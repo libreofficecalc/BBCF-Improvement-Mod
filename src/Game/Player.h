@@ -1,6 +1,7 @@
 #pragma once
 #include "CharData.h"
 #include "Palette/CharPaletteHandle.h"
+#include <deque>
 
 class Player
 {
@@ -22,6 +23,9 @@ public:
 	void SetCBROverride(bool b);
 	void makeCBRInput();
 
+	bool Recording;
+	bool Replaying;
+	std::deque<char> inputs;
 
 private:
 	CharData** m_charData;

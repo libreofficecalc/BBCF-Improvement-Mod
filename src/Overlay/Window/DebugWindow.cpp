@@ -78,8 +78,16 @@ void DebugWindow::DrawGameValuesSection()
 
 	if (ImGui::TreeNode("Character data"))
 	{
-		g_interfaces.player1.SetCBROverride(true);
-		g_interfaces.player1.SetCBRInputValue(6);
+		if (ImGui::Button("Record"))
+		{
+			g_interfaces.player1.Recording = !g_interfaces.player1.Recording;
+		}
+		if (ImGui::Button("Replaying"))
+		{
+			g_interfaces.player1.Replaying = !g_interfaces.player1.Replaying;
+		}
+		//g_interfaces.player1.SetCBROverride(true);
+		//g_interfaces.player1.SetCBRInputValue(6);
 		ImGui::Text("pP1InputDataPTR 0x%p", g_interfaces.player1.GetInput());
 		ImGui::Text("pP1InputDataPTR 0x%p", *g_interfaces.player1.GetCBRInput());
 		

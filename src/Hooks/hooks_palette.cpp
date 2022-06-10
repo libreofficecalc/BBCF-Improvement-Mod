@@ -114,23 +114,30 @@ void __declspec(naked)P1Input()
 	//*g_interfaces.player1.input = 6;
 	if (addr == (char*)0x011E7874) {
 		g_interfaces.player1.SetInputPtr(addr);
-		if (g_interfaces.player1.GetCBROverride()) {
-			g_interfaces.player1.SetInputValue(g_interfaces.player1.GetCBRInput());
+
+		if (g_interfaces.player1.Replaying && !g_interfaces.player1.inputs.empty()) {
+			*addr = g_interfaces.player1.inputs.front();
+			g_interfaces.player1.inputs.pop_front();
 		}
+
+		if (g_interfaces.player1.Recording) {
+			g_interfaces.player1.inputs.push_back(*addr);
+		}
+
+		//if (g_interfaces.player1.GetCBROverride()) {
+		//	g_interfaces.player1.SetInputValue(g_interfaces.player1.GetCBRInput());
+		//}
 	}
 	if (addr == (char*)0x011E7890) {
 		g_interfaces.player2.SetInputPtr(addr);
-		if (g_interfaces.player2.GetCBROverride()) {
-			g_interfaces.player2.SetInputValue(g_interfaces.player2.GetCBRInput());
-		}
+		//if (g_interfaces.player2.GetCBROverride()) {
+		//	g_interfaces.player2.SetInputValue(g_interfaces.player2.GetCBRInput());
+		//}
 	}
 	__asm
 	{
 		jmp[P1InputJmpBackAddr]
 	}
-	
-
-	
 }
 
 DWORD GetGameStateCharacterSelectJmpBackAddr = 0;
