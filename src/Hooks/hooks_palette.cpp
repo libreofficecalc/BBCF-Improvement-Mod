@@ -84,6 +84,55 @@ void __declspec(naked)GetIsP1CPU()
 	}
 }
 
+std::string hexify(unsigned int n)
+{
+	std::string res;
+
+	do
+	{
+		res += "0123456789ABCDEF"[n % 16];
+		n >>= 4;
+	} while (n);
+
+	return std::string(res.rbegin(), res.rend());
+}
+
+DWORD P1InputJmpBackAddr = 0;
+void __declspec(naked)P1Input()
+{
+	LOG_ASM(2, "P1Input\n");
+	static char* addr = nullptr;
+	__asm
+	{
+		movzx edi, ax
+		mov[esi], di
+		mov[addr], esi
+
+	}
+	//g_interfaces.player1.input = addr;
+	//g_interfaces.player1.SetInputPtr(addr);
+	//*g_interfaces.player1.input = 6;
+	if (addr == (char*)0x011E7874) {
+		g_interfaces.player1.SetInputPtr(addr);
+		if (g_interfaces.player1.GetCBROverride()) {
+			g_interfaces.player1.SetInputValue(g_interfaces.player1.GetCBRInput());
+		}
+	}
+	if (addr == (char*)0x011E7890) {
+		g_interfaces.player2.SetInputPtr(addr);
+		if (g_interfaces.player2.GetCBROverride()) {
+			g_interfaces.player2.SetInputValue(g_interfaces.player2.GetCBRInput());
+		}
+	}
+	__asm
+	{
+		jmp[P1InputJmpBackAddr]
+	}
+	
+
+	
+}
+
 DWORD GetGameStateCharacterSelectJmpBackAddr = 0;
 void __declspec(naked)GetGameStateCharacterSelect()
 {
@@ -191,6 +240,9 @@ bool placeHooks_palette()
 
 	GetIsP1CPUJmpBackAddr = HookManager::SetHook("GetIsP1CPU", "\x89\xB8\x00\x00\x00\x00\x8B\x83",
 		"xx????xx", 6, GetIsP1CPU);
+
+	P1InputJmpBackAddr = HookManager::SetHook("P1Input", "\x0F\xB7\x00\x66\x89\x00\xE9\x00\x00\x00\x00\x53",
+		"xx?xx?x????x", 6, P1Input);
 
 	return true;
 }

@@ -78,6 +78,19 @@ void DebugWindow::DrawGameValuesSection()
 
 	if (ImGui::TreeNode("Character data"))
 	{
+		g_interfaces.player1.SetCBROverride(true);
+		g_interfaces.player1.SetCBRInputValue(6);
+		ImGui::Text("pP1InputDataPTR 0x%p", g_interfaces.player1.GetInput());
+		ImGui::Text("pP1InputDataPTR 0x%p", *g_interfaces.player1.GetCBRInput());
+		
+
+
+		//g_interfaces.player1.GetInputData()->Inputs = 6;
+		
+		//ImGui::Text("pP1InputData 0x%p", g_interfaces.player1.GetInputData()->Inputs);
+		
+
+
 		if (!g_interfaces.player1.IsCharDataNullPtr())
 			ImGui::Text("pP1CharData 0x%p", g_interfaces.player1.GetData());
 
@@ -89,6 +102,23 @@ void DebugWindow::DrawGameValuesSection()
 
 		if (!g_interfaces.player2.IsCharDataNullPtr())
 			ImGui::Text("P2CharIndex %d", g_interfaces.player2.GetData()->charIndex);
+
+		if (!g_interfaces.player1.IsCharDataNullPtr()) {
+			//g_interfaces.player1.GetData()->pad_5B08[102058] = 5;
+			ImGui::Text("pad_5B08 - 102058: %d %d", g_interfaces.player1.GetData()->pad_5B08[102058], std::addressof(g_interfaces.player1.GetData()->pad_5B08[102058]));
+		}
+
+		if (!g_interfaces.player1.IsCharDataNullPtr()) {
+			//g_interfaces.player1.GetData()->pad_5B08[102065] = 6;
+			ImGui::Text("pad_5B08 - 102065: %d %d", g_interfaces.player1.GetData()->pad_5B08[102065], std::addressof(g_interfaces.player1.GetData()->pad_5B08[102065]));
+		}
+		
+		unsigned int steps = sizeof(g_interfaces.player1.GetData()->pad_0004) / sizeof(g_interfaces.player1.GetData()->pad_0004[0]);
+		for (unsigned int a = 0; a < steps; a = a + 1) {
+			if (g_interfaces.player1.GetData()->pad_0004[a] != 1232315) {
+				ImGui::Text(":%d", g_interfaces.player1.GetData()->pad_0004[a]);
+			}
+		}
 
 		ImGui::Separator();
 		ImGui::Text("pP1PalIndex 0x%p", &(g_interfaces.player1.GetPalHandle().GetPalIndexRef()));
@@ -110,6 +140,10 @@ void DebugWindow::DrawGameValuesSection()
 
 		ImGui::TreePop();
 	}
+	else {
+		g_interfaces.player1.SetCBRInputValue(4);
+	}
+
 
 	if (ImGui::TreeNode("Game and Match variables"))
 	{
