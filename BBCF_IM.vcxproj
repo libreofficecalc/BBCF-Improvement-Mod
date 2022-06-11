@@ -83,7 +83,6 @@
     <ClInclude Include="depends\imgui\stb_rect_pack.h" />
     <ClInclude Include="depends\imgui\stb_textedit.h" />
     <ClInclude Include="depends\imgui\stb_truetype.h" />
-    <ClInclude Include="src\CBR\libCBR.h" />
     <ClInclude Include="src\Core\info.h" />
     <ClInclude Include="src\CustomGameMode\customGameMode.h" />
     <ClInclude Include="src\CustomGameMode\GameModeManager.h" />
@@ -159,9 +158,6 @@
       <DeploymentContent>false</DeploymentContent>
     </None>
     <None Include="src\Core\settings.def" />
-  </ItemGroup>
-  <ItemGroup>
-    <Library Include="src\CBR\libCBR.so" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{CB50353A-2EC9-4D1C-89C6-65A621C335C5}</ProjectGuid>

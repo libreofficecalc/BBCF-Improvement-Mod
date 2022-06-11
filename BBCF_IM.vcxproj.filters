@@ -249,7 +249,6 @@
     <ClInclude Include="src\Overlay\Widget\StageSelectWidget.h" />
     <ClInclude Include="src\Overlay\Widget\GameModeSelectWidget.h" />
     <ClInclude Include="src\Overlay\Widget\ActiveGameModeWidget.h" />
-    <ClInclude Include="src\CBR\libCBR.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="export\dinput8.def">
@@ -260,8 +259,5 @@
     </None>
     <None Include="src\Core\settings.def" />
     <None Include="resource\palettes.ini" />
-  </ItemGroup>
-  <ItemGroup>
-    <Library Include="src\CBR\libCBR.so" />
   </ItemGroup>
 </Project>
