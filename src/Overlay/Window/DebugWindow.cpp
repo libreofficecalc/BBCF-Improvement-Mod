@@ -92,7 +92,6 @@ void DebugWindow::DrawGameValuesSection()
 		ImGui::Text("pP1InputDataPTR 0x%p", *g_interfaces.player1.GetCBRInput());
 		
 
-
 		//g_interfaces.player1.GetInputData()->Inputs = 6;
 		
 		//ImGui::Text("pP1InputData 0x%p", g_interfaces.player1.GetInputData()->Inputs);

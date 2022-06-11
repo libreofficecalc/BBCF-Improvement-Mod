@@ -1,0 +1,114 @@
+# depslib dependency file v1.0
+1653749548 source:f:\users\linus\documents\github\bbcf-improvement-mod\depends\imgui\imgui.cpp
+	"imgui.h"
+	"imgui_internal.h"
+	<ctype.h>
+	<stdlib.h>
+	<stdio.h>
+	<limits.h>
+	<stddef.h>
+	<stdint.h>
+	"stb_textedit.h"
+	<Windows.h>
+	<imm.h>
+	"imgui_user.inl"
+
+1653749548 f:\users\linus\documents\github\bbcf-improvement-mod\depends\imgui\imgui.h
+	"imconfig.h"
+	<float.h>
+	<stdarg.h>
+	<stddef.h>
+	<string.h>
+	<assert.h>
+	"imgui_user.h"
+
+1653749548 f:\users\linus\documents\github\bbcf-improvement-mod\depends\imgui\imconfig.h
+
+1653749548 f:\users\linus\documents\github\bbcf-improvement-mod\depends\imgui\imgui_internal.h
+	<stdio.h>
+	<math.h>
+	"stb_textedit.h"
+
+1653749548 f:\users\linus\documents\github\bbcf-improvement-mod\depends\imgui\stb_textedit.h
+	<string.h>
+
+1653749548 source:f:\users\linus\documents\github\bbcf-improvement-mod\depends\imgui\imgui_demo.cpp
+	"imgui.h"
+	<ctype.h>
+	<math.h>
+	<stdio.h>
+	<stdlib.h>
+	<stddef.h>
+	<stdint.h>
+
+1653749548 source:f:\users\linus\documents\github\bbcf-improvement-mod\depends\imgui\imgui_draw.cpp
+	"imgui.h"
+	"imgui_internal.h"
+	<stdio.h>
+	<malloc.h>
+	<alloca.h>
+	<stdlib.h>
+	"stb_rect_pack.h"
+	"stb_truetype.h"
+
+1653749548 f:\users\linus\documents\github\bbcf-improvement-mod\depends\imgui\stb_rect_pack.h
+	<stdlib.h>
+	<assert.h>
+
+1653749548 f:\users\linus\documents\github\bbcf-improvement-mod\depends\imgui\stb_truetype.h
+	"stb_truetype.h"
+	<stdio.h>
+	"stb_truetype.h"
+	<math.h>
+	<math.h>
+	<math.h>
+	<stdlib.h>
+	<assert.h>
+	<string.h>
+	<memory.h>
+
+1653749548 source:f:\users\linus\documents\github\bbcf-improvement-mod\depends\imgui\imgui_impl_dx9.cpp
+	<imgui.h>
+	"imgui_impl_dx9.h"
+	<d3d9.h>
+	<dinput.h>
+
+1653749548 f:\users\linus\documents\github\bbcf-improvement-mod\depends\imgui\\imgui.h
+	"imconfig.h"
+	<float.h>
+	<stdarg.h>
+	<stddef.h>
+	<string.h>
+	<assert.h>
+	"imgui_user.h"
+
+1653749548 f:\users\linus\documents\github\bbcf-improvement-mod\depends\imgui\\imconfig.h
+
+1653749548 f:\users\linus\documents\github\bbcf-improvement-mod\depends\imgui\imgui_impl_dx9.h
+
+1653749548 f:\users\linus\documents\github\bbcf-improvement-mod\depends\directx_sdk\include\\d3d9.h
+	<stdlib.h>
+	<objbase.h>
+	<windows.h>
+	"d3d9types.h"
+	"d3d9caps.h"
+
+1653749548 f:\users\linus\documents\github\bbcf-improvement-mod\depends\directx_sdk\include\\d3d9types.h
+	<float.h>
+
+1653749548 f:\users\linus\documents\github\bbcf-improvement-mod\depends\directx_sdk\include\\d3d9caps.h
+
+1653749548 f:\users\linus\documents\github\bbcf-improvement-mod\depends\directx_sdk\include\\dinput.h
+	<objbase.h>
+
+1653749548 source:f:\users\linus\documents\github\bbcf-improvement-mod\src\core\crashdump.cpp
+	"crashdump.h"
+	<ctime>
+	<dbghelp.h>
+	<memory>
+	<shlobj.h>
+	<tchar.h>
+
+1653749548 f:\users\linus\documents\github\bbcf-improvement-mod\src\core\crashdump.h
+	<Windows.h>
+

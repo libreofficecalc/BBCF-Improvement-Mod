@@ -5,6 +5,7 @@
 #include "Core/interfaces.h"
 #include "Core/logger.h"
 #include "Game/gamestates.h"
+#include "CBR/libCBR.h"
 
 DWORD GetCharObjPointersJmpBackAddr = 0;
 void __declspec(naked)GetCharObjPointers()
@@ -118,6 +119,7 @@ void __declspec(naked)P1Input()
 		if (g_interfaces.player1.Replaying && !g_interfaces.player1.inputs.empty()) {
 			*addr = g_interfaces.player1.inputs.front();
 			g_interfaces.player1.inputs.pop_front();
+			cgoSetPlayerName(0, "bob");
 		}
 
 		if (g_interfaces.player1.Recording) {
