@@ -115,6 +115,9 @@ Keep in mind that the mod may partially, or completely stop working whenever a n
 
 Changelog
 ==========================
+23-07-2022 -- version 3.04
+===============================
+- Updated to be compatible with the ver 2103 patch
 
 08-03-2022 -- version 3.03
 ===============================

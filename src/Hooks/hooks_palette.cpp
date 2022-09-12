@@ -229,8 +229,8 @@ void __declspec(naked) GetPaletteIndexPointers()
 
 bool placeHooks_palette()
 {
-	GetCharObjPointersJmpBackAddr = HookManager::SetHook("GetCharObjPointers", "\x89\xb4\xb8\xe8\x25\x00\x00\x8b\x45\xfc",
-		"xxxxxxxxxx", 7, GetCharObjPointers);
+	GetCharObjPointersJmpBackAddr = HookManager::SetHook("GetCharObjPointers", "\x89\xB4\x00\x00\x00\x00\x00\x8B\x45",
+		"xx?????xx", 7, GetCharObjPointers);
 
 	GetPalBaseAddressesJmpBackAddr = HookManager::SetHook("GetPalBaseAddresses", "\x89\x81\x30\x08\x00\x00\x8b\xc8\xe8\x00\x00\x00\x00\x5f",
 		"xxxxxxxxx????x", 6, GetPalBaseAddresses);

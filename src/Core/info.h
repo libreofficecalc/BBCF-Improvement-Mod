@@ -1,6 +1,6 @@
 #pragma once
 
-#define MOD_VERSION_NUM	"v3.03"
+#define MOD_VERSION_NUM	"v3.04"
 #define MOD_WINDOW_TITLE "BBCF Improvement Mod"
 
 #define MOD_FORCE_DISABLE_UPDATE_CHECK 0

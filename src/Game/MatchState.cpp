@@ -75,6 +75,7 @@ void MatchState::OnMatchEnd()
 		g_interfaces.player2.GetPalHandle()
 	);
 
+	g_interfaces.pOnlinePaletteManager->ClearSavedPalettePacketQueues();
 	g_interfaces.pOnlineGameModeManager->ClearPlayerGameModeChoices();
 }
 

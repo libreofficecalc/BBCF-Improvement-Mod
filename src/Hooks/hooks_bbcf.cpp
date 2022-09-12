@@ -248,8 +248,8 @@ void __declspec(naked)PacketProcessingFunc()
 NOT_CUSTOM_PACKET:
 		popad
 		// original bytes
-		mov edx, [ebp - 08h]
-		lea edi, [ebp - 24h]
+		mov edx, [ebp - 50h]
+		lea edi, [ebp - 14h]
 		mov eax, [edx]
 		push edi
 		push ecx
@@ -406,8 +406,8 @@ void __declspec(naked)OverwriteStagesList()
 
 	__asm
 	{
-		mov esi, [ebp - 04h]
-		lea eax, [ebp - 08h]
+		mov esi, [ebp - 20h]
+		lea eax, [ebp - 24h]
 		jmp[OverwriteStagesListJmpBackAddr]
 	}
 }
@@ -463,6 +463,8 @@ void __declspec(naked)GetIsHUDHidden()
 DWORD GetViewAndProjMatrixesJmpBackAddr = 0;
 void __declspec(naked)GetViewAndProjMatrixes()
 {
+	LOG_ASM(7, "GetViewAndProjMatrixes\n");
+
 	__asm
 	{
 		push eax
@@ -475,8 +477,8 @@ void __declspec(naked)GetViewAndProjMatrixes()
 
 	__asm
 	{
-		movss[ebp - 20h], xmm0
-		mov DWORD PTR [ebp - 1Ch], 3F800000h
+		movss[ebp - 60h], xmm0
+		mov DWORD PTR [ebp - 5Ch], 3F800000h
 		jmp[GetViewAndProjMatrixesJmpBackAddr]
 	}
 }
@@ -655,8 +657,8 @@ bool placeHooks_bbcf()
 	DenyKeyboardInputFromGameJmpBackAddr = HookManager::SetHook("DenyKeyboardInputFromGame", "\x8d\x46\x28\x50\xff\x15\x00\x00\x00\x00",
 		"xxxxxx????", 10, DenyKeyboardInputFromGame);
 	
-	PacketProcessingFuncJmpBackAddr = HookManager::SetHook("PacketProcessingFunc", "\x8b\x55\xf8\x8d\x7d\xdc\x8b\x02",
-		"xxxxxxxx", 18, PacketProcessingFunc);
+	PacketProcessingFuncJmpBackAddr = HookManager::SetHook("PacketProcessingFunc", "\x8B\x55\x00\x8D\x7D",
+		"xx?xx", 18, PacketProcessingFunc);
 	
 	GetPlayerAvatarBaseAddr = HookManager::SetHook("GetPlayerAvatarBaseFunc", "\x89\x83\xca\x00\x00\x00\xe8",
 		"xxxxxxx", 6, GetPlayerAvatarBaseFunc);
@@ -673,8 +675,8 @@ bool placeHooks_bbcf()
 	GetMusicSelectAddrJmpBackAddr = HookManager::SetHook("GetMusicSelectAddr", "\xc7\x41\x04\x00\x00\x00\x00\x8d\x41\x0c",
 		"xxxxxxxxxx", 7, GetMusicSelectAddr);
 
-	OverwriteStagesListJmpBackAddr = HookManager::SetHook("OverwriteStagesList", "\x8b\x75\xfc\x8d\x45\xf8",
-		"xxxxxx", 6, OverwriteStagesList);
+	OverwriteStagesListJmpBackAddr = HookManager::SetHook("OverwriteStagesList", "\x8B\x75\x00\x8D\x45\x00\x50\x6A\x00\x68",
+		"xx?xx?xx?x", 6, OverwriteStagesList);
 
 	GetEntityListAddrJmpBackAddr = HookManager::SetHook("GetEntityListAddr", "\x68\x00\x00\x00\x00\x89\x86\x00\x00\x00\x00\xE8\x00\x00\x00\x00\x68",
 		"x????xx????x????x", 11, GetEntityListAddr);
@@ -687,8 +689,8 @@ bool placeHooks_bbcf()
 	GetIsHUDHiddenJmpBackAddr = HookManager::SetHook("GetIsHUDHidden", "\x83\x88\x78\x27\x00\x00\x00\x8B\x07\x8B\xCF\xFF\x50\x00\xB9\x00\x00\x00\x00\xE8\x00\x00\x00\x00\x5F\xB8\x00\x00\x00\x00\x5B\xC3\x8B\x07\x8B\xCF\xFF\x50\x00\xB9\x00\x00\x00\x00\xE8\x00\x00\x00\x00\x5F\xB8\x00\x00\x00\x00\x5B\xC3\x8B\x07",
 		"xxxxxx?xxxxxx?x????x????xx????xxxxxxxx?x????x????xx????xxxx", 7, GetIsHUDHidden);
 
-	GetViewAndProjMatrixesJmpBackAddr = HookManager::SetHook("GetViewAndProjMatrixes", "\xf3\x0f\x11\x45\xe0\xc7\x45\xe4\x00\x00\x80\x3f",
-		"xxxxxxxxxxxx", 12, GetViewAndProjMatrixes);
+	GetViewAndProjMatrixesJmpBackAddr = HookManager::SetHook("GetViewAndProjMatrixes", "\xF3\x0F\x00\x00\x00\xC7\x45\xA4\x00\x00\x00\x00\xE8",
+		"xx???xxx????x", 12, GetViewAndProjMatrixes);
 
 	GameUpdatePauseJmpBackAddr = HookManager::SetHook("GameUpdatePause", "\xf6\x01\x01\x74\x00\xe8\x00\x00\x00\x00",
 		"xxxx?x????", 5, GameUpdatePause, false);
@@ -707,8 +709,8 @@ bool placeHooks_bbcf()
 	GetFFAMatchThisPlayerIndexJmpBackAddr = HookManager::SetHook("GetFFAMatchThisPlayerIndex", "\xc7\x83\x04\x07\x00\x00\x00\x00\x00\x00\xc7\x83\xd8\x06\x00\x00\x00\x00\x00\x00",
 		"xxxxxxxxxxxxxxxxxxxx", 10, GetFFAMatchThisPlayerIndex);
 
-	HookManager::RegisterHook("GetMoneyAddr", "\xff\x35\x00\x00\x00\x00\x8d\x45\xb4\x68\x00\x00\x00\x00\x50",
-		"xx????xxxx????x", 6);
+	HookManager::RegisterHook("GetMoneyAddr", "\xFF\x35\x00\x00\x00\x00\x8D\x45\x00\x68\x00\x00\x00\x00\x50\xE8\x00\x00\x00\x00\xDB\x45",
+		"xx????xx?x????xx????xx", 6);
 	g_gameVals.pGameMoney = (int*)HookManager::GetBytesFromAddr("GetMoneyAddr", 2, 4);
 
 	return true;

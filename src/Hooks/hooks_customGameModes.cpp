@@ -668,8 +668,8 @@ void placeHooks_CustomGameModes()
 	// Could not make a better fix due to unreliable byte pattern for sigscan
 
 	// Get return address
-	HookManager::SetHook("getTrainingHealthModifyFixJmpBackAddr", "\x8b\x75\xfc\x85\xf6\x0f\x84\x00\x00\x00\x00\x68\x00\x00\x00\x00",
-		"xxxxxxx????x????", 0, nullptr, false);
+	HookManager::SetHook("getTrainingHealthModifyFixJmpBackAddr", "\x8B\xB5\x00\x00\x00\x00\x85\xF6\x0F\x84\x00\x00\x00\x00\x68",
+		"xx????xxxx????x", 0, nullptr, false);
 
 	HookManager::SetHook("training_healthModifyFix", "\x83\x7b\x30\x00\x8b\xf0\x74\x00",
 		"xxxxxxx?", 6, training_healthModifyFix, false);
