@@ -24,6 +24,7 @@ private:
 	void DrawHitboxOverlaySection() const;
 	void DrawGameplaySettingSection() const;
 	void DrawAvatarSection() const;
+	void DrawCBRAiSection()const;
 
 	const ImVec2 BTN_SIZE = ImVec2(60, 20);
 	WindowContainer* m_pWindowContainer = nullptr;

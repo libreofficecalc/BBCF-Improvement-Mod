@@ -2,6 +2,8 @@
 #include "CharData.h"
 #include "Palette/CharPaletteHandle.h"
 #include <deque>
+#include "CBR/AnnotatedReplay.h"
+#include <CBR/CbrData.h>
 
 class Player
 {
@@ -16,22 +18,23 @@ public:
 	void SetInputPtr(char* ptr);
 	void SetInputValue(char* inputval);
 
-	char* GetCBRInput() const;
-	void SetCBRInputValue(int inputInt);
+	void setAnnotatedReplay(AnnotatedReplay);
+	AnnotatedReplay* getAnnotatedReplay();
 
-	bool GetCBROverride() const;
-	void SetCBROverride(bool b);
-	void makeCBRInput();
+	void setCbrData(CbrData);
+	CbrData* getCbrData();
 
 	bool Recording;
 	bool Replaying;
+	bool instantLearning;
+	bool firstInputParser;
+	int debugReplayNr = 0;
 	std::deque<char> inputs;
 
 private:
 	CharData** m_charData;
 	char* input;
-	char* CbrInputOverride = new char();
-	bool CBROverride;
 	CharPaletteHandle m_charPalHandle;
-	
+	AnnotatedReplay aReplay;
+	CbrData cbrData;
 };

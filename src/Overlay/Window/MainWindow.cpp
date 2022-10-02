@@ -78,7 +78,9 @@ void MainWindow::Draw()
 	DrawHitboxOverlaySection();
 	DrawAvatarSection();
 	DrawLoadedSettingsValuesSection();
+	DrawCBRAiSection();
 	DrawUtilButtons();
+	
 
 	ImGui::VerticalSpacing(5);
 
@@ -334,3 +336,116 @@ void MainWindow::DrawLoadedSettingsValuesSection() const
 
 	ImGui::EndChild();
 }
+
+
+
+void MainWindow::DrawCBRAiSection() const
+{
+	if (!ImGui::CollapsingHeader("CBR AI"))
+		return;
+
+	if (!isInMatch())
+	{
+		ImGui::HorizontalSpacing();
+		ImGui::TextDisabled("YOU ARE NOT IN MATCH!");
+
+
+		return;
+	}
+
+	ImGui::HorizontalSpacing();
+
+	if (isInMatch())
+	{
+		//ImGui::VerticalSpacing(10);
+		//ImGui::HorizontalSpacing();
+
+		if (ImGui::Button("Record"))
+		{
+			if (g_interfaces.player1.Recording == false) {
+				g_interfaces.player1.debugReplayNr++;
+				g_interfaces.player1.setAnnotatedReplay(AnnotatedReplay("KDing", "Ragna", "Jin"));
+			}
+			else {
+				if (!g_interfaces.player1.getCbrData()->getEnabled()) {
+					g_interfaces.player1.setCbrData(CbrData(g_interfaces.player1.getAnnotatedReplay()->getPlayerName(), g_interfaces.player1.getAnnotatedReplay()->getFocusCharName()));
+				}
+				auto cbrReplay = CbrReplayFile(g_interfaces.player1.getAnnotatedReplay()->getCharacterName());
+				cbrReplay.makeFullCaseBase(*g_interfaces.player1.getAnnotatedReplay(), g_interfaces.player1.GetData()->char_abbr);
+				g_interfaces.player1.getCbrData()->AddReplay(cbrReplay);
+			}
+			g_interfaces.player1.Recording = !g_interfaces.player1.Recording;
+		}
+		if (ImGui::Button("Replaying P1"))
+		{
+			g_interfaces.player1.Replaying = !g_interfaces.player1.Replaying;
+		}
+		if (ImGui::Button("Replaying P2"))
+		{
+			g_interfaces.player2.Replaying = !g_interfaces.player2.Replaying;
+		}
+		if (ImGui::Button("Delete"))
+		{
+			g_interfaces.player1.debugReplayNr = 0;
+			g_interfaces.player1.getCbrData()->setEnabled(false);
+		}
+		if (ImGui::Button("InstantLearning"))
+		{
+			if (g_interfaces.player1.instantLearning == false) {
+				g_interfaces.player1.setAnnotatedReplay(AnnotatedReplay("KDing", "Ragna", "Jin"));
+				if (!g_interfaces.player1.getCbrData()->getEnabled()) {
+					g_interfaces.player1.setCbrData(CbrData(g_interfaces.player1.getAnnotatedReplay()->getPlayerName(), g_interfaces.player1.getAnnotatedReplay()->getFocusCharName()));
+				}
+				auto cbrReplay = CbrReplayFile(g_interfaces.player1.getAnnotatedReplay()->getCharacterName());
+				g_interfaces.player1.getCbrData()->AddReplay(cbrReplay);
+			}
+			else {
+
+			}
+			g_interfaces.player1.instantLearning = !g_interfaces.player1.instantLearning;
+		}
+
+		//g_interfaces.player1.SetCBROverride(true);
+		//g_interfaces.player1.SetCBRInputValue(6);
+		ImGui::Text("Recording: %d", g_interfaces.player1.Recording);
+		ImGui::Text("Replaying P1 %d", g_interfaces.player1.Replaying);
+		ImGui::Text("Replaying P2 %d", g_interfaces.player2.Replaying);
+		ImGui::Text("InstantLearning %d", g_interfaces.player1.instantLearning);
+		ImGui::Text(g_interfaces.player1.getCbrData()->debugText.c_str());
+		ImGui::Text("Replay: %d - Frame: %d", g_interfaces.player1.debugReplayNr, g_interfaces.player1.getAnnotatedReplay()->debugFrameIndex);
+		
+		if (!g_interfaces.player1.IsCharDataNullPtr()) {
+
+			/*
+			ImGui::TextUnformatted(g_interfaces.player1.GetData()->char_abbr);
+			ImGui::TextUnformatted(g_interfaces.player1.GetData()->currentAction);
+			ImGui::Text("P1FrameCount-1 %d", g_interfaces.player1.GetData()->frame_count_minus_1);
+			ImGui::Text("hitstop %d", g_interfaces.player1.GetData()->hitstop);
+			ImGui::Text("actionTime %d", g_interfaces.player1.GetData()->actionTime);
+			ImGui::Text("actionTime2 %d", g_interfaces.player1.GetData()->actionTime2);
+			ImGui::Text("actionTimeNoHitstop %d", g_interfaces.player1.GetData()->actionTimeNoHitstop);
+			ImGui::Text("typeOfAttack %d", g_interfaces.player1.GetData()->typeOfAttack);
+			ImGui::Text("attackLevel %d", g_interfaces.player1.GetData()->attackLevel);
+			ImGui::Text("moveDamage %d", g_interfaces.player1.GetData()->moveDamage);
+			ImGui::Text("moveSpecialBlockstun %d", g_interfaces.player1.GetData()->moveSpecialBlockstun);
+			ImGui::Text("moveGuardCrushTime %d", g_interfaces.player1.GetData()->moveGuardCrushTime);
+			ImGui::Text("moveHitstunOverwrite %d", g_interfaces.player1.GetData()->moveHitstunOverwrite);
+			ImGui::Text("blockstun %d", g_interfaces.player1.GetData()->blockstun);
+			ImGui::Text("hitstun %d", g_interfaces.player1.GetData()->hitstun); 
+			ImGui::Text("timeAfterTechIsPerformed %d", g_interfaces.player1.GetData()->timeAfterTechIsPerformed);
+			ImGui::Text("timeAfterLatestHit %d", g_interfaces.player1.GetData()->timeAfterLatestHit);
+			ImGui::Text("comboDamage %d", g_interfaces.player1.GetData()->comboDamage);
+			ImGui::Text("comboDamage2 %d", g_interfaces.player1.GetData()->comboDamage2);
+			ImGui::Text("P1PosX %d", g_interfaces.player1.GetData()->position_x);
+			ImGui::Text("P1PosY %d", g_interfaces.player1.GetData()->position_y);
+
+			ImGui::TextUnformatted(g_interfaces.player2.GetData()->char_abbr);
+			ImGui::TextUnformatted(g_interfaces.player2.GetData()->currentAction);
+			ImGui::Text("P1PosX %d", g_interfaces.player2.GetData()->position_x);
+			ImGui::Text("P1PosY %d", g_interfaces.player2.GetData()->position_y);
+			*/
+		}
+
+	}
+}
+

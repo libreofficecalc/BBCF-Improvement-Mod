@@ -36,25 +36,19 @@ void Player::SetInputPtr(char* ptr)
 {
 	input = ptr;
 }
-char* Player::GetCBRInput() const
-{
-	return CbrInputOverride;
+
+void Player::setAnnotatedReplay(AnnotatedReplay r) {
+	aReplay = r;
 }
-void Player::SetCBRInputValue(int inputInt)
-{
-	*CbrInputOverride = inputInt;
+AnnotatedReplay* Player::getAnnotatedReplay() {
+	return &aReplay;
 }
 
+void Player::setCbrData(CbrData c) {
+	cbrData = c;
+}
 
-bool Player::GetCBROverride() const
-{
-	return CBROverride;
+CbrData* Player::getCbrData() {
+	return &cbrData;
 }
-void Player::SetCBROverride(bool b)
-{
-	CBROverride = b;
-}
-void Player::makeCBRInput()
-{
-	CbrInputOverride = new char();
-}
+

@@ -112,32 +112,139 @@ void __declspec(naked)P1Input()
 	//g_interfaces.player1.input = addr;
 	//g_interfaces.player1.SetInputPtr(addr);
 	//*g_interfaces.player1.input = 6;
-	if (addr == (char*)0x011E7874) {
-		g_interfaces.player1.SetInputPtr(addr);
-
-		if (g_interfaces.player1.Replaying && !g_interfaces.player1.inputs.empty()) {
-			*addr = g_interfaces.player1.inputs.front();
-			g_interfaces.player1.inputs.pop_front();
-		}
-
-		if (g_interfaces.player1.Recording) {
-			g_interfaces.player1.inputs.push_back(*addr);
-		}
-
-		//if (g_interfaces.player1.GetCBROverride()) {
-		//	g_interfaces.player1.SetInputValue(g_interfaces.player1.GetCBRInput());
-		//}
+	if (((reinterpret_cast<uintptr_t>(addr) & 0x00009888) == (uintptr_t)0x00009888)) {
+		g_interfaces.player1.firstInputParser = true;
 	}
-	if (addr == (char*)0x011E7890) {
-		g_interfaces.player2.SetInputPtr(addr);
-		//if (g_interfaces.player2.GetCBROverride()) {
-		//	g_interfaces.player2.SetInputValue(g_interfaces.player2.GetCBRInput());
-		//}
-	}
+	CBRLogic(addr);
+	
 	__asm
 	{
 		jmp[P1InputJmpBackAddr]
 	}
+}
+
+
+DWORD P2InputJmpBackAddr = 0;
+void __declspec(naked)P2Input()
+{
+	LOG_ASM(2, "P2Input\n");
+	static char* addr = nullptr;
+	__asm
+	{
+		mov[esi], ax
+		mov[addr], esi
+		
+	}
+	//g_interfaces.player1.input = addr;
+	//g_interfaces.player1.SetInputPtr(addr);
+	//*g_interfaces.player1.input = 6;
+	if (g_interfaces.player1.firstInputParser == false) {
+		CBRLogic(addr);
+	}
+	
+
+	__asm
+	{
+		jmp[P2InputJmpBackAddr]
+	}
+}
+
+void CBRLogic(char* addr) {
+	
+	if ((reinterpret_cast<uintptr_t>(addr) & 0x0000986c) == (uintptr_t)0x0000986c) {
+		g_interfaces.player1.SetInputPtr(addr);
+		if (g_interfaces.player1.Replaying || g_interfaces.player1.Recording || g_interfaces.player1.instantLearning) {
+			auto meta = RecordCbrMetaData(addr, 0);
+			meta->computeMetaData();
+			if (g_interfaces.player1.Replaying) {
+				*addr = (char)g_interfaces.player1.getCbrData()->CBRcomputeNextAction(*meta);
+				//*addr = ReplayCbrData();
+				//*addr = g_interfaces.player1.inputs.front();
+				//g_interfaces.player1.inputs.pop_front();
+			}
+
+			if (g_interfaces.player1.Recording || g_interfaces.player1.instantLearning) {
+				g_interfaces.player1.getAnnotatedReplay()->AddFrame(meta, ((int)(*addr)));
+				//g_interfaces.player1.inputs.push_back(*addr);
+			}
+
+			//if (g_interfaces.player1.GetCBROverride()) {
+			//	g_interfaces.player1.SetInputValue(g_interfaces.player1.GetCBRInput());
+			//}
+		}
+
+	}
+	if ((reinterpret_cast<uintptr_t>(addr) & 0x00009888) == (uintptr_t)0x00009888){
+		auto replay = g_interfaces.player1.getAnnotatedReplay();
+
+		if (g_interfaces.player1.instantLearning == true) {
+			g_interfaces.player1.getCbrData()->getLastReplay()->instantLearning(*g_interfaces.player1.getAnnotatedReplay(), g_interfaces.player1.getAnnotatedReplay()->getFocusCharName());
+		}
+		g_interfaces.player2.SetInputPtr(addr);
+		
+		if (g_interfaces.player2.Replaying || g_interfaces.player2.Recording || g_interfaces.player1.instantLearning == true) {
+			auto meta = RecordCbrMetaData(addr, 1);
+			meta->computeMetaData();
+			if (g_interfaces.player2.Replaying || g_interfaces.player1.instantLearning == true) {
+				*addr = (char)g_interfaces.player1.getCbrData()->CBRcomputeNextAction(*meta);
+			}
+
+			if (g_interfaces.player2.Recording) {
+				g_interfaces.player2.getAnnotatedReplay()->AddFrame(meta, ((int)(*addr)));
+			}
+		}
+
+	}
+}
+
+char ReplayCbrData() {
+	return (char)g_interfaces.player1.getAnnotatedReplay()->getNextInput();
+}
+
+std::shared_ptr<Metadata> RecordCbrMetaData(char * addr, bool PlayerIndex) {
+	if (PlayerIndex == 0){
+		auto p1X = g_interfaces.player1.GetData()->position_x;
+		auto p1Y = g_interfaces.player1.GetData()->position_y;
+		auto p2X = g_interfaces.player2.GetData()->position_x;
+		auto p2Y = g_interfaces.player2.GetData()->position_y;
+		auto facing = g_interfaces.player1.GetData()->facingLeft;
+		auto p1State = std::string(g_interfaces.player1.GetData()->currentAction);
+		auto p2State = std::string(g_interfaces.player2.GetData()->currentAction);
+		auto p1Block = g_interfaces.player1.GetData()->blockstun;
+		auto p2Block = g_interfaces.player2.GetData()->blockstun;
+		auto p1Hit = g_interfaces.player1.GetData()->hitstun;
+		auto p2Hit = g_interfaces.player2.GetData()->hitstun;
+		auto p1atkType = g_interfaces.player1.GetData()->typeOfAttack;
+		auto p2atkType = g_interfaces.player2.GetData()->typeOfAttack;
+		auto p1hitstop = g_interfaces.player1.GetData()->hitstop;
+		auto p2hitstop = g_interfaces.player2.GetData()->hitstop;
+		auto p1actionTimeNHS = g_interfaces.player1.GetData()->actionTimeNoHitstop;
+		auto p2actionTimeNHS = g_interfaces.player2.GetData()->actionTimeNoHitstop;
+		return std::make_shared<Metadata>(p1X, p2X, p1Y, p2Y, facing, p1State, p2State, p1Block, p2Block, p1Hit, p2Hit, p1atkType, p2atkType, p1hitstop, p2hitstop, p1actionTimeNHS, p2actionTimeNHS);
+		
+	}
+	else {
+		auto p1X = g_interfaces.player2.GetData()->position_x;
+		auto p1Y = g_interfaces.player2.GetData()->position_y;
+		auto p2X = g_interfaces.player1.GetData()->position_x;
+		auto p2Y = g_interfaces.player1.GetData()->position_y;
+		auto facing = g_interfaces.player2.GetData()->facingLeft;
+		auto p1State = std::string(g_interfaces.player2.GetData()->currentAction);
+		auto p2State = std::string(g_interfaces.player1.GetData()->currentAction);
+		auto p1Block = g_interfaces.player2.GetData()->blockstun;
+		auto p2Block = g_interfaces.player1.GetData()->blockstun;
+		auto p1Hit = g_interfaces.player2.GetData()->hitstun;
+		auto p2Hit = g_interfaces.player1.GetData()->hitstun;
+		auto p1atkType = g_interfaces.player2.GetData()->typeOfAttack;
+		auto p2atkType = g_interfaces.player1.GetData()->typeOfAttack;
+		auto p1hitstop = g_interfaces.player2.GetData()->hitstop;
+		auto p2hitstop = g_interfaces.player1.GetData()->hitstop;
+		auto p1actionTimeNHS = g_interfaces.player2.GetData()->actionTimeNoHitstop;
+		auto p2actionTimeNHS = g_interfaces.player1.GetData()->actionTimeNoHitstop;
+		return std::make_shared<Metadata>(p1X, p2X, p1Y, p2Y, facing, p1State, p2State, p1Block, p2Block, p1Hit, p2Hit, p1atkType, p2atkType, p1hitstop, p2hitstop, p1actionTimeNHS, p2actionTimeNHS);
+	}
+	
+
 }
 
 DWORD GetGameStateCharacterSelectJmpBackAddr = 0;
@@ -251,5 +358,10 @@ bool placeHooks_palette()
 	P1InputJmpBackAddr = HookManager::SetHook("P1Input", "\x0F\xB7\x00\x66\x89\x00\xE9\x00\x00\x00\x00\x53",
 		"xx?xx?x????x", 6, P1Input);
 
+	P2InputJmpBackAddr = HookManager::SetHook("P2Input", "\xE9\x00\x00\x00\x00\xE8\x00\x00\x00\x00\x8B\xC8\xE8\x00\x00\x00\x00\x85\xC0\x75\x00\xE8\x00\x00\x00\x00\x8B\xC8\xE8\x00\x00\x00\x00\x85\xC0\x75\x00\xE8\x00\x00\x00\x00\x8B\xC8\xE8\x00\x00\x00\x00\x53",
+		"x????x????xxx????xxx?x????xxx????xxx?x????xxx????x", 5, P2Input);
+
+
 	return true;
 }
+

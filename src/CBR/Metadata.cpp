@@ -1,0 +1,205 @@
+#include <boost/archive/text_iarchive.hpp>
+#include <boost/archive/text_oarchive.hpp>
+#include <boost/serialization/vector.hpp>
+#include "Metadata.h"
+
+
+
+Metadata::Metadata()
+{
+}
+//p1PosX, p2PosX, p1PosY, p2PosY, facing, P1Action, P2Action, P1Blockstun, P2Blockstun, P1Hitstun, P2Hitstun, P1AttackType, P2AttackType, p1Hitstop, p2Hitstop, p1ActionTimeNHS, p2ActionTimeNHS
+Metadata::Metadata(int p1x, int p2x, int p1y, int p2y, bool b, std::string p1action, std::string p2action,
+	int P1Blockstun, int P2Blockstun, int P1Hitstun, int P2Hitstun, int P1AttackType, int P2AttackType,
+	int p1Hitstop, int p2Hitstop, int p1ActionTimeNHS, int p2ActionTimeNHS)
+{
+	posX[0] = p1x;
+	posX[1] = p2x;
+	posY[0] = p1y;
+	posY[1] = p2y;
+	facing = b;
+	currentAction[0] = p1action;
+	currentAction[1] = p2action;
+	blockstun[0] = P1Blockstun;
+	blockstun[1] = P2Blockstun;
+	hitstun[0] = P1Hitstun;
+	hitstun[1] = P2Hitstun;
+	attackType[0] = P1AttackType;
+	attackType[1] = P2AttackType;
+	hitstop[0] = p1Hitstop;
+	hitstop[1] = p2Hitstop;
+	actionTimeNoHitstop[0] = p1ActionTimeNHS;
+	actionTimeNoHitstop[1] = p2ActionTimeNHS;
+}
+std::array< int, 2> Metadata::getPosX() {
+	return posX;
+}
+std::array< int, 2>Metadata::getPosY() {
+	return posY;
+}
+bool Metadata::getFacing() {
+	return facing;
+}
+
+std::array< std::string, 2>Metadata::getCurrentAction() {
+	return currentAction;
+}
+
+
+std::array< int, 2> Metadata::getBlockstun() {
+	return blockstun;
+}
+std::array< int, 2> Metadata::getHitstun() {
+	return hitstun;
+}
+std::array< int, 2> Metadata::getAttackType() {
+	return attackType;
+}
+std::array< int, 2> Metadata::getHitstop() {
+	return hitstop;
+}
+std::array< int, 2> Metadata::getActionTimeNHS() {
+	return actionTimeNoHitstop;
+}
+std::array< bool, 2> Metadata::getNeutral() {
+	return neutral;
+}
+std::array< bool, 2> Metadata::getAttack() {
+	return attack;
+}
+std::array< bool, 2> Metadata::getWakeup() {
+	return wakeup;
+}
+std::array< bool, 2> Metadata::getBlocking() {
+	return blocking;
+}
+std::array< bool, 2> Metadata::getHit() {
+	return hit;
+}
+std::array< bool, 2> Metadata::getHitThisFrame() {
+	return hitThisFrame;
+}
+std::array< bool, 2> Metadata::getBlockThisFrame() {
+	return BlockThisFrame;
+}
+std::array< bool, 2> Metadata::getAir() {
+	return air;
+}
+std::array< bool, 2> Metadata::getCrouching() {
+	return air;
+}
+
+std::array< std::string, 13> neutralActions = { "CmnActStand",
+"_NEUTRAL", 
+"CmnActBWalk", 
+"CmnActFWalk", 
+"CmnActCrouch", 
+"CmnActStand2Crouch", 
+"CmnActCrouch2Stand", 
+"CmnActJumpPre", "CmnActJumpUpper", 
+"CmnActJumpUpperEnd", "CmnActJumpDown", 
+"CmnActJumpLanding" };
+
+std::array< std::string, 16> wakeupActions = { 
+"CmnActBDownCrash",
+"CmnActBDownBound",
+"CmnActBDownLoop",
+"CmnActBDown2Stand",
+"CmnActFDownCrash", 
+"CmnActFDownBound",
+"CmnActFDownLoop", 
+"CmnActFDown2Stand", 
+"CmnActVDownCrash",
+"CmnActUkemiAirF",
+"CmnActUkemiAirB",
+"CmnActUkemiAirN",
+"CmnActUkemiLandF",
+"CmnActUkemiLandB",
+"CmnActUkemiLandN",
+"CmnActUkemiLandNLanding",
+};
+
+std::array< std::string, 13> crouchingActions = {
+"CmnActCrouch",
+"CmnActCrouchTurn",
+"CmnActHitCrouchLv1",
+"CmnActHitCrouchLv2",
+"CmnActHitCrouchLv3",
+"CmnActHitCrouchLv4",
+"CmnActHitCrouchLv5",
+"CmnActCrouchGuardPre",
+"CmnActCrouchGuardLoop",
+"CmnActCrouchGuardEnd",
+"CmnActCrouchHeavyGuardLoop",
+"CmnActCrouchHeavyGuardEnd",
+"CmnActGuardBreakCrouch",
+};
+
+void Metadata::computeMetaData() {
+	neutral[0] = CheckNeutralState(currentAction[0]);
+	neutral[1] = CheckNeutralState(currentAction[1]);
+	attack[0] = attackType[0] > 0;
+	attack[1] = attackType[1] > 0;
+	wakeup[0] = CheckWakeupState(currentAction[0]) && !(hitstun[0] > 0);
+	wakeup[1] = CheckWakeupState(currentAction[1]) && !(hitstun[1] > 0);
+	blocking[0] = blockstun[0] > 0;
+	blocking[1] = blockstun[1] > 0;
+	hit[0] = hitstun[0] > 0;
+	hit[1] = hitstun[1] > 0;
+	hitThisFrame[0] = (hitstun[0] > 0) && (hitstop[0] > 0) && (actionTimeNoHitstop[0] == 1);
+	hitThisFrame[1] = (hitstun[1] > 0) && (hitstop[1] > 0) && (actionTimeNoHitstop[1] == 1);
+	BlockThisFrame[0] = (blockstun[0] > 0) && (hitstop[0] > 0) && (actionTimeNoHitstop[0] == 1);
+	BlockThisFrame[1] = (blockstun[1] > 0) && (hitstop[1] > 0) && (actionTimeNoHitstop[1] == 1);
+	air[0] = posY[0] > 0;
+	air[1] = posY[1] > 0;
+	crouching[0] = CheckCrouchingState(currentAction[0]);
+	crouching[1] = CheckCrouchingState(currentAction[1]);
+}
+
+bool Metadata::CheckNeutralState(std::string state) {
+	for (std::size_t i = 0; i < neutralActions.size(); ++i) {
+		if (state == neutralActions[i]) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool Metadata::CheckWakeupState(std::string state) {
+	for (std::size_t i = 0; i < wakeupActions.size(); ++i) {
+		if (state == wakeupActions[i]) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool Metadata::CheckCrouchingState(std::string state) {
+	for (std::size_t i = 0; i < crouchingActions.size(); ++i) {
+		if (state == crouchingActions[i]) {
+			return true;
+		}
+	}
+	return false;
+}
+
+std::string Metadata::PrintState() {
+	std::string str = "";
+
+	str += "PosX: " + std::to_string(posX[0]) + " - " + std::to_string(posX[1]) + "\n";
+	str += "PosY: " + std::to_string(posY[0]) + " - " + std::to_string(posY[1]) + "\n";
+	str += "CurAction: " + currentAction[0] + " - " + currentAction[1] + "\n";
+	str += "Air: " + std::to_string(air[0]) + " - " + std::to_string(air[1]) + "\n";
+	str += "Attack: " + std::to_string(attack[0]) + " - " + std::to_string(attack[1]) + "\n";
+	//str += "AtkType: " + std::to_string(attackType[0]) + " - " + std::to_string(attackType[1]) + "\n";
+	str += "Crouching: " + std::to_string(crouching[0]) + " - " + std::to_string(crouching[1]) + "\n";
+	str += "Neutral: " + std::to_string(neutral[0]) + " - " + std::to_string(neutral[1]) + "\n";
+	str += "Wakeup: " + std::to_string(wakeup[0]) + " - " + std::to_string(wakeup[1]) + "\n";
+	str += "Blocking: " + std::to_string(blocking[0]) + " - " + std::to_string(blocking[1]) + "\n";
+	str += "BlockingTF: " + std::to_string(BlockThisFrame[0]) + " - " + std::to_string(BlockThisFrame[1]) + "\n";
+	str += "Hit: " + std::to_string(hit[0]) + " - " + std::to_string(hit[1]) + "\n";
+	str += "HitTF: " + std::to_string(hitThisFrame[0]) + " - " + std::to_string(hitThisFrame[1]) + "\n";
+
+
+	return str;
+}
