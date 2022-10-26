@@ -24,6 +24,13 @@ int CbrCase::getEndIndex() {
 }
 
 
-Metadata CbrCase::getMetadata() {
-	return *metaData;
+Metadata* CbrCase::getMetadata() {
+	return metaData.get();
+}
+
+void CbrCase::SetEndIndex(int index) {
+	inputEndIndex = index;
+}
+void CbrCase::SetStartIndex(int index) {
+	inputStartingIndex = index;
 }

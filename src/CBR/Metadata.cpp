@@ -9,9 +9,7 @@ Metadata::Metadata()
 {
 }
 //p1PosX, p2PosX, p1PosY, p2PosY, facing, P1Action, P2Action, P1Blockstun, P2Blockstun, P1Hitstun, P2Hitstun, P1AttackType, P2AttackType, p1Hitstop, p2Hitstop, p1ActionTimeNHS, p2ActionTimeNHS
-Metadata::Metadata(int p1x, int p2x, int p1y, int p2y, bool b, std::string p1action, std::string p2action,
-	int P1Blockstun, int P2Blockstun, int P1Hitstun, int P2Hitstun, int P1AttackType, int P2AttackType,
-	int p1Hitstop, int p2Hitstop, int p1ActionTimeNHS, int p2ActionTimeNHS)
+Metadata::Metadata(int p1x, int p2x, int p1y, int p2y, bool b, std::string p1action, std::string p2action,int P1Blockstun, int P2Blockstun, int P1Hitstun, int P2Hitstun, int P1AttackType, int P2AttackType,int p1Hitstop, int p2Hitstop, int p1ActionTimeNHS, int p2ActionTimeNHS, char* p1LastAction, char* p2LastAction)
 {
 	posX[0] = p1x;
 	posX[1] = p2x;
@@ -30,7 +28,41 @@ Metadata::Metadata(int p1x, int p2x, int p1y, int p2y, bool b, std::string p1act
 	hitstop[1] = p2Hitstop;
 	actionTimeNoHitstop[0] = p1ActionTimeNHS;
 	actionTimeNoHitstop[1] = p2ActionTimeNHS;
+	lastAction[0] = p1LastAction;
+	lastAction[1] = p2LastAction;
 }
+
+void Metadata::SetComboVariables(int p1comboProration, int p2comboProration, int p1starterRating, int p2starterRating, int p1comboTime, int p2comboTime) {
+	comboProration[0] = p1comboProration;
+	comboProration[1] = p2comboProration;
+	starterRating[0] = p1starterRating;
+	starterRating[1] = p2starterRating;
+	comboTime[0] = p1comboTime;
+	comboTime[1] = p2comboTime;
+}
+
+void Metadata::addHelper(std::shared_ptr<Helper> h, int playerIndex) {
+	helpers[playerIndex].push_back(h);
+}
+std::array<std::vector<std::shared_ptr<Helper>>, 2> Metadata::getHelpers() {
+	return helpers;
+}
+void Metadata::SetFrameCount(int frameCount) {
+	frame_count_minus_1 = frameCount;
+}
+
+int Metadata::getFrameCount() {
+	return frame_count_minus_1;
+}
+
+
+void Metadata::setInputBufferActive(bool b) {
+	inputBufferActive = b;
+}
+bool Metadata::getInputBufferActive() {
+	return inputBufferActive;
+}
+
 std::array< int, 2> Metadata::getPosX() {
 	return posX;
 }
@@ -44,7 +76,17 @@ bool Metadata::getFacing() {
 std::array< std::string, 2>Metadata::getCurrentAction() {
 	return currentAction;
 }
+std::array< std::string, 2>Metadata::getLastAction() {
+	return lastAction;
+}
 
+std::array< size_t, 2>Metadata::getCurrentActionHash() {
+	return currentActionHash;
+}
+
+std::array< size_t, 2>Metadata::getLastActionHash() {
+	return lastActionHash;
+}
 
 std::array< int, 2> Metadata::getBlockstun() {
 	return blockstun;
@@ -86,8 +128,18 @@ std::array< bool, 2> Metadata::getAir() {
 	return air;
 }
 std::array< bool, 2> Metadata::getCrouching() {
-	return air;
+	return crouching;
 }
+std::array< int, 2> Metadata::getComboProration() {
+	return comboProration;
+}
+std::array< int, 2> Metadata::getStarterRating() {
+	return starterRating;
+}
+std::array< int, 2> Metadata::getComboTime() {
+	return comboTime;
+}
+
 
 std::array< std::string, 13> neutralActions = { "CmnActStand",
 "_NEUTRAL", 
@@ -154,6 +206,10 @@ void Metadata::computeMetaData() {
 	air[1] = posY[1] > 0;
 	crouching[0] = CheckCrouchingState(currentAction[0]);
 	crouching[1] = CheckCrouchingState(currentAction[1]);
+	currentActionHash[0] = std::hash<std::string>{}(currentAction[0]);
+	currentActionHash[1] = std::hash<std::string>{}(currentAction[1]);
+	lastActionHash[0] = std::hash<std::string>{}(lastAction[0]);
+	lastActionHash[1] = std::hash<std::string>{}(lastAction[1]);
 }
 
 bool Metadata::CheckNeutralState(std::string state) {
@@ -186,8 +242,8 @@ bool Metadata::CheckCrouchingState(std::string state) {
 std::string Metadata::PrintState() {
 	std::string str = "";
 
-	str += "PosX: " + std::to_string(posX[0]) + " - " + std::to_string(posX[1]) + "\n";
-	str += "PosY: " + std::to_string(posY[0]) + " - " + std::to_string(posY[1]) + "\n";
+	str += "PosX: " + std::to_string(posX[0]) + " - " + std::to_string(posX[1]) + " - " + std::to_string(abs(posX[0] - posX[1]))+ "\n";
+	str += "PosY: " + std::to_string(posY[0]) + " - " + std::to_string(posY[1]) + " - " + std::to_string(abs(posY[0] - posY[1])) + "\n";
 	str += "CurAction: " + currentAction[0] + " - " + currentAction[1] + "\n";
 	str += "Air: " + std::to_string(air[0]) + " - " + std::to_string(air[1]) + "\n";
 	str += "Attack: " + std::to_string(attack[0]) + " - " + std::to_string(attack[1]) + "\n";
@@ -199,7 +255,9 @@ std::string Metadata::PrintState() {
 	str += "BlockingTF: " + std::to_string(BlockThisFrame[0]) + " - " + std::to_string(BlockThisFrame[1]) + "\n";
 	str += "Hit: " + std::to_string(hit[0]) + " - " + std::to_string(hit[1]) + "\n";
 	str += "HitTF: " + std::to_string(hitThisFrame[0]) + " - " + std::to_string(hitThisFrame[1]) + "\n";
-
+	str += "comboPror: " + std::to_string(comboProration[0]) + " - " + std::to_string(comboProration[1]) + "\n";
+	str += "starterRating: " + std::to_string(starterRating[0]) + " - " + std::to_string(starterRating[1]) + "\n";
+	str += "comboTime: " + std::to_string(comboTime[0]) + " - " + std::to_string(comboTime[1]) + "\n";
 
 	return str;
 }

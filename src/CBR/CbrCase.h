@@ -21,8 +21,12 @@ public:
     }
     CbrCase();
     CbrCase(std::shared_ptr<Metadata>, int, int);
-    
-    Metadata getMetadata();
+
+    Metadata* getMetadata();
     int getStartingIndex();
     int getEndIndex();
+    void SetEndIndex(int index);
+    void SetStartIndex(int index);
+
+    
 };

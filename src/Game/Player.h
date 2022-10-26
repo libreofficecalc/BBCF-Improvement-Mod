@@ -14,9 +14,8 @@ public:
 	void SetCharDataPtr(const void* addr);
 	bool IsCharDataNullPtr() const;
 	
-	char* GetInput() const;
-	void SetInputPtr(char* ptr);
-	void SetInputValue(char* inputval);
+	int GetInput() const;
+	void SetInput(int);
 
 	void setAnnotatedReplay(AnnotatedReplay);
 	AnnotatedReplay* getAnnotatedReplay();
@@ -30,11 +29,28 @@ public:
 	bool firstInputParser;
 	int debugReplayNr = 0;
 	std::deque<char> inputs;
+	int input;
+	int debugErrorCounter = 0;
+
+	void addReversalReplay(AnnotatedReplay);
+	void deleteReversalReplays();
+	void deleteReversalReplay(int);
+	AnnotatedReplay* getReversalReplay(int);
+	char playerName[128] = "";
+
+	bool reversalRecording;
+	bool reversalRecordingActive;
+	bool reversalActive;
+	int reversalReplayNr = 0;
+	int reversalBuffer = 0;
+	bool blockStanding = false;
+	bool blockCrouching = false;
+
 
 private:
 	CharData** m_charData;
-	char* input;
 	CharPaletteHandle m_charPalHandle;
 	AnnotatedReplay aReplay;
 	CbrData cbrData;
+	std::vector<AnnotatedReplay> reversalReplays;
 };

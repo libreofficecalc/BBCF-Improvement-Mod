@@ -23,18 +23,14 @@ CharPaletteHandle& Player::GetPalHandle()
 	return m_charPalHandle;
 }
 
-char* Player::GetInput() const
+int Player::GetInput() const
 {
 	return input;
 }
 
-void Player::SetInputValue(char* inputval) 
+void Player::SetInput(int i)
 {
-	*input = *inputval;
-}
-void Player::SetInputPtr(char* ptr)
-{
-	input = ptr;
+	input = i;
 }
 
 void Player::setAnnotatedReplay(AnnotatedReplay r) {
@@ -52,3 +48,15 @@ CbrData* Player::getCbrData() {
 	return &cbrData;
 }
 
+void Player::addReversalReplay(AnnotatedReplay ar) {
+	reversalReplays.push_back(ar);
+}
+void Player::deleteReversalReplays() {
+	reversalReplays.clear();
+}
+void Player::deleteReversalReplay(int i) {
+	reversalReplays.erase(reversalReplays.begin() + i);
+}
+AnnotatedReplay* Player::getReversalReplay(int i) {
+	return &reversalReplays[i];
+}

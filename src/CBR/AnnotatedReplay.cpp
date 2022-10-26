@@ -55,12 +55,58 @@ std::string AnnotatedReplay::getFocusCharName() {
 std::array< std::string, 2> AnnotatedReplay::getCharacterName() {
     return characterName;
 }
-int AnnotatedReplay::getNextInput() {
+int AnnotatedReplay::getNextInput(bool facing) {
     auto ret = input[replayIndex];
+    if (facing != metaData[replayIndex]->getFacing()) {
+        ret = inverseInput(ret);
+    }
     replayIndex++;
     if (replayIndex >= input.size()) {
         replayIndex = 0;
+        playing = false;
     }
     return ret;
 }
 
+void AnnotatedReplay::resetReplayIndex() {
+    replayIndex = 0;
+}
+
+bool AnnotatedReplay::getPlaying() {
+    return playing;
+}
+void AnnotatedReplay::setPlaying(bool b) {
+    playing = b;
+}
+
+
+#define specialButton 512
+#define tauntButton 256
+#define DButton 128
+#define CButton 64
+#define BButton 32
+#define AButton 16
+int AnnotatedReplay::inverseInput(int input) {
+    auto buffer = input;
+    auto test = buffer - specialButton;
+    if (test > 0) { buffer = test; }
+    test = buffer - tauntButton;
+    if (test > 0) { buffer = test; }
+    test = buffer - DButton;
+    if (test > 0) { buffer = test; }
+    test = buffer - CButton;
+    if (test > 0) { buffer = test; }
+    test = buffer - BButton;
+    if (test > 0) { buffer = test; }
+    test = buffer - AButton;
+    if (test > 0) { buffer = test; }
+
+    if (buffer == 6 || buffer == 3 || buffer == 9) {
+        return input - 2;
+    }
+
+    if (buffer == 4 || buffer == 7 || buffer == 1) {
+        return input + 2;
+    }
+    return input;
+}

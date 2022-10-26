@@ -30,7 +30,7 @@ private:
 public:
     template<class Archive>
     void serialize(Archive& a, const unsigned version) {
-        a& cbrCase& characterName & input;
+        a& cbrCase& characterName & input &  stateChangeTrigger & commandInputNeedsResolving;
     }
     CbrReplayFile();
     //p1Charname p2Charname
@@ -38,20 +38,22 @@ public:
     CbrReplayFile(std::array< std::string, 2>);
     void CopyInput(std::vector<int>);
     void AddCase(CbrCase);
-    CbrCase getCase(int);
-    std::vector<CbrCase> getCaseBase();
+    CbrCase* getCase(int);
+    std::vector<CbrCase>* getCaseBase();
     int getCaseBaseLength();
     int getInput(int);
 
-    void MakeCaseBase(AnnotatedReplay, std::string, int, int, int);
+    int MakeCaseBase(AnnotatedReplay*, std::string, int, int, int);
     bool CheckCaseEnd(int, Metadata, std::string, bool);
     bool CheckNeutralState(std::string);
     std::vector<int> DeconstructInput(int, bool);
     std::vector < std::vector<signed int>> CheckCommandExecution(int, std::vector<std::vector<int>>);
     std::vector<std::vector<int>> MakeInputArray(std::string, std::vector<CommandActions>, std::string);
     std::vector<CommandActions> FetchCommandActions(std::string);
-    void instantLearning(AnnotatedReplay, std::string);
-    void CbrReplayFile::makeFullCaseBase(AnnotatedReplay, std::string);
+    int instantLearning(AnnotatedReplay*, std::string);
+    int CbrReplayFile::makeFullCaseBase(AnnotatedReplay*, std::string);
+    bool checkDirectionInputs(int direction, int input);
+    bool isDirectionInputs(int direction);
 };
 
 

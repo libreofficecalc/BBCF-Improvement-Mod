@@ -139,6 +139,7 @@
     <ClCompile Include="src\CBR\CbrData.cpp" />
     <ClCompile Include="src\CBR\CbrReplayFile.cpp" />
     <ClCompile Include="src\CBR\Metadata.cpp" />
+    <ClCompile Include="src\CBR\Helper.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="depends\imgui\imgui.h" />
@@ -259,6 +260,7 @@
     <ClInclude Include="src\CBR\CbrData.h" />
     <ClInclude Include="src\CBR\CbrReplayFile.h" />
     <ClInclude Include="src\CBR\Metadata.h" />
+    <ClInclude Include="src\CBR\Helper.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="export\dinput8.def">

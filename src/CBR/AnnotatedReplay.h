@@ -12,6 +12,7 @@ private:
     std::vector<int> input;
     std::string playerName;
     std::array< std::string, 2> characterName;
+    bool playing = false;
 
 
 public:
@@ -33,6 +34,12 @@ public:
     std::string getPlayerName();
     std::string getFocusCharName();
     std::array< std::string, 2> getCharacterName();
-    int getNextInput();
+    int getNextInput(bool);
+    void resetReplayIndex();
+
+    bool getPlaying();
+    void setPlaying(bool);
+    int inverseInput(int input);
+
     
 };

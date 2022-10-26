@@ -181,20 +181,24 @@ public:
 	int32_t previousHP; //0x09D0
 	int32_t currentHP; //0x09D4
 	int32_t maxHP; //0x09D8
-
 	char pad_09DC[5656]; //0x09DC
 	char lastAction[20]; //0x1FF4
-	char pad_2008[104]; //0x2008
+	char pad_2008[12]; //0x2008 
+	char currentActionNoNeutral[20]; //0x2014
+	char pad_2028[72]; //0x2028 
 	char currentAction[20]; //0x2070
 	char pad_2084[452]; //0x2084
 	char char_abbr[4]; //0x2248
 	char pad_224C[40]; //0x224C
 	int32_t blockstun; //0x2274
-	char pad_2278[12024]; //0x2278
+	char pad_2278[172]; //0x2278
+	char id1[8]; //0x2324
+	char pad_232C[11844]; //0x232C
 	int32_t hitstun; //0x5170
 	char pad_5174[160]; //0x5174
 	int32_t defaultProration[6]; //0x5214-0x5227, for Lv0-Lv5
 	char pad_5228[1348]; //0x5228
+	//possible identifier: bl06 //0x52AC //4
 	int32_t hitCount; //0x5770
 	int32_t hitCount2; //0x5774
 	int32_t timeAfterTechIsPerformed; //0x5778
@@ -223,7 +227,9 @@ public:
 	int32_t overdriveMaxtime; //0x5AF8
 	char pad_5AFC[8]; //0x5AFC
 	int32_t barrier; //0x5B04
-	char pad_5B08[108036]; //0x5B08
+	char pad_5B08[102076]; //0x5B08
+	int32_t BulletHeatLevel; //0x1e9c4
+	char pad_1e9c8[5956]; //0x1e9c8
 	int32_t Drive1; //0x2010C
 	char pad_20110[12]; //0x20110
 	int32_t Drive1_type; //0x2011C
