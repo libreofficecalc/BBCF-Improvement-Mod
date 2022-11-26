@@ -15,12 +15,14 @@ CbrReplayFile::CbrReplayFile()
 {
 }
 
-CbrReplayFile::CbrReplayFile(std::string p1, std::string p2)
+CbrReplayFile::CbrReplayFile(std::string p1, std::string p2, int p1ID, int p2ID)
 {
     characterName[0] = p1;
     characterName[1] = p2;
+    characterId[0] = p1ID;
+    characterId[1] = p2ID;
 }
-CbrReplayFile::CbrReplayFile(std::array< std::string, 2> arr): characterName(arr)
+CbrReplayFile::CbrReplayFile(std::array< std::string, 2> arr, std::array< int, 2> arrId): characterName(arr), characterId(arrId)
 {
 }
 void CbrReplayFile::CopyInput(std::vector<int> in)
@@ -38,7 +40,9 @@ CbrCase* CbrReplayFile::getCase(int index) {
     }
     return &cbrCase[index];
 }
-
+std::array<int, 2>& CbrReplayFile::getCharIds() {
+    return characterId;
+}
 std::vector<CbrCase>* CbrReplayFile::getCaseBase() {
     return &cbrCase;
 }
@@ -54,33 +58,59 @@ int CbrReplayFile::MakeCaseBase(AnnotatedReplay* ar, std::string charName, int s
     //auto i = inputs.size()-1;
     int errorCounter = 0;
     int debugInt = 0;
+    bool inputBuffering = false;
 
     bool facingCommandStart = 0;
 
     auto commands = FetchCommandActions(charName);
     input = ar->getInput();
-    std::vector < std::vector<signed int>> inputResolve;
+    std::vector < std::vector<signed int>> inputResolve = {};
     std::vector < std::vector<signed int>> debugResolve;
     std::string curState = ar->ViewMetadata(endIndex).getCurrentAction()[0];
     auto neutral = false;
-
-    int iteratorIndex = endIndex;//last index of the replay
+    bool inputNewCaseTrigger = false;
+    
     int framesIdle = 0; //frames character can be in a neutral state 
 
     int frameCount = ar->ViewMetadata(endIndex).getFrameCount();
     
+    int meterRequirement = 0;
+    int odRequirement = 0;
 
+    //Making sure rollbacks dont cause issues by deleting rolled back frames
+    int reduceAmount = 0;
     for (std::vector<int>::size_type i = endIndex;
         i != startIndex - 1; i--) {
 
+        auto metaData = ar->getAllMetadata();
         if (endIndex != i && frameCount <= ar->ViewMetadata(i).getFrameCount()) {
-            continue;
+            input.erase(input.begin() + i);
+            metaData->erase(metaData->begin() + i);
+            reduceAmount++;
         }
         frameCount = ar->ViewMetadata(i).getFrameCount();
+    }
+    auto adjustedEndIndex = endIndex - reduceAmount;
+    int iteratorIndex = adjustedEndIndex;//last index of the replay
+
+    for (std::vector<int>::size_type i = adjustedEndIndex;
+        i != startIndex - 1; i--) {
+        frameCount = ar->ViewMetadata(i).getFrameCount();
+
+        if (((int)i - 1) >= 0) {
+            auto difMeter = ar->ViewMetadata(i).heatMeter[0] - ar->ViewMetadata(i - 1).heatMeter[0];
+            if (difMeter < 0) {
+                meterRequirement = difMeter * -1;
+            }
+            auto difOD = ar->ViewMetadata(i).overdriveMeter[0] - ar->ViewMetadata(i - 1).overdriveMeter[0];
+            if (difOD < 0) {
+                odRequirement = difOD * -1;
+            }
+        }
 
 
         neutral = ar->ViewMetadata(i).getNeutral()[0];
-        
+
         if (inputResolve.size() > 0) {
             debugInt++;
             if (debugInt == 100) {
@@ -90,69 +120,70 @@ int CbrReplayFile::MakeCaseBase(AnnotatedReplay* ar, std::string charName, int s
             auto deconInputs = DeconstructInput(input[i], facingCommandStart);
             for (std::vector<int>::size_type j = 0; j < deconInputs.size(); ++j) {
                 inputResolve = CheckCommandExecution(deconInputs[j], inputResolve);//fix this inputResolve doesnt update from the function.
-                if (inputResolve.size() == 0) {
-                    curState = ar->ViewMetadata(i).getCurrentAction()[0];
-                    ar->CopyMetadataPtr(i)->setInputBufferActive(true);
-                    cbrCase.insert(cbrCase.begin() + insertPoint, CbrCase(std::move(ar->CopyMetadataPtr(i)), (int)i, iteratorIndex));
-                    if ((int)i > iteratorIndex) {
-                        errorCounter++;
-                    }
-                    iteratorIndex = i - 1;
-                    framesIdle = -1;
-                    break;
-                }
+
+            }
+            if (inputResolve.size() == 0) {
+                inputNewCaseTrigger = true;
             }
         }
-        else {
-            if (CheckCaseEnd(framesIdle, ar->ViewMetadata(i), curState, neutral)) {
-                inputResolve = {};
-                if (stateChangeTrigger == true) {
-                    debugInt = 0;
-                    stateChangeTrigger = false;
+
+        if (CheckCaseEnd(framesIdle, ar->ViewMetadata(i), curState, neutral) || inputNewCaseTrigger) {
+            inputNewCaseTrigger = false;
+            if (stateChangeTrigger == true) {
+                debugInt = 0;
+                stateChangeTrigger = false;
+
+                if (inputResolve.size() == 0) {
                     facingCommandStart = ar->ViewMetadata(i + 1).getFacing();
                     inputResolve = MakeInputArray(curState, commands, ar->ViewMetadata(i).getCurrentAction()[0]);
-
-                }
-                curState = ar->ViewMetadata(i).getCurrentAction()[0];
-                debugResolve = inputResolve;
-                if (inputResolve.size() > 0) {
-                    auto deconInputs = DeconstructInput(input[i], facingCommandStart);
-                    for (std::vector<int>::size_type j = 0; j < deconInputs.size(); ++j) {
-                        inputResolve = CheckCommandExecution(deconInputs[j], inputResolve);
-                        if (inputResolve.size() == 0) {
-                            curState = ar->ViewMetadata(i).getCurrentAction()[0];
-                            ar->CopyMetadataPtr(i)->setInputBufferActive(true);
-                            cbrCase.insert(cbrCase.begin()+ insertPoint, CbrCase(std::move(ar->CopyMetadataPtr(i)), (int)i, iteratorIndex));
-                            if ((int)i > iteratorIndex) {
-                                errorCounter++;
-                            }
-                            iteratorIndex = i - 1;
-                            framesIdle = -1;
-                            break;
+                    if (inputResolve.size() > 0) {
+                        inputBuffering = true;
+                        auto deconInputs = DeconstructInput(input[i], facingCommandStart);
+                        for (std::vector<int>::size_type j = 0; j < deconInputs.size(); ++j) {
+                            inputResolve = CheckCommandExecution(deconInputs[j], inputResolve);//fix this inputResolve doesnt update from the function.
                         }
                     }
                 }
-                else {
-                    cbrCase.insert(cbrCase.begin()+ insertPoint, CbrCase(std::move(ar->CopyMetadataPtr(i)), (int)i, iteratorIndex));
-                    if ((int)i > iteratorIndex) {
-                        errorCounter++;
-                    }
-                    iteratorIndex = i - 1;
-                    framesIdle = -1;
-                }
+
             }
+            curState = ar->ViewMetadata(i).getCurrentAction()[0];
+            cbrCase.insert(cbrCase.begin()+ insertPoint, CbrCase(std::move(ar->CopyMetadataPtr(i)), (int)i, iteratorIndex));
+            if (inputResolve.size() == 0) {
+                inputBuffering = false;
+            }
+            cbrCase[insertPoint].setInputBufferSequence(inputBuffering);
+            cbrCase[insertPoint].heatConsumed = meterRequirement;
+            cbrCase[insertPoint].overDriveConsumed = odRequirement;
+            if (inputBuffering == false) { 
+                meterRequirement = 0; 
+                odRequirement = 0;
+            }
+            
+            
+            if ((int)i > iteratorIndex) {
+                errorCounter++;
+            }
+            iteratorIndex = i - 1;
+            framesIdle = -1;
+            
         }
+        
         framesIdle++;
 
         
         /* std::cout << someVector[i]; ... */
     }
-
     if (framesIdle > 0){
-        auto debugCase = cbrCase;
         if (framesIdle < caseMinTime && cbrCase.size() > 0 && insertPoint > 0) {
             int updatedInsertPoint = insertPoint - 1;
             cbrCase[updatedInsertPoint].SetEndIndex(cbrCase[updatedInsertPoint].getEndIndex() + framesIdle);
+            cbrCase[updatedInsertPoint].setInputBufferSequence(inputBuffering);
+            if (cbrCase[updatedInsertPoint].heatConsumed < meterRequirement) {
+                cbrCase[updatedInsertPoint].heatConsumed = meterRequirement;
+            }
+            if (cbrCase[updatedInsertPoint].overDriveConsumed < odRequirement) {
+                cbrCase[updatedInsertPoint].overDriveConsumed = odRequirement;
+            }
             //auto end = cbrCase[updatedInsertPoint].getEndIndex();
             //cbrCase.erase(cbrCase.begin() + updatedInsertPoint);
             //cbrCase.insert(cbrCase.begin() + updatedInsertPoint, CbrCase(std::move(ar->CopyMetadataPtr(startIndex)), (int)startIndex, end));
@@ -175,6 +206,13 @@ int CbrReplayFile::MakeCaseBase(AnnotatedReplay* ar, std::string charName, int s
         }
         else {
             cbrCase.insert(cbrCase.begin() + insertPoint, CbrCase(std::move(ar->CopyMetadataPtr(startIndex)), (int)startIndex, iteratorIndex));
+            if (cbrCase[insertPoint].heatConsumed < meterRequirement) {
+                cbrCase[insertPoint].heatConsumed = meterRequirement;
+            }
+            if (cbrCase[insertPoint].overDriveConsumed < odRequirement) {
+                cbrCase[insertPoint].overDriveConsumed = odRequirement;
+            }
+            cbrCase[insertPoint].setInputBufferSequence(inputBuffering);
             if ((int)startIndex > iteratorIndex) {
                 errorCounter++;
             }
@@ -195,6 +233,30 @@ int CbrReplayFile::MakeCaseBase(AnnotatedReplay* ar, std::string charName, int s
         }
         
     }
+
+    if (inputResolve.size() > 0) {
+        auto caseBaseSize = cbrCase.size();
+        for (int i = insertPoint-1; i >= 0 && inputResolve.size() > 0; --i) {
+            cbrCase[i].setInputBufferSequence(true);
+            if (cbrCase[i].heatConsumed < meterRequirement) {
+                cbrCase[i].heatConsumed = meterRequirement;
+            }
+            if (cbrCase[i].overDriveConsumed < odRequirement) {
+                cbrCase[i].overDriveConsumed = odRequirement;
+            }
+            for (int k = cbrCase[i].getEndIndex(); k >= cbrCase[i].getStartingIndex() && inputResolve.size() > 0; --k) {
+                auto deconInputs = DeconstructInput(input[k], facingCommandStart);
+                for (std::vector<int>::size_type j = 0; j < deconInputs.size(); ++j) {
+                    inputResolve = CheckCommandExecution(deconInputs[j], inputResolve);//fix this inputResolve doesnt update from the function.
+                    if (inputResolve.size() == 0) {
+                        cbrCase[i].setInputBufferSequence(false);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
     auto caseBaseSize = cbrCase.size();
     auto testEnd = 0;
     for (std::size_t j = 0; j < caseBaseSize; ++j) {
@@ -238,7 +300,6 @@ int CbrReplayFile::instantLearning(AnnotatedReplay* ar, std::string charName) {
     int start = 0;
     int end = ar->getInput().size() - 1;
     if (end <= 1) { return ret; }
-    auto copy = cbrCase;
     if (cbrCase.size() > 0) {
         start = cbrCase[cbrCase.size() -1].getStartingIndex();
         cbrCase.pop_back();

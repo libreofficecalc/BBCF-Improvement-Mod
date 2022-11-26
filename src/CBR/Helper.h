@@ -8,12 +8,16 @@
 class Helper {
 private:
     friend class boost::serialization::access;
+
+
+public:
     std::string type;
     size_t typeHash;
     int posX;
     int posY;
     std::string currentAction;
     size_t currentActionHash;
+    bool proximityScale = false;
 
     int hitstun;
     int attackType;
@@ -24,10 +28,6 @@ private:
     bool hit;
     bool hitThisFrame;
     bool facing;
-
-
-
-public:
     template<class Archive>
     void serialize(Archive& a, const unsigned version) {
         a& type& typeHash& posX& posY& currentAction& currentActionHash& hitstun& attackType& hitstop& actionTimeNoHitstop& attack& hit& hitThisFrame& facing;

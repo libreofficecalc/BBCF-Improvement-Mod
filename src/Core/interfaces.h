@@ -17,6 +17,7 @@
 #include "SteamApiWrapper/SteamUserStatsWrapper.h"
 #include "SteamApiWrapper/SteamUserWrapper.h"
 #include "SteamApiWrapper/SteamUtilsWrapper.h"
+#include "Cbr/CbrInterface.h"
 
 struct interfaces_t
 {
@@ -41,6 +42,7 @@ struct interfaces_t
 
 	Player player1;
 	Player player2;
+	CbrInterface cbrInterface;
 };
 
 struct gameVals_t

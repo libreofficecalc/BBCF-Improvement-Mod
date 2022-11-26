@@ -18,6 +18,7 @@
     <ClCompile Include="src\CBR\AnnotatedReplay.cpp" />
     <ClCompile Include="src\CBR\CbrCase.cpp" />
     <ClCompile Include="src\CBR\CbrData.cpp" />
+    <ClCompile Include="src\CBR\CbrInterface.cpp" />
     <ClCompile Include="src\CBR\CbrReplayFile.cpp" />
     <ClCompile Include="src\CBR\Helper.cpp" />
     <ClCompile Include="src\CBR\Metadata.cpp" />
@@ -92,6 +93,7 @@
     <ClInclude Include="src\CBR\AnnotatedReplay.h" />
     <ClInclude Include="src\CBR\CbrCase.h" />
     <ClInclude Include="src\CBR\CbrData.h" />
+    <ClInclude Include="src\CBR\CbrInterface.h" />
     <ClInclude Include="src\CBR\CbrReplayFile.h" />
     <ClInclude Include="src\CBR\Helper.h" />
     <ClInclude Include="src\CBR\Metadata.h" />

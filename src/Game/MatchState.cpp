@@ -17,7 +17,8 @@ void MatchState::OnMatchInit()
 
 	g_interfaces.pPaletteManager->LoadPaletteSettingsFile();
 	g_interfaces.pPaletteManager->OnMatchInit(g_interfaces.player1, g_interfaces.player2);
-
+	g_interfaces.cbrInterface.OnMatchInit(*g_interfaces.player1.GetData(), *g_interfaces.player2.GetData(), *g_gameVals.pGameMode);
+	auto a =g_interfaces.player1.GetData();
 	if (g_interfaces.pRoomManager->IsRoomFunctional())
 	{
 		// Prevent loading palettes.ini custom palette on opponent

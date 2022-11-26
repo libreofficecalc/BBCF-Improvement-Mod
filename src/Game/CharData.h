@@ -109,8 +109,13 @@ public:
 	int32_t actionTime2; //0x0164
 	char pad_0168[8]; //0x0168
 	int32_t actionTimeNoHitstop; //0x0170
-	char pad_0174[56]; //0x0174
-	int32_t lambda_nu_drive_hitcount; //0x01AC
+	char pad_0174[8]; //0x0174
+	int32_t EsBuff; //0x17C
+	char pad_0180[32]; //0x0180
+	int32_t Drive10; //0x1A0 //azrael fireball /Plat item type//bang seal
+	int32_t Drive20; //0x1A4 //bang seal
+	int32_t Drive30; //0x1A8 ////bang seal
+	int32_t lambda_nu_drive_hitcount; //0x01AC//bang seal
 	char pad_01B0[16]; //0x01B0
 	int32_t overdriveTimeleft; //0x01C0
 	int32_t overdriveTimerStartedAt; //0x01C4
@@ -136,7 +141,8 @@ public:
 	char pad_028C[80]; //0x028C
 	int32_t position_x_dupe; //0x02DC
 	int32_t position_y_dupe; //0x02E0
-	char pad_02E4[16]; //0x02E4
+	int32_t position_x3;//0x02E4
+	char pad_02E4[12]; //0x02E8
 	int32_t offsetX_2; //0x02F4
 	char pad_02F8[4]; //0x02F8
 	int32_t offsetY_2; //0x02FC
@@ -182,12 +188,14 @@ public:
 	int32_t currentHP; //0x09D4
 	int32_t maxHP; //0x09D8
 	char pad_09DC[5656]; //0x09DC
-	char lastAction[20]; //0x1FF4
-	char pad_2008[12]; //0x2008 
-	char currentActionNoNeutral[20]; //0x2014
-	char pad_2028[72]; //0x2028 
-	char currentAction[20]; //0x2070
-	char pad_2084[452]; //0x2084
+	char lastAction[32]; //0x1FF4
+	//char pad_2008[12]; //0x2008 
+	char currentActionNoNeutral[32]; //0x2014
+	char pad_2034[60]; //0x2034 
+	char currentAction[32]; //0x2070
+	char pad_2090[232]; //0x2090
+	int32_t TagerMagnetism; //0x2178
+	char pad_217C[204];  //0x217C
 	char char_abbr[4]; //0x2248
 	char pad_224C[40]; //0x224C
 	int32_t blockstun; //0x2274
@@ -227,16 +235,25 @@ public:
 	int32_t overdriveMaxtime; //0x5AF8
 	char pad_5AFC[8]; //0x5AFC
 	int32_t barrier; //0x5B04
-	char pad_5B08[102076]; //0x5B08
-	int32_t BulletHeatLevel; //0x1e9c4
-	char pad_1e9c8[5956]; //0x1e9c8
-	int32_t Drive1; //0x2010C
+	char pad_5B08[102072]; //0x5B08
+	int32_t Drive12; //0x1e9c0 //ReliusDollState /SusanUnlocks //izaFloatingTime //nineMagicSlots //izayoiStance
+	int32_t Drive11; //0x1e9c4 //BulletHeatLevel //PlatNextItemType //SusanDrivePosition //nineMagicSlotsBackup //KokoGravState
+	int32_t UnknownDriveVal0;//0x1e9c8 //izaRibcage
+	int32_t UnknownDriveVal1;//0x1e9cc //IzaBitStance
+	int32_t CelicaRegen;//0x1e9d0
+	int32_t UnknownDriveVal3;//0x1e9d4
+	int32_t UnknownDriveVal4;//0x1e9d8
+	int32_t LitchiStaffState; //0x1e9dd
+	char pad_1e9e1[5927]; //0x1e9e1
+	int32_t Drive0; //0x20108 //Rachel wind meter; Az top weakspot //PlatMaxItem
+	int32_t Drive1; //0x2010C //PlatCurItemVal //ReliusDollMeter //ValkWolfMeter //JubeiSuperBuff //nineSpell //KokoGravCount //izayoistocks//bangNails
 	char pad_20110[12]; //0x20110
-	int32_t Drive1_type; //0x2011C
-	char pad_20120[16]; //0x20120
-	int32_t Drive2; //0x20130
+	int32_t Drive1_type; //0x2011C //ReliusDollInCooldown //ValkWolfMode 160 == cooldown
+	char pad_20120[12]; //0x20120
+	int32_t DriveX; //0x2012C //Az bot weakspot
+	int32_t Drive2; //0x20130 //jubei mark timer //nineSpellBackup //izayoiSuperModeTimer
 	char pad_20134[32]; //0x20134
-	int32_t Drive3; //0x20154
+	int32_t Drive3; //0x20154 //Iza bit cooldown //kokoTrapAvailable
 	char pad_20158[4972]; //0x20158
 }; //Size: 0x214C4
 //211C

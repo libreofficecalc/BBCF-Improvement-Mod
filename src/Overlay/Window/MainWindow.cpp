@@ -11,6 +11,7 @@
 #include "Overlay/Widget/ActiveGameModeWidget.h"
 #include "Overlay/Widget/GameModeSelectWidget.h"
 #include "Overlay/Widget/StageSelectWidget.h"
+#include "Overlay/NotificationBar/NotificationBar.h"
 
 #include <fstream>
 #include <boost/archive/text_iarchive.hpp>
@@ -87,6 +88,7 @@ void MainWindow::Draw()
 	DrawCBRAiSection();
 	DrawReversalSection();
 	DrawUtilButtons();
+	
 	
 
 	ImGui::VerticalSpacing(5);
@@ -344,48 +346,23 @@ void MainWindow::DrawLoadedSettingsValuesSection() const
 	ImGui::EndChild();
 }
 
-void MainWindow::EndCbrActivities()const {
 
-	if (g_interfaces.player1.Recording == true) {
-		//EndRecording
-		g_interfaces.player1.debugReplayNr++;
-		if (!g_interfaces.player1.getCbrData()->getEnabled()) {
-			g_interfaces.player1.setCbrData(CbrData(g_interfaces.player1.getAnnotatedReplay()->getPlayerName(), g_interfaces.player1.getAnnotatedReplay()->getFocusCharName()));
-		}
-		auto cbrReplay = CbrReplayFile(g_interfaces.player1.getAnnotatedReplay()->getCharacterName());
-		g_interfaces.player1.debugErrorCounter += cbrReplay.makeFullCaseBase(g_interfaces.player1.getAnnotatedReplay(), g_interfaces.player1.GetData()->char_abbr);
-		g_interfaces.player1.getCbrData()->AddReplay(cbrReplay);
-		g_interfaces.player1.Recording = false;
-	}
-
-	if (g_interfaces.player1.Replaying == true) {
-		g_interfaces.player1.Replaying = false;
-	}
-	if (g_interfaces.player2.Replaying == true) {
-		g_interfaces.player2.Replaying = false;
-	}
-	if (g_interfaces.player1.instantLearning == true) {
-		g_interfaces.player1.instantLearning = false;
-	}
-
-}
 
 void MainWindow::DrawCBRAiSection() const
 {
 	if (!ImGui::CollapsingHeader("CBR AI"))
 		return;
-
 	if (!isInMatch())
 	{
 		ImGui::HorizontalSpacing();
 		ImGui::TextDisabled("YOU ARE NOT IN MATCH!");
-
+		ImGui::Checkbox("AutomaticallyRecordMyself", &g_interfaces.cbrInterface.autoRecordGameOwner);
+		ImGui::Checkbox("AutomaticallyRecordOpponent", &g_interfaces.cbrInterface.autoRecordAllOtherPlayers);
 
 		return;
 	}
 
 	ImGui::HorizontalSpacing();
-
 	if (isInMatch())
 	{
 		//ImGui::VerticalSpacing(10);
@@ -393,80 +370,99 @@ void MainWindow::DrawCBRAiSection() const
 
 		if (ImGui::Button("Record"))
 		{
-			
-			if (g_interfaces.player1.Recording == false) {
-				EndCbrActivities();
-				g_interfaces.player1.Recording = true;
-				g_interfaces.player1.setAnnotatedReplay(AnnotatedReplay(g_interfaces.player1.playerName, g_interfaces.player1.GetData()->char_abbr, g_interfaces.player2.GetData()->char_abbr));
+			if (g_interfaces.cbrInterface.Recording == false) {
+				g_interfaces.cbrInterface.EndCbrActivities();
+				g_interfaces.cbrInterface.StartCbrRecording(g_interfaces.player1.GetData()->char_abbr, g_interfaces.player2.GetData()->char_abbr, g_interfaces.player1.GetData()->charIndex, g_interfaces.player2.GetData()->charIndex,0);
 			}
 			else {
-				EndCbrActivities();
+				g_interfaces.cbrInterface.EndCbrActivities();
+			}
+		}
+		if (ImGui::Button("RecordP2"))
+		{
+
+			if (g_interfaces.cbrInterface.RecordingP2 == false) {
+				g_interfaces.cbrInterface.EndCbrActivities();
+				g_interfaces.cbrInterface.StartCbrRecording(g_interfaces.player2.GetData()->char_abbr, g_interfaces.player1.GetData()->char_abbr, g_interfaces.player2.GetData()->charIndex, g_interfaces.player1.GetData()->charIndex, 1);
+			}
+			else {
+				g_interfaces.cbrInterface.EndCbrActivities();
 			}
 		}
 		if (ImGui::Button("Replaying P1"))
 		{
 			
-			if (g_interfaces.player1.debugReplayNr > 0 && g_interfaces.player1.Replaying == false) {
-				EndCbrActivities();
-				g_interfaces.player1.Replaying = true;
+			if (g_interfaces.cbrInterface.getCbrData(0)->getReplayCount() > 0 && g_interfaces.cbrInterface.Replaying == false) {
+				g_interfaces.cbrInterface.EndCbrActivities();
+				g_interfaces.cbrInterface.Replaying = true;
 			}
 			else {
-				EndCbrActivities();
+				g_interfaces.cbrInterface.EndCbrActivities();
 			}
 		}
 		if (ImGui::Button("Replaying P2"))
 		{
 			
-			if (g_interfaces.player1.debugReplayNr > 0 && g_interfaces.player2.Replaying == false) {
-				EndCbrActivities();
-				g_interfaces.player2.Replaying = true;
+			if (g_interfaces.cbrInterface.getCbrData(1)->getReplayCount() > 0 && g_interfaces.cbrInterface.ReplayingP2 == false) {
+				g_interfaces.cbrInterface.EndCbrActivities();
+				g_interfaces.cbrInterface.ReplayingP2 = true;
 			}
 			else {
-				EndCbrActivities();
+				g_interfaces.cbrInterface.EndCbrActivities();
 			}
 		}
 		if (ImGui::Button("Delete"))
 		{
-			EndCbrActivities();
-			g_interfaces.player1.debugReplayNr = 0;
-			g_interfaces.player1.getCbrData()->setEnabled(false);
+			g_interfaces.cbrInterface.EndCbrActivities();
+			*g_interfaces.cbrInterface.getCbrData(0) = CbrData{};
+			*g_interfaces.cbrInterface.getCbrData(1) = CbrData{};
 		}
 		if (ImGui::Button("InstantLearning"))
 		{
 			
-			if (g_interfaces.player1.instantLearning == false) {
-				EndCbrActivities();
-				g_interfaces.player1.instantLearning = true;
-				g_interfaces.player1.setAnnotatedReplay(AnnotatedReplay(g_interfaces.player1.playerName, g_interfaces.player1.GetData()->char_abbr, g_interfaces.player2.GetData()->char_abbr));
-				if (!g_interfaces.player1.getCbrData()->getEnabled()) {
-					g_interfaces.player1.setCbrData(CbrData(g_interfaces.player1.getAnnotatedReplay()->getPlayerName(), g_interfaces.player1.getAnnotatedReplay()->getFocusCharName()));
-				}
-				auto cbrReplay = CbrReplayFile(g_interfaces.player1.getAnnotatedReplay()->getCharacterName());
-				g_interfaces.player1.getCbrData()->AddReplay(cbrReplay);
+			if (g_interfaces.cbrInterface.instantLearning != true) {
+				g_interfaces.cbrInterface.EndCbrActivities();
+				g_interfaces.cbrInterface.StartCbrInstantLearning(g_interfaces.player1.GetData()->char_abbr, g_interfaces.player2.GetData()->char_abbr, g_interfaces.player1.GetData()->charIndex, g_interfaces.player2.GetData()->charIndex,0);
 			}
 			else {
-				EndCbrActivities();
+				g_interfaces.cbrInterface.EndCbrActivities();
 			}
 		}
-		ImGui::InputText("PlayerName", g_interfaces.player1.playerName, IM_ARRAYSIZE(g_interfaces.player1.playerName));
+		if (ImGui::Button("InstantLearning2"))
+		{
+
+			if (g_interfaces.cbrInterface.instantLearningP2 != true) {
+				g_interfaces.cbrInterface.EndCbrActivities();
+				g_interfaces.cbrInterface.StartCbrInstantLearning(g_interfaces.player2.GetData()->char_abbr, g_interfaces.player1.GetData()->char_abbr, g_interfaces.player2.GetData()->charIndex, g_interfaces.player1.GetData()->charIndex,1);
+			}
+			else {
+				g_interfaces.cbrInterface.EndCbrActivities();
+			}
+		}
+		
+		ImGui::InputText("PlayerName", g_interfaces.cbrInterface.playerName, IM_ARRAYSIZE(g_interfaces.cbrInterface.playerName));
 		if (ImGui::Button("Save"))
 		{
-			EndCbrActivities();
-			boost::filesystem::path dir("CBRsave");
+			g_interfaces.cbrInterface.EndCbrActivities();
+			g_interfaces.cbrInterface.getCbrData(0)->setPlayerName(g_interfaces.cbrInterface.playerName);
+			g_interfaces.cbrInterface.getCbrData(0)->setCharName(g_interfaces.player1.GetData()->char_abbr);
+			g_interfaces.cbrInterface.SaveCbrData(*g_interfaces.cbrInterface.getCbrData(0));
+			
+			/*boost::filesystem::path dir("CBRsave");
 			if (!(boost::filesystem::exists(dir))) {
 				boost::filesystem::create_directory(dir);
 			}
-			auto filename = ".\\CBRsave\\" + g_interfaces.player1.getCbrData()->getCharName() + g_interfaces.player1.getCbrData()->getPlayerName() + ".cbr";
+			auto filename = ".\\CBRsave\\" + g_interfaces.cbrInterface.getCbrData(0)->getCharName() + g_interfaces.cbrInterface.getCbrData(0)->getPlayerName() + ".cbr";
 			std::ofstream outfile(filename);
 			boost::archive::text_oarchive archive(outfile);
-			auto data = *g_interfaces.player1.getCbrData();
-			archive << data;
-
+			archive << *g_interfaces.cbrInterface.getCbrData(0);*/
 		}
-		if (ImGui::Button("Load")) {
-			EndCbrActivities();
+		if (ImGui::Button("LoadP1")) {
+			g_interfaces.cbrInterface.EndCbrActivities();
+			g_interfaces.cbrInterface.setCbrData(g_interfaces.cbrInterface.LoadCbrData(g_interfaces.cbrInterface.playerName, g_interfaces.player1.GetData()->char_abbr), 0);
+			/*
 			std::string filename = ".\\CBRsave\\";
-			filename = filename + g_interfaces.player2.GetData()->char_abbr + g_interfaces.player1.playerName + ".cbr";
+			filename = filename + g_interfaces.player1.GetData()->char_abbr + g_interfaces.cbrInterface.playerName + ".cbr";
 			std::ifstream infile(filename);
 			if (infile.fail()) {
 				//File does not exist code here
@@ -475,26 +471,52 @@ void MainWindow::DrawCBRAiSection() const
 				boost::archive::text_iarchive archive(infile);
 				CbrData insert;
 				archive >> insert;
-				g_interfaces.player1.setCbrData(insert);
-				g_interfaces.player1.debugReplayNr = g_interfaces.player1.getCbrData()->getReplayCount();
-			}
+				g_interfaces.cbrInterface.setCbrData(insert,0);
+			}*/
 		}
+		if (ImGui::Button("LoadP2")) {
+			g_interfaces.cbrInterface.EndCbrActivities();
+			g_interfaces.cbrInterface.setCbrData(g_interfaces.cbrInterface.LoadCbrData(g_interfaces.cbrInterface.playerName, g_interfaces.player2.GetData()->char_abbr), 1);
 
+			/*
+			std::string filename = ".\\CBRsave\\";
+			filename = filename + g_interfaces.player2.GetData()->char_abbr + g_interfaces.cbrInterface.playerName + ".cbr";
+			std::ifstream infile(filename);
+			if (infile.fail()) {
+				//File does not exist code here
+			}
+			else {
+				boost::archive::text_iarchive archive(infile);
+				CbrData insert;
+				archive >> insert;
+				g_interfaces.cbrInterface.setCbrData(insert, 1);
+			}*/
+		}
 
 		//g_interfaces.player1.SetCBROverride(true);
 		//g_interfaces.player1.SetCBRInputValue(6);
 
-		ImGui::Text("Recording: %d", g_interfaces.player1.Recording);
-		ImGui::Text("Replaying P1 %d", g_interfaces.player1.Replaying);
-		ImGui::Text("Replaying P2 %d", g_interfaces.player2.Replaying);
-		ImGui::Text("InstantLearning %d", g_interfaces.player1.instantLearning);
-		ImGui::Text("Replay: %d - Frame: %d", g_interfaces.player1.debugReplayNr, g_interfaces.player1.getAnnotatedReplay()->debugFrameIndex);
-		ImGui::Text("ErrorCount: %d", g_interfaces.player1.debugErrorCounter);
-		ImGui::Text(g_interfaces.player1.getCbrData()->debugText.c_str());
-		
+		ImGui::Text("Recording: %d ", g_interfaces.cbrInterface.Recording);
+		ImGui::Text("Replaying P1 %d", g_interfaces.cbrInterface.Replaying);
+		ImGui::Text("InstantLearning %d", g_interfaces.cbrInterface.instantLearning);
+		ImGui::Text("Replay: %d - Frame: %d", g_interfaces.cbrInterface.getCbrData(0)->getReplayCount(), g_interfaces.cbrInterface.getAnnotatedReplay(1)->getInputSize());
+		ImGui::Text("Replay: %d - Frame: %d", g_interfaces.cbrInterface.getCbrData(1)->getReplayCount(), g_interfaces.cbrInterface.getAnnotatedReplay(0)->getInputSize());
+		ImGui::Text("ErrorCount: %d", g_interfaces.cbrInterface.debugErrorCounter);
+		ImGui::Text("Input: %d", g_interfaces.cbrInterface.input);
+		ImGui::Text("Input: %d", g_interfaces.cbrInterface.inputP2);
 		if (!g_interfaces.player1.IsCharDataNullPtr()) {
-
-			
+			ImGui::Text("hitstop %d", g_interfaces.player1.GetData()->hitstop);
+			ImGui::Text("CharNr %d", g_interfaces.player1.GetData()->charIndex);
+		}
+		//ImGui::Text("MatchState: %d", *g_gameVals.pMatchState);
+		//ImGui::Text("MatchState: %d", *g_gameVals.pGameState);
+		//ImGui::Text("MatchState: %d", *g_gameVals.pMatchTimer);
+		
+		ImGui::Text("CaseInstance: %d", g_interfaces.cbrInterface.getCbrData(0)->debugTextArr.size());
+		//ImGui::Text(g_interfaces.player1.getCbrData()->debugText.c_str());
+		
+		/*
+		if (!g_interfaces.player1.IsCharDataNullPtr()) {
 			ImGui::TextUnformatted(g_interfaces.player1.GetData()->char_abbr);
 			ImGui::Text("Input: %d", g_interfaces.player1.input);
 			ImGui::TextUnformatted(g_interfaces.player1.GetData()->currentAction);
@@ -552,7 +574,7 @@ void MainWindow::DrawCBRAiSection() const
 			ImGui::Text("P2PosX %d", g_interfaces.player2.GetData()->position_x);
 			ImGui::Text("P2PosY %d", g_interfaces.player2.GetData()->position_y);
 			
-		}
+		}*/
 
 	}
 }
@@ -580,35 +602,35 @@ void MainWindow::DrawReversalSection() const
 
 		if (ImGui::Button("Record"))
 		{
-			if (!g_interfaces.player2.reversalActive) {
-				if (g_interfaces.player1.reversalRecording == false) {
-					g_interfaces.player1.reversalReplayNr = 0;
-					g_interfaces.player1.deleteReversalReplays();
-					g_interfaces.player1.setAnnotatedReplay(AnnotatedReplay("KDing", "Ragna", "Jin"));
+			if (!g_interfaces.cbrInterface.reversalActive) {
+				if (g_interfaces.cbrInterface.reversalRecording == false) {
+					g_interfaces.cbrInterface.reversalReplayNr = 0;
+					g_interfaces.cbrInterface.deleteReversalReplays();
+					g_interfaces.cbrInterface.setAnnotatedReplay(AnnotatedReplay(g_interfaces.cbrInterface.playerName, g_interfaces.player1.GetData()->char_abbr, g_interfaces.player2.GetData()->char_abbr, g_interfaces.player1.GetData()->charIndex, g_interfaces.player2.GetData()->charIndex),0);
 				}
 				else {
-					g_interfaces.player1.addReversalReplay(*g_interfaces.player1.getAnnotatedReplay());
-					g_interfaces.player1.reversalReplayNr++;
-					g_interfaces.player1.reversalRecordingActive = false;
+					g_interfaces.cbrInterface.addReversalReplay(*g_interfaces.cbrInterface.getAnnotatedReplay(0));
+					g_interfaces.cbrInterface.reversalReplayNr++;
+					g_interfaces.cbrInterface.reversalRecordingActive = false;
 				}
-				g_interfaces.player1.reversalRecording = !g_interfaces.player1.reversalRecording;
+				g_interfaces.cbrInterface.reversalRecording = !g_interfaces.cbrInterface.reversalRecording;
 			}
 		}
 		if (ImGui::Button("ReversalActive"))
 		{
-			if (g_interfaces.player1.reversalReplayNr > 0) {
-				g_interfaces.player2.reversalActive = !g_interfaces.player2.reversalActive;
+			if (g_interfaces.cbrInterface.reversalReplayNr > 0) {
+				g_interfaces.cbrInterface.reversalActive = !g_interfaces.cbrInterface.reversalActive;
 			}
 		}
-		ImGui::SliderInt("Pre Recovery Buffer Time", &g_interfaces.player1.reversalBuffer, 1, 15, "%.0f");
-		if (ImGui::Checkbox("Block Crouching", &g_interfaces.player1.blockCrouching)) {
-			if (g_interfaces.player1.blockCrouching == true) {
-				g_interfaces.player1.blockStanding = false;
+		ImGui::SliderInt("Pre Recovery Buffer Time", &g_interfaces.cbrInterface.reversalBuffer, 1, 15, "%.0f");
+		if (ImGui::Checkbox("Block Crouching", &g_interfaces.cbrInterface.blockCrouching)) {
+			if (g_interfaces.cbrInterface.blockCrouching == true) {
+				g_interfaces.cbrInterface.blockStanding = false;
 			}
 		}
-		if (ImGui::Checkbox("Block Standing", &g_interfaces.player1.blockStanding)) {
-			if (g_interfaces.player1.blockStanding == true) {
-				g_interfaces.player1.blockCrouching = false;
+		if (ImGui::Checkbox("Block Standing", &g_interfaces.cbrInterface.blockStanding)) {
+			if (g_interfaces.cbrInterface.blockStanding == true) {
+				g_interfaces.cbrInterface.blockCrouching = false;
 			}
 		}
 		/*
@@ -617,8 +639,8 @@ void MainWindow::DrawReversalSection() const
 			g_interfaces.player1.reversalReplayNr = 0;
 			g_interfaces.player1.deleteReversalReplays();
 		}*/
-		ImGui::Text("Recording: %d", g_interfaces.player1.reversalRecording);
-		ImGui::Text("ReversalActive %d", g_interfaces.player2.reversalActive);
+		ImGui::Text("Recording: %d", g_interfaces.cbrInterface.reversalRecording);
+		ImGui::Text("ReversalActive %d", g_interfaces.cbrInterface.reversalActive);
 
 	}
 }

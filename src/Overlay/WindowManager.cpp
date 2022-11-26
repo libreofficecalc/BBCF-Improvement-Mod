@@ -15,6 +15,7 @@
 #include <imgui.h>
 #include <imgui_impl_dx9.h>
 #include <ctime>
+#include <Game/gamestates.h>
 
 #define DEFAULT_ALPHA 0.87f
 
@@ -117,6 +118,10 @@ bool WindowManager::Initialize(void *hwnd, IDirect3DDevice9 *device)
 	keyToggleHud = Settings::getButtonValue(Settings::settingsIni.toggleHUDbutton);
 	m_pLogger->Log("[system] HUD toggling key set to '%s'\n", Settings::settingsIni.toggleHUDbutton.c_str());
 
+	keyToggleHud = 113;
+
+	keyToggleHud = 114;
+
 	// Load custom palettes
 
 	g_interfaces.pPaletteManager->LoadAllPalettes();
@@ -202,6 +207,26 @@ void WindowManager::Render()
 
 	HandleButtons();
 
+	if (g_interfaces.cbrInterface.autoRecordFinished == true) {
+		g_notificationBar->AddNotification("Currently %s replays unsaved. Press F8 to save them or Press F9 to discard them.", std::to_string(g_interfaces.cbrInterface.getAutoRecordReplayAmount()).c_str());
+		g_interfaces.cbrInterface.autoRecordFinished = false;
+	}
+	if (ImGui::IsKeyPressed(119, false)) {
+		if (!isInMatch()) {
+			g_notificationBar->AddNotification("Replays Saved");
+			g_interfaces.cbrInterface.threadSaveReplay(true);
+		}
+		else {
+			g_notificationBar->AddNotification("Cant save during a match.");
+		}
+		
+
+	}
+	if (ImGui::IsKeyPressed(120, false)) {
+		g_notificationBar->AddNotification("Replays Deleted");
+		g_interfaces.cbrInterface.clearAutomaticRecordReplays();
+	}
+
 	ImGui_ImplDX9_NewFrame();
 
 	bool isMainWindowOpen =
@@ -234,6 +259,10 @@ void WindowManager::Render()
 	g_notificationBar->DrawNotifications();
 
 	ImGui::Render();
+
+	if (*g_gameVals.pGameState != 15) {
+		g_interfaces.cbrInterface.EndCbrActivities();
+	}
 }
 
 void WindowManager::HandleButtons()
@@ -257,6 +286,7 @@ void WindowManager::HandleButtons()
 	{
 		*g_gameVals.pIsHUDHidden ^= 1;
 	}
+
 }
 
 void WindowManager::DrawAllWindows() const

@@ -80,10 +80,11 @@ void Helper::computeMetaData(std::string charName) {
 	hitThisFrame = (hitstun > 0) && (hitstop > 0) && (actionTimeNoHitstop == 1);
 	currentActionHash = std::hash<std::string>{}(currentAction);
 
-	if (charName != "ca" || charName != "rl") {
+	if (type == "-") {
 		type = currentAction;
-		typeHash = std::hash<std::string>{}(currentAction);
 	}
+	typeHash = std::hash<std::string>{}(type);
+	
 
 }
 

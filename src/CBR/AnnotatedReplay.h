@@ -12,6 +12,7 @@ private:
     std::vector<int> input;
     std::string playerName;
     std::array< std::string, 2> characterName;
+    std::array<int, 2> characterId;
     bool playing = false;
 
 
@@ -20,13 +21,15 @@ public:
     int debugReplayIndex = 0;
     template<class Archive>
     void serialize(Archive& a, const unsigned version) {
-        a& playerName& characterName& metaData& input;
+        a& playerName& characterName& metaData& input & characterId;
     }
     AnnotatedReplay();
-    AnnotatedReplay( std::string, std::string, std::string);
+    AnnotatedReplay::AnnotatedReplay(std::string n, std::string p1, std::string p2, int p1Id, int p2Id);
     void AddFrame(std::shared_ptr<Metadata>, int);
     std::vector<int> getInput();
     std::vector<int> copyInput();
+    int AnnotatedReplay::getInputSize();
+    std::vector<std::shared_ptr<Metadata>>* getAllMetadata();
     std::shared_ptr<Metadata> getMetadata(int);
     std::shared_ptr<Metadata>CopyMetadataPtr(int i);
     Metadata ViewMetadata(int);
@@ -40,6 +43,6 @@ public:
     bool getPlaying();
     void setPlaying(bool);
     int inverseInput(int input);
-
+    std::array<int, 2> getCharIds();
     
 };

@@ -11,11 +11,13 @@ AnnotatedReplay::AnnotatedReplay()
     replayIndex = 0;
 }
 
-AnnotatedReplay::AnnotatedReplay( std::string n, std::string p1, std::string p2) : playerName(n)
+AnnotatedReplay::AnnotatedReplay( std::string n, std::string p1, std::string p2, int p1Id, int p2Id) : playerName(n)
 {
     characterName[0] = p1;
     characterName[1] = p2;
     replayIndex = 0;
+    characterId[0] = p1Id;
+    characterId[1] = p2Id;
     //metaData = {};
     //input = {};
 }
@@ -27,18 +29,28 @@ void AnnotatedReplay::AddFrame(std::shared_ptr<Metadata> m, int i)
     debugFrameIndex++;
 }
 
+std::array<int, 2> AnnotatedReplay::getCharIds() {
+    return characterId;
+}
 std::shared_ptr<Metadata> AnnotatedReplay::getMetadata(int i)
 {
-    auto ret = std::move(metaData[i]);
+    auto ret = std::move(metaData[i]); 
     return ret;
 }
-
+std::vector<std::shared_ptr<Metadata>>* AnnotatedReplay::getAllMetadata() {
+    return &metaData;
+}
 Metadata AnnotatedReplay::ViewMetadata(int i) {
     return *metaData[i];
 }
 
 std::shared_ptr<Metadata> AnnotatedReplay::CopyMetadataPtr(int i) {
     return metaData[i];
+}
+
+int AnnotatedReplay::getInputSize()
+{
+    return input.size();
 }
 
 std::vector<int> AnnotatedReplay::getInput() 

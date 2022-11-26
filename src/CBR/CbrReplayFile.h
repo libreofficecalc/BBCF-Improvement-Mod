@@ -21,7 +21,8 @@ private:
     //friend class boost::serialization::access;
     std::vector<CbrCase> cbrCase;
     std::vector<int> input;
-    std::array< std::string, 2> characterName;
+    std::array<std::string, 2> characterName;
+    std::array<int, 2> characterId;
     static std::array< std::string, 13> neutralActions;
     bool stateChangeTrigger = false;
     bool commandInputNeedsResolving = false;
@@ -30,12 +31,12 @@ private:
 public:
     template<class Archive>
     void serialize(Archive& a, const unsigned version) {
-        a& cbrCase& characterName & input &  stateChangeTrigger & commandInputNeedsResolving;
+        a& cbrCase& characterName & input &  stateChangeTrigger & commandInputNeedsResolving & characterId;
     }
     CbrReplayFile();
     //p1Charname p2Charname
-    CbrReplayFile(std::string, std::string);
-    CbrReplayFile(std::array< std::string, 2>);
+    CbrReplayFile::CbrReplayFile(std::string p1, std::string p2, int p1ID, int p2ID);
+    CbrReplayFile::CbrReplayFile(std::array< std::string, 2> arr, std::array< int, 2> arrId);
     void CopyInput(std::vector<int>);
     void AddCase(CbrCase);
     CbrCase* getCase(int);
@@ -54,6 +55,7 @@ public:
     int CbrReplayFile::makeFullCaseBase(AnnotatedReplay*, std::string);
     bool checkDirectionInputs(int direction, int input);
     bool isDirectionInputs(int direction);
+    std::array<int, 2>& CbrReplayFile::getCharIds();
 };
 
 

@@ -34,3 +34,10 @@ void CbrCase::SetEndIndex(int index) {
 void CbrCase::SetStartIndex(int index) {
 	inputStartingIndex = index;
 }
+
+bool CbrCase::getInputBufferSequence() {
+	return inputBufferSequence;
+}
+void CbrCase::setInputBufferSequence(bool b) {
+	inputBufferSequence = b;
+}

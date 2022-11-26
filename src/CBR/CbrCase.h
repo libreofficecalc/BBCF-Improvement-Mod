@@ -13,11 +13,14 @@ private:
     std::shared_ptr<Metadata>metaData;
     int inputStartingIndex;
     int inputEndIndex;
+    bool inputBufferSequence = false;
 
 public:
+    int heatConsumed = 0;
+    int overDriveConsumed = 0;
     template<class Archive>
     void serialize(Archive& a, const unsigned version) {
-        a& metaData& inputStartingIndex & inputEndIndex;
+        a& metaData& inputStartingIndex & inputEndIndex & inputBufferSequence & heatConsumed & overDriveConsumed;
     }
     CbrCase();
     CbrCase(std::shared_ptr<Metadata>, int, int);
@@ -27,6 +30,8 @@ public:
     int getEndIndex();
     void SetEndIndex(int index);
     void SetStartIndex(int index);
+    bool getInputBufferSequence();
+    void setInputBufferSequence(bool);
 
     
 };

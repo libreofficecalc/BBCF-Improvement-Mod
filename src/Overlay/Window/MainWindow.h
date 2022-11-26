@@ -26,7 +26,6 @@ private:
 	void DrawAvatarSection() const;
 	void DrawCBRAiSection()const;
 	void DrawReversalSection()const;
-	void MainWindow::EndCbrActivities()const;
 
 	const ImVec2 BTN_SIZE = ImVec2(60, 20);
 	WindowContainer* m_pWindowContainer = nullptr;

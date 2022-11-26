@@ -192,12 +192,12 @@ void Metadata::computeMetaData() {
 	neutral[1] = CheckNeutralState(currentAction[1]);
 	attack[0] = attackType[0] > 0;
 	attack[1] = attackType[1] > 0;
-	wakeup[0] = CheckWakeupState(currentAction[0]) && !(hitstun[0] > 0);
-	wakeup[1] = CheckWakeupState(currentAction[1]) && !(hitstun[1] > 0);
+	wakeup[0] = CheckWakeupState(currentAction[0]) && (!(hitstun[0] > 0 && timeAfterRecovery[0] == 0));
+	wakeup[1] = CheckWakeupState(currentAction[1]) && (!(hitstun[1] > 0 && timeAfterRecovery[1] == 0));
 	blocking[0] = blockstun[0] > 0;
 	blocking[1] = blockstun[1] > 0;
-	hit[0] = hitstun[0] > 0;
-	hit[1] = hitstun[1] > 0;
+	hit[0] = hitstun[0] > 0 && timeAfterRecovery[0] == 0;
+	hit[1] = hitstun[1] > 0 && timeAfterRecovery[1] == 0;
 	hitThisFrame[0] = (hitstun[0] > 0) && (hitstop[0] > 0) && (actionTimeNoHitstop[0] == 1);
 	hitThisFrame[1] = (hitstun[1] > 0) && (hitstop[1] > 0) && (actionTimeNoHitstop[1] == 1);
 	BlockThisFrame[0] = (blockstun[0] > 0) && (hitstop[0] > 0) && (actionTimeNoHitstop[0] == 1);

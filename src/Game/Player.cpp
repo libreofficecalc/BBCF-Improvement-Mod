@@ -1,4 +1,11 @@
 #include "Player.h"
+#include <fstream>
+#include <boost/archive/text_iarchive.hpp>
+#include <boost/archive/text_oarchive.hpp>
+#include <boost/serialization/vector.hpp>
+#include <boost/filesystem.hpp>
+
+#include <sstream>
 
 void Player::SetCharDataPtr(const void* addr)
 {
@@ -21,42 +28,4 @@ CharData* Player::GetData() const
 CharPaletteHandle& Player::GetPalHandle()
 {
 	return m_charPalHandle;
-}
-
-int Player::GetInput() const
-{
-	return input;
-}
-
-void Player::SetInput(int i)
-{
-	input = i;
-}
-
-void Player::setAnnotatedReplay(AnnotatedReplay r) {
-	aReplay = r;
-}
-AnnotatedReplay* Player::getAnnotatedReplay() {
-	return &aReplay;
-}
-
-void Player::setCbrData(CbrData c) {
-	cbrData = c;
-}
-
-CbrData* Player::getCbrData() {
-	return &cbrData;
-}
-
-void Player::addReversalReplay(AnnotatedReplay ar) {
-	reversalReplays.push_back(ar);
-}
-void Player::deleteReversalReplays() {
-	reversalReplays.clear();
-}
-void Player::deleteReversalReplay(int i) {
-	reversalReplays.erase(reversalReplays.begin() + i);
-}
-AnnotatedReplay* Player::getReversalReplay(int i) {
-	return &reversalReplays[i];
 }
