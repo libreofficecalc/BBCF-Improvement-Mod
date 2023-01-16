@@ -27,6 +27,7 @@ private:
     bool stateChangeTrigger = false;
     bool commandInputNeedsResolving = false;
  
+    std::string inputResolveName = "";
 
 public:
     template<class Archive>

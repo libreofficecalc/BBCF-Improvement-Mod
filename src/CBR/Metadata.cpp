@@ -259,5 +259,6 @@ std::string Metadata::PrintState() {
 	str += "starterRating: " + std::to_string(starterRating[0]) + " - " + std::to_string(starterRating[1]) + "\n";
 	str += "comboTime: " + std::to_string(comboTime[0]) + " - " + std::to_string(comboTime[1]) + "\n";
 
+	
 	return str;
 }

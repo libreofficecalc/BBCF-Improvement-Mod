@@ -333,7 +333,6 @@ void __declspec(naked)MatchIntroStartsPlayingFunc()
 	__asm pushad
 
 	g_interfaces.pGameModeManager->InitGameMode();
-
 	__asm
 	{
 		popad

@@ -128,7 +128,6 @@
     <ClCompile Include="src\Overlay\Window\RoomWindow.cpp" />
     <ClCompile Include="src\Overlay\NotificationBar\NotificationBar.cpp" />
     <ClCompile Include="src\Web\url_downloader.cpp" />
-    <ClCompile Include="src\Palette\impl_templates.h" />
     <ClCompile Include="src\Palette\impl_templates.cpp" />
     <ClCompile Include="src\SteamApiWrapper\steamApiWrappers.cpp" />
     <ClCompile Include="src\Overlay\Widget\StageSelectWidget.cpp" />
@@ -141,6 +140,8 @@
     <ClCompile Include="src\CBR\Metadata.cpp" />
     <ClCompile Include="src\CBR\Helper.cpp" />
     <ClCompile Include="src\CBR\CbrInterface.cpp" />
+    <ClCompile Include="src\Overlay\Window\CbrServerWindow.cpp" />
+    <ClCompile Include="src\CBR\CharacterStorage.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="depends\imgui\imgui.h" />
@@ -244,7 +245,6 @@
     <ClInclude Include="src\Network\OnlinePaletteManager.h" />
     <ClInclude Include="src\Palette\CharPaletteHandle.h" />
     <ClInclude Include="src\Palette\impl_format.h" />
-    <ClInclude Include="src\Palette\PaletteManager.h" />
     <ClInclude Include="src\CustomGameMode\customGameMode.h" />
     <ClInclude Include="src\Network\OnlineGameModeManager.h" />
     <ClInclude Include="src\CustomGameMode\GameModeManager.h" />
@@ -261,8 +261,14 @@
     <ClInclude Include="src\CBR\CbrData.h" />
     <ClInclude Include="src\CBR\CbrReplayFile.h" />
     <ClInclude Include="src\CBR\Metadata.h" />
-    <ClInclude Include="src\CBR\Helper.h" />
     <ClInclude Include="src\CBR\CbrInterface.h" />
+    <ClInclude Include="src\CBR\Helper.h" />
+    <ClInclude Include="src\Overlay\Window\CbrServerWindow.h" />
+    <ClInclude Include="src\Palette\PaletteManager.h" />
+    <ClInclude Include="src\Palette\impl_templates.h" />
+    <ClInclude Include="src\CBR\CharacterStorage.h" />
+    <ClInclude Include="src\CBR\json.hpp" />
+    <ClInclude Include="src\CBR\httplib.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="export\dinput8.def">

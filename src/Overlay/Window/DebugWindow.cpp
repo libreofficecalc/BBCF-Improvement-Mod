@@ -8,6 +8,7 @@
 #include "Overlay/WindowManager.h"
 #include "Overlay/Window/HitboxOverlay.h"
 
+
 void DebugWindow::Draw()
 {
 	if (m_showDemoWindow)

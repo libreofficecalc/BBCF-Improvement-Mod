@@ -22,6 +22,8 @@
     <ClCompile Include="src\CBR\CbrReplayFile.cpp" />
     <ClCompile Include="src\CBR\Helper.cpp" />
     <ClCompile Include="src\CBR\Metadata.cpp" />
+    <ClCompile Include="src\CBR\CharacterStorage.cpp" />
+    <ClCompile Include="src\Overlay\Window\CbrServerWindow.cpp" />
     <ClCompile Include="src\CustomGameMode\customGameMode.cpp" />
     <ClCompile Include="src\CustomGameMode\GameModeManager.cpp" />
     <ClCompile Include="src\Game\characters.cpp" />
@@ -70,7 +72,10 @@
     <ClCompile Include="src\Core\Settings.cpp" />
     <ClCompile Include="src\Palette\impl_templates.cpp" />
     <ClCompile Include="src\Palette\PaletteManager.cpp" />
-    <ClCompile Include="src\Palette\impl_templates.h" />
+    <ClInclude Include="src\CBR\CharacterStorage.h" />
+    <ClInclude Include="src\CBR\httplib.h" />
+    <ClInclude Include="src\CBR\json.hpp" />
+    <ClInclude Include="src\Palette\impl_templates.h" />
     <ClCompile Include="src\SteamApiWrapper\SteamApiHelper.cpp" />
     <ClCompile Include="src\SteamApiWrapper\SteamFriendsWrapper.cpp" />
     <ClCompile Include="src\SteamApiWrapper\SteamMatchmakingWrapper.cpp" />
@@ -97,6 +102,7 @@
     <ClInclude Include="src\CBR\CbrReplayFile.h" />
     <ClInclude Include="src\CBR\Helper.h" />
     <ClInclude Include="src\CBR\Metadata.h" />
+    <ClInclude Include="src\Overlay\Window\CbrServerWindow.h" />
     <ClInclude Include="src\Core\info.h" />
     <ClInclude Include="src\CustomGameMode\customGameMode.h" />
     <ClInclude Include="src\CustomGameMode\GameModeManager.h" />
@@ -120,6 +126,7 @@
     <ClInclude Include="src\Hooks\hooks_customGameModes.h" />
     <ClInclude Include="src\Hooks\hooks_detours.h" />
     <ClInclude Include="src\Hooks\hooks_palette.h" />
+    <ClInclude Include="src\Palette\PaletteManager.h" />
     <ClInclude Include="src\SteamApiWrapper\steamApiWrappers.h" />
     <ClInclude Include="src\Game\CharData.h" />
     <ClInclude Include="src\Core\interfaces.h" />
@@ -152,7 +159,6 @@
     <ClInclude Include="src\Core\logger.h" />
     <ClInclude Include="src\Core\Settings.h" />
     <ClInclude Include="src\Game\gamestates.h" />
-    <ClInclude Include="src\Palette\PaletteManager.h" />
     <ClInclude Include="src\SteamApiWrapper\SteamApiHelper.h" />
     <ClInclude Include="src\SteamApiWrapper\SteamFriendsWrapper.h" />
     <ClInclude Include="src\SteamApiWrapper\SteamMatchmakingWrapper.h" />
@@ -230,12 +236,13 @@
       </PrecompiledHeader>
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
-      <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;_USRDLL;BBCF_IM_EXPORTS;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;_USRDLL;BBCF_IM_EXPORTS;_CRT_SECURE_NO_WARNINGS;_HAS_STD_BYTE=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <SDLCheck>true</SDLCheck>
       <DebugInformationFormat>EditAndContinue</DebugInformationFormat>
       <PrecompiledHeaderFile />
       <PrecompiledHeaderOutputFile />
       <PreprocessToFile>false</PreprocessToFile>
+      <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>

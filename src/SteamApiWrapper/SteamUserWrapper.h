@@ -1,4 +1,5 @@
 #pragma once
+
 #include <isteamuser.h>
 
 #include <Windows.h>

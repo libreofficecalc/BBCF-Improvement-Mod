@@ -212,19 +212,31 @@ void WindowManager::Render()
 		g_interfaces.cbrInterface.autoRecordFinished = false;
 	}
 	if (ImGui::IsKeyPressed(119, false)) {
-		if (!isInMatch()) {
-			g_notificationBar->AddNotification("Replays Saved");
-			g_interfaces.cbrInterface.threadSaveReplay(true);
+		if (g_interfaces.cbrInterface.recordBufferP1.size() > 0 || g_interfaces.cbrInterface.recordBufferP2.size() > 0) {
+			if (!isInMatch()) {
+				g_notificationBar->AddNotification("Replays beeing saved, please dont close the game or save untill finished");
+				g_interfaces.cbrInterface.threadSaveReplay(true);
+			}
+			else {
+				g_notificationBar->AddNotification("Cant save during a match.");
+			}
 		}
 		else {
-			g_notificationBar->AddNotification("Cant save during a match.");
+			g_notificationBar->AddNotification("No Replays to save");
 		}
 		
-
 	}
 	if (ImGui::IsKeyPressed(120, false)) {
-		g_notificationBar->AddNotification("Replays Deleted");
-		g_interfaces.cbrInterface.clearAutomaticRecordReplays();
+		if (g_interfaces.cbrInterface.recordBufferP1.size() > 0 || g_interfaces.cbrInterface.recordBufferP2.size() > 0) {
+			g_notificationBar->AddNotification("Replays Deleted");
+			g_interfaces.cbrInterface.clearAutomaticRecordReplays();
+		}
+		else {
+			g_notificationBar->AddNotification("No Replays to save");
+		}
+	}
+	if (g_interfaces.cbrInterface.threadCheckSaving()) {
+		g_notificationBar->AddNotification("Saving Completed");
 	}
 
 	ImGui_ImplDX9_NewFrame();
@@ -241,9 +253,11 @@ void WindowManager::Render()
 		m_windowContainer->GetWindow(WindowType_Room)->IsOpen();
 	bool isDebugWindowOpen =
 		m_windowContainer->GetWindow(WindowType_Debug)->IsOpen();
+	bool isCbrServerWindowOpen =
+		m_windowContainer->GetWindow(WindowType_CbrServer)->IsOpen();
 
 	ImGui::GetIO().MouseDrawCursor = isMainWindowOpen || isLogWindowOpen || isPaletteEditorWindowOpen
-		|| isUpdateNotifierWindowOpen || isRoomWindowOpen || isDebugWindowOpen;
+		|| isUpdateNotifierWindowOpen || isRoomWindowOpen || isDebugWindowOpen || isCbrServerWindowOpen;
 
 	if (Settings::settingsIni.viewport == 2)
 	{

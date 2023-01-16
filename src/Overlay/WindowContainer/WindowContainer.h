@@ -1,7 +1,8 @@
 #pragma once
-#include "WindowType.h"
-#include "Overlay/Window/IWindow.h"
 
+#include "WindowType.h"
+
+#include "Overlay/Window/IWindow.h"
 #include <map>
 
 typedef std::map<WindowType_, IWindow*> WindowMap;

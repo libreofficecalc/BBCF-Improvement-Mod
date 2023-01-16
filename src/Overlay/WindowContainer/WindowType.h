@@ -8,5 +8,6 @@ enum WindowType_
 	WindowType_UpdateNotifier,
 	WindowType_PaletteEditor,
 	WindowType_HitboxOverlay,
-	WindowType_Room
+	WindowType_Room,
+	WindowType_CbrServer
 };

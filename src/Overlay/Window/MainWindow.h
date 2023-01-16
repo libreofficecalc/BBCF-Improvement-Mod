@@ -1,7 +1,7 @@
 #pragma once
 #include "IWindow.h"
-
 #include "Overlay/WindowContainer/WindowContainer.h"
+
 
 class MainWindow : public IWindow
 {
@@ -26,6 +26,8 @@ private:
 	void DrawAvatarSection() const;
 	void DrawCBRAiSection()const;
 	void DrawReversalSection()const;
+
+	void DrawNetaSection() const;
 
 	const ImVec2 BTN_SIZE = ImVec2(60, 20);
 	WindowContainer* m_pWindowContainer = nullptr;

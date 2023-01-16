@@ -5,7 +5,7 @@
 #include <unordered_map>
 #include "Metadata.h"
 #include "CbrReplayFile.h"
-
+#include <utility>  // std::forward
 
 struct HelperMapping
 {
@@ -34,8 +34,6 @@ private:
 
     bool enabled = false;
 
-    
-
 
 public:
     std::string debugText = "";
@@ -56,40 +54,43 @@ public:
     bool getEnabled();
     void AddReplay(CbrReplayFile);
     void deleteReplays(int start, int end);
+    std::vector<CbrReplayFile>* getReplayFiles();
     CbrReplayFile* getLastReplay();
     int CBRcomputeNextAction(Metadata*);
     int inverseInput(int);
     bool switchCaseCheck(Metadata*);
     void CbrData::resetCbr();
-
+    
     float CbrData::comparisonFunction(Metadata* curGamestate, Metadata* caseGamestate, CbrReplayFile& caseReplay);
-    float compRelativePosX(std::array< int, 2>, std::array< int, 2>);
-    float compRelativePosY(std::array< int, 2>, std::array< int, 2>);
-    float compState(std::string, std::string);
-    float compNeutralState(bool, bool);
-    float compAirborneState(bool, bool);
-    float compWakeupState(bool, bool);
-    float compBlockState(bool, bool);
-    float compHitState(bool, bool);
-    float compGetHitThisFrameState(bool, bool);
-    float compBlockingThisFrameState(bool, bool);
-    float compCrouching(bool, bool);
-    float compDistanceToWall(std::array< int, 2>, std::array< int, 2>, bool, bool);
-    void debugPrint(CbrCase*, CbrCase*, Metadata*, float, float, int, int, int, int);
+    float CbrData::comparisonFunctionDebug(Metadata* curGamestate, Metadata* caseGamestate, CbrReplayFile& caseReplay);
+    //float compRelativePosX(std::array< int, 2>, std::array< int, 2>);
+    //float compRelativePosY(std::array< int, 2>, std::array< int, 2>);
+    //float compState(std::string, std::string);
+    //float compNeutralState(bool, bool);
+    //float compAirborneState(bool, bool);
+    //float compWakeupState(bool, bool);
+    //float compBlockState(bool, bool);
+    //float compHitState(bool, bool);
+    //float compGetHitThisFrameState(bool, bool);
+    //float compBlockingThisFrameState(bool, bool);
+    //float compCrouching(bool, bool);
+    //float compDistanceToWall(std::array< int, 2>, std::array< int, 2>, bool, bool);
+    void CbrData::debugPrint(Metadata* curM, int nextCI, int bestCI, int nextRI, int bestRI);
     std::string debugPrintCompValues(CbrCase* nextC, Metadata* curM);
-    float comboSpecificComp(Metadata* curGamestate, Metadata* caseGamestate);   
-    float compBool(bool cur, bool cas);
-    float compInt(int cur, int cas, int max);
-    float compIntState(int cur, int cas);
-    float compStateHash(size_t curS, size_t caseS);
+    float comboSpecificComp(Metadata* curGamestate, Metadata* caseGamestate, bool print);   
+    //float compBool(bool cur, bool cas);
+    //float compInt(int cur, int cas, int max);
+    //float compIntState(int cur, int cas);
+    //float compStateHash(size_t curS, size_t caseS);
     int CbrData::makeCharacterID(std::string charName);
     int CbrData::getCharacterIndex();
     float CbrData::HelperCompMatch(Metadata* curGamestate, Metadata* caseGamestate);
     float CbrData::HelperComp(Metadata* curGamestate, Metadata* caseGamestate, Helper* curHelper, Helper* caseHelper, bool autoFail, bool opponent);
-    float  CbrData::compRelativePosX(int curP1, int curP2, int caseP1, int caseP2);
-    float  CbrData::compRelativePosY(int curP1, int curP2, int caseP1, int caseP2);
+    //float  CbrData::compRelativePosX(int curP1, int curP2, int caseP1, int caseP2);
+    //float  CbrData::compRelativePosY(int curP1, int curP2, int caseP1, int caseP2);
     recurseHelperMapping CbrData::findBestHelperMapping(std::vector<HelperMapping>& hMap, std::unordered_map<int, int>& usedUpCaseIndex, std::unordered_map<int, int>& usedUpCurIndex, int depth);
-    float CbrData::compHelperOrder(int curPosOpponent, int curPosChar, int curPosHelper, int casePosOpponent, int casePosChar, int casePosHelper);
+    //float CbrData::compHelperOrder(int curPosOpponent, int curPosChar, int curPosHelper, int casePosOpponent, int casePosChar, int casePosHelper);
     bool CbrData::caseValidityCheck(Metadata* curGamestate, int replayIndex, int caseIndex);
     bool CbrData::nextCaseValidityCheck(Metadata* curGamestate, int replayIndex, int caseIndex);
+
 };

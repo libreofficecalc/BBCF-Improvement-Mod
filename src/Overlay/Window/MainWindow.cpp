@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 
+//#include "CBR/CharacterStorage.h"
 #include "HitboxOverlay.h"
 #include "PaletteEditorWindow.h"
 
@@ -57,6 +58,11 @@ void MainWindow::BeforeDraw()
 
 void MainWindow::Draw()
 {
+	if (ImGui::Button("Test"))
+	{
+		m_pWindowContainer->GetWindow(WindowType_CbrServer)->ToggleOpen();
+		//testHTTPReq();
+	}
 	ImGui::Text("Toggle me with %s", Settings::settingsIni.togglebutton.c_str());
 	ImGui::Text("Toggle Online with %s", Settings::settingsIni.toggleOnlineButton.c_str());
 	ImGui::Text("Toggle HUD with %s", Settings::settingsIni.toggleHUDbutton.c_str());
@@ -87,6 +93,7 @@ void MainWindow::Draw()
 	DrawLoadedSettingsValuesSection();
 	DrawCBRAiSection();
 	DrawReversalSection();
+	DrawNetaSection();
 	DrawUtilButtons();
 	
 	
@@ -352,32 +359,49 @@ void MainWindow::DrawCBRAiSection() const
 {
 	if (!ImGui::CollapsingHeader("CBR AI"))
 		return;
-	if (!isInMatch())
+
+	g_interfaces.cbrInterface.loadSettings(&g_interfaces.cbrInterface);
+	if (g_interfaces.cbrInterface.debugErrorCounter[0] > 0) {
+		ImGui::Text("ErrorCountP1: %d", g_interfaces.cbrInterface.debugErrorCounter[0]);
+	}
+	if (g_interfaces.cbrInterface.debugErrorCounter[1] > 0) {
+		ImGui::Text("ErrorCountP2: %d", g_interfaces.cbrInterface.debugErrorCounter[1]);
+	}
+	if (!isInMatch() || !(*g_gameVals.pGameMode == GameMode_Training || *g_gameVals.pGameMode == GameMode_Versus || 
+		*g_gameVals.pGameMode == GameMode_Online) )
 	{
 		ImGui::HorizontalSpacing();
-		ImGui::TextDisabled("YOU ARE NOT IN MATCH!");
-		ImGui::Checkbox("AutomaticallyRecordMyself", &g_interfaces.cbrInterface.autoRecordGameOwner);
-		ImGui::Checkbox("AutomaticallyRecordOpponent", &g_interfaces.cbrInterface.autoRecordAllOtherPlayers);
-
+		ImGui::TextDisabled("CBR Menu only accesible in training, versus and online versus");
+		if (ImGui::Checkbox("Automatically Record Myself", &g_interfaces.cbrInterface.autoRecordGameOwner)) {
+			g_interfaces.cbrInterface.saveSettings();
+		}
+		if (ImGui::Checkbox("Automatically Record Opponents", &g_interfaces.cbrInterface.autoRecordAllOtherPlayers)) {
+			g_interfaces.cbrInterface.saveSettings();
+		}
+		ImGui::Text("Names for players in versus mode:");
+		ImGui::InputText("Player1Name", g_interfaces.cbrInterface.nameVersusP1, IM_ARRAYSIZE(g_interfaces.cbrInterface.nameVersusP1));
+		ImGui::InputText("Player2Name", g_interfaces.cbrInterface.nameVersusP2, IM_ARRAYSIZE(g_interfaces.cbrInterface.nameVersusP2));
+		
 		return;
 	}
 
-	ImGui::HorizontalSpacing();
 	if (isInMatch())
 	{
 		//ImGui::VerticalSpacing(10);
 		//ImGui::HorizontalSpacing();
-
-		if (ImGui::Button("Record"))
+		ImGui::HorizontalSpacing();
+		ImGui::BeginGroup();
+		if (ImGui::Button("Record P1"))
 		{
 			if (g_interfaces.cbrInterface.Recording == false) {
 				g_interfaces.cbrInterface.EndCbrActivities();
-				g_interfaces.cbrInterface.StartCbrRecording(g_interfaces.player1.GetData()->char_abbr, g_interfaces.player2.GetData()->char_abbr, g_interfaces.player1.GetData()->charIndex, g_interfaces.player2.GetData()->charIndex,0);
+				g_interfaces.cbrInterface.StartCbrRecording(g_interfaces.player1.GetData()->char_abbr, g_interfaces.player2.GetData()->char_abbr, g_interfaces.player1.GetData()->charIndex, g_interfaces.player2.GetData()->charIndex, 0);
 			}
 			else {
 				g_interfaces.cbrInterface.EndCbrActivities();
 			}
 		}
+		ImGui::SameLine();
 		if (ImGui::Button("RecordP2"))
 		{
 
@@ -389,65 +413,118 @@ void MainWindow::DrawCBRAiSection() const
 				g_interfaces.cbrInterface.EndCbrActivities();
 			}
 		}
-		if (ImGui::Button("Replaying P1"))
-		{
-			
-			if (g_interfaces.cbrInterface.getCbrData(0)->getReplayCount() > 0 && g_interfaces.cbrInterface.Replaying == false) {
-				g_interfaces.cbrInterface.EndCbrActivities();
-				g_interfaces.cbrInterface.Replaying = true;
+		ImGui::EndGroup();
+		if (!(*g_gameVals.pGameMode == GameMode_Versus)) {
+			ImGui::HorizontalSpacing();
+			ImGui::BeginGroup();
+			if (ImGui::Button("Replaying P1"))
+			{
+
+				if (g_interfaces.cbrInterface.getCbrData(0)->getReplayCount() > 0 && g_interfaces.cbrInterface.Replaying == false) {
+					g_interfaces.cbrInterface.EndCbrActivities();
+					g_interfaces.cbrInterface.Replaying = true;
+				}
+				else {
+					g_interfaces.cbrInterface.EndCbrActivities();
+				}
 			}
-			else {
-				g_interfaces.cbrInterface.EndCbrActivities();
+			ImGui::SameLine();
+			if (ImGui::Button("Replaying P2"))
+			{
+
+				if (g_interfaces.cbrInterface.getCbrData(1)->getReplayCount() > 0 && g_interfaces.cbrInterface.ReplayingP2 == false) {
+					g_interfaces.cbrInterface.EndCbrActivities();
+					g_interfaces.cbrInterface.ReplayingP2 = true;
+				}
+				else {
+					g_interfaces.cbrInterface.EndCbrActivities();
+				}
 			}
+			ImGui::EndGroup();
 		}
-		if (ImGui::Button("Replaying P2"))
-		{
-			
-			if (g_interfaces.cbrInterface.getCbrData(1)->getReplayCount() > 0 && g_interfaces.cbrInterface.ReplayingP2 == false) {
-				g_interfaces.cbrInterface.EndCbrActivities();
-				g_interfaces.cbrInterface.ReplayingP2 = true;
-			}
-			else {
-				g_interfaces.cbrInterface.EndCbrActivities();
-			}
-		}
-		if (ImGui::Button("Delete"))
+
+		ImGui::HorizontalSpacing();
+		ImGui::BeginGroup();
+		ImGui::Text("Delete Replays in selected range:");
+		if (ImGui::Button("Delete P1"))
 		{
 			g_interfaces.cbrInterface.EndCbrActivities();
-			*g_interfaces.cbrInterface.getCbrData(0) = CbrData{};
-			*g_interfaces.cbrInterface.getCbrData(1) = CbrData{};
+			g_interfaces.cbrInterface.getCbrData(0)->deleteReplays(g_interfaces.cbrInterface.deletionStart, g_interfaces.cbrInterface.deletionEnd);
 		}
-		if (ImGui::Button("InstantLearning"))
+		ImGui::SameLine();
+		if (ImGui::Button("Delete P2"))
 		{
-			
-			if (g_interfaces.cbrInterface.instantLearning != true) {
-				g_interfaces.cbrInterface.EndCbrActivities();
-				g_interfaces.cbrInterface.StartCbrInstantLearning(g_interfaces.player1.GetData()->char_abbr, g_interfaces.player2.GetData()->char_abbr, g_interfaces.player1.GetData()->charIndex, g_interfaces.player2.GetData()->charIndex,0);
-			}
-			else {
-				g_interfaces.cbrInterface.EndCbrActivities();
-			}
+			g_interfaces.cbrInterface.EndCbrActivities();
+			g_interfaces.cbrInterface.getCbrData(1)->deleteReplays(g_interfaces.cbrInterface.deletionStart, g_interfaces.cbrInterface.deletionEnd);
 		}
-		if (ImGui::Button("InstantLearning2"))
-		{
+		ImGui::SameLine();
+		ImGui::PushItemWidth(80);
+		ImGui::DragIntRange2("", &g_interfaces.cbrInterface.deletionStart, &g_interfaces.cbrInterface.deletionEnd, 1.0F, 0);
+		ImGui::EndGroup();
+		ImGui::PushItemWidth(0);
+		if (!(*g_gameVals.pGameMode == GameMode_Versus)) {
+			ImGui::HorizontalSpacing();
+			ImGui::BeginGroup();
+			if (ImGui::Button("InstantLearning"))
+			{
 
-			if (g_interfaces.cbrInterface.instantLearningP2 != true) {
-				g_interfaces.cbrInterface.EndCbrActivities();
-				g_interfaces.cbrInterface.StartCbrInstantLearning(g_interfaces.player2.GetData()->char_abbr, g_interfaces.player1.GetData()->char_abbr, g_interfaces.player2.GetData()->charIndex, g_interfaces.player1.GetData()->charIndex,1);
+				if (g_interfaces.cbrInterface.instantLearning != true) {
+					g_interfaces.cbrInterface.EndCbrActivities();
+					g_interfaces.cbrInterface.StartCbrInstantLearning(g_interfaces.player1.GetData()->char_abbr, g_interfaces.player2.GetData()->char_abbr, g_interfaces.player1.GetData()->charIndex, g_interfaces.player2.GetData()->charIndex, 0);
+				}
+				else {
+					g_interfaces.cbrInterface.EndCbrActivities();
+				}
 			}
-			else {
-				g_interfaces.cbrInterface.EndCbrActivities();
+			ImGui::SameLine();
+			if (ImGui::Button("InstantLearning2"))
+			{
+
+				if (g_interfaces.cbrInterface.instantLearningP2 != true) {
+					g_interfaces.cbrInterface.EndCbrActivities();
+					g_interfaces.cbrInterface.StartCbrInstantLearning(g_interfaces.player2.GetData()->char_abbr, g_interfaces.player1.GetData()->char_abbr, g_interfaces.player2.GetData()->charIndex, g_interfaces.player1.GetData()->charIndex, 1);
+				}
+				else {
+					g_interfaces.cbrInterface.EndCbrActivities();
+				}
 			}
+			if (ImGui::Button("RecordP1 ReplayP2"))
+			{
+				if (g_interfaces.cbrInterface.getCbrData(1)->getReplayCount() > 0 && g_interfaces.cbrInterface.ReplayingP2 == false && g_interfaces.cbrInterface.Recording == false) {
+					g_interfaces.cbrInterface.EndCbrActivities();
+					g_interfaces.cbrInterface.ReplayingP2 = true;
+					g_interfaces.cbrInterface.Recording = true;
+				}
+				else {
+					g_interfaces.cbrInterface.EndCbrActivities();
+				}
+			}
+			ImGui::SameLine();
+			if (ImGui::Button("ReplayP1 RecordP2"))
+			{
+				if (g_interfaces.cbrInterface.getCbrData(0)->getReplayCount() > 0 && g_interfaces.cbrInterface.Replaying == false && g_interfaces.cbrInterface.RecordingP2 == false) {
+					g_interfaces.cbrInterface.EndCbrActivities();
+					g_interfaces.cbrInterface.Replaying = true;
+					g_interfaces.cbrInterface.RecordingP2 = true;
+				}
+				else {
+					g_interfaces.cbrInterface.EndCbrActivities();
+				}
+			}
+			ImGui::EndGroup();
 		}
-		
+		ImGui::HorizontalSpacing();
 		ImGui::InputText("PlayerName", g_interfaces.cbrInterface.playerName, IM_ARRAYSIZE(g_interfaces.cbrInterface.playerName));
+
+		ImGui::HorizontalSpacing();
+		ImGui::BeginGroup();
 		if (ImGui::Button("Save"))
 		{
 			g_interfaces.cbrInterface.EndCbrActivities();
 			g_interfaces.cbrInterface.getCbrData(0)->setPlayerName(g_interfaces.cbrInterface.playerName);
 			g_interfaces.cbrInterface.getCbrData(0)->setCharName(g_interfaces.player1.GetData()->char_abbr);
 			g_interfaces.cbrInterface.SaveCbrData(*g_interfaces.cbrInterface.getCbrData(0));
-			
+
 			/*boost::filesystem::path dir("CBRsave");
 			if (!(boost::filesystem::exists(dir))) {
 				boost::filesystem::create_directory(dir);
@@ -457,67 +534,80 @@ void MainWindow::DrawCBRAiSection() const
 			boost::archive::text_oarchive archive(outfile);
 			archive << *g_interfaces.cbrInterface.getCbrData(0);*/
 		}
+		ImGui::SameLine();
+		if (ImGui::Button("Save P2"))
+		{
+			g_interfaces.cbrInterface.EndCbrActivities();
+			g_interfaces.cbrInterface.getCbrData(1)->setPlayerName(g_interfaces.cbrInterface.playerName);
+			g_interfaces.cbrInterface.getCbrData(1)->setCharName(g_interfaces.player2.GetData()->char_abbr);
+			g_interfaces.cbrInterface.SaveCbrData(*g_interfaces.cbrInterface.getCbrData(1));
+		}
+		if (ImGui::Button("Test HTTP"))
+		{
+			g_interfaces.cbrInterface.netRequestTest();
+		}
+		ImGui::EndGroup();
+		ImGui::HorizontalSpacing();
+		ImGui::BeginGroup();
 		if (ImGui::Button("LoadP1")) {
 			g_interfaces.cbrInterface.EndCbrActivities();
 			g_interfaces.cbrInterface.setCbrData(g_interfaces.cbrInterface.LoadCbrData(g_interfaces.cbrInterface.playerName, g_interfaces.player1.GetData()->char_abbr), 0);
-			/*
-			std::string filename = ".\\CBRsave\\";
-			filename = filename + g_interfaces.player1.GetData()->char_abbr + g_interfaces.cbrInterface.playerName + ".cbr";
-			std::ifstream infile(filename);
-			if (infile.fail()) {
-				//File does not exist code here
-			}
-			else {
-				boost::archive::text_iarchive archive(infile);
-				CbrData insert;
-				archive >> insert;
-				g_interfaces.cbrInterface.setCbrData(insert,0);
-			}*/
+
 		}
+		
+		ImGui::SameLine();
 		if (ImGui::Button("LoadP2")) {
 			g_interfaces.cbrInterface.EndCbrActivities();
 			g_interfaces.cbrInterface.setCbrData(g_interfaces.cbrInterface.LoadCbrData(g_interfaces.cbrInterface.playerName, g_interfaces.player2.GetData()->char_abbr), 1);
 
-			/*
-			std::string filename = ".\\CBRsave\\";
-			filename = filename + g_interfaces.player2.GetData()->char_abbr + g_interfaces.cbrInterface.playerName + ".cbr";
-			std::ifstream infile(filename);
-			if (infile.fail()) {
-				//File does not exist code here
-			}
-			else {
-				boost::archive::text_iarchive archive(infile);
-				CbrData insert;
-				archive >> insert;
-				g_interfaces.cbrInterface.setCbrData(insert, 1);
-			}*/
+	
 		}
 
+		if (ImGui::Button("Load+MergeP1")) {
+			g_interfaces.cbrInterface.EndCbrActivities();
+			g_interfaces.cbrInterface.mergeCbrData(g_interfaces.cbrInterface.LoadCbrData(g_interfaces.cbrInterface.playerName, g_interfaces.player1.GetData()->char_abbr), 0);
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Load+MergeP2")) {
+			g_interfaces.cbrInterface.EndCbrActivities();
+			g_interfaces.cbrInterface.mergeCbrData(g_interfaces.cbrInterface.LoadCbrData(g_interfaces.cbrInterface.playerName, g_interfaces.player2.GetData()->char_abbr), 1);
+		}
+		ImGui::EndGroup();
 		//g_interfaces.player1.SetCBROverride(true);
 		//g_interfaces.player1.SetCBRInputValue(6);
+		ImGui::HorizontalSpacing();
+		ImGui::BeginGroup(); 
+		ImGui::Text(g_interfaces.cbrInterface.WriteAiInterfaceState().c_str());
+		//ImGui::Text("Recording: %d ", g_interfaces.cbrInterface.Recording);
+		//ImGui::SameLine();
+		//ImGui::Text("Replaying P1 %d", g_interfaces.cbrInterface.Replaying);
+		//ImGui::Text("InstantLearning %d", g_interfaces.cbrInterface.instantLearning);
+		ImGui::Text("Slot 1 Replays: %d - FramesRecorded: %d", g_interfaces.cbrInterface.getCbrData(0)->getReplayCount(), g_interfaces.cbrInterface.getAnnotatedReplay(1)->getInputSize());
+		ImGui::Text("Slot 2 Replays: %d - FramesRecorded: %d", g_interfaces.cbrInterface.getCbrData(1)->getReplayCount(), g_interfaces.cbrInterface.getAnnotatedReplay(0)->getInputSize());
+		
+		ImGui::Text("P1Input: %d", g_interfaces.cbrInterface.input);
+		ImGui::SameLine();
+		ImGui::Text("IP2nput: %d", g_interfaces.cbrInterface.inputP2);
 
-		ImGui::Text("Recording: %d ", g_interfaces.cbrInterface.Recording);
-		ImGui::Text("Replaying P1 %d", g_interfaces.cbrInterface.Replaying);
-		ImGui::Text("InstantLearning %d", g_interfaces.cbrInterface.instantLearning);
-		ImGui::Text("Replay: %d - Frame: %d", g_interfaces.cbrInterface.getCbrData(0)->getReplayCount(), g_interfaces.cbrInterface.getAnnotatedReplay(1)->getInputSize());
-		ImGui::Text("Replay: %d - Frame: %d", g_interfaces.cbrInterface.getCbrData(1)->getReplayCount(), g_interfaces.cbrInterface.getAnnotatedReplay(0)->getInputSize());
-		ImGui::Text("ErrorCount: %d", g_interfaces.cbrInterface.debugErrorCounter);
-		ImGui::Text("Input: %d", g_interfaces.cbrInterface.input);
-		ImGui::Text("Input: %d", g_interfaces.cbrInterface.inputP2);
+		//ImGui::Text("DebugInput1: %d", g_interfaces.cbrInterface.debugPrint1);
+		//ImGui::Text("DebugInput2: %d", g_interfaces.cbrInterface.debugPrint2);
+		//ImGui::Text("DebugInput3: %d", g_interfaces.cbrInterface.debugPrint3);
+		//ImGui::Text("DebugInput4: %d", g_interfaces.cbrInterface.debugPrint4);
 		if (!g_interfaces.player1.IsCharDataNullPtr()) {
-			ImGui::Text("hitstop %d", g_interfaces.player1.GetData()->hitstop);
-			ImGui::Text("CharNr %d", g_interfaces.player1.GetData()->charIndex);
+			ImGui::TextUnformatted(g_interfaces.player1.GetData()->char_abbr);
+			//ImGui::Text("hitstop %d", g_interfaces.player1.GetData()->hitstop);
+			//ImGui::Text("CharNr %d", g_interfaces.player1.GetData()->charIndex);
 		}
 		//ImGui::Text("MatchState: %d", *g_gameVals.pMatchState);
 		//ImGui::Text("MatchState: %d", *g_gameVals.pGameState);
 		//ImGui::Text("MatchState: %d", *g_gameVals.pMatchTimer);
 		
-		ImGui::Text("CaseInstance: %d", g_interfaces.cbrInterface.getCbrData(0)->debugTextArr.size());
+		ImGui::Text("CaseInstance: %d - %d", g_interfaces.cbrInterface.getCbrData(0)->debugTextArr.size(), g_interfaces.cbrInterface.getCbrData(1)->debugTextArr.size());
 		//ImGui::Text(g_interfaces.player1.getCbrData()->debugText.c_str());
 		
 		/*
 		if (!g_interfaces.player1.IsCharDataNullPtr()) {
-			ImGui::TextUnformatted(g_interfaces.player1.GetData()->char_abbr);
+			
 			ImGui::Text("Input: %d", g_interfaces.player1.input);
 			ImGui::TextUnformatted(g_interfaces.player1.GetData()->currentAction);
 			ImGui::TextUnformatted(g_interfaces.player1.GetData()->lastAction);
@@ -575,7 +665,7 @@ void MainWindow::DrawCBRAiSection() const
 			ImGui::Text("P2PosY %d", g_interfaces.player2.GetData()->position_y);
 			
 		}*/
-
+		ImGui::EndGroup();
 	}
 }
 
@@ -641,6 +731,80 @@ void MainWindow::DrawReversalSection() const
 		}*/
 		ImGui::Text("Recording: %d", g_interfaces.cbrInterface.reversalRecording);
 		ImGui::Text("ReversalActive %d", g_interfaces.cbrInterface.reversalActive);
+
+	}
+}
+
+void MainWindow::DrawNetaSection() const
+{
+	if (!ImGui::CollapsingHeader("Neta Recorder"))
+		return;
+
+	if (!isInMatch())
+	{
+		ImGui::HorizontalSpacing();
+		ImGui::TextDisabled("YOU ARE NOT IN MATCH!");
+
+
+		return;
+	}
+
+	ImGui::HorizontalSpacing();
+
+	if (isInMatch())
+	{
+		//ImGui::VerticalSpacing(10);
+		//ImGui::HorizontalSpacing();
+
+		if (ImGui::Button("Record Both Players"))
+		{
+			if (!g_interfaces.cbrInterface.netaPlaying) {
+				if (g_interfaces.cbrInterface.netaRecording == false) {
+					g_interfaces.cbrInterface.netaRecording = true;
+					g_interfaces.cbrInterface.setAnnotatedReplay(AnnotatedReplay(g_interfaces.cbrInterface.playerName, g_interfaces.player1.GetData()->char_abbr, g_interfaces.player2.GetData()->char_abbr, g_interfaces.player1.GetData()->charIndex, g_interfaces.player2.GetData()->charIndex), 0);
+					g_interfaces.cbrInterface.setAnnotatedReplay(AnnotatedReplay(g_interfaces.cbrInterface.playerName, g_interfaces.player2.GetData()->char_abbr, g_interfaces.player1.GetData()->char_abbr, g_interfaces.player2.GetData()->charIndex, g_interfaces.player1.GetData()->charIndex), 1);
+				}
+				else {
+					g_interfaces.cbrInterface.netaRecording = false;
+				}
+			}
+		}
+		if (ImGui::Button("Replay Both Players"))
+		{
+			if (g_interfaces.cbrInterface.netaPlaying == false && g_interfaces.cbrInterface.getAnnotatedReplay(0)->getInputSize()> 0 &&
+				g_interfaces.cbrInterface.getAnnotatedReplay(1)->getInputSize() > 0) {
+				g_interfaces.cbrInterface.netaPlaying = !g_interfaces.cbrInterface.netaPlaying;
+				g_interfaces.cbrInterface.netaReplayCounter = 0;
+			}
+		}
+
+		ImGui::Checkbox("Freeze frame:", &g_gameVals.isFrameFrozen);
+		if (g_gameVals.pFrameCount)
+		{
+			ImGui::SameLine();
+			ImGui::Text("%d", *g_gameVals.pFrameCount);
+			ImGui::SameLine();
+			if (ImGui::Button("Reset"))
+			{
+				*g_gameVals.pFrameCount = 0;
+				g_gameVals.framesToReach = 0;
+			}
+		}
+
+		if (g_gameVals.isFrameFrozen)
+		{
+			static int framesToStep = 1;
+			ImGui::HorizontalSpacing();
+			if (ImGui::Button("Step frames"))
+			{
+				g_gameVals.framesToReach = *g_gameVals.pFrameCount + framesToStep;
+			}
+
+			ImGui::SameLine();
+			ImGui::SliderInt("", &framesToStep, 1, 60);
+		}
+		ImGui::Text("Recording: %d", g_interfaces.cbrInterface.netaRecording);
+		ImGui::Text("Replaying %d", g_interfaces.cbrInterface.netaPlaying);
 
 	}
 }
