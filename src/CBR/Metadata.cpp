@@ -44,8 +44,11 @@ void Metadata::SetComboVariables(int p1comboProration, int p2comboProration, int
 void Metadata::addHelper(std::shared_ptr<Helper> h, int playerIndex) {
 	helpers[playerIndex].push_back(h);
 }
-std::array<std::vector<std::shared_ptr<Helper>>, 2> Metadata::getHelpers() {
+std::array<std::vector<std::shared_ptr<Helper>>, 2>& Metadata::getHelpers() {
 	return helpers;
+}
+std::vector<std::shared_ptr<Helper>>& Metadata::getPlayerHelpers(int index) {
+	return helpers[index];
 }
 void Metadata::SetFrameCount(int frameCount) {
 	frame_count_minus_1 = frameCount;
@@ -141,16 +144,28 @@ std::array< int, 2> Metadata::getComboTime() {
 }
 
 
-std::array< std::string, 13> neutralActions = { "CmnActStand",
+std::array< std::string, 20> neutralActions = { 
+"CmnActStand",
 "_NEUTRAL", 
 "CmnActBWalk", 
 "CmnActFWalk", 
 "CmnActCrouch", 
 "CmnActStand2Crouch", 
 "CmnActCrouch2Stand", 
-"CmnActJumpPre", "CmnActJumpUpper", 
-"CmnActJumpUpperEnd", "CmnActJumpDown", 
-"CmnActJumpLanding" };
+"CmnActJumpUpper", 
+"CmnActJumpUpperEnd", 
+"CmnActJumpDown", 
+"CmnActJumpLanding", 
+"CmnActCrouchGuardPre",
+"CmnActCrouchGuardLoop",
+"CmnActCrouchGuardEnd",
+"CmnActMidGuardPre",
+"CmnActMidGuardLoop",
+"CmnActMidGuardEnd",
+"CmnActAirGuardPre",
+"CmnActAirGuardLoop",
+"CmnActAirGuardEnd",
+};
 
 std::array< std::string, 16> wakeupActions = { 
 "CmnActBDownCrash",
@@ -188,8 +203,6 @@ std::array< std::string, 13> crouchingActions = {
 };
 
 void Metadata::computeMetaData() {
-	neutral[0] = CheckNeutralState(currentAction[0]);
-	neutral[1] = CheckNeutralState(currentAction[1]);
 	attack[0] = attackType[0] > 0;
 	attack[1] = attackType[1] > 0;
 	wakeup[0] = CheckWakeupState(currentAction[0]) && (!(hitstun[0] > 0 && timeAfterRecovery[0] == 0));
@@ -198,6 +211,8 @@ void Metadata::computeMetaData() {
 	blocking[1] = blockstun[1] > 0;
 	hit[0] = hitstun[0] > 0 && timeAfterRecovery[0] == 0;
 	hit[1] = hitstun[1] > 0 && timeAfterRecovery[1] == 0;
+	neutral[0] = !blocking[0] && !hit[0] && CheckNeutralState(currentAction[0]);
+	neutral[1] = !blocking[1] && !hit[1] && CheckNeutralState(currentAction[1]);
 	hitThisFrame[0] = (hitstun[0] > 0) && (hitstop[0] > 0) && (actionTimeNoHitstop[0] == 1);
 	hitThisFrame[1] = (hitstun[1] > 0) && (hitstop[1] > 0) && (actionTimeNoHitstop[1] == 1);
 	BlockThisFrame[0] = (blockstun[0] > 0) && (hitstop[0] > 0) && (actionTimeNoHitstop[0] == 1);
@@ -210,6 +225,7 @@ void Metadata::computeMetaData() {
 	currentActionHash[1] = std::hash<std::string>{}(currentAction[1]);
 	lastActionHash[0] = std::hash<std::string>{}(lastAction[0]);
 	lastActionHash[1] = std::hash<std::string>{}(lastAction[1]);
+
 }
 
 bool Metadata::CheckNeutralState(std::string state) {

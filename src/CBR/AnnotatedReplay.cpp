@@ -41,9 +41,21 @@ std::vector<std::shared_ptr<Metadata>>* AnnotatedReplay::getAllMetadata() {
     return &metaData;
 }
 Metadata AnnotatedReplay::ViewMetadata(int i) {
+//#ifdef _DEBUG
+//    if (i >= metaData.size()) {
+//        return *metaData[0];
+//    }
+//#endif
     return *metaData[i];
 }
-
+int AnnotatedReplay::MetadataSize() {
+    //#ifdef _DEBUG
+    //    if (i >= metaData.size()) {
+    //        return *metaData[0];
+    //    }
+    //#endif
+    return metaData.size();
+}
 std::shared_ptr<Metadata> AnnotatedReplay::CopyMetadataPtr(int i) {
     return metaData[i];
 }

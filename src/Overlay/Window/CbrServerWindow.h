@@ -8,12 +8,12 @@ public:
 		ImGuiWindowFlags windowFlags = 0)
 		: IWindow(windowTitle, windowClosable, windowFlags) {}
 	~CbrServerWindow() override = default;
-
 protected:
 	void Draw() override;
 
 private:
 	void DrawImGuiSection();
+
 
 	bool m_showDemoWindow = false;
 };

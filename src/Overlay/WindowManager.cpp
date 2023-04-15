@@ -100,9 +100,16 @@ bool WindowManager::Initialize(void *hwnd, IDirect3DDevice9 *device)
 	config.OversampleH = 1;
 	config.OversampleV = 1;
 	config.PixelSnapH = true;
-
-	const ImWchar* ranges = ImGui::GetIO().Fonts->GetGlyphRangesJapanese();
-	ranges = ranges + 2; // Skip default ranges to prevent overwriting the default font
+	static const ImWchar ranges[] =
+	{
+		//0x0020, 0x00FF, // Basic Latin + Latin Supplement
+		0x0100, 0xFFFF, // All
+		0,
+	};
+	//const ImWchar* ranges = ImGui::GetIO().Fonts->GetGlyphRangesJapanese();
+	//const ImWchar* ranges2 = ImGui::GetIO().Fonts->GetGlyphRangesCyrillic();
+	//ranges = ranges + ranges2;
+	//ranges = ranges + 2; // Skip default ranges to prevent overwriting the default font
 
 	ImGui::GetIO().Fonts->AddFontFromMemoryCompressedTTF(mplusMedium_compressed_data, mplusMedium_compressed_size,
 		unicodeFontSize, &config, ranges);

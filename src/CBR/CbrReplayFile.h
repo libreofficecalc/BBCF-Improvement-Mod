@@ -6,6 +6,12 @@
 #include "CbrCase.h"
 #include "AnnotatedReplay.h"
 
+struct CbrGenerationError
+{
+    std::string structure;
+    std::string errorDetail;
+    int errorCount;
+};
 
 struct CommandActions
 {
@@ -15,6 +21,11 @@ struct CommandActions
     std::vector<int> altInputs;
 };
 
+struct inputMemory 
+{
+    std::vector<signed int> inputs;
+    std::string name;
+};
 
 class CbrReplayFile {
 private:
@@ -45,18 +56,23 @@ public:
     int getCaseBaseLength();
     int getInput(int);
 
-    int MakeCaseBase(AnnotatedReplay*, std::string, int, int, int);
-    bool CheckCaseEnd(int, Metadata, std::string, bool);
+    CbrGenerationError MakeCaseBase(AnnotatedReplay*, std::string, int, int, int);
+    bool CbrReplayFile::CheckCaseEnd(int framesIdle, Metadata ar, std::string prevState, bool neutral, std::vector<CommandActions> commands);
     bool CheckNeutralState(std::string);
     std::vector<int> DeconstructInput(int, bool);
-    std::vector < std::vector<signed int>> CheckCommandExecution(int, std::vector<std::vector<int>>);
-    std::vector<std::vector<int>> MakeInputArray(std::string, std::vector<CommandActions>, std::string);
+    std::vector < inputMemory> CbrReplayFile::CheckCommandExecution(int input, std::vector < inputMemory>& inputBuffer);
+    std::vector < inputMemory> CbrReplayFile::MakeInputArray(std::string move, std::vector<CommandActions> commands, std::string prevState);
     std::vector<CommandActions> FetchCommandActions(std::string);
-    int instantLearning(AnnotatedReplay*, std::string);
-    int CbrReplayFile::makeFullCaseBase(AnnotatedReplay*, std::string);
+    std::vector<CommandActions> CbrReplayFile::FetchNirvanaCommandActions();
+    CbrGenerationError instantLearning(AnnotatedReplay*, std::string);
+    CbrGenerationError CbrReplayFile::makeFullCaseBase(AnnotatedReplay*, std::string);
     bool checkDirectionInputs(int direction, int input);
     bool isDirectionInputs(int direction);
     std::array<int, 2>& CbrReplayFile::getCharIds();
+    std::array<std::string, 2>& CbrReplayFile::getCharNames();
+    std::vector < inputMemory> CbrReplayFile::MakeInputArraySuperJump(std::string move, std::vector<int> inputs, int startingIndex, std::vector < inputMemory> inVec);
+    std::vector < inputMemory> CbrReplayFile::DeleteCompletedInputs(std::string name, std::vector < inputMemory>& inputBuffer);
+    bool CbrReplayFile::ContainsCommandState(std::string move, std::vector<CommandActions> commands);
 };
 
 

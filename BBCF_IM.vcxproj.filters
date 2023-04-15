@@ -267,8 +267,9 @@
     <ClInclude Include="src\Palette\PaletteManager.h" />
     <ClInclude Include="src\Palette\impl_templates.h" />
     <ClInclude Include="src\CBR\CharacterStorage.h" />
-    <ClInclude Include="src\CBR\json.hpp" />
     <ClInclude Include="src\CBR\httplib.h" />
+    <ClInclude Include="src\CBR\json.hpp" />
+    <ClInclude Include="src\CBR\CbrUtils.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="export\dinput8.def">

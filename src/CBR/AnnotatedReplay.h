@@ -33,6 +33,7 @@ public:
     std::shared_ptr<Metadata> getMetadata(int);
     std::shared_ptr<Metadata>CopyMetadataPtr(int i);
     Metadata ViewMetadata(int);
+    int AnnotatedReplay::MetadataSize();
 
     std::string getPlayerName();
     std::string getFocusCharName();

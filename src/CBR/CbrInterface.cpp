@@ -12,11 +12,15 @@
 #include <boost/iostreams/filter/gzip.hpp>
 #include <boost/iostreams/filtering_stream.hpp>
 #include <iostream>
+#include "CharacterStorage.h"
+#include <boost/algorithm/string.hpp>
+#include <Core/interfaces.h>
 
 
-void CbrInterface::netRequestTest() {
 
-}
+
+
+
 
 
 
@@ -92,6 +96,60 @@ void CbrInterface::deleteReversalReplay(int i) {
 AnnotatedReplay* CbrInterface::getReversalReplay(int i) {
 	return &reversalReplays[i];
 }
+
+
+
+
+
+int CbrInterface::randomReversalReplaySelection() {
+	int combinedPropability = 0;
+	for (int i = 0; i < reversalReplaysTriggerOdds.size(); i++) {
+		reversalReplays[i].setPlaying(false);
+		combinedPropability += reversalReplaysTriggerOdds[i];
+	}
+	float multi = static_cast<float>(100) / combinedPropability;
+	//std::vector<float> probContainer;
+	float probSave = 0;
+	float rand = RandomFloat(0, 100);
+	for (int i = 0; i < reversalReplaysTriggerOdds.size(); i++) {
+		float max = reversalReplaysTriggerOdds[i] * multi;
+		auto test = max + probSave;
+		probSave += max;
+		if (test > rand) {
+			//reversalReplays[i].setPlaying(true);
+			//reversalReplays[i].resetReplayIndex();
+			return i;
+			break;
+		}
+	}
+	return -1;
+}
+void CbrInterface::ReplayActivation(int i) {
+	reversalReplays[i].setPlaying(true);
+	reversalReplays[i].resetReplayIndex();
+}
+
+void CbrInterface::disableAllReversalReplays() {
+	for (int i = 0; i < reversalReplaysTriggerOdds.size(); i++) {
+		reversalReplays[i].setPlaying(false);
+		reversalReplays[i].resetReplayIndex();
+	}
+}
+int CbrInterface::playBackActiveReversalReplay(bool facing) {
+	for (int i = 0; i < reversalReplaysTriggerOdds.size(); i++) {
+		if (reversalReplays[i].getPlaying()) {
+			return reversalReplays[i].getNextInput(facing);
+		}
+	}
+}
+bool CbrInterface::isAnyPlayingReversalReplays() {
+	for (int i = 0; i < reversalReplaysTriggerOdds.size(); i++) {
+		if (reversalReplays[i].getPlaying()) {
+			return true;
+		}
+	}
+	return false;
+}
 CbrInterface::CbrInterface()
 {
 	//loadSettings(this);
@@ -119,25 +177,228 @@ void CbrInterface::OnMatchInit(CharData& c1, CharData& c2, int gameMode) {
 	
 }
 
+
 void CbrInterface::SaveCbrData(CbrData& cbr) {
 
 	boost::filesystem::path dir("CBRsave");
 	if (!(boost::filesystem::exists(dir))) {
 		boost::filesystem::create_directory(dir);
 	}
-	{
-		auto filename = ".\\CBRsave\\" + cbr.getCharName() + cbr.getPlayerName() + ".cbr";
+	
+	auto filenameReal = u8".\\CBRsave\\" + cbr.getCharName() + cbr.getPlayerName() + ".cbr";
+	auto filename = u8".\\CBRsave\\SaveBuffer.cbr";
+	
+
+	auto opponentChar = getOpponentCharNameString(cbr);
+
+	 {
 		std::ofstream outfile(filename, std::ios_base::binary);
+		boost::iostreams::filtering_stream<boost::iostreams::output> f;
+		f.push(boost::iostreams::gzip_compressor(boost::iostreams::gzip_params(boost::iostreams::gzip::best_compression)));
+		f.push(outfile);
+		boost::archive::binary_oarchive archive(f);
+		std::string charName = cbr.getCharName();
+		std::string playerName = cbr.getPlayerName();
+		//std::string opponentChar = "all";
+		int rCount = cbr.getReplayCount();
+		archive << charName;
+		archive << playerName;
+		archive << opponentChar;
+		archive << rCount;
+		archive << cbr;
+		
+	}
+	
+	 auto filenameReal2 = "\\CBRsave\\" + cbr.getCharName() + cbr.getPlayerName() + ".cbr";
+	 auto filename2 = "\\CBRsave\\SaveBuffer.cbr";
+	 auto p = boost::filesystem::current_path() / filename2;
+	 auto pReal = boost::filesystem::current_path() / filenameReal2;
+	 
+	 if (boost::filesystem::exists(pReal)) {
+		 boost::filesystem::remove(pReal);
+	 }
+	 if (boost::filesystem::exists(p)) {
+		 try
+		 {
+			 boost::filesystem::rename(p, pReal);
+		 }
+		 catch (const std::exception& e)
+		 {
+			 std::string s = "reversalName";
+		 }
+		 
+	 }
+	 
+}
+
+void CbrInterface::SaveReversal(AnnotatedReplay& rev) {
+
+	boost::filesystem::path dir("CBRsave");
+	if (!(boost::filesystem::exists(dir))) {
+		boost::filesystem::create_directory(dir);
+	}
+	std::string s = reversalName;
+	auto filename = u8".\\CBRsave\\" + s + ".rev";
+	std::ofstream outfile(filename, std::ios_base::binary);
+	{
+		boost::iostreams::filtering_stream<boost::iostreams::output> f;
+		f.push(boost::iostreams::gzip_compressor(boost::iostreams::gzip_params(boost::iostreams::gzip::best_compression)));
+		f.push(outfile);
+		boost::archive::binary_oarchive archive(f);
+		archive << rev;
+	}
+}
+
+AnnotatedReplay CbrInterface::LoadReversal(std::string in) {
+	
+	auto filename = u8".\\CBRsave\\" + in + ".rev";
+	std::ifstream infile(filename, std::ios_base::binary);
+	AnnotatedReplay insert;
+	insert.debugFrameIndex = -1;
+	if (infile.fail()) {
+		//File does not exist code here
+	}
+	else {
+		//std::string b = "";
+		//infile >> b;
+		
+		boost::iostreams::filtering_stream<boost::iostreams::input> f;
+		f.push(boost::iostreams::gzip_decompressor());
+		f.push(infile);
+		boost::archive::binary_iarchive archive(f);
+		AnnotatedReplay insert;
+		archive >> insert;
+		insert.debugFrameIndex = 0;
+		return insert;
+	}
+	return insert;
+}
+
+void CbrInterface::SaveWeights(costWeights cst) {
+
+	boost::filesystem::path dir("CBRsave");
+	if (!(boost::filesystem::exists(dir))) {
+		boost::filesystem::create_directory(dir);
+	}
+	std::string s = weightName;
+	auto filename = u8".\\CBRsave\\" + s + ".cst";
+	std::ofstream outfile(filename, std::ios_base::binary);
+	{
+		boost::iostreams::filtering_stream<boost::iostreams::output> f;
+		f.push(boost::iostreams::gzip_compressor(boost::iostreams::gzip_params(boost::iostreams::gzip::best_compression)));
+		f.push(outfile);
+		boost::archive::binary_oarchive archive(f);
+		archive << cst;
+	}
+}
+costWeights CbrInterface::LoadWeights(std::string in) {
+
+	auto filename = u8".\\CBRsave\\" + in + ".cst";
+	std::ifstream infile(filename, std::ios_base::binary);
+	costWeights insert;
+	insert.name[0] = "-1";
+	if (infile.fail()) {
+		//File does not exist code here
+	}
+	else {
+		//std::string b = "";
+		//infile >> b;
+
+		boost::iostreams::filtering_stream<boost::iostreams::input> f;
+		f.push(boost::iostreams::gzip_decompressor());
+		f.push(infile);
+		boost::archive::binary_iarchive archive(f);
+		costWeights insert;
+		archive >> insert;
+		return insert;
+	}
+	return insert;
+}
+void CbrInterface::Testbase64(std::string cbr) {
+
+	boost::filesystem::path dir("CBRsave");
+	if (!(boost::filesystem::exists(dir))) {
+		boost::filesystem::create_directory(dir);
+	}
+	auto filename = ".\\CBRsave\\binaryZipString.txt";
+	std::ofstream outfile(filename, std::ios_base::binary);
+	{
 		boost::iostreams::filtering_stream<boost::iostreams::output> f;
 		f.push(boost::iostreams::gzip_compressor(boost::iostreams::gzip_params(boost::iostreams::gzip::best_compression)));
 		f.push(outfile);
 		boost::archive::binary_oarchive archive(f);
 		archive << cbr;
 	}
-	
+
+	filename = ".\\CBRsave\\binaryString.txt";
+	std::ofstream outfile2(filename, std::ios_base::binary);
+	{
+		boost::iostreams::filtering_stream<boost::iostreams::output> f;
+		//f.push(boost::iostreams::gzip_compressor(boost::iostreams::gzip_params(boost::iostreams::gzip::best_compression)));
+		f.push(outfile2);
+		boost::archive::binary_oarchive archive(f);
+		archive << cbr;
+	}
+
+	{
+		std::stringstream outfile3;
+		{
+			boost::iostreams::filtering_stream<boost::iostreams::output> f;
+			//f.push(boost::iostreams::gzip_compressor(boost::iostreams::gzip_params(boost::iostreams::gzip::best_compression)));
+			f.push(outfile3);
+			boost::archive::binary_oarchive archive(f);
+			archive << cbr;
+		}
+		std::string s = outfile3.str();
+		auto en64 = encode64(s);
+		auto d = decode64(en64);
+
+
+		filename = ".\\CBRsave\\encoded64String.txt";
+		std::ofstream outfile4(filename, std::ios_base::binary);
+		outfile4 << en64;
+
+		filename = ".\\CBRsave\\decoded64String.txt";
+		std::ofstream outfile5(filename, std::ios_base::binary);
+		outfile5 << d;
+
+		filename = ".\\CBRsave\\preEncode64String.txt";
+		std::ofstream outfile6(filename, std::ios_base::binary);
+		outfile6 << s;
+
+	}
+	{
+		std::stringstream outfile3;
+		{
+			boost::iostreams::filtering_stream<boost::iostreams::output> f;
+			f.push(boost::iostreams::gzip_compressor(boost::iostreams::gzip_params(boost::iostreams::gzip::best_compression)));
+			f.push(outfile3);
+			boost::archive::binary_oarchive archive(f);
+			archive << cbr;
+		}
+		std::string s = outfile3.str();
+		auto en64 = encode64(s);
+		auto d = decode64(en64);
+
+		if (s != d) {
+			filename = ".\\CBRsave\\compressedEncoded64String.txt";
+			std::ofstream outfile4(filename, std::ios_base::binary);
+			outfile4 << en64;
+
+			filename = ".\\CBRsave\\compressedDecoded64String.txt";
+			std::ofstream outfile5(filename, std::ios_base::binary);
+			outfile5 << d;
+
+			filename = ".\\CBRsave\\preCompressedEncode64String.txt";
+			std::ofstream outfile6(filename, std::ios_base::binary);
+			outfile6 << s;
+
+			filename = ".\\CBRsave\\inputString.txt";
+			std::ofstream outfile7(filename);
+			outfile4 << cbr;
+		}
+	}
 }
-
-
 
 CbrData CbrInterface::LoadCbrData(std::string playerName, std::string characterName) {
 	std::string filename = ".\\CBRsave\\";
@@ -149,8 +410,69 @@ CbrData CbrInterface::LoadCbrData(std::string playerName, std::string characterN
 		//File does not exist code here
 	}
 	else {
+		//std::string b = "";
+		//infile >> b;
 		
-		
+		boost::iostreams::filtering_stream<boost::iostreams::input> f;
+		f.push(boost::iostreams::gzip_decompressor());
+		f.push(infile);
+		boost::archive::binary_iarchive archive(f);
+		CbrData insert;
+		std::string charName = "";
+		std::string playerName = "";
+		std::string opponentChar = "";
+		int rCount = 0;
+		archive >> charName;
+		archive >> playerName;
+		archive >> opponentChar;
+		archive >> rCount;
+		archive >> insert;
+		return insert;
+	}
+	return insert;
+}
+
+CbrData CbrInterface::LoadCbrData(std::string filename) {
+	std::ifstream infile(filename, std::ios_base::binary);
+	CbrData insert;
+	insert.setPlayerName("-1");
+	if (infile.fail()) {
+		//File does not exist code here
+	}
+	else {
+		//std::string b = "";
+		//infile >> b;
+
+		boost::iostreams::filtering_stream<boost::iostreams::input> f;
+		f.push(boost::iostreams::gzip_decompressor());
+		f.push(infile);
+		boost::archive::binary_iarchive archive(f);
+		CbrData insert;
+		std::string charName = "";
+		std::string playerName = "";
+		std::string opponentChar = "";
+		int rCount = 0;
+		archive >> charName;
+		archive >> playerName;
+		archive >> opponentChar;
+		archive >> rCount;
+		archive >> insert;
+		return insert;
+	}
+	return insert;
+}
+
+CbrData CbrInterface::LoadCbrDataOld(std::string filename) {
+	std::ifstream infile(filename, std::ios_base::binary);
+	CbrData insert;
+	insert.setPlayerName("-1");
+	if (infile.fail()) {
+		//File does not exist code here
+	}
+	else {
+		//std::string b = "";
+		//infile >> b;
+
 		boost::iostreams::filtering_stream<boost::iostreams::input> f;
 		f.push(boost::iostreams::gzip_decompressor());
 		f.push(infile);
@@ -161,6 +483,7 @@ CbrData CbrInterface::LoadCbrData(std::string playerName, std::string characterN
 	}
 	return insert;
 }
+
 
 
 int CbrInterface::getAutoRecordReplayAmount() {
@@ -180,21 +503,29 @@ void CbrInterface::resetCbrInterface() {
 	resetPlayer = -1;
 	writeMemory = { -1,-1 };
 	netplayMemory = { };
+	executionOrder = {};
+	cbrData[0].resetReplayVariables();
+	cbrData[1].resetReplayVariables();
 }
+
 void CbrInterface::EndCbrActivities() {
+	EndCbrActivities(2);
+}
+void CbrInterface::EndCbrActivities(int playerNr) {
 	resetCbrInterface();
 	cbrData[0].resetCbr();
 	cbrData[1].resetCbr();
+	disableAllReversalReplays();
 
 	if (autoRecordActive == true) {
 		auto anReplay = getAnnotatedReplay(0);
-		auto savedReplay = AnnotatedReplay(anReplay->getPlayerName(), anReplay->getCharacterName()[0], anReplay->getCharacterName()[1], anReplay->getCharIds()[0], anReplay->getCharIds()[0]);
+		auto savedReplay = AnnotatedReplay(anReplay->getPlayerName(), anReplay->getCharacterName()[0], anReplay->getCharacterName()[1], anReplay->getCharIds()[0], anReplay->getCharIds()[1]);
 		if (anReplay->getInputSize() >= 600) {
 			recordBufferP1.push_back(std::move(*anReplay));
 		}
 		setAnnotatedReplay(savedReplay, 0);
 		anReplay = getAnnotatedReplay(1);
-		savedReplay = AnnotatedReplay(anReplay->getPlayerName(), anReplay->getCharacterName()[0], anReplay->getCharacterName()[1], anReplay->getCharIds()[0], anReplay->getCharIds()[0]);
+		savedReplay = AnnotatedReplay(anReplay->getPlayerName(), anReplay->getCharacterName()[0], anReplay->getCharacterName()[1], anReplay->getCharIds()[0], anReplay->getCharIds()[1]);
 		if (anReplay->getInputSize() >= 600) {
 			recordBufferP2.push_back(std::move(*anReplay));
 		}
@@ -203,39 +534,59 @@ void CbrInterface::EndCbrActivities() {
 		autoRecordFinished = true;
 	}
 
-	if (Recording == true) {
+	if ((playerNr == 0 || playerNr == 2) && Recording == true) {
 		//EndRecording
 		auto anReplay = getAnnotatedReplay(0);
 
 		if (anReplay->getInputSize() >= 10) {
 			auto cbrReplay = CbrReplayFile(anReplay->getCharacterName(), anReplay->getCharIds());
-			debugErrorCounter[0] += cbrReplay.makeFullCaseBase(anReplay, anReplay->getFocusCharName());
-			auto data = getCbrData(0);
-			if (data->getPlayerName() != anReplay->getPlayerName() || data->getCharacterIndex() != anReplay->getCharIds()[0]) {
-				setCbrData(CbrData(anReplay->getPlayerName(), anReplay->getPlayerName(), anReplay->getCharIds()[0]), 0);
+			auto err = cbrReplay.makeFullCaseBase(anReplay, anReplay->getFocusCharName());
+			debugErrorCounter[0] += err.errorCount;
+			if(err.structure != ""){ saveStructureDebug(err.structure); }
+			if(err.errorCount == 0){
+				auto data = getCbrData(0);
+				if (data->getCharName() != anReplay->getCharacterName()[0]) {
+					setCbrData(CbrData(anReplay->getPlayerName(), anReplay->getPlayerName(), anReplay->getCharIds()[0]), 0);
+					data->setCharName(anReplay->getCharacterName()[0]);
+				}
+				data->AddReplay(cbrReplay);
 			}
-			data->AddReplay(cbrReplay);
+			else {
+				cbrCreationDebugStr += err.errorDetail;
+				saveDebug();
+			}
+			setAnnotatedReplay(AnnotatedReplay(anReplay->getPlayerName(), anReplay->getCharacterName()[0], anReplay->getCharacterName()[1], anReplay->getCharIds()[0], anReplay->getCharIds()[1]), 0);
+			
 		}
 		Recording = false;
 	}
 
-	if (RecordingP2 == true) {
+	if ((playerNr == 1 || playerNr == 2) && RecordingP2 == true) {
 		//EndRecording
 		auto anReplay = getAnnotatedReplay(1);
 		if (anReplay->getInputSize() >= 10) {
 			auto cbrReplay = CbrReplayFile(anReplay->getCharacterName(), anReplay->getCharIds());
-			debugErrorCounter[1] += cbrReplay.makeFullCaseBase(anReplay, anReplay->getFocusCharName());
-			auto data = getCbrData(1);
-			if (data->getPlayerName() != anReplay->getPlayerName() || data->getCharacterIndex() != anReplay->getCharIds()[0]) {
-				setCbrData(CbrData(anReplay->getPlayerName(), anReplay->getPlayerName(), anReplay->getCharIds()[0]), 1);
+			auto  err = cbrReplay.makeFullCaseBase(anReplay, anReplay->getFocusCharName());
+			debugErrorCounter[1] += err.errorCount;
+			if (err.structure != "") { saveStructureDebug(err.structure); }
+			if (err.errorCount == 0) {
+				auto data = getCbrData(1);
+				if (data->getCharName() != anReplay->getCharacterName()[0]) {
+					setCbrData(CbrData(anReplay->getPlayerName(), anReplay->getPlayerName(), anReplay->getCharIds()[0]), 1);
+					data->setCharName(anReplay->getCharacterName()[0]);
+				}
+				data->AddReplay(cbrReplay);
+			}else {
+				cbrCreationDebugStr += err.errorDetail;
+				saveDebug();
 			}
-			data->AddReplay(cbrReplay);
+			setAnnotatedReplay(AnnotatedReplay(anReplay->getPlayerName(), anReplay->getCharacterName()[0], anReplay->getCharacterName()[1], anReplay->getCharIds()[0], anReplay->getCharIds()[1]), 1);
 		}
 		RecordingP2 = false;
 	}
 
 
-	if (Replaying == true) {
+	if ((playerNr == 0 || playerNr == 2) && Replaying == true) {
 		boost::filesystem::path dir("CBRsave");
 		if (!(boost::filesystem::exists(dir))) {
 			boost::filesystem::create_directory(dir);
@@ -248,7 +599,7 @@ void CbrInterface::EndCbrActivities() {
 		cbrData[0].debugTextArr.clear();
 		Replaying = false;
 	}
-	if (ReplayingP2 == true) {
+	if ((playerNr == 1 || playerNr == 2) && ReplayingP2 == true) {
 		boost::filesystem::path dir("CBRsave");
 		if (!(boost::filesystem::exists(dir))) {
 			boost::filesystem::create_directory(dir);
@@ -265,17 +616,30 @@ void CbrInterface::EndCbrActivities() {
 	if (instantLearning == true) {
 		auto data = getCbrData(1);
 		auto anReplay = getAnnotatedReplay(0);
-		if (data->getPlayerName() != anReplay->getPlayerName() || data->getCharacterIndex() != anReplay->getCharIds()[0]) {
+		if (data->getCharName() != anReplay->getCharacterName()[0]) {
 			setCbrData(CbrData(anReplay->getPlayerName(), anReplay->getPlayerName(), anReplay->getCharIds()[0]), 0);
+			data->setCharName(anReplay->getCharacterName()[0]);
 		}
 
 		if (data->getReplayCount() > 0) {
 			data->deleteReplays(data->getReplayCount() - 1, data->getReplayCount() - 1);
 		}
 		auto cbrReplay = CbrReplayFile(anReplay->getCharacterName(), anReplay->getCharIds());
-		debugErrorCounter[0] += cbrReplay.makeFullCaseBase(anReplay, anReplay->getFocusCharName());
-		data->AddReplay(cbrReplay);
-
+		auto err = cbrReplay.makeFullCaseBase(anReplay, anReplay->getFocusCharName());
+		debugErrorCounter[0] += err.errorCount;
+		if (err.structure != "") { saveStructureDebug(err.structure); }
+		if (err.errorCount == 0) {
+			auto data = getCbrData(1);
+			if (data->getCharName() != anReplay->getCharacterName()[0]) {
+				setCbrData(CbrData(anReplay->getPlayerName(), anReplay->getPlayerName(), anReplay->getCharIds()[0]), 1);
+				data->setCharName(anReplay->getCharacterName()[0]);
+			}
+			data->AddReplay(cbrReplay);
+		}
+		else {
+			cbrCreationDebugStr += err.errorDetail;
+			saveDebug();
+		}
 		boost::filesystem::path dir("CBRsave");
 		if (!(boost::filesystem::exists(dir))) {
 			boost::filesystem::create_directory(dir);
@@ -293,7 +657,7 @@ void CbrInterface::EndCbrActivities() {
 	if (instantLearningP2 == true) {
 		auto data = getCbrData(0);
 		auto anReplay = getAnnotatedReplay(1);
-		if (data->getPlayerName() != anReplay->getPlayerName() || data->getCharacterIndex() != anReplay->getCharIds()[0]) {
+		if (data->getCharName() != anReplay->getCharacterName()[0]) {
 			setCbrData(CbrData(anReplay->getPlayerName(), anReplay->getPlayerName(), anReplay->getCharIds()[0]), 1);
 		}
 
@@ -301,9 +665,16 @@ void CbrInterface::EndCbrActivities() {
 			data->deleteReplays(data->getReplayCount() - 1, data->getReplayCount() - 1);
 		}
 		auto cbrReplay = CbrReplayFile(anReplay->getCharacterName(), anReplay->getCharIds());
-		debugErrorCounter[1] += cbrReplay.makeFullCaseBase(anReplay, anReplay->getFocusCharName());
-		data->AddReplay(cbrReplay);
-
+		auto err = cbrReplay.makeFullCaseBase(anReplay, anReplay->getFocusCharName());
+		debugErrorCounter[1] += err.errorCount;
+		if (err.structure != "") { saveStructureDebug(err.structure); }
+		if (err.errorCount == 0) {
+			data->AddReplay(cbrReplay);
+		}
+		else {
+			cbrCreationDebugStr += err.errorDetail;
+			saveDebug();
+		}
 		boost::filesystem::path dir("CBRsave");
 		if (!(boost::filesystem::exists(dir))) {
 			boost::filesystem::create_directory(dir);
@@ -354,22 +725,23 @@ void CbrInterface::StartCbrInstantLearning(char* p1charName, char* p2charName, i
 void CbrInterface::threadSaveReplay(bool save) {
 	
 	//saveReplayDataInMenu();
-	
-	if (threadActive == true && processingStoredRecordingsThread.joinable()) {
-		processingStoredRecordingsThread.join();
-		threadActive = false;
+	if (!threadActive) {
+		if (processingStoredRecordingsThread.joinable()) {
+			processingStoredRecordingsThread.join();
+			//threadActive = false;
 	}
 	threadActive = true;
 	processingStoredRecordingsThread = boost::thread(&CbrInterface::saveReplayDataInMenu, this);
+	}
 }
 
 bool CbrInterface::threadCheckSaving() {
 	bool ret = false;
 	//saveReplayDataInMenu();
 
-	if (threadActive && processingStoredRecordingsThread.joinable()) {
+	if (!threadActive && processingStoredRecordingsThread.joinable()) {
 		processingStoredRecordingsThread.join();
-		threadActive = false;
+		//threadActive = false;
 		ret = true;
 	}
 	return ret;
@@ -384,7 +756,7 @@ void CbrInterface::saveSettings() {
 		auto filename = ".\\CBRsave\\CbrSettings.ini";
 		std::ofstream outfile(filename);
 		boost::archive::text_oarchive archive(outfile);
-		archive << autoRecordGameOwner << autoRecordAllOtherPlayers;
+		archive << autoRecordGameOwner << autoRecordAllOtherPlayers << autoUploadOwnData;
 	}
 }
 void CbrInterface::loadSettings(CbrInterface* cbrI) {
@@ -401,13 +773,47 @@ void CbrInterface::loadSettings(CbrInterface* cbrI) {
 	else {
 		boost::archive::text_iarchive archive(infile);
 		debugPrintText += "LoadOk0\n";
-		saveDebugPrint();
 		archive >> cbrI->autoRecordGameOwner;
-		debugPrintText += "LoadOk1\n";
-		saveDebugPrint();
 		archive >> cbrI->autoRecordAllOtherPlayers;
-		debugPrintText += "LoadOk2\n";
-		saveDebugPrint();
+		archive >> cbrI->autoUploadOwnData;
+	}
+}
+void CbrInterface::saveDebug() {
+	boost::filesystem::path dir("CBRsave");
+	if (!(boost::filesystem::exists(dir))) {
+		boost::filesystem::create_directory(dir);
+	}
+	{
+		auto filename = ".\\CBRsave\\CbrErrorReport.txt";
+		std::ofstream outfile(filename);
+		//boost::archive::text_oarchive archive(outfile);
+		outfile << cbrCreationDebugStr;
+	}
+}
+
+
+void CbrInterface::saveStructureDebug(std::string text) {
+	boost::filesystem::path dir("CBRsave\\Structure");
+	if (!(boost::filesystem::exists(dir))) {
+		boost::filesystem::create_directory(dir);
+	}
+	{
+		auto time = NowToString();
+		
+		std::string bufferName = "";
+		for (int i = 0; i < 23; ++i) {
+			if (time[i] != 0) {
+				std::string tests = "";
+				tests += time[i];
+				if (boost::filesystem::windows_name(tests)) {
+					bufferName += time[i];
+				}
+			}
+		}
+		auto filename = ".\\CBRsave\\Structure\\" + bufferName + ".txt";
+		std::ofstream outfile(filename);
+		//boost::archive::text_oarchive archive(outfile);
+		outfile << text;
 	}
 }
 
@@ -416,6 +822,10 @@ void CbrInterface::saveReplayDataInMenu() {
 	bool ranOnce = false;
 	std::string charName = "";
 	std::string playerName = "";
+	if (playerID == "") {
+		playerID = GetPlayerID();
+	}
+
 
 	for (int i = 0; i < recordBufferP1.size(); ++i) {
 		auto& anReplay = recordBufferP1[i];
@@ -424,6 +834,7 @@ void CbrInterface::saveReplayDataInMenu() {
 			playerName = anReplay.getPlayerName();
 			if (ranOnce) { 
 				SaveCbrData(cbrData); 
+				if (autoUploadOwnData && cbrData.getPlayerName() == playerID){ CbrHTTPPostNoThreat(convertCBRtoJson(cbrData, playerID)); }
 				cbrData = CbrData();
 			}
 			ranOnce = true;
@@ -433,11 +844,20 @@ void CbrInterface::saveReplayDataInMenu() {
 			}
 		}
 		auto cbrReplay = CbrReplayFile(anReplay.getCharacterName(), anReplay.getCharIds());
-		debugErrorCounter[0] += cbrReplay.makeFullCaseBase(&anReplay, anReplay.getFocusCharName());
-		cbrData.AddReplay(cbrReplay);
+		auto err = cbrReplay.makeFullCaseBase(&anReplay, anReplay.getFocusCharName());
+		if (err.structure != "") { saveStructureDebug(err.structure); }
+		debugErrorCounter[0] += err.errorCount;
+		if (err.errorCount == 0) { cbrData.AddReplay(cbrReplay); }
+		else {
+			cbrCreationDebugStr += err.errorDetail;
+			saveDebug();
+		}
 		
 	}
-	if(ranOnce){ SaveCbrData(cbrData); }
+	if(ranOnce){ 
+		SaveCbrData(cbrData);
+		if (autoUploadOwnData && cbrData.getPlayerName() == playerID) { CbrHTTPPostNoThreat(convertCBRtoJson(cbrData, playerID)); }
+	}
 	ranOnce = false;
 
 	cbrData = CbrData();
@@ -448,6 +868,7 @@ void CbrInterface::saveReplayDataInMenu() {
 			playerName = anReplay.getPlayerName();
 			if (ranOnce) { 
 				SaveCbrData(cbrData); 
+				if (autoUploadOwnData && cbrData.getPlayerName() == playerID) { CbrHTTPPostNoThreat(convertCBRtoJson(cbrData, playerID)); }
 				cbrData = CbrData();
 			}
 			ranOnce = true;
@@ -457,14 +878,25 @@ void CbrInterface::saveReplayDataInMenu() {
 			}
 		}
 		auto cbrReplay = CbrReplayFile(anReplay.getCharacterName(), anReplay.getCharIds());
-		debugErrorCounter[1] += cbrReplay.makeFullCaseBase(&anReplay, anReplay.getFocusCharName());
-		cbrData.AddReplay(cbrReplay);
+		auto err = cbrReplay.makeFullCaseBase(&anReplay, anReplay.getFocusCharName());
+		if (err.structure != "") { saveStructureDebug(err.structure); }
+		debugErrorCounter[1] += err.errorCount;
+		if (err.errorCount == 0) { cbrData.AddReplay(cbrReplay); }
+		else {
+			cbrCreationDebugStr += err.errorDetail;
+			saveDebug();
+		}
 		
 	}
-	if (ranOnce) { SaveCbrData(cbrData); }
+	if (ranOnce) { 
+		SaveCbrData(cbrData); 
+		if (autoUploadOwnData && cbrData.getPlayerName() == playerID) { CbrHTTPPostNoThreat(convertCBRtoJson(cbrData, playerID)); }
+	}
 	ranOnce = false;
 	recordBufferP1.clear();
 	recordBufferP2.clear();
+
+	threadActive = false;
 }
 std::string CbrInterface::WriteAiInterfaceState() {
 	std::string str = "Ai Activities:";
@@ -487,21 +919,24 @@ std::string CbrInterface::WriteAiInterfaceState() {
 	if (instantLearningP2) {
 		str += " - InstantLearningP2";
 	}
+	str += "\n FAP1: " + std::to_string(cbrData[0].framesActive);
+	str += "\n FAP2: " + std::to_string(cbrData[1].framesActive);
 	return str;
 }
 void CbrInterface::RestartCbrActivities(char* p1charName, char* p2charName, int p1charId, int p2charId) {
 	resetCbrInterface();
 	cbrData[0].resetCbr();
 	cbrData[1].resetCbr();
+	disableAllReversalReplays();
 	if (autoRecordActive == true) {
 		auto anReplay = getAnnotatedReplay(0);
-		auto savedReplay = AnnotatedReplay(anReplay->getPlayerName(), anReplay->getCharacterName()[0], anReplay->getCharacterName()[1], anReplay->getCharIds()[0], anReplay->getCharIds()[0]);
+		auto savedReplay = AnnotatedReplay(anReplay->getPlayerName(), anReplay->getCharacterName()[0], anReplay->getCharacterName()[1], anReplay->getCharIds()[0], anReplay->getCharIds()[1]);
 		if (anReplay->getInputSize() >= 600) {
 			recordBufferP1.push_back(std::move(*anReplay));
 		}
 		setAnnotatedReplay(savedReplay, 0);
 		anReplay = getAnnotatedReplay(1);
-		savedReplay = AnnotatedReplay(anReplay->getPlayerName(), anReplay->getCharacterName()[0], anReplay->getCharacterName()[1], anReplay->getCharIds()[0], anReplay->getCharIds()[0]);
+		savedReplay = AnnotatedReplay(anReplay->getPlayerName(), anReplay->getCharacterName()[0], anReplay->getCharacterName()[1], anReplay->getCharIds()[0], anReplay->getCharIds()[1]);
 		if (anReplay->getInputSize() >= 600) {
 			recordBufferP2.push_back(std::move(*anReplay));
 		}
@@ -514,8 +949,14 @@ void CbrInterface::RestartCbrActivities(char* p1charName, char* p2charName, int 
 		//EndRecording
 		if (anReplay->getInputSize() >= 10) {
 			auto cbrReplay = CbrReplayFile(anReplay->getCharacterName(), anReplay->getCharIds());
-			debugErrorCounter[0] += cbrReplay.makeFullCaseBase(anReplay, anReplay->getFocusCharName());
-			data->AddReplay(cbrReplay);
+			auto err = cbrReplay.makeFullCaseBase(anReplay, anReplay->getFocusCharName());
+			if (err.structure != "") { saveStructureDebug(err.structure); }
+			debugErrorCounter[0] += err.errorCount;
+			if (err.errorCount == 0) { data->AddReplay(cbrReplay); }
+			else {
+				cbrCreationDebugStr += err.errorDetail;
+				saveDebug();
+			}
 			Recording = false;
 		}
 		StartCbrRecording(p1charName, p2charName, p1charId, p2charId,0);
@@ -527,8 +968,12 @@ void CbrInterface::RestartCbrActivities(char* p1charName, char* p2charName, int 
 		//EndRecording
 		if (anReplay->getInputSize() >= 10) {
 			auto cbrReplay = CbrReplayFile(anReplay->getCharacterName(), anReplay->getCharIds());
-			debugErrorCounter[1] += cbrReplay.makeFullCaseBase(anReplay, anReplay->getFocusCharName());
-			data->AddReplay(cbrReplay);
+			auto err = cbrReplay.makeFullCaseBase(anReplay, anReplay->getFocusCharName());
+			debugErrorCounter[0] += err.errorCount;
+			if (err.errorCount == 0) { data->AddReplay(cbrReplay); }
+			if (err.structure != "") { saveStructureDebug(err.structure); }
+			cbrCreationDebugStr += err.errorDetail;
+			saveDebug();
 			RecordingP2 = false;
 		}
 		StartCbrRecording(p2charName, p1charName, p2charId, p1charId, 1);
@@ -570,8 +1015,14 @@ void CbrInterface::RestartCbrActivities(char* p1charName, char* p2charName, int 
 		if (data->getReplayCount() > 0) {
 			data->deleteReplays(data->getReplayCount() - 1, data->getReplayCount() - 1);
 			auto cbrReplay = CbrReplayFile(anReplay->getCharacterName(), anReplay->getCharIds());
-			debugErrorCounter[0] += cbrReplay.makeFullCaseBase(anReplay, anReplay->getFocusCharName());
-			data->AddReplay(cbrReplay);
+			auto err = cbrReplay.makeFullCaseBase(anReplay, anReplay->getFocusCharName());
+			if (err.structure != "") { saveStructureDebug(err.structure); }
+			debugErrorCounter[0] += err.errorCount;
+			if (err.errorCount == 0) { data->AddReplay(cbrReplay); }
+			else {
+				cbrCreationDebugStr += err.errorDetail;
+				saveDebug();
+			}
 		}
 		boost::filesystem::path dir("CBRsave");
 		if (!(boost::filesystem::exists(dir))) {
@@ -592,8 +1043,14 @@ void CbrInterface::RestartCbrActivities(char* p1charName, char* p2charName, int 
 		if (data->getReplayCount() > 0) {
 			data->deleteReplays(data->getReplayCount() - 1, data->getReplayCount() - 1);
 			auto cbrReplay = CbrReplayFile(anReplay->getCharacterName(), anReplay->getCharIds());
-			debugErrorCounter[1] += cbrReplay.makeFullCaseBase(anReplay, anReplay->getFocusCharName());
-			data->AddReplay(cbrReplay);
+			auto err = cbrReplay.makeFullCaseBase(anReplay, anReplay->getFocusCharName());
+			if (err.structure != "") { saveStructureDebug(err.structure); }
+			debugErrorCounter[1] += err.errorCount;
+			if (err.errorCount == 0) { data->AddReplay(cbrReplay); }
+			else {
+				cbrCreationDebugStr += err.errorDetail;
+				saveDebug();
+			}
 		}
 		boost::filesystem::path dir("CBRsave");
 		if (!(boost::filesystem::exists(dir))) {
@@ -648,6 +1105,43 @@ void CbrInterface::Checkinputs() {
 	if (input1 != input3) {
 		input1 = input1;
 	}
+}
+
+std::string CbrInterface::GetPlayerID() {
+	
+	//Get ProcId of the target process
+	DWORD procId = GetProcId(L"BBCF.exe");
+	//Getmodulebaseaddress
+	uintptr_t moduleBase = GetModuleBaseAddress(procId, L"BBCF.exe");
+	uintptr_t p1NamePtr = moduleBase + 0x662740;
+	HANDLE hProcess = 0;
+	hProcess = OpenProcess(PROCESS_ALL_ACCESS, NULL, procId);
+
+	char playerID[35]{ 0 };
+
+	ReadProcessMemory(hProcess, (BYTE*)p1NamePtr, &playerID, 34, 0);
+	nameP1 = "";
+
+	for (int i = 0; i < 35; i++) {
+		debugPrintText += playerID[i];
+	}
+	std::string bufferName = "";
+	for (int i = 0; i < 35; ++i) {
+		if (playerID[i] != 0) {
+			bufferName = nameP1 + playerID[i];
+			if (boost::filesystem::windows_name(bufferName)) {
+				nameP1 += playerID[i];
+			}
+
+		}
+		else {
+			if (i + 1 >= 35 || playerID[i + 1] == 0) {
+				break;
+			}
+		}
+
+	}
+	return nameP1;
 }
 
 void CbrInterface::SetPlayerNames() {
@@ -762,4 +1256,271 @@ uintptr_t CbrInterface::GetModuleBaseAddress(DWORD procId, const wchar_t* modNam
 	}
 	CloseHandle(hSnap);
 	return modBaseAddr;
+}
+/*
+void CbrInterface::UpdateOldCbrMetadata() {
+	using recursive_directory_iterator = std::filesystem::recursive_directory_iterator;
+	//boost::filesystem::path dir("CBRsave");
+	for (const auto& dirEntry : recursive_directory_iterator("CBRsave")) {
+		auto& t = dirEntry;
+		std::string s = dirEntry.path().string();
+		auto found = std::string::npos != s.find(".cbr");
+		if (found) {
+			auto cbr = LoadCbrDataOld(s);
+			SaveCbrData(cbr);
+		}
+	}
+}*/
+
+// Returns true if two rectangles (l1, r1) and (l2, r2)
+// overlap
+
+ImVec2 doOverlap(ImVec2 l1, ImVec2 r1, ImVec2 l2, ImVec2 r2, bool swap)
+{
+	// if rectangle has area 0, no overlap
+	if (l1.x == r1.x || l1.y == r1.y || r2.x == l2.x || l2.y == r2.y)
+		return ImVec2(-1, -1);
+
+	// If one rectangle is on left side of other
+	if (l1.x > r2.x || l2.x > r1.x)
+		return ImVec2(-1, -1);;
+
+	// If one rectangle is above other
+	if (r1.y > l2.y || r2.y > l1.y)
+		return ImVec2(-1, -1);;
+
+	if(swap){ return ImVec2(r2.x - l1.x, l1.y - r2.y); }
+	return ImVec2(r1.x - l2.x, l1.y - r2.y);
+}
+
+float Playerdistance = 99999999999;
+float hitboxdistance = 99999999999;
+float minDistance = 999999999;
+ImVec2 CbrInterface::GetMinDistance(const CharData* charObj, const CharData* charObjOpp)
+{
+	int asd = 0;
+	float pointdistance2 = 99999999999;
+	float Playerdistance2 = 99999999999;
+	std::vector<JonbEntry> entries = JonbReader::getJonbEntries(charObj);
+	float minx = 0;
+	float miny = 0;
+	for (const JonbEntry& entry : entries)
+	{
+		if (entry.type == JonbChunkType_Hitbox) {
+			ImVec2 playerWorldPos(charObj->position_x, charObj->position_y_dupe);
+			float scaleX = charObj->scaleX;
+			float scaleY = charObj->scaleY;
+			float offsetX = floor(entry.offsetX * scaleX);
+			float offsetY = -floor(entry.offsetY * scaleY);
+			float width = floor(entry.width * scaleX);
+			float height = -floor(entry.height * scaleY);
+
+			float rotationDeg = charObj->rotationDegrees / 1000.0f;
+
+			if (!charObj->facingLeft)
+			{
+				offsetX = -offsetX;
+				width = -width;
+				if (rotationDeg)
+				{
+					rotationDeg = 360.0f - rotationDeg;
+				}
+			}
+
+			ImVec2 pointA(playerWorldPos.x + offsetX, playerWorldPos.y + offsetY);
+			ImVec2 pointB(playerWorldPos.x + offsetX + width, playerWorldPos.y + offsetY);
+			ImVec2 pointC(playerWorldPos.x + offsetX + width, playerWorldPos.y + offsetY + height);
+			ImVec2 pointD(playerWorldPos.x + offsetX, playerWorldPos.y + offsetY + height);
+
+			float rotationRad = D3DXToRadian(rotationDeg);
+
+			pointA = RotatePoint(playerWorldPos, rotationRad, pointA);
+			pointB = RotatePoint(playerWorldPos, rotationRad, pointB);
+			pointC = RotatePoint(playerWorldPos, rotationRad, pointC);
+			pointD = RotatePoint(playerWorldPos, rotationRad, pointD);
+
+			ImVec2 pointLU(9999999999, -9999999999);
+			ImVec2 pointRD(-9999999999, 9999999999);
+			
+			
+			if (pointA.x < pointLU.x) { pointLU.x = pointA.x; }
+			if (pointA.y > pointLU.y) { pointLU.y = pointA.y; }
+			if (pointA.x > pointRD.x) { pointRD.x = pointA.x; }
+			if (pointA.y < pointRD.y) { pointRD.y = pointA.y; }
+
+			if (pointB.x < pointLU.x) { pointLU.x = pointB.x; }
+			if (pointB.y > pointLU.y) { pointLU.y = pointB.y; }
+			if (pointB.x > pointRD.x) { pointRD.x = pointB.x; }
+			if (pointB.y < pointRD.y) { pointRD.y = pointB.y; }
+
+			if (pointC.x < pointLU.x) { pointLU.x = pointC.x; }
+			if (pointC.y > pointLU.y) { pointLU.y = pointC.y; }
+			if (pointC.x > pointRD.x) { pointRD.x = pointC.x; }
+			if (pointC.y < pointRD.y) { pointRD.y = pointC.y; }
+
+			if (pointD.x < pointLU.x) { pointLU.x = pointD.x; }
+			if (pointD.y > pointLU.y) { pointLU.y = pointD.y; }
+			if (pointD.x > pointRD.x) { pointRD.x = pointD.x; }
+			if (pointD.y < pointRD.y) { pointRD.y = pointD.y; }
+
+
+			
+
+			auto pos = charObj->position_x;
+			auto posy = charObj->position_y_dupe;
+
+			std::vector<JonbEntry> entriesOpp = JonbReader::getJonbEntries(charObjOpp);
+			for (const JonbEntry& entryOpp : entriesOpp)
+			{
+				if (entryOpp.type == JonbChunkType_Hurtbox) {
+					ImVec2 playerWorldPosOpp(charObjOpp->position_x, charObjOpp->position_y_dupe);
+					float scaleXOpp = charObjOpp->scaleX;
+					float scaleYOpp = charObjOpp->scaleY;
+					float offsetXOpp = floor(entryOpp.offsetX * scaleXOpp); //0.346f*
+					float offsetYOpp = -floor(entryOpp.offsetY * scaleYOpp);
+					float widthOpp = floor(entryOpp.width * scaleXOpp);
+					float heightOpp = -floor(entryOpp.height * scaleYOpp);
+
+					float rotationDegOpp = charObj->rotationDegrees / 1000.0f;
+
+					if (!charObjOpp->facingLeft)
+					{
+						offsetXOpp = -offsetXOpp;
+						widthOpp = -widthOpp;
+						if (rotationDegOpp)
+						{
+							rotationDegOpp = 360.0f - rotationDegOpp;
+						}
+					}
+
+					ImVec2 pointAOpp(playerWorldPosOpp.x + offsetXOpp, playerWorldPosOpp.y + offsetYOpp);
+					ImVec2 pointBOpp(playerWorldPosOpp.x + offsetXOpp + widthOpp, playerWorldPosOpp.y + offsetYOpp);
+					ImVec2 pointCOpp(playerWorldPosOpp.x + offsetXOpp + widthOpp, playerWorldPosOpp.y + offsetYOpp + heightOpp);
+					ImVec2 pointDOpp(playerWorldPosOpp.x + offsetXOpp, playerWorldPosOpp.y + offsetYOpp + heightOpp);
+
+					float rotationRadOpp = D3DXToRadian(rotationDegOpp);
+
+					pointAOpp = RotatePoint(playerWorldPosOpp, rotationRadOpp, pointAOpp);
+					pointBOpp = RotatePoint(playerWorldPosOpp, rotationRadOpp, pointBOpp);
+					pointCOpp = RotatePoint(playerWorldPosOpp, rotationRadOpp, pointCOpp);
+					pointDOpp = RotatePoint(playerWorldPosOpp, rotationRadOpp, pointDOpp);
+
+					auto pos = charObjOpp->position_x;
+					auto posy = charObjOpp->position_y_dupe;
+					ImVec2 pointLU2(9999999999, -9999999999);
+					ImVec2 pointRD2(-9999999999, 9999999999);
+
+					if (pointAOpp.x < pointLU2.x) { pointLU2.x = pointAOpp.x; }
+					if (pointAOpp.y > pointLU2.y) { pointLU2.y = pointAOpp.y; }
+					if (pointAOpp.x > pointRD2.x) { pointRD2.x = pointAOpp.x; }
+					if (pointAOpp.y < pointRD2.y) { pointRD2.y = pointAOpp.y; }
+
+					if (pointBOpp.x < pointLU2.x) { pointLU2.x = pointBOpp.x; }
+					if (pointBOpp.y > pointLU2.y) { pointLU2.y = pointBOpp.y; }
+					if (pointBOpp.x > pointRD2.x) { pointRD2.x = pointBOpp.x; }
+					if (pointBOpp.y < pointRD2.y) { pointRD2.y = pointBOpp.y; }
+
+					if (pointCOpp.x < pointLU2.x) { pointLU2.x = pointCOpp.x; }
+					if (pointCOpp.y > pointLU2.y) { pointLU2.y = pointCOpp.y; }
+					if (pointCOpp.x > pointRD2.x) { pointRD2.x = pointCOpp.x; }
+					if (pointCOpp.y < pointRD2.y) { pointRD2.y = pointCOpp.y; }
+
+					if (pointDOpp.x < pointLU2.x) { pointLU2.x = pointDOpp.x; }
+					if (pointDOpp.y > pointLU2.y) { pointLU2.y = pointDOpp.y; }
+					if (pointDOpp.x > pointRD2.x) { pointRD2.x = pointDOpp.x; }
+					if (pointDOpp.y < pointRD2.y) { pointRD2.y = pointDOpp.y; }
+
+					Playerdistance2 = charObj->position_x - charObjOpp->position_x;
+					if (pointdistance2 > pointRD.x - pointLU2.x) {
+						 pointdistance2 = pointRD.x - pointLU2.x;
+					}
+					
+					auto distance = doOverlap(pointLU, pointRD, pointLU2, pointRD2, charObj->position_x > charObjOpp->position_x);
+					if (distance.x != -1) {
+						if (distance.x > minx) { minx = distance.x; }
+						if (distance.y > miny) { miny = distance.y; }
+						auto pos = minx/abs(charObj->position_x - charObjOpp->position_x);
+						auto distance2 = doOverlap(pointLU, pointRD, pointLU2, pointRD2, charObj->position_x > charObjOpp->position_x);
+						minDistance = charObj->position_x - minx;
+					}
+
+				}
+
+
+			}
+			/*
+			if (asd == 0) {
+				asd++;
+				auto pdist3 = Playerdistance - Playerdistance2;
+				auto hitdist3 = hitboxdistance - pointdistance2;
+				if(pdist3  != hitdist3) {
+					Playerdistance = Playerdistance2;
+					hitboxdistance = pointdistance2;
+				}
+				Playerdistance = Playerdistance2;
+				hitboxdistance = pointdistance2;
+			}*/
+		}
+		
+	}
+	return ImVec2(minx * 0.8, miny * 0.8);
+}
+
+ImVec2 CbrInterface::RotatePoint(ImVec2 center, float angleInRad, ImVec2 point)
+{
+	if (!angleInRad)
+	{
+		return point;
+	}
+
+	// translate point back to origin:
+	point.x -= center.x;
+	point.y -= center.y;
+
+	float s = sin(angleInRad);
+	float c = cos(angleInRad);
+
+	// rotate point
+	float xNew = point.x * c - point.y * s;
+	float yNew = point.x * s + point.y * c;
+
+	// translate point back:
+	point.x = xNew + center.x;
+	point.y = yNew + center.y;
+	return point;
+}
+
+ImVec2 CbrInterface::CalculateScreenPosition(ImVec2 worldPos)
+{
+	D3DXVECTOR3 result;
+	D3DXVECTOR3 vec3WorldPos(worldPos.x, worldPos.y, 0.0f);
+	WorldToScreen(g_interfaces.pD3D9ExWrapper, g_gameVals.viewMatrix, g_gameVals.projMatrix, &vec3WorldPos, &result);
+
+	return ImVec2(floor(result.x), floor(result.y));
+}
+
+bool CbrInterface::WorldToScreen(LPDIRECT3DDEVICE9 pDevice, D3DXMATRIX* view, D3DXMATRIX* proj, D3DXVECTOR3* pos, D3DXVECTOR3* out)
+{
+	D3DVIEWPORT9 viewPort;
+	D3DXMATRIX world;
+
+	pDevice->GetViewport(&viewPort);
+	D3DXMatrixIdentity(&world);
+
+	D3DXVec3Project(out, pos, &viewPort, proj, view, &world);
+	if (out->z < 1) {
+		return true;
+	}
+	return false;
+}
+
+ImVec2 CbrInterface::CalculateObjWorldPosition(const CharData* charObj)
+{
+	float posX = charObj->position_x_dupe - charObj->offsetX_1 + charObj->offsetX_2;
+	float posY = charObj->position_y_dupe + charObj->offsetY_2;
+
+	return ImVec2(
+		floor(posX / 1000 * 0.346f),
+		floor(posY / 1000 * 0.346f)
+	);
 }

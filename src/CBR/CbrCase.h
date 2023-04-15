@@ -18,6 +18,7 @@ private:
 public:
     int heatConsumed = 0;
     int overDriveConsumed = 0;
+    int caseCooldownFrameStart = -1;
     template<class Archive>
     void serialize(Archive& a, const unsigned version) {
         a& metaData& inputStartingIndex & inputEndIndex & inputBufferSequence & heatConsumed & overDriveConsumed;

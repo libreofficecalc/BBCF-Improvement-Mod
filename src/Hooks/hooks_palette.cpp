@@ -110,10 +110,7 @@ void __declspec(naked)P1Input()
 		mov[addr], esi
 		mov playerNr, ebx
 	}
-	//g_interfaces.player1.input = addr;
-	//g_interfaces.player1.SetInputPtr(addr);
-	//*g_interfaces.player1.input = 6;
-	//CBRLogic(addr, 6);
+
 	CBRLogic(addr, 5, true, true, playerNr);
 	__asm
 	{
@@ -176,7 +173,13 @@ void __declspec(naked)P1OverwriteNetplay()
 	
 
 	if ((reinterpret_cast<uintptr_t>(addr) & 0x00000678) == (uintptr_t)0x00000678) { 
-		input = CBRLogic(input, 6, playerNum, 0, true, true);
+		if (input != 5) {
+			input = CBRLogic(input, 6, playerNum, 0, true, true);
+		}
+		else {
+			input = CBRLogic(input, 6, playerNum, 0, true, true);
+		}
+		
 	}
 	if ((reinterpret_cast<uintptr_t>(addr) & 0x00000684) == (uintptr_t)0x00000684) { 
 		input = CBRLogic(input, 6, playerNum, 1, true, true);
@@ -198,7 +201,7 @@ void __declspec(naked)P1OverwriteNetplay()
 		jmp[P1OverwriteNetplayJmpBackAddr]
 	}
 }
-
+//Keyboard input
 DWORD P2ReadNetplayJmpBackAddr = 0;
 void __declspec(naked)P2ReadNetplay()
 {
@@ -214,10 +217,10 @@ void __declspec(naked)P2ReadNetplay()
 	}
 	//g_interfaces.cbrInterface.Checkinputs();
 	if (*g_gameVals.pGameMode == GameMode_Online && input != 0) {
-		input = CBRLogic(input, 0, playerNum, -1, true, false, true);
+		input = CBRLogic(input, 0, playerNum, -1, true, false, true);//true
 	}
 	else {
-		input = CBRLogic(input, 0, playerNum, -1, true, false, true);
+		input = CBRLogic(input, 0, playerNum, -1, true, false, false);//true
 	}
 	
 	__asm
@@ -256,6 +259,7 @@ int CBRLogic(int input, int hirarchy, int playerNr, int controllerNr, bool read,
 		" -read: " + std::to_string(read) + " -write: " + std::to_string(write) + "\n";
 	LOG(2, s.c_str());
 #endif
+	
 	//Resetting past inputs in first input function.
 	if (g_interfaces.cbrInterface.resetDepth == hirarchy && g_interfaces.cbrInterface.resetPlayer == playerNr) {
 #ifdef DEBUG
@@ -269,9 +273,29 @@ int CBRLogic(int input, int hirarchy, int playerNr, int controllerNr, bool read,
 		g_interfaces.cbrInterface.inputMemory = {5,5};
 		g_interfaces.cbrInterface.writeMemory = { -1,-1 };
 		g_interfaces.cbrInterface.inputMemoryHirarchy = { -1,-1 };
+		g_interfaces.cbrInterface.executionOrder = {};
+		g_interfaces.cbrInterface.reversalInput = 5;
 
 	}
-	if (write && g_interfaces.cbrInterface.writeMemory[playerNr] != -1) {
+	
+	auto i = g_interfaces.cbrInterface.executionOrder.find(hirarchy * 10 + playerNr);
+	if (true == false && i != g_interfaces.cbrInterface.executionOrder.end()) {
+		 //g_interfaces.cbrInterface.resetCbrInterface();
+		g_interfaces.cbrInterface.resetDepth = -1;
+		g_interfaces.cbrInterface.resetPlayer = -1;
+		//g_interfaces.cbrInterface.pMatchState = *g_gameVals.pMatchState;
+		g_interfaces.cbrInterface.inputMemory = { 5,5 };
+		g_interfaces.cbrInterface.writeMemory = { -1,-1 };
+		g_interfaces.cbrInterface.inputMemoryHirarchy = { -1,-1 };
+		g_interfaces.cbrInterface.executionOrder = {};
+		g_interfaces.cbrInterface.reversalInput = 5;
+		g_interfaces.cbrInterface.readDepth[0] = 99;
+		g_interfaces.cbrInterface.readDepth[1] = 99;
+		g_interfaces.cbrInterface.writeDepth[0] = -1;
+		g_interfaces.cbrInterface.writeDepth[1] = -1;
+	}
+	g_interfaces.cbrInterface.executionOrder[hirarchy*10+playerNr] = true;
+	if (write && g_interfaces.cbrInterface.writeMemory[playerNr] != -1 && input == 5) {
 		input = g_interfaces.cbrInterface.writeMemory[playerNr];
 	}
 	bool readHere = g_interfaces.cbrInterface.readDepth[playerNr] == hirarchy && read;
@@ -316,6 +340,7 @@ int CBRLogic(int input, int hirarchy, int playerNr, int controllerNr, bool read,
 		}
 		//input = g_interfaces.cbrInterface.inputMemory[playerNr];
 	}
+	input = reversalLogic(input, playerNr, read, writeHere);
 	if (playerNr == 0) {
 		g_interfaces.cbrInterface.input = input;
 	}
@@ -340,10 +365,13 @@ void CBRLogic(char* addr, int hirarchy, bool readOnly, bool writeOnly, int playe
 		input = CBRLogic(input, hirarchy, playerNr, 1, readOnly, writeOnly);
 	}
 	//convert inputs back to little endian hex format and isnert it to addr
+
 	byte b1 = input >> 8;
 	byte b2 = input & 0xFF;
 	addr[0] = (char)b2;
 	addr[1] = (char)b1;
+	
+	
 }
 
 int CBRLogic(int input, int playerNr, int controllerNr, bool readOnly, bool writeOnly, bool netplayMemory) {
@@ -351,14 +379,15 @@ int CBRLogic(int input, int playerNr, int controllerNr, bool readOnly, bool writ
 	if (playerNr == 0) {
 		
 		if (g_interfaces.cbrInterface.instantLearningP2 == true) {
-			g_interfaces.cbrInterface.debugErrorCounter[playerNr] += g_interfaces.cbrInterface.getCbrData(0)->getLastReplay()->instantLearning(g_interfaces.cbrInterface.getAnnotatedReplay(1), g_interfaces.cbrInterface.getAnnotatedReplay(1)->getFocusCharName());
+			 auto& err = g_interfaces.cbrInterface.getCbrData(0)->getLastReplay()->instantLearning(g_interfaces.cbrInterface.getAnnotatedReplay(1), g_interfaces.cbrInterface.getAnnotatedReplay(1)->getFocusCharName());
+			 g_interfaces.cbrInterface.debugErrorCounter[playerNr] += err.errorCount;
 		}
-		if (g_interfaces.cbrInterface.netaPlaying || g_interfaces.cbrInterface.netaRecording || g_interfaces.cbrInterface.autoRecordActive || g_interfaces.cbrInterface.Replaying || g_interfaces.cbrInterface.Recording || g_interfaces.cbrInterface.instantLearning == true || g_interfaces.cbrInterface.instantLearningP2 == true || g_interfaces.cbrInterface.reversalRecording || g_interfaces.cbrInterface.reversalActive) {
+		if (g_interfaces.cbrInterface.netaPlaying || g_interfaces.cbrInterface.netaRecording || g_interfaces.cbrInterface.autoRecordActive || g_interfaces.cbrInterface.Replaying || g_interfaces.cbrInterface.Recording || g_interfaces.cbrInterface.instantLearning == true || g_interfaces.cbrInterface.instantLearningP2 == true ) {
 
 			auto meta = RecordCbrMetaData(0);
 			meta->computeMetaData();
 			RecordCbrHelperData(meta, 0);
-			input = reversalLogic(input, meta, 1,  readOnly,  writeOnly);
+			
 			input = netaLogic(input, meta, 0, readOnly, writeOnly);
 			if (writeOnly && controllerNr >= 0 && (g_interfaces.cbrInterface.Replaying || g_interfaces.cbrInterface.instantLearningP2 == true)) {
 				input = g_interfaces.cbrInterface.getCbrData(0)->CBRcomputeNextAction(meta.get());
@@ -381,15 +410,16 @@ int CBRLogic(int input, int playerNr, int controllerNr, bool readOnly, bool writ
 	if (playerNr == 1) {
 
 		if (g_interfaces.cbrInterface.instantLearning == true) {
-			g_interfaces.cbrInterface.debugErrorCounter[playerNr] += g_interfaces.cbrInterface.getCbrData(1)->getLastReplay()->instantLearning(g_interfaces.cbrInterface.getAnnotatedReplay(0), g_interfaces.cbrInterface.getAnnotatedReplay(0)->getFocusCharName());
+			auto& err = g_interfaces.cbrInterface.getCbrData(1)->getLastReplay()->instantLearning(g_interfaces.cbrInterface.getAnnotatedReplay(0), g_interfaces.cbrInterface.getAnnotatedReplay(0)->getFocusCharName());
+			g_interfaces.cbrInterface.debugErrorCounter[playerNr] += err.errorCount;
 		}
 		LOG_ASM(3, "ActiveCheckP2\n");
-		if (g_interfaces.cbrInterface.netaPlaying || g_interfaces.cbrInterface.netaRecording || g_interfaces.cbrInterface.autoRecordActive || g_interfaces.cbrInterface.ReplayingP2 || g_interfaces.cbrInterface.RecordingP2 || g_interfaces.cbrInterface.instantLearning == true || g_interfaces.cbrInterface.instantLearningP2 == true || g_interfaces.cbrInterface.reversalRecording || g_interfaces.cbrInterface.reversalActive) {
+		if (g_interfaces.cbrInterface.netaPlaying || g_interfaces.cbrInterface.netaRecording || g_interfaces.cbrInterface.autoRecordActive || g_interfaces.cbrInterface.ReplayingP2 || g_interfaces.cbrInterface.RecordingP2 || g_interfaces.cbrInterface.instantLearning == true || g_interfaces.cbrInterface.instantLearningP2 == true ) {
 
 			auto meta = RecordCbrMetaData(1);
 			meta->computeMetaData();
 			RecordCbrHelperData(meta, 1);
-			input = reversalLogic(input, meta, 2, readOnly, writeOnly);
+			//input = reversalLogic(input, meta, 2, readOnly, writeOnly);
 			input = netaLogic(input, meta, 1, readOnly, writeOnly);
 			if (writeOnly && controllerNr >= 0 && (g_interfaces.cbrInterface.ReplayingP2 || g_interfaces.cbrInterface.instantLearning == true)) {
 				input = g_interfaces.cbrInterface.getCbrData(1)->CBRcomputeNextAction(meta.get());
@@ -412,56 +442,77 @@ int CBRLogic(int input, int playerNr, int controllerNr, bool readOnly, bool writ
 	return input;
 }
 
-int reversalLogic(int input, std::shared_ptr<Metadata> meta, int playerNR, bool readOnly, bool writeOnly) {
-	if (playerNR == 1 && writeOnly && g_interfaces.cbrInterface.reversalRecording) {
-		g_interfaces.cbrInterface.reversalInput = input;
-		input = 5;
-	}
+int reversalLogic(int input, int playerNR, bool readOnly, bool writeOnly) {
+	if (g_interfaces.cbrInterface.reversalRecording || g_interfaces.cbrInterface.reversalActive) {
 
-	if (playerNR == 2 && readOnly && g_interfaces.cbrInterface.reversalRecording) {
-		input = g_interfaces.cbrInterface.reversalInput;
-		if (g_interfaces.cbrInterface.reversalRecording && !g_interfaces.cbrInterface.reversalRecordingActive && input != 5) {
-			g_interfaces.cbrInterface.reversalRecordingActive = true;
+		auto meta = RecordCbrMetaData(0);
+		meta->computeMetaData();
+		RecordCbrHelperData(meta, 0);
+
+		if (playerNR == 0 && g_interfaces.cbrInterface.reversalRecording) {
+			if (input != 5 && input != 0) {
+				g_interfaces.cbrInterface.reversalInput = input;
+			}
+			input = 5;
 		}
-		if (g_interfaces.cbrInterface.reversalRecordingActive) {
-			g_interfaces.cbrInterface.getAnnotatedReplay(0)->AddFrame(meta, input);
+
+		if (playerNR == 1 && writeOnly && g_interfaces.cbrInterface.reversalRecording) {
+			input = g_interfaces.cbrInterface.reversalInput;
+			if (g_interfaces.cbrInterface.reversalRecording && !g_interfaces.cbrInterface.reversalRecordingActive && input != 5) {
+				g_interfaces.cbrInterface.reversalRecordingActive = true;
+			}
+			if (g_interfaces.cbrInterface.reversalRecordingActive) {
+				g_interfaces.cbrInterface.getAnnotatedReplay(0)->AddFrame(meta, input);
+			}
 		}
-	}
 
 
-	if (playerNR == 2 && writeOnly && g_interfaces.cbrInterface.reversalActive) {
-		if (g_interfaces.cbrInterface.blockStanding && g_interfaces.player1.GetData()->typeOfAttack > 0) {
-			if (g_interfaces.player2.GetData()->facingLeft) {
-				input = 06;
+		if (playerNR == 1 && writeOnly && g_interfaces.cbrInterface.reversalActive) {
+			if (g_interfaces.cbrInterface.blockStanding && g_interfaces.player1.GetData()->typeOfAttack > 0) {
+				if (g_interfaces.player2.GetData()->facingLeft) {
+					input = 06;
+				}
+				else {
+					input = 04;
+				}
+				if (g_interfaces.cbrInterface.barrierReversal) {
+					input += 48;
+				}
+			}
+			if (g_interfaces.cbrInterface.blockCrouching) {
+				if (g_interfaces.player2.GetData()->facingLeft) {
+					input = 03;
+				}
+				else {
+					input = 01;
+				}
+				if (g_interfaces.cbrInterface.barrierReversal) {
+					input += 48;
+				}
+			}
+			
+			bool hitThisFrame = (g_interfaces.player2.GetData()->hitstun > 0) && (g_interfaces.player2.GetData()->hitstop > 0) && (g_interfaces.player2.GetData()->actionTimeNoHitstop == 1);
+			bool blockThisFrame = (g_interfaces.player2.GetData()->blockstun > 0) && (g_interfaces.player2.GetData()->hitstop > 0) && (g_interfaces.player2.GetData()->actionTimeNoHitstop == 1);
+			if (hitThisFrame || blockThisFrame)
+			{
+				//g_interfaces.cbrInterface.getReversalReplay(0)->setPlaying(false);
+				g_interfaces.cbrInterface.disableAllReversalReplays();
+				g_interfaces.cbrInterface.reversalReplaySelected = g_interfaces.cbrInterface.randomReversalReplaySelection();
+			}
+			if (g_interfaces.cbrInterface.isAnyPlayingReversalReplays() && writeOnly) {
+				//input = g_interfaces.cbrInterface.getReversalReplay(0)->getNextInput(meta->getFacing());
+				input = g_interfaces.cbrInterface.playBackActiveReversalReplay(meta->getFacing());
 			}
 			else {
-				input = 04;
-			}
-		}
-		if (g_interfaces.cbrInterface.blockCrouching) {
-			if (g_interfaces.player2.GetData()->facingLeft) {
-				input = 03;
-			}
-			else {
-				input = 01;
-			}
-		}
-		bool hitThisFrame = (g_interfaces.player2.GetData()->hitstun > 0) && (g_interfaces.player2.GetData()->hitstop > 0) && (g_interfaces.player2.GetData()->actionTimeNoHitstop == 1);
-		bool blockThisFrame = (g_interfaces.player2.GetData()->blockstun > 0) && (g_interfaces.player2.GetData()->hitstop > 0) && (g_interfaces.player2.GetData()->actionTimeNoHitstop == 1);
-		if (hitThisFrame || blockThisFrame)
-		{
-			g_interfaces.cbrInterface.getReversalReplay(0)->setPlaying(false);
-		}
-		if (g_interfaces.cbrInterface.getReversalReplay(0)->getPlaying() && writeOnly) {
-			input = g_interfaces.cbrInterface.getReversalReplay(0)->getNextInput(meta->getFacing());
-		}
-		else {
-			if (g_interfaces.player2.GetData()->blockstun == g_interfaces.cbrInterface.reversalBuffer || g_interfaces.player2.GetData()->hitstun == g_interfaces.cbrInterface.reversalBuffer) {
-				g_interfaces.cbrInterface.getReversalReplay(0)->resetReplayIndex();
-				g_interfaces.cbrInterface.getReversalReplay(0)->setPlaying(true);
+				if (g_interfaces.cbrInterface.reversalReplaySelected != -1 && g_interfaces.cbrInterface.reversalReplaySelected < g_interfaces.cbrInterface.reversalBuffer.size() && (g_interfaces.player2.GetData()->blockstun == g_interfaces.cbrInterface.reversalBuffer[g_interfaces.cbrInterface.reversalReplaySelected] || g_interfaces.player2.GetData()->hitstun == g_interfaces.cbrInterface.reversalBuffer[g_interfaces.cbrInterface.reversalReplaySelected])) {
+					g_interfaces.cbrInterface.ReplayActivation(g_interfaces.cbrInterface.reversalReplaySelected);
+					//g_interfaces.cbrInterface.getReversalReplay(0)->resetReplayIndex();
+					//g_interfaces.cbrInterface.getReversalReplay(0)->setPlaying(true);
+				}
 			}
 		}
 	}
+
 	return input;
 }
 
@@ -498,10 +549,11 @@ std::shared_ptr<Metadata> RecordCbrMetaData(bool PlayerIndex) {
 		focusCharData = g_interfaces.player2.GetData();
 		enemyCharData = g_interfaces.player1.GetData();
 	}
+	
 	auto p1X = focusCharData->position_x;
-	auto p1Y = focusCharData->position_y;
+	auto p1Y = focusCharData->position_y_dupe;
 	auto p2X = enemyCharData->position_x;
-	auto p2Y = enemyCharData->position_y;
+	auto p2Y = enemyCharData->position_y_dupe;
 	auto facing = focusCharData->facingLeft;
 	auto p1State = std::string(focusCharData->currentActionNoNeutral);
 	auto p2State = std::string(enemyCharData->currentActionNoNeutral);
@@ -536,6 +588,13 @@ std::shared_ptr<Metadata> RecordCbrMetaData(bool PlayerIndex) {
 	meta->overdriveMeter[1] = enemyCharData->overdriveMeter;
 	meta->overdriveTimeleft[0] = focusCharData->overdriveTimeleft;
 	meta->overdriveTimeleft[1] = enemyCharData->overdriveTimeleft;
+	meta->healthMeter[0] = focusCharData->currentHP;
+	meta->healthMeter[1] = enemyCharData->currentHP;
+
+	//When hitbox intersects opponent add a min distance to the case
+	auto minDist = g_interfaces.cbrInterface.GetMinDistance(focusCharData, enemyCharData);
+	meta->hitMinX = minDist.x;
+	meta->hitMinY = minDist.y;
 
 	int buffVal = 0;
 	int testVal = 0;
@@ -555,8 +614,8 @@ std::shared_ptr<Metadata> RecordCbrMetaData(bool PlayerIndex) {
 		meta->CharSpecific1[0] = focusCharData->Drive11; //heat
 		break;
 	case 22://Azrael
-		meta->CharSpecific1[0] = focusCharData->Drive0>0; //aztopWeakspot
-		meta->CharSpecific2[0] = focusCharData->DriveX > 0;//azBotWeakspot
+		meta->CharSpecific1[0] = focusCharData->Drive1>0; //aztopWeakspot//Drive1 //TODO:Check if the place drive is stored in changes
+		meta->CharSpecific2[0] = focusCharData->Drive2 > 0;//azBotWeakspot //Drive2
 		meta->CharSpecific3[0] = focusCharData->Drive10; //azFireball
 		break;
 	case 26://Celica
@@ -687,8 +746,8 @@ std::shared_ptr<Metadata> RecordCbrMetaData(bool PlayerIndex) {
 		meta->CharSpecific2[1] = focusCharData->TagerMagnetism > 0;
 		break;
 	case 22://Azrael
-		meta->CharSpecific1[1] = enemyCharData->Drive0 > 0; //aztopWeakspot
-		meta->CharSpecific2[1] = enemyCharData->DriveX > 0;//azBotWeakspot
+		meta->CharSpecific1[1] = enemyCharData->Drive1 > 0; //aztopWeakspot
+		meta->CharSpecific2[1] = enemyCharData->Drive2 > 0;//azBotWeakspot
 		meta->CharSpecific3[1] = enemyCharData->Drive10; //azFireball
 		break;
 	case 13://Hazama
@@ -932,7 +991,7 @@ void RecordCbrHelperData(std::shared_ptr<Metadata> me, bool PlayerIndex) {
 			if (attacking || specialProjectile) {
 				
 				auto p1X = pEntity->position_x;
-				auto p1Y = pEntity->position_y;
+				auto p1Y = pEntity->position_y_dupe;
 				auto facing = pEntity->facingLeft;
 				auto p2Hit = pEntity->hitstun;
 				auto p1atkType = pEntity->typeOfAttack;

@@ -43,6 +43,10 @@ CbrCase* CbrReplayFile::getCase(int index) {
 std::array<int, 2>& CbrReplayFile::getCharIds() {
     return characterId;
 }
+std::array<std::string, 2>& CbrReplayFile::getCharNames() {
+    return characterName;
+}
+
 std::vector<CbrCase>* CbrReplayFile::getCaseBase() {
     return &cbrCase;
 }
@@ -54,19 +58,33 @@ int CbrReplayFile::getInput(int i) {
     return input[i];
 }
 
-int CbrReplayFile::MakeCaseBase(AnnotatedReplay* ar, std::string charName, int startIndex, int endIndex, int insertPoint) {
+
+
+CbrGenerationError CbrReplayFile::MakeCaseBase(AnnotatedReplay* ar, std::string charName, int startIndex, int endIndex, int insertPoint) {
     //auto i = inputs.size()-1;
-    int errorCounter = 0;
+    CbrGenerationError retError;
+    retError.errorCount = 0;
+    retError.errorDetail = "";
+    //int errorCounter = 0;
     int debugInt = 0;
     bool inputBuffering = false;
 
     bool facingCommandStart = 0;
 
     auto commands = FetchCommandActions(charName);
+    bool carlDoll = false;
+    if (charName == "ca") {
+        carlDoll = true;
+
+    }
+
     input = ar->getInput();
-    std::vector < std::vector<signed int>> inputResolve = {};
-    std::vector < std::vector<signed int>> debugResolve;
+    std::vector < inputMemory> inputResolve = {};
+    std::vector < inputMemory> dollResolve = {};
+    std::vector < inputMemory> debugResolve;
     std::string curState = ar->ViewMetadata(endIndex).getCurrentAction()[0];
+    std::string curStateDoll = "";
+
     auto neutral = false;
     bool inputNewCaseTrigger = false;
     
@@ -79,6 +97,7 @@ int CbrReplayFile::MakeCaseBase(AnnotatedReplay* ar, std::string charName, int s
     
     //Making sure rollbacks dont cause issues by deleting rolled back frames
     int reduceAmount = 0;
+
     
     for (std::vector<int>::size_type i = endIndex;
         i != startIndex - 1; i--) {
@@ -93,29 +112,46 @@ int CbrReplayFile::MakeCaseBase(AnnotatedReplay* ar, std::string charName, int s
     }
     auto adjustedEndIndex = endIndex - reduceAmount;
     int iteratorIndex = adjustedEndIndex;//last index of the replay
-    
+
+    //TODO: Debug function to test weather netplay inputs work well. Remove this when not needed anymore.
+    std::string debugStructureStr = "";
+    for (std::vector<int>::size_type i = startIndex;
+        i < adjustedEndIndex - 1; i++) {
+        debugStructureStr += ("Input: " + std::to_string(input[i]) + " Player: " + ar->ViewMetadata(i).getCurrentAction()[0] + " - Opp: " + ar->ViewMetadata(i).getCurrentAction()[1] + "\n");
+    }
+    int minx = -1;
+    int miny = -1;
+    bool nextMinDisResolve = false;
+
     for (std::vector<int>::size_type i = adjustedEndIndex;
         i != startIndex - 1; i--) {
         frameCount = ar->ViewMetadata(i).getFrameCount();
 
-        if (((int)i - 1) >= 0) {
-            auto difMeter = ar->ViewMetadata(i).heatMeter[0] - ar->ViewMetadata(i - 1).heatMeter[0];
+        if (((int)i >= ar->MetadataSize()) && i >= 0) {
+            auto difMeter = ar->ViewMetadata(i+1).heatMeter[0] - ar->ViewMetadata(i).heatMeter[0];
             if (difMeter < 0) {
                 meterRequirement = difMeter * -1;
             }
-            auto difOD = ar->ViewMetadata(i).overdriveMeter[0] - ar->ViewMetadata(i - 1).overdriveMeter[0];
+            auto difOD = ar->ViewMetadata(i + 1).overdriveMeter[0] - ar->ViewMetadata(i).overdriveMeter[0];
             if (difOD < 0) {
                 odRequirement = difOD * -1;
             }
         }
 
+        //set minimum distance on hit to be saved when the case is generated.
+        //we take i-1 from the frame the opponent is hit on because the opponentsh urtbox expands in the first frame of hitstun already.
+        if ((ar->ViewMetadata(i).getHitThisFrame()[1] || ar->ViewMetadata(i).getBlockThisFrame()[1]) && ar->ViewMetadata(i).hitMinX > 0 && (ar->ViewMetadata(i).hitMinX < minx || minx == -1) && i - 1 >= 0) {
+            minx = ar->ViewMetadata(i - 1).hitMinX; }
+        if ((ar->ViewMetadata(i).getHitThisFrame()[1] || ar->ViewMetadata(i).getBlockThisFrame()[1]) && ar->ViewMetadata(i).hitMinY > 0 && (ar->ViewMetadata(i).hitMinY < miny || miny == -1) && i - 1 >= 0) {
+            miny = ar->ViewMetadata(i-1).hitMinY; }
 
         neutral = ar->ViewMetadata(i).getNeutral()[0];
 
         if (inputResolve.size() > 0) {
             debugInt++;
             if (debugInt == 100) {
-                errorCounter++;
+                retError.errorCount++;
+                retError.errorDetail += "\nerror on move: " + inputResolveName + "\n" + "Frame: " + std::to_string(i) + "\n Not resolved in 100 steps\n" ;
             }
             auto deconInputs = DeconstructInput(input[i], facingCommandStart);
             for (std::vector<int>::size_type j = 0; j < deconInputs.size(); ++j) {
@@ -125,16 +161,45 @@ int CbrReplayFile::MakeCaseBase(AnnotatedReplay* ar, std::string charName, int s
             if (inputResolve.size() == 0) {
                 inputNewCaseTrigger = true;
             }
+            else {
+                inputNewCaseTrigger = false;
+            }
         }
 
-        if (CheckCaseEnd(framesIdle, ar->ViewMetadata(i), curState, neutral) || inputNewCaseTrigger) {
+        if (carlDoll && dollResolve.size() > 0) {
+            debugInt++;
+            if (debugInt == 100) {
+                retError.errorCount++;
+                retError.errorDetail += "error on doll move: " + inputResolveName + "\n" + "Not resolved in 100 steps\n";
+            }
+            auto deconInputs = DeconstructInput(input[i], facingCommandStart);
+            for (std::vector<int>::size_type j = 0; j < deconInputs.size(); ++j) {
+                dollResolve = CheckCommandExecution(deconInputs[j], dollResolve);//fix this inputResolve doesnt update from the function.
+
+            }
+            if (dollResolve.size() == 0) {
+                inputNewCaseTrigger = true;
+            }
+            else {
+                inputNewCaseTrigger = false;
+            }
+        }
+
+        if (CheckCaseEnd(framesIdle, ar->ViewMetadata(i), curState, neutral, commands) || inputNewCaseTrigger) {
             inputNewCaseTrigger = false;
             if (stateChangeTrigger == true) {
                 stateChangeTrigger = false;
 
                 if (inputResolve.size() == 0) {
-                    facingCommandStart = ar->ViewMetadata(i + 1).getFacing();
+                    if (i+1 >= input.size()) {
+                        facingCommandStart = ar->ViewMetadata(i).getFacing();
+                    }
+                    else {
+                        facingCommandStart = ar->ViewMetadata(i + 1).getFacing();
+                    }
+                    
                     inputResolve = MakeInputArray(curState, commands, ar->ViewMetadata(i).getCurrentAction()[0]);
+                    inputResolve = MakeInputArraySuperJump(curState, input, i, inputResolve);
                     if (inputResolve.size() > 0) {
                         debugInt = 0;
                         inputResolveName = curState;
@@ -146,15 +211,68 @@ int CbrReplayFile::MakeCaseBase(AnnotatedReplay* ar, std::string charName, int s
                     }
                 }
 
+                if (carlDoll && dollResolve.size() == 0) {
+                    facingCommandStart = ar->ViewMetadata(i + 1).getFacing();
+                    for (int o = 0; o < ar->ViewMetadata(i + 1).getHelpers()[0].size(); o++) {
+                        if (ar->ViewMetadata(i + 1).getHelpers()[0][o].get()->type == "Nirvana") {
+                            curStateDoll = ar->ViewMetadata(i + 1).getHelpers()[0][o].get()->currentAction;
+                            continue;
+                        }
+                    }
+                    dollResolve = MakeInputArray(curStateDoll, FetchNirvanaCommandActions(), "none");
+                    if (dollResolve.size() > 0) {
+                        debugInt = 0;
+                        inputResolveName = curState;
+                        inputBuffering = true;
+                        auto deconInputs = DeconstructInput(input[i], facingCommandStart);
+                        for (std::vector<int>::size_type j = 0; j < deconInputs.size(); ++j) {
+                            dollResolve = CheckCommandExecution(deconInputs[j], dollResolve);//fix this inputResolve doesnt update from the function.
+                        }
+                    }
+                }
+
             }
             curState = ar->ViewMetadata(i).getCurrentAction()[0];
             cbrCase.insert(cbrCase.begin()+ insertPoint, CbrCase(std::move(ar->CopyMetadataPtr(i)), (int)i, iteratorIndex));
-            if (inputResolve.size() == 0) {
+            if (inputResolve.size() == 0 && dollResolve.size() == 0) {
                 inputBuffering = false;
             }
+
             cbrCase[insertPoint].setInputBufferSequence(inputBuffering);
             cbrCase[insertPoint].heatConsumed = meterRequirement;
             cbrCase[insertPoint].overDriveConsumed = odRequirement;
+            if ((minx != -1 || miny != -1) &&nextMinDisResolve == true) {
+                if (cbrCase[insertPoint].getMetadata()->getNeutral()[0]) {
+                    cbrCase[insertPoint].getMetadata()->hitMinX = minx;
+                    cbrCase[insertPoint].getMetadata()->hitMinY = miny;
+                    //Checking if min distance is truely only set in the proper conditions
+                    if ((cbrCase[insertPoint].getMetadata()->hitMinX > 0 || cbrCase[insertPoint].getMetadata()->hitMinX > 0)) {
+                        if (!cbrCase[insertPoint + 1].getMetadata()->getHitThisFrame()[1] && !cbrCase[insertPoint + 1].getMetadata()->getBlockThisFrame()[1]) {
+                            retError.errorCount++;
+                             retError.errorDetail += "minDist: \n";
+                        }
+                        if (!cbrCase[insertPoint].getMetadata()->getNeutral()[0]) {
+                            retError.errorCount++;
+                            retError.errorDetail += "minDist: \n";
+                        }
+                    }
+                }
+                else {
+                    cbrCase[insertPoint].getMetadata()->hitMinX = -1;
+                    cbrCase[insertPoint].getMetadata()->hitMinY = -1;
+                }
+                minx = -1; miny = -1;
+                nextMinDisResolve = false;
+            }
+            else { 
+                if ((minx != -1 || miny != -1)) {
+                    nextMinDisResolve = true;
+                }
+                cbrCase[insertPoint].getMetadata()->hitMinX = -1;
+                cbrCase[insertPoint].getMetadata()->hitMinY = -1;
+            }
+            
+
             if (inputBuffering == false) { 
                 meterRequirement = 0; 
                 odRequirement = 0;
@@ -162,13 +280,13 @@ int CbrReplayFile::MakeCaseBase(AnnotatedReplay* ar, std::string charName, int s
             
             
             if ((int)i > iteratorIndex) {
-                errorCounter++;
+                retError.errorCount++;
+                retError.errorDetail += "Iterator error: " + inputResolveName + "\n";
             }
             iteratorIndex = i - 1;
             framesIdle = -1;
             
         }
-        
         framesIdle++;
 
         
@@ -178,6 +296,9 @@ int CbrReplayFile::MakeCaseBase(AnnotatedReplay* ar, std::string charName, int s
         if (framesIdle < caseMinTime && cbrCase.size() > 0 && insertPoint > 0) {
             int updatedInsertPoint = insertPoint - 1;
             cbrCase[updatedInsertPoint].SetEndIndex(cbrCase[updatedInsertPoint].getEndIndex() + framesIdle);
+            if (inputResolve.size() == 0 && dollResolve.size() == 0) {
+                inputBuffering = false;
+            }
             cbrCase[updatedInsertPoint].setInputBufferSequence(inputBuffering);
             if (cbrCase[updatedInsertPoint].heatConsumed < meterRequirement) {
                 cbrCase[updatedInsertPoint].heatConsumed = meterRequirement;
@@ -185,11 +306,43 @@ int CbrReplayFile::MakeCaseBase(AnnotatedReplay* ar, std::string charName, int s
             if (cbrCase[updatedInsertPoint].overDriveConsumed < odRequirement) {
                 cbrCase[updatedInsertPoint].overDriveConsumed = odRequirement;
             }
+            if ((minx != -1 || miny != -1) && nextMinDisResolve == true) {
+                if (cbrCase[updatedInsertPoint].getMetadata()->getNeutral()[0]) {
+                    cbrCase[updatedInsertPoint].getMetadata()->hitMinX = minx;
+                    cbrCase[updatedInsertPoint].getMetadata()->hitMinY = miny;
+                    //Checking if min distance is truely only set in the proper conditions
+                    if ((cbrCase[updatedInsertPoint].getMetadata()->hitMinX > 0 || cbrCase[updatedInsertPoint].getMetadata()->hitMinX > 0)) {
+                        if (!cbrCase[updatedInsertPoint + 1].getMetadata()->getHitThisFrame()[1] && !cbrCase[updatedInsertPoint + 1].getMetadata()->getBlockThisFrame()[1]) {
+                            retError.errorCount++;
+                            retError.errorDetail += "minDist: \n";
+                        }
+                        if (!cbrCase[updatedInsertPoint].getMetadata()->getNeutral()[0]) {
+                            retError.errorCount++;
+                            retError.errorDetail += "minDist: \n";
+                        }
+                    }
+                }
+                else {
+                    cbrCase[updatedInsertPoint].getMetadata()->hitMinX = -1;
+                    cbrCase[updatedInsertPoint].getMetadata()->hitMinY = -1;
+                }
+                minx = -1; miny = -1;
+                nextMinDisResolve = false;
+            }
+            else {
+                if ((minx != -1 || miny != -1)) {
+                    nextMinDisResolve = true;
+                }
+                cbrCase[updatedInsertPoint].getMetadata()->hitMinX = -1;
+                cbrCase[updatedInsertPoint].getMetadata()->hitMinY = -1;
+            }
+            
             //auto end = cbrCase[updatedInsertPoint].getEndIndex();
             //cbrCase.erase(cbrCase.begin() + updatedInsertPoint);
             //cbrCase.insert(cbrCase.begin() + updatedInsertPoint, CbrCase(std::move(ar->CopyMetadataPtr(startIndex)), (int)startIndex, end));
             if (cbrCase[updatedInsertPoint].getStartingIndex() > cbrCase[updatedInsertPoint].getEndIndex()) {
-                errorCounter++;
+                retError.errorCount++;
+                retError.errorDetail += "StartingIndex Error: \n";
             }
             auto caseBaseSize = cbrCase.size();
             auto testEnd = 0;
@@ -199,7 +352,8 @@ int CbrReplayFile::MakeCaseBase(AnnotatedReplay* ar, std::string charName, int s
                 }
                 else {
                     if (testEnd + 1 != cbrCase[j].getStartingIndex()) {
-                        errorCounter++;
+                        retError.errorCount++;
+                        retError.errorDetail += "testEnd error: \n";
                     }
                     testEnd = cbrCase[j].getEndIndex();
                 }
@@ -213,9 +367,40 @@ int CbrReplayFile::MakeCaseBase(AnnotatedReplay* ar, std::string charName, int s
             if (cbrCase[insertPoint].overDriveConsumed < odRequirement) {
                 cbrCase[insertPoint].overDriveConsumed = odRequirement;
             }
+            if ((minx != -1 || miny != -1) && nextMinDisResolve == true) {
+                if (cbrCase[insertPoint].getMetadata()->getNeutral()[0]) {
+                    cbrCase[insertPoint].getMetadata()->hitMinX = minx;
+                    cbrCase[insertPoint].getMetadata()->hitMinY = miny;
+                    //Checking if min distance is truely only set in the proper conditions
+                    if ((cbrCase[insertPoint].getMetadata()->hitMinX > 0 || cbrCase[insertPoint].getMetadata()->hitMinX > 0)) {
+                        if (!cbrCase[insertPoint + 1].getMetadata()->getHitThisFrame()[1] && !cbrCase[insertPoint + 1].getMetadata()->getBlockThisFrame()[1]) {
+                            retError.errorCount++;
+                            retError.errorDetail += "minDist: \n";
+                        }
+                        if (!cbrCase[insertPoint].getMetadata()->getNeutral()[0]) {
+                            retError.errorCount++;
+                            retError.errorDetail += "minDist: \n";
+                        }
+                    }
+                }
+                else {
+                    cbrCase[insertPoint].getMetadata()->hitMinX = -1;
+                    cbrCase[insertPoint].getMetadata()->hitMinY = -1;
+                }
+                minx = -1; miny = -1;
+                nextMinDisResolve = false;
+            }
+            else {
+                if ((minx != -1 || miny != -1)) {
+                    nextMinDisResolve = true;
+                }
+                cbrCase[insertPoint].getMetadata()->hitMinX = -1;
+                cbrCase[insertPoint].getMetadata()->hitMinY = -1;
+            }
             cbrCase[insertPoint].setInputBufferSequence(inputBuffering);
             if ((int)startIndex > iteratorIndex) {
-                errorCounter++;
+                retError.errorCount++;
+                retError.errorDetail += "startIndex error\n";
             }
             auto caseBaseSize = cbrCase.size();
             auto testEnd = 0;
@@ -225,7 +410,8 @@ int CbrReplayFile::MakeCaseBase(AnnotatedReplay* ar, std::string charName, int s
                 }
                 else {
                     if (testEnd + 1 != cbrCase[j].getStartingIndex()) {
-                        errorCounter++;
+                        retError.errorCount++;
+                        retError.errorDetail += "testend2nd error: \n";
                     }
                     testEnd = cbrCase[j].getEndIndex();
                 }
@@ -245,11 +431,63 @@ int CbrReplayFile::MakeCaseBase(AnnotatedReplay* ar, std::string charName, int s
             if (cbrCase[i].overDriveConsumed < odRequirement) {
                 cbrCase[i].overDriveConsumed = odRequirement;
             }
+            if ((minx != -1 || miny != -1) && nextMinDisResolve == true) {
+                if (cbrCase[i].getMetadata()->getNeutral()[0]) {
+                    cbrCase[i].getMetadata()->hitMinX = minx;
+                    cbrCase[i].getMetadata()->hitMinY = miny;
+                    //Checking if min distance is truely only set in the proper conditions
+                    if ((cbrCase[i].getMetadata()->hitMinX > 0 || cbrCase[i].getMetadata()->hitMinX > 0)) {
+                        if (!cbrCase[i + 1].getMetadata()->getHitThisFrame()[1] && !cbrCase[i + 1].getMetadata()->getBlockThisFrame()[1]) {
+                            retError.errorCount++;
+                            retError.errorDetail += "minDist: \n";
+                        }
+                        if (!cbrCase[i].getMetadata()->getNeutral()[0]) {
+                            retError.errorCount++;
+                            retError.errorDetail += "minDist: \n";
+                        }
+                    }
+                }
+                else {
+                    cbrCase[i].getMetadata()->hitMinX = -1;
+                    cbrCase[i].getMetadata()->hitMinY = -1;
+                }
+                minx = -1; miny = -1;
+                nextMinDisResolve = false;
+            }
+            else {
+                if ((minx != -1 || miny != -1)) {
+                    nextMinDisResolve = true;
+                }
+                cbrCase[i].getMetadata()->hitMinX = -1;
+                cbrCase[i].getMetadata()->hitMinY = -1;
+            }
             for (int k = cbrCase[i].getEndIndex(); k >= cbrCase[i].getStartingIndex() && inputResolve.size() > 0; --k) {
                 auto deconInputs = DeconstructInput(input[k], facingCommandStart);
                 for (std::vector<int>::size_type j = 0; j < deconInputs.size(); ++j) {
                     inputResolve = CheckCommandExecution(deconInputs[j], inputResolve);//fix this inputResolve doesnt update from the function.
                     if (inputResolve.size() == 0) {
+                        cbrCase[i].setInputBufferSequence(false);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    if (carlDoll && dollResolve.size() > 0) {
+        auto caseBaseSize = cbrCase.size();
+        for (int i = insertPoint - 1; i >= 0 && dollResolve.size() > 0; --i) {
+            cbrCase[i].setInputBufferSequence(true);
+            if (cbrCase[i].heatConsumed < meterRequirement) {
+                cbrCase[i].heatConsumed = meterRequirement;
+            }
+            if (cbrCase[i].overDriveConsumed < odRequirement) {
+                cbrCase[i].overDriveConsumed = odRequirement;
+            }
+            for (int k = cbrCase[i].getEndIndex(); k >= cbrCase[i].getStartingIndex() && dollResolve.size() > 0; --k) {
+                auto deconInputs = DeconstructInput(input[k], facingCommandStart);
+                for (std::vector<int>::size_type j = 0; j < deconInputs.size(); ++j) {
+                    dollResolve = CheckCommandExecution(deconInputs[j], dollResolve);//fix this inputResolve doesnt update from the function.
+                    if (dollResolve.size() == 0) {
                         cbrCase[i].setInputBufferSequence(false);
                         break;
                     }
@@ -266,20 +504,53 @@ int CbrReplayFile::MakeCaseBase(AnnotatedReplay* ar, std::string charName, int s
         }
         else {
             if (testEnd + 1 != cbrCase[j].getStartingIndex()) {
-                errorCounter++;
+                retError.errorCount++;
+                retError.errorDetail += "testend3nd error: \n";
             }
             testEnd = cbrCase[j].getEndIndex();
         }
+        //Checking if min distance is truely only set in the proper conditions
+        if ((cbrCase[j].getMetadata()->hitMinX > 0 || cbrCase[j].getMetadata()->hitMinX > 0)) {
+            if (!cbrCase[j + 1].getMetadata()->getHitThisFrame()[1] && !cbrCase[j + 1].getMetadata()->getBlockThisFrame()[1]) {
+                retError.errorCount++;
+                retError.errorDetail += "minDist: \n";
+            }
+            if (!cbrCase[j].getMetadata()->getNeutral()[0]) {
+                retError.errorCount++;
+                retError.errorDetail += "minDist: \n";
+            }
+        }
+  
     }
-    return errorCounter;
+
+    if (retError.errorCount > 0) {
+        for (std::vector<int>::size_type i = startIndex;
+            i < endIndex; i++) {
+            if (ar->CopyMetadataPtr(i) != nullptr) {
+                retError.errorDetail += " Frame: " + std::to_string(i) + " " + ar->CopyMetadataPtr(i)->getCurrentAction()[0];
+            }
+            else {
+                retError.errorDetail += " Frame: " + std::to_string(i) + " " + "ERROR PTR WAS NULL";
+            }
+        }
+        retError.errorDetail += "\n";
+        for (std::vector<int>::size_type i = startIndex;
+            i < endIndex; i++) {
+            retError.errorDetail += " Frame: " + std::to_string(i) + " " + std::to_string(input[i]);
+        }
+    }
+
+    retError.structure = charName + "\n" + debugStructureStr;
+    return retError;
 }
 
 
-bool CbrReplayFile::CheckCaseEnd(int framesIdle, Metadata ar, std::string prevState, bool neutral) {
+bool CbrReplayFile::CheckCaseEnd(int framesIdle, Metadata ar, std::string prevState, bool neutral, std::vector<CommandActions> commands) {
 
     //if states changed and minimum case time is reached change state
     auto curState = ar.getCurrentAction()[0];
-    if (curState != prevState ) { //&& framesIdle > caseMinTime
+    
+    if (curState != prevState && (framesIdle >= caseMinTime || !ar.getNeutral()[0] || ContainsCommandState(prevState, commands))) {
         stateChangeTrigger = true;
         return true;
     }
@@ -296,8 +567,10 @@ bool CbrReplayFile::CheckCaseEnd(int framesIdle, Metadata ar, std::string prevSt
     return false;
 }
 
-int CbrReplayFile::instantLearning(AnnotatedReplay* ar, std::string charName) {
-    int ret = 0;
+CbrGenerationError CbrReplayFile::instantLearning(AnnotatedReplay* ar, std::string charName) {
+    CbrGenerationError ret;
+    ret.errorCount = 0;
+    ret.errorDetail = "";
     int start = 0;
     int end = ar->getInput().size() - 1;
     if (end <= 1) { return ret; }
@@ -305,6 +578,7 @@ int CbrReplayFile::instantLearning(AnnotatedReplay* ar, std::string charName) {
         start = cbrCase[cbrCase.size() -1].getStartingIndex();
         cbrCase.pop_back();
         ret = MakeCaseBase(ar, charName, start, end, cbrCase.size());
+
     }
     else {
         ret = MakeCaseBase(ar, charName, start, end, 0);
@@ -312,11 +586,13 @@ int CbrReplayFile::instantLearning(AnnotatedReplay* ar, std::string charName) {
     return ret;
 }
 
-int CbrReplayFile::makeFullCaseBase(AnnotatedReplay* ar, std::string charName) {
-    int ret = 0;
+CbrGenerationError CbrReplayFile::makeFullCaseBase(AnnotatedReplay* ar, std::string charName) {
+    CbrGenerationError ret;
+    ret.errorCount = 0;
+    ret.errorDetail = "";
     int start = 0;
     int end = ar->getInput().size() - 1;
-    ret += MakeCaseBase(ar, charName, start, end, 0);
+    ret = MakeCaseBase(ar, charName, start, end, 0);
     return ret;
 }
 
@@ -405,53 +681,60 @@ std::vector<int> CbrReplayFile::DeconstructInput(int input, bool facingSwitch) {
     inputs.push_back(buffer);
     return inputs;
 }
-
-std::vector<std::vector<int>> CbrReplayFile::CheckCommandExecution(int input, std::vector<std::vector<int>> inputBuffer)
+std::vector < inputMemory> CbrReplayFile::DeleteCompletedInputs(std::string name, std::vector < inputMemory>& inputBuffer) {
+    for (int i = inputBuffer.size()-1; i >= 0 ; i--) {
+        if (inputBuffer[i].name == name) {
+            inputBuffer.erase(inputBuffer.begin() + i);
+        }
+    }
+    return inputBuffer;
+}
+std::vector < inputMemory> CbrReplayFile::CheckCommandExecution(int input, std::vector < inputMemory>& inputBuffer)
 {
     for (int i = 0; i < inputBuffer.size(); ++i) {
-        auto test = inputBuffer[i].size() - 1;
-        for (int j = inputBuffer[i].size() - 1; j >= 0; --j) {
-            if (inputBuffer[i][j] < 0) {
-                if (isDirectionInputs(-1 * inputBuffer[i][j])) {
-                    if (!checkDirectionInputs(inputBuffer[i][j] * -1, input)) {
+        auto test = inputBuffer[i].inputs.size() - 1;
+        for (int j = inputBuffer[i].inputs.size() - 1; j >= 0; --j) {
+            if (inputBuffer[i].inputs[j] < 0) {
+                if (isDirectionInputs(-1 * inputBuffer[i].inputs[j])) {
+                    if (!checkDirectionInputs(inputBuffer[i].inputs[j] * -1, input)) {
                         if (j == 0) {
-                            return inputBuffer = {};
+                            return DeleteCompletedInputs(inputBuffer[i].name, inputBuffer);
                         }
                         else {
-                            inputBuffer[i][j] = 0;
+                            inputBuffer[i].inputs[j] = 0;
                         }
                     }
                 }
                 else {
-                    if (input != inputBuffer[i][j] * -1) {
+                    if (input != inputBuffer[i].inputs[j] * -1) {
                         if (j == 0) {
-                            return inputBuffer = {};
+                            return DeleteCompletedInputs(inputBuffer[i].name, inputBuffer);
                         }
                         else {
-                            inputBuffer[i][j] = 0;
+                            inputBuffer[i].inputs[j] = 0;
                         }
                     }
                 }
                 break;
             }
-            if (inputBuffer[i][j] > 0) {
-                if (isDirectionInputs( inputBuffer[i][j])) {
-                    if (checkDirectionInputs(inputBuffer[i][j], input)) {
+            if (inputBuffer[i].inputs[j] > 0) {
+                if (isDirectionInputs( inputBuffer[i].inputs[j])) {
+                    if (checkDirectionInputs(inputBuffer[i].inputs[j], input)) {
                         if (j == 0) {
-                            return inputBuffer = {};
+                            return DeleteCompletedInputs(inputBuffer[i].name, inputBuffer);
                         }
                         else {
-                            inputBuffer[i][j] = 0;
+                            inputBuffer[i].inputs[j] = 0;
                         }
                     }
                 }
                 else {
-                    if (input == inputBuffer[i][j] ) {
+                    if (input == inputBuffer[i].inputs[j] ) {
                         if (j == 0) {
-                            return inputBuffer = {};
+                            return DeleteCompletedInputs(inputBuffer[i].name, inputBuffer);
                         }
                         else {
-                            inputBuffer[i][j] = 0;
+                            inputBuffer[i].inputs[j] = 0;
                         }
                     }
                 }
@@ -490,25 +773,32 @@ bool CbrReplayFile::checkDirectionInputs(int direction, int input) {
     }
     return false;
 }
-
-std::vector<std::vector<int>> CbrReplayFile::MakeInputArray(std::string move, std::vector<CommandActions> commands, std::string prevState) {
+bool CbrReplayFile::ContainsCommandState(std::string move, std::vector<CommandActions> commands) {
+    for (std::size_t i = 0; i < commands.size(); ++i) {
+        if (commands[i].moveName == move) {
+            return true;
+        }
+    }
+}
+std::vector < inputMemory> CbrReplayFile::MakeInputArray(std::string move, std::vector<CommandActions> commands, std::string prevState) {
     int lastInput = -1;
     bool threeSixty = false;
 
-    std::vector<int> inputsSequence;
-    std::vector<std::vector<int>> container = { };
+    inputMemory inputsSequence;
+    std::vector < inputMemory> container = { };
 
     for (std::size_t i = 0; i < commands.size(); ++i) {
         if (commands[i].moveName == move) {
-            std::vector<int> inputsSequence;
+            inputMemory inputsSequence;
+            inputsSequence.name = move;
             if (commands[i].priorMove == prevState) {
                 for (std::size_t j = 0; j < commands[i].altInputs.size(); ++j) {
-                    inputsSequence.push_back(commands[i].altInputs[j]);
+                    inputsSequence.inputs.push_back(commands[i].altInputs[j]);
                 }
             }
             else {
                 for (std::size_t j = 0; j < commands[i].inputs.size(); ++j) {
-                    inputsSequence.push_back(commands[i].inputs[j]);
+                    inputsSequence.inputs.push_back(commands[i].inputs[j]);
                 }
             }
 
@@ -517,6 +807,47 @@ std::vector<std::vector<int>> CbrReplayFile::MakeInputArray(std::string move, st
     }
     return container;
 }
+std::vector<CommandActions> superjumpCommands = {
+{
+    "CmnActJumpPre", {down, up}},
+};
+std::vector < inputMemory> CbrReplayFile::MakeInputArraySuperJump(std::string move, std::vector<int> inputs, int startingIndex, std::vector < inputMemory> inVec) {
+
+    
+        inputMemory container;
+
+        if (move == superjumpCommands[0].moveName) {
+            int foundUp = -1;
+            for (int i = 0; i >= -2 && startingIndex + i >= 0; i--) {
+                auto deconInputs = DeconstructInput(inputs[startingIndex + i], false);
+                for (int o = 0; o < deconInputs.size(); o++) {
+                    if (checkDirectionInputs(up, deconInputs[o])) {
+                        foundUp = startingIndex + i;
+                    }
+                }
+            }
+            if (foundUp > -1) {
+                int foundDown = 999;
+                for (int i = 0; i >= -9; i--) {
+                    auto deconInputs = DeconstructInput(inputs[foundUp + i], false);
+                    for (int o = 0; o < deconInputs.size(); o++) {
+                        if (checkDirectionInputs(down, deconInputs[o])) {
+                            foundDown = startingIndex + foundUp + i;
+                            container.inputs = superjumpCommands[0].inputs;
+                            container.name = superjumpCommands[0].moveName;
+                            inVec.push_back(container);
+                            return inVec;
+                        }
+                    }
+                }
+            }
+        }
+
+    return inVec;
+}
+
+
+
 std::vector<CommandActions> esCommands =
 {
     { "CmnActFDash", {-6,6,-forward,6}},
@@ -603,8 +934,8 @@ std::vector<CommandActions> azraelCommands =
     { "Dunk", {6,2,3,B}},
     { "ShotAtemi", {2,1,4,B}},
     { "Baigaeshi", {2,3,6,B}},
-    { "HomingJump", {2,1,4,C}},
-    { "HomingJump", {-down,2,-down, 2, C}},
+    { "Shinkyaku", {2,1,4,C}},
+    { "Oiuchi", {-down,2,-down, 2, C}},
     { "VanishingAttack", {2,3,6,D}},
     { "DustAttack", {2,1,4,D}},
     { "SuperPunch", {2,6,2,6,D}},
@@ -949,6 +1280,7 @@ std::vector<CommandActions> bulletCommands =
     { "InterrUpThrow", {6,2,3,B}},
     { "InterrUpAddAttack", {2,2,D}},
     { "Shot", {2,3,6,A}},
+    { "ShortDash", {-6,6,-forward,6}},
     { "CompulsionHeatUp", {2,1,4,D}},
     { "DashThrow", {4,1,3,6,C}},
     { "DashThrow", {4,2,6,C}},
@@ -1045,30 +1377,30 @@ std::vector<CommandActions> tagerCommands =
     { "MTH_OD", {2,3,6,3,1,4,B}},
     { "MTH2nd", {2,6,2,6,B}},
     { "MTH2nd_OD", {2,3,6,3,1,4,B}},
-    { "GETB", {s720_1,A}},
-    { "GETB", {s720_2,A}},
-    { "GETB", {s720_3,A}},
-    { "GETB", {s720_4,A}},
-    { "GETB", {s720_5,A}},
-    { "GETB", {s720_6,A}},
-    { "GETB", {s720_7,A}},
-    { "GETB", {s720_8,A}},
-    { "GETB_OD", {s720_1,A}},
-    { "GETB_OD", {s720_2,A}},
-    { "GETB_OD", {s720_3,A}},
-    { "GETB_OD", {s720_4,A}},
-    { "GETB_OD", {s720_5,A}},
-    { "GETB_OD", {s720_6,A}},
-    { "GETB_OD", {s720_7,A}},
-    { "GETB_OD", {s720_8,A}},
-    { "AstralHeat", {s360_1,s720_1,A}},
-    { "AstralHeat", {s360_2,s720_2,A}},
-    { "AstralHeat", {s360_3,s720_3,A}},
-    { "AstralHeat", {s360_4,s720_4,A}},
-    { "AstralHeat", {s360_5,s720_5,A}},
-    { "AstralHeat", {s360_6,s720_6,A}},
-    { "AstralHeat", {s360_7,s720_7,A}},
-    { "AstralHeat", {s360_8,s720_8,A}},
+    { "GETB", {s720_1,C}},
+    { "GETB", {s720_2,C}},
+    { "GETB", {s720_3,C}},
+    { "GETB", {s720_4,C}},
+    { "GETB", {s720_5,C}},
+    { "GETB", {s720_6,C}},
+    { "GETB", {s720_7,C}},
+    { "GETB", {s720_8,C}},
+    { "GETB_OD", {s720_1,C}},
+    { "GETB_OD", {s720_2,C}},
+    { "GETB_OD", {s720_3,C}},
+    { "GETB_OD", {s720_4,C}},
+    { "GETB_OD", {s720_5,C}},
+    { "GETB_OD", {s720_6,C}},
+    { "GETB_OD", {s720_7,C}},
+    { "GETB_OD", {s720_8,C}},
+    { "AstralHeat", {s360_1,s720_1,D}},
+    { "AstralHeat", {s360_2,s720_2,D}},
+    { "AstralHeat", {s360_3,s720_3,D}},
+    { "AstralHeat", {s360_4,s720_4,D}},
+    { "AstralHeat", {s360_5,s720_5,D}},
+    { "AstralHeat", {s360_6,s720_6,D}},
+    { "AstralHeat", {s360_7,s720_7,D}},
+    { "AstralHeat", {s360_8,s720_8,D}}, 
 };
 std::vector<CommandActions> terumiCommands =
 {
@@ -1217,7 +1549,7 @@ std::vector<CommandActions> platinumCommands =
     { "CommandThrow", {4,2,6,D}},
     { "CommandThrow", {4,1,3,6,D}},
     { "WeaponThrow", {2,1,4,D}},
-    { "Atemi", {chargeDown,2,D}},
+    { "Atemi", {chargeDown,up,C}},
     { "Oiuchi", {-down,2,-down,2,C}},
     { "UltimateAssault", {6,3,1,4,6,C}},
     { "UltimateAssault", {6,2,4,6,C}},
@@ -1382,9 +1714,9 @@ std::vector<CommandActions> nineCommands =
     { "CmnActAirFDash", {-9,9,-forward,6}},
     { "CmnActAirBDash", {-4,4,-back,4}},
     { "CmnActAirBDash", {-7,7,-back,4}},
-    { "AssaultLand", {2,3,6,A}},
-    { "AssaultAir", {2,3,6,A}},
-    { "AssaultAir", {2,3,9,A}},
+    { "AssaultLand", {2,1,4,A}},
+    { "AssaultAir", {2,1,4,A}},
+    { "AssaultAir", {2,1,7,A}},
     { "AntiAir", {2,1,4,B}},
     { "MidAssault", {2,1,4,C}},
     { "MagicConversion", {2,3,6,D}},
@@ -1839,6 +2171,29 @@ std::vector<CommandActions> jubeiCommands =
     { "AstralHeat", {6,3,1,4,6,2,4,C}},
     { "AstralHeat", {6,2,4,6,3,1,4,C}},
 };
+std::vector<CommandActions> nirvanaCommands =
+{
+    { "NirvanaAtk236D", {4,2,6,D,-D}},
+    { "NirvanaAtk236D", {4,1,3,6,D,-D}},
+    { "NirvanaAtk22D", {2,-down,2,D,-D}},
+    { "NirvanaAtkSpecialShot", {2,1,4,D,-D}},
+    { "NirvanaAtk623D", {6,2,3,D,-D}},
+    { "NirvanaAtk214D", {6,2,4,D,-D}},
+    { "NirvanaAtk214D", {6,3,1,4,D,-D}},
+    { "NirvanaRush", {2,6,2,6,D,-D}},
+    { "NirvanaStrike", {2,4,2,4,D,-D}},
+
+    { "NirvanaAtk236D", {4,2,D,6,-D}},
+    { "NirvanaAtk236D", {4,1,3,D,6,-D}},
+    { "NirvanaAtk22D", {2,-down,D,2,-D}},
+    { "NirvanaAtkSpecialShot", {2,1,D,4,-D}},
+    { "NirvanaAtk623D", {6,2,D,3,-D}},
+    { "NirvanaAtk214D", {6,2,D,4,-D}},
+    { "NirvanaAtk214D", {6,3,1,D,4,-D}},
+    { "NirvanaRush", {2,6,2,D,6,-D}},
+    { "NirvanaStrike", {2,4,2,D,4,-D}},
+};
+
 std::vector<CommandActions> CbrReplayFile::FetchCommandActions(std::string charName) {
     if (charName == "es") { return esCommands; };//es
     if (charName == "ny") { return nuCommands; };//nu
@@ -1877,4 +2232,7 @@ std::vector<CommandActions> CbrReplayFile::FetchCommandActions(std::string charN
     if (charName == "su") { return susanCommands; };//susan
     if (charName == "jb") { return jubeiCommands; };//jubei
     return bulletCommands;
+}
+std::vector<CommandActions> CbrReplayFile::FetchNirvanaCommandActions() {
+    return nirvanaCommands;
 }

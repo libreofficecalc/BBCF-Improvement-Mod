@@ -6,6 +6,11 @@
 #include "Game/CharData.h"
 #include <boost/serialization/shared_ptr.hpp>
 #include <boost/thread.hpp>
+#include <imgui.h>
+#include <Overlay/Window/HitboxOverlay.h>
+#include <Game/Jonb/JonbEntry.h>
+#include <Game/Jonb/JonbReader.h>
+#include <CBR/CbrUtils.h>
 
 class CbrInterface
 {
@@ -13,6 +18,13 @@ public:
 	CbrInterface();
 
 	std::string debugPrintText = "";
+
+	ImVec2 CbrInterface::GetMinDistance(const CharData* charObj, const CharData* charObjOpp);
+	ImVec2 CbrInterface::RotatePoint(ImVec2 center, float angleInRad, ImVec2 point);
+	ImVec2 CbrInterface::CalculateScreenPosition(ImVec2 worldPos);
+	bool CbrInterface::WorldToScreen(LPDIRECT3DDEVICE9 pDevice, D3DXMATRIX* view, D3DXMATRIX* proj, D3DXVECTOR3* pos, D3DXVECTOR3* out);
+	ImVec2 CbrInterface::CalculateObjWorldPosition(const CharData* charObj);
+
 	void netRequestTest();
 	void saveDebugPrint();
 
@@ -26,6 +38,7 @@ public:
 	void setCbrData(CbrData, int i);
 	CbrData* getCbrData(int i);
 	void CbrInterface::SetPlayerNames();
+	std::string CbrInterface::GetPlayerID();
 	uintptr_t CbrInterface::GetModuleBaseAddress(DWORD procId, const wchar_t* modName);
 	DWORD CbrInterface::GetProcId(const wchar_t* procName);
 
@@ -37,15 +50,19 @@ public:
 
 	void CbrInterface::SaveCbrData(CbrData& cbr);
 	CbrData CbrInterface::LoadCbrData(std::string playerName, std::string characterName);
-
+	CbrData CbrInterface::LoadCbrData(std::string filename);
+	CbrData CbrInterface::LoadCbrDataOld(std::string filename);
 	std::string CbrInterface::WriteAiInterfaceState();
 
-	
+	int windowLoadNr = -1;
+	bool windowReload = false;
+
+	std::string playerID = "";
 
 	std::string nameP1 = "";
 	std::string nameP2 = "";
-	char nameVersusP1[128] = "";
-	char nameVersusP2[128] = "";
+	char nameVersusP1[128] = u8"";
+	char nameVersusP2[128] = u8"";
 
 
 	int deletionStart = 0;
@@ -56,9 +73,11 @@ public:
 	bool autoRecordAllOtherPlayers = false;
 	bool autoRecordActive = false;
 	bool autoRecordFinished = false;
+	bool autoUploadOwnData = false;
 
 	int resetDepth = -1;
 	int resetPlayer = -1;
+	std::unordered_map<int, bool> executionOrder = {};
 	std::array <int, 2> readDepth = { 99,99 };
 	std::array <int, 2> writeDepth = { -1,-1 };
 	std::array <int, 2> inputMemory = { 5,5 };
@@ -85,25 +104,43 @@ public:
 	std::array<int, 2> debugErrorCounter = { 0,0 };
 	int pMatchState = 0;
 	int debugNr = -1;
-
+	std::string cbrCreationDebugStr = "";
 
 	void addReversalReplay(AnnotatedReplay);
 	void deleteReversalReplays();
 	void deleteReversalReplay(int);
 	AnnotatedReplay* getReversalReplay(int);
+	int CbrInterface::randomReversalReplaySelection();
+	void CbrInterface::disableAllReversalReplays();
+	int CbrInterface::playBackActiveReversalReplay(bool facing);
+	bool CbrInterface::isAnyPlayingReversalReplays();
+	void CbrInterface::ReplayActivation(int i);
+
 	char playerName[128] = "";
+	char reversalName[128] = "";
+	char weightName[128] = "";
+	void CbrInterface::SaveReversal(AnnotatedReplay& rev);
+	AnnotatedReplay CbrInterface::LoadReversal(std::string filename);
+	void CbrInterface::SaveWeights(costWeights cst);
+	costWeights CbrInterface::LoadWeights(std::string in);
 
 	bool reversalRecording;
 	bool reversalRecordingActive;
 	bool reversalActive;
 	int reversalReplayNr = 0;
-	int reversalBuffer = 1;
 	bool blockStanding = false;
 	bool blockCrouching = false;
+	bool barrierReversal = false;
 	int reversalInput = 5;
+	int reversalReplaySelected = -1;
+
+	std::vector<int> reversalReplaysTriggerOdds;
+	std::vector<int> reversalBuffer;
 
 	void CbrInterface::saveSettings();
 	void CbrInterface::loadSettings(CbrInterface* cbrI);
+	void CbrInterface::saveDebug();
+	void CbrInterface::saveStructureDebug(std::string text);
 
 	void CbrInterface::saveReplayDataInMenu();
 	void EndCbrActivities();
@@ -111,6 +148,10 @@ public:
 	void CbrInterface::StartCbrInstantLearning(char* p1charName, char* p2charName, int p1charId, int p2charId, int recordingSlot);
 	void CbrInterface::RestartCbrActivities(char* p1charName, char* p2charName, int p1charId, int p2charId);
 	void CbrInterface::resetCbrInterface();
+
+	void EndCbrActivities(int playerNr);
+
+	void CbrInterface::UpdateOldCbrMetadata();
 
 	void CbrInterface::Checkinputs();
 	int debugPrint1;
@@ -127,6 +168,8 @@ public:
 	bool netaRecording = false;
 	bool netaPlaying = false;
 	int netaReplayCounter = 0;
+	
+	void CbrInterface::Testbase64(std::string cbr);
 
 	template<class Archive>
 	void serialize(Archive& a, const unsigned version) {
@@ -137,6 +180,7 @@ private:
 	std::array<AnnotatedReplay,2> aReplay;
 	std::array < CbrData,2> cbrData;
 	std::vector<AnnotatedReplay> reversalReplays;
+	
 	
 	bool threadActive = false;
 	boost::thread processingStoredRecordingsThread;
