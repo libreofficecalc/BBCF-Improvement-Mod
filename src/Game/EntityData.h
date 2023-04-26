@@ -136,6 +136,6 @@ public:
 	char lastAction[20]; //0x1FF4
 	char pad_2008[104]; //0x2008
 	char currentAction[20]; //0x2070
-	char pad_2084[452]; //0x2084
-	char char_abbr[4]; //0x2248
+	char pad_2084[448]; //0x2084
+	//char char_abbr[4]; //0x2248
 }; //Size: 0x2248

@@ -9,9 +9,9 @@
 #include <array>
 #include <map>
 #include <memory>
-#include "FrameState.h"
+#include "FrameStateOffset.h"
 
-FrameState::FrameState() {
+FrameStateOffset::FrameStateOffset() {
     if (!g_interfaces.player1.IsCharDataNullPtr() && !g_interfaces.player2.IsCharDataNullPtr()) {
         p1 = *g_interfaces.player1.GetData();
         p2 = *g_interfaces.player2.GetData();
@@ -19,15 +19,15 @@ FrameState::FrameState() {
         matchTimer = *g_gameVals.pMatchTimer;
 
         viewMatrix = *g_gameVals.viewMatrix;
-        auto camArgs = FrameState::get_camera_vals();
+        auto camArgs = FrameStateOffset::get_camera_vals();
         camPos = camArgs[0];
         camTarget = camArgs[1];
         camUpVector = camArgs[2];
 
-        cam_mystery_vals0 = FrameState::get_camera_mystery_vals0();
-        cam_mystery_vals1 = FrameState::get_camera_mystery_vals1();
-        cam_mystery_vals2 = FrameState::get_camera_mystery_vals2();
-        full_entity_map = save_entity_map();
+        cam_mystery_vals0 = FrameStateOffset::get_camera_mystery_vals0();
+        cam_mystery_vals1 = FrameStateOffset::get_camera_mystery_vals1();
+        cam_mystery_vals2 = FrameStateOffset::get_camera_mystery_vals2();
+        full_entity_offset_map = save_entity_map();
         //ownedEntites = save_owned_entities();
         //gets first non player entity adress: 
         //entity data is not actually CharData sized!! they prob share a superclass
@@ -56,7 +56,7 @@ FrameState::FrameState() {
     }
 }
 
-std::array<std::array<uint8_t, 12>, 3> FrameState::get_camera_vals() {
+std::array<std::array<uint8_t, 12>, 3> FrameStateOffset::get_camera_vals() {
     auto bbcf_base_adress = GetBbcfBaseAdress();
     char*** ptr_D3CAM_args = (char***)(bbcf_base_adress + 0x6128A8);
     char* ptr_D3CAM_pos = **ptr_D3CAM_args + 0x4;
@@ -75,7 +75,7 @@ std::array<std::array<uint8_t, 12>, 3> FrameState::get_camera_vals() {
 }
 
 
-std::array<uint8_t, 0xC> FrameState::get_camera_mystery_vals0() {
+std::array<uint8_t, 0xC> FrameStateOffset::get_camera_mystery_vals0() {
     auto bbcf_base_adress = GetBbcfBaseAdress();
     char* mystery_val_base = bbcf_base_adress + 0xE3AA38;
     std::array<uint8_t, 0xC> camera_mystery_vals0{};
@@ -84,7 +84,7 @@ std::array<uint8_t, 0xC> FrameState::get_camera_mystery_vals0() {
     }
     return camera_mystery_vals0;
 }
-std::array<uint8_t, 0x18> FrameState::get_camera_mystery_vals1() {
+std::array<uint8_t, 0x18> FrameStateOffset::get_camera_mystery_vals1() {
     auto bbcf_base_adress = GetBbcfBaseAdress();
     char* mystery_val_base = bbcf_base_adress + 0xE3AA84;
     std::array<uint8_t, 0x18> camera_mystery_vals1{};
@@ -93,7 +93,7 @@ std::array<uint8_t, 0x18> FrameState::get_camera_mystery_vals1() {
     }
     return camera_mystery_vals1;
 }
-std::array<uint8_t, 0x34> FrameState::get_camera_mystery_vals2() {
+std::array<uint8_t, 0x34> FrameStateOffset::get_camera_mystery_vals2() {
     auto bbcf_base_adress = GetBbcfBaseAdress();
     char* mystery_val_base = bbcf_base_adress + 0xE3AAC0;
     std::array<uint8_t, 0x34> camera_mystery_vals2{};
@@ -102,23 +102,24 @@ std::array<uint8_t, 0x34> FrameState::get_camera_mystery_vals2() {
     }
     return camera_mystery_vals2;
 }
-std::shared_ptr<std::map<EntityData*, EntityData>> FrameState::save_entity_map() {
+std::shared_ptr<std::map<size_t, EntityData>> FrameStateOffset::save_entity_map() {
     //gets first non player entity adress: 
     //entity data is not actually CharData sized!! they prob share a superclass
     auto entity_size = 0x2248;
-    full_entity_map = std::make_shared<std::map<EntityData*, EntityData>>();
+    full_entity_offset_map = std::make_shared<std::map<size_t, EntityData>>();
 
-    int* first_entity = *((int**)(g_gameVals.pEntityList + (2)));
+    EntityData* first_entity = *((EntityData**)(g_gameVals.pEntityList + (2)));
     int* last_entity = *((int**)(g_gameVals.pEntityList + (251)));
 
     for (int i = 0; i < 250; i++) {
         EntityData** entity = (EntityData**)(g_gameVals.pEntityList + (2) + i);
-        (*full_entity_map)[*entity] = **entity;
+        size_t offset = *entity - first_entity;
+        (*full_entity_offset_map)[offset] = **entity;
     }
-    return full_entity_map;
+    return full_entity_offset_map;
 }
 
-std::map<CharData*, CharData> FrameState::save_owned_entities() {
+std::map<CharData*, CharData> FrameStateOffset::save_owned_entities() {
     std::map<CharData*, CharData> ownedEntities{};
     //p1 direct owned entities
     CharData* player1 = g_interfaces.player1.GetData();
@@ -159,7 +160,7 @@ std::map<CharData*, CharData> FrameState::save_owned_entities() {
     return ownedEntities;
 }
 
-void FrameState::load_frame_state(bool with_entities) {
+void FrameStateOffset::load_frame_state(bool with_entities) {
     if (!g_interfaces.player1.IsCharDataNullPtr() && !g_interfaces.player2.IsCharDataNullPtr()){
         auto bbcf_base_adress = GetBbcfBaseAdress();
         char* ptr_replay_theater_current_frame = bbcf_base_adress + 0x11C0348;
@@ -188,24 +189,33 @@ void FrameState::load_frame_state(bool with_entities) {
         memcpy(ptr_D3CAM_target, &(camTarget[0]), 12);
         memcpy(ptr_D3CAM_upVector, &(camUpVector[0]), 12);
         *g_gameVals.viewMatrix = viewMatrix;
+        int tst = sizeof(EntityData);
+
+
+
+
+
 
         // ownedEntites = save_owned_entities();
         //gets first non player etity adress: 
-        int* first_entity = *((int**)(g_gameVals.pEntityList + (2)));
+        EntityData* first_entity = *((EntityData**)(g_gameVals.pEntityList + (2)));
         int* last_entity = *((int**)(g_gameVals.pEntityList + (251)));
         //just say they are from player 1 to stop the check from failing, need to change later
         if (with_entities) {
-            for (auto& entity : *full_entity_map) {
+            for (auto& entity : *full_entity_offset_map) {
+                EntityData* entity_resolved = (EntityData*)first_entity + entity.first;
+             
                 if (entity.first != NULL 
                     /*&& entity.first->unknownStatus1*/ 
-                    && entity.first->enemyChar != NULL
+                    && entity_resolved->enemyChar != NULL
                     ) {
-                    entity.second.enemyChar = entity.first->enemyChar;
-                    memcpy(entity.first, &entity.second, sizeof(EntityData));
+                    entity.second.enemyChar = entity_resolved->enemyChar;
+                    //memcpy(entity_resolved, &entity.second, sizeof(EntityData));
                 }
-                if (entity.first != NULL && entity.first->unknown_status2 == 2) {
+                memcpy(entity_resolved, &entity.second, sizeof(EntityData));
+                if (entity.first != NULL && entity_resolved->unknown_status2 == 2) {
                     ///really need further insight into the unknown status 2
-                    entity.first->unknown_status2 = 0;
+                    entity_resolved->unknown_status2 = 0;
                 }
                 //memcpy(entity.first, &entity.second, sizeof(EntityData));
             }

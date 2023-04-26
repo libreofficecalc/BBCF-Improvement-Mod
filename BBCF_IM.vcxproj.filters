@@ -137,6 +137,7 @@
     <ClCompile Include="src\Game\Scr\ScrStateReader.cpp" />
     <ClCompile Include="src\Overlay\Window\ScrWindow.cpp" />
     <ClCompile Include="src\Game\ReplayStates\FrameState.cpp" />
+    <ClCompile Include="src\Game\ReplayStates\FrameStateOffset.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="depends\imgui\imgui.h" />
@@ -258,6 +259,7 @@
     <ClInclude Include="src\Overlay\Window\ScrWindow.h" />
     <ClInclude Include="src\Game\ReplayStates\FrameState.h" />
     <ClInclude Include="src\Game\EntityData.h" />
+    <ClInclude Include="src\Game\ReplayStates\FrameStateOffset.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="export\dinput8.def">

@@ -5,6 +5,7 @@
 #include "Core/utils.h"
 #include "Game/gamestates.h"
 #include "Game/ReplayStates/FrameState.h"
+#include "Game/ReplayStates/FrameStateOffset.h"
 #include "Overlay/NotificationBar/NotificationBar.h"
 #include "Overlay/WindowManager.h"
 #include "Overlay/Window/HitboxOverlay.h"
@@ -28,7 +29,7 @@ void ScrWindow::Draw()
     DrawPlaybackSection();
     DrawReplayTheaterSection();
     DrawReplayRewind();
-    DrawVeryExperimentalSection2();
+    DrawReplayTakeover();
 }
 
 void ScrWindow::DrawStatesSection()
@@ -869,7 +870,7 @@ void ScrWindow::DrawPlaybackSection() {
             auto wakeup_action_trigger_find = current_action.find("CmnActUkemiLandNLanding");
             if (random_wakeup_slot_toggle && !random_wakeup.empty() && wakeup_action_trigger_find != std::string::npos) {
                 //does randomized
-                int random_pos = std::rand() % random_gap.size();
+                int random_pos = std::rand() % random_wakeup.size();
                 slot = random_wakeup[random_pos] - 1;
                 memcpy(active_slot, &slot, 4);
                 memcpy(playback_control_ptr, &val_set, 2);
@@ -1306,8 +1307,14 @@ std::vector<int> find_nearest_checkpoint(std::vector<unsigned int> frameCount) {
 }
 
 
-
-void ScrWindow::DrawVeryExperimentalSection2() {
+void swap_players() {
+    auto p1 = *g_interfaces.player1.GetData();
+    auto p2 = *g_interfaces.player2.GetData();
+    *g_interfaces.player1.GetData() = p2;
+    *g_interfaces.player2.GetData() = p1;
+    return;
+}
+void ScrWindow::DrawReplayTakeover() {
 
     struct states {
         CharData p1;
@@ -1315,17 +1322,20 @@ void ScrWindow::DrawVeryExperimentalSection2() {
         D3DXMATRIX viewMatrixes;
     };
     static states state{};
-    static std::unique_ptr<FrameState> framestate;
+    static std::unique_ptr<FrameStateOffset> framestate;
     char* bbcf_base = GetBbcfBaseAdress();
     static std::vector<char> replay_action_load{};
     char* r1p1_start = bbcf_base + 0x115B470 + 0x8d4;
     char* r1p2_start = bbcf_base + 0x115B470 + 0x8d4 + 0x7080;
     if (!ImGui::CollapsingHeader("Replay takeover/save states::experimental"))
         return;
+    if (ImGui::Button("swap players interfaces")) {
+        swap_players();
+    }
     ImGui::Text("time: %d", *g_gameVals.pMatchTimer);
     if (ImGui::Button("save state")) {
         if (!g_interfaces.player1.IsCharDataNullPtr() && !g_interfaces.player2.IsCharDataNullPtr()) {
-            framestate = std::make_unique<FrameState>(FrameState());
+            framestate = std::make_unique<FrameStateOffset>(FrameStateOffset());
             state.p1 = *g_interfaces.player1.GetData();
             state.p2 = *g_interfaces.player2.GetData();
 
@@ -1366,37 +1376,7 @@ void ScrWindow::DrawVeryExperimentalSection2() {
     }
     if (ImGui::Button("load state")) {
         if (!g_interfaces.player1.IsCharDataNullPtr() && !g_interfaces.player2.IsCharDataNullPtr()) {
-            if (g_gameVals.isP1CPU) {
-                auto p1 = g_interfaces.player1.GetData();
-                auto p2 = g_interfaces.player2.GetData();
-                g_interfaces.player2.GetData()->position_x = state.p1.position_x;
-                g_interfaces.player2.GetData()->position_x = state.p1.position_y;
-                g_interfaces.player2.GetData()->position_x = state.p1.position_y;
-                p2->position_x_dupe = state.p1.position_x_dupe;
-                p2->position_y_dupe = state.p1.position_y_dupe;
-                
-                
-                
-                g_interfaces.player1.GetData()->position_x = state.p2.position_x;
-                g_interfaces.player1.GetData()->position_x = state.p2.position_y;
-                p1->position_x_dupe = state.p2.position_x_dupe;
-                p1->position_y_dupe = state.p2.position_y_dupe;
-            }
-            else {
-                /**g_interfaces.player1.GetData() = state.p1;
-                g_interfaces.player1.GetData()->position_x = state.p1.position_x;
-                g_interfaces.player1.GetData()->position_x = state.p1.position_y;
-                g_interfaces.player2.GetData()->position_x = state.p2.position_x;
-                g_interfaces.player2.GetData()->position_x = state.p2.position_y;
-
-                *g_interfaces.player1.GetData() = state.p1;
-                *g_interfaces.player2.GetData() = state.p2;
-                memcpy(g_interfaces.player1.GetData(), &state.p1, 0x2084);
-                memcpy(g_interfaces.player2.GetData(), &state.p2, 0x2084);*/
-
-                framestate->load_frame_state(false);
-
-            }
+            framestate->load_frame_state(false);
             
             for (int i = 0; i < 0x200; i++) {
                 //char* r1p2_curr_action = r1p2_start + (*g_gameVals.pFrameCount + i) * 2;

@@ -9,19 +9,16 @@
 #include <array>
 #include <map>
 #include <memory>
-struct ChildEntity {
-    uint8_t offset_ownerEntity;
-    uint8_t offset_pEntityList;
-    CharData entity;
-};
-class FrameState {
+
+class FrameStateOffset {
 public:
     CharData p1;
     CharData p2;
     //std::map<CharData*, CharData> ownedEntites;
     //std::shared_ptr<std::array<EntityData, 250>> full_entity_list;
-    std::shared_ptr<std::map<EntityData*, EntityData>> full_entity_map;
-    std::array<size_t, 252> secondary_entity_pointers_list;
+    //std::shared_ptr<std::map<EntityData*, EntityData>> full_entity_map;
+    std::shared_ptr<std::map<size_t, EntityData>> full_entity_offset_map;
+    std::array<uint8_t, 252> secondary_entity_pointers_list;
     //std::vector<uint8_t> savedpEntityList;
 
     unsigned int frameCount;
@@ -37,9 +34,9 @@ public:
     std::array<uint8_t, 0x34> cam_mystery_vals2;//bbcf.exe + e3aac0 to bbcf.exe + e3aaf4 
 
 
-    FrameState();
+    FrameStateOffset();
     std::map<CharData*, CharData> save_owned_entities();
-    std::shared_ptr<std::map<EntityData*, EntityData>> FrameState::save_entity_map();
+    std::shared_ptr<std::map<size_t, EntityData>> FrameStateOffset::save_entity_map();
 
     void load_frame_state(bool with_entities = false);
 
