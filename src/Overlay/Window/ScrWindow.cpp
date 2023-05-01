@@ -141,20 +141,10 @@ void ScrWindow::DrawStatesSection()
         
         ImGui::Separator();
         if (ImGui::Button("Set as wakeup action")) {
+            wakeup_register = {};
             states = g_interfaces.player2.states;
-            auto selected_state = states[selected];
-            std::string substr = "CmnActUkemiLandNLanding";
-            std::vector<std::string> matches = {};
-            for (auto state : states) {
-                std::string name = state->name;
-                if (name.find(substr) != std::string::npos) {
-                    if (!state->replaced_state_script[0]) {
-                        memcpy(state->replaced_state_script, state->addr + 36, 36);
-                    }
-                    override_state(state->addr, &selected_state->name[0]);
+            wakeup_register.push_back(states[selected]);
 
-                }
-            }
         }
         ImGui::SameLine();
         if (ImGui::Button("Set as gap action")) {
@@ -194,7 +184,7 @@ void ScrWindow::DrawStatesSection()
             wakeup_register = {};
         }
         
-    
+        
         if (ImGui::CollapsingHeader("Gap/wakeup random actions")) {
             ImGui::Columns(2);
             if (ImGui::Button("Add to wakeup action")) {
@@ -217,37 +207,46 @@ void ScrWindow::DrawStatesSection()
                 ImGui::Text(e->name.c_str());
             }
             ImGui::EndChild();
-            if (!wakeup_register.empty()) {
-                states = g_interfaces.player2.states;
-                auto selected_state = states[selected];
-                int random_pos = std::rand() % wakeup_register.size();
-                std::string substr = "CmnActUkemiLandNLanding";
-                for (auto state : states) {
-                    std::string name = state->name;
-                    if (name.find(substr) != std::string::npos) {
-                        if (!state->replaced_state_script[0]) {
-                            memcpy(state->replaced_state_script, state->addr + 36, 36);
-                        }
-                        override_state(state->addr, &wakeup_register[random_pos]->name[0]);
 
-                    }
+    
+            
+        }
+        static std::vector<std::tuple<std::string, int>> wakeup_length_pairs{
+            //{"CmnActUkemiLandN",30} ,
+           {"CmnActUkemiLandNLanding",1},
+            {"CmnActUkemiLandF",30 },
+            {"CmnActUkemiLandB",30 } };
+        if (!wakeup_register.empty()) {
+            states = g_interfaces.player2.states;
+            int random_pos = std::rand() % wakeup_register.size();
+            for (std::tuple<std::string, int> wakeup_length_pair : wakeup_length_pairs) {
+                auto name = std::get<0>(wakeup_length_pair);
+                auto len = std::get<1>(wakeup_length_pair);
+                if (g_interfaces.player2.GetData()->currentAction == name
+                    &&
+                    g_interfaces.player2.GetData()->actionTime == len
+                    ) {
+                    memcpy(&(g_interfaces.player2.GetData()->currentScriptActionLocationInMemory), &(wakeup_register[random_pos]->addr), 4);
+                    memcpy(&(g_interfaces.player2.GetData()->currentAction), &(wakeup_register[random_pos]->name[0]), 20);
+                    break;
                 }
             }
+           
+        }
 
 
-            if (!gap_register.empty()) {
-                states = g_interfaces.player2.states;
-                auto selected_state = states[selected];
-                int random_pos = std::rand() % gap_register.size();
-                std::string substr = "GuardEnd";
-                for (auto state : states) {
-                    std::string name = state->name;
-                    if (name.find(substr) != std::string::npos) {
-                        if (!state->replaced_state_script[0]) {
-                            memcpy(state->replaced_state_script, state->addr + 36, 36);
-                        }
-                        override_state(state->addr, &gap_register[random_pos]->name[0]);
+        if (!gap_register.empty()) {
+            states = g_interfaces.player2.states;
+            auto selected_state = states[selected];
+            int random_pos = std::rand() % gap_register.size();
+            std::string substr = "GuardEnd";
+            for (auto state : states) {
+                std::string name = state->name;
+                if (name.find(substr) != std::string::npos) {
+                    if (!state->replaced_state_script[0]) {
+                        memcpy(state->replaced_state_script, state->addr + 36, 36);
                     }
+                    override_state(state->addr, &gap_register[random_pos]->name[0]);
                 }
             }
         }
@@ -831,7 +830,10 @@ void ScrWindow::DrawPlaybackSection() {
             //                {"ActBDownDown", 20}, //lasts 20 frames
             //                {"ActWallBoundDown", 15}
             //}; //lasts 15 frames
-            static std::vector<std::tuple<std::string, int>> wakeup_buffer_actions{ {"ActUkemiLandN",30 } };
+            static std::vector<std::tuple<std::string, int>> wakeup_buffer_actions{ 
+                {"ActUkemiLandN",30 } ,
+                {"ActUkemiLandF",30 },
+                {"ActUkemiLandB",30 } };
             
             //checks if 
 

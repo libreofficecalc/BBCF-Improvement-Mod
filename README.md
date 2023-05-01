@@ -8,14 +8,27 @@ Join the [BB Improvement Mod Discord Server](https://discord.gg/j2mCX9s) to disc
 ## What this mod provides
 - Adds extra game modes
 - Adds hitbox overlay
-- Adds Wakeup action
-- Adds Gap action
-- Adds janky P2 state library
+
+- Adds P2 State Library
+- Adds wakeup action thru state library
+- Adds gap action thru state library
+- Adds training dummy slot introspection
+- Adds training dummy slot saving/loading to/from local files
+- Adds wakeup action thru training dummy slots
+- Adds gap action thru training dummy slots
+- Adds local replay file loading
+- more experimental features
+
+
 - Create and load custom palettes and effects without file modifications
 - See each other's custom palettes in online matches
 - More flexibility to change the graphics options
 - Change avatars and accessories in online rooms/lobbies without going back into menu
 - Freely adjustable ingame currency value
+
+## Installing
+Download dinput8.dll from the latest release and put it in your BlazBlue Centralfiction folder. There is no need to compile it yourself for regular usage.
+
 
 ## Compiling and usage
 BBCF Improvement Mod is coded using Visual Studio 2019 (toolset v142). <br>
