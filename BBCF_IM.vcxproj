@@ -94,6 +94,7 @@
     <ClInclude Include="src\Game\characters.h" />
     <ClInclude Include="src\Game\ReplayStates\FrameStateOffset.h" />
     <ClInclude Include="src\Game\ReplayStates\FrameState.h" />
+    <ClInclude Include="src\Game\ReplayStates\RollbackIntrospection.h" />
     <ClInclude Include="src\Game\Scr\CmdList.h" />
     <ClInclude Include="src\Game\Scr\ScrStateEntry.h" />
     <ClInclude Include="src\Game\Scr\ScrStateReader.h" />

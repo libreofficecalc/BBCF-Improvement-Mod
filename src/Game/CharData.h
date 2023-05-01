@@ -135,6 +135,7 @@ public:
 	char pad_1340[3252]; //0x01340
 	char lastAction[20]; //0x1FF4
 	char pad_2008[104]; //0x2008
+	//0x203C relevant to test against zero for script?
 	char currentAction[20]; //0x2070
 	char pad_2084[452]; //0x2084
 	char char_abbr[4]; //0x2248

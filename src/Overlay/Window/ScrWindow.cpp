@@ -6,6 +6,7 @@
 #include "Game/gamestates.h"
 #include "Game/ReplayStates/FrameState.h"
 #include "Game/ReplayStates/FrameStateOffset.h"
+#include "Game/ReplayStates/RollbackIntrospection.h"
 #include "Overlay/NotificationBar/NotificationBar.h"
 #include "Overlay/WindowManager.h"
 #include "Overlay/Window/HitboxOverlay.h"
@@ -1314,6 +1315,56 @@ void swap_players() {
     *g_interfaces.player2.GetData() = p1;
     return;
 }
+//void call_save_callback_asm() {
+//    char* bbcf_base = GetBbcfBaseAdress();
+//    __asm {
+//        
+//    }
+//}
+
+void  call_save_callback_asm()
+{
+    //first of all I need to set the values in the statics to actually resolve to the adress I want.\
+    //[[bbcf.exe +142a924]+0x170] + 4 + [[[bbcf.exe +142a924]+0x170] + 2d0] * 0x48
+    struct _state {
+        void* size;
+        void* tst;
+    };
+    static std::array<uint8_t, 0x8533A0> buf = {};
+    char* ptr_to_buf = (char*)buf.data();
+    char* ptr_to_buf_minus_170 = ptr_to_buf -0x170;
+    //need to make it non local later?
+    uint32_t *head_of_states = new uint32_t();
+    DAT24* _dat24 = new DAT24();
+    DAT24_170* _dat24_170 = new  DAT24_170();
+    *head_of_states = 0;
+    /*DAT24 _dat24{};
+    DAT24_170  _dat24_170{};*/
+    _dat24_170->buf_adrr = ptr_to_buf;
+    _dat24_170->head_of_states = *head_of_states;
+    _dat24->dat24_170 = _dat24_170;
+
+    uint8_t* bbcf_base = (uint8_t*)GetBbcfBaseAdress();
+    DAT24** DAT_0218a924 = (DAT24**)(bbcf_base + 0x142a924);
+    *DAT_0218a924 = _dat24;
+
+
+
+    void* asm_save_fun = bbcf_base + 0x3842b0;
+    int size = 0x008533A0; // doing it literal
+    int* size_ptr = &size;
+    int* sink_addr = &size;
+//    //static std::array<uint8_t, 0x8533A0> buf = {};
+//    //void* buf_base = buf.data();
+	__asm
+	{
+        push 0 //checksum, seems to always be zero
+        push size_ptr //size of the buffer, cbuf
+        push sink_addr //adress of the start of the buffer, *buf, need to change 
+
+        call asm_save_fun
+	}
+}
 void ScrWindow::DrawReplayTakeover() {
 
     struct states {
@@ -1330,7 +1381,8 @@ void ScrWindow::DrawReplayTakeover() {
     if (!ImGui::CollapsingHeader("Replay takeover/save states::experimental"))
         return;
     if (ImGui::Button("swap players interfaces")) {
-        swap_players();
+        //swap_players();
+        call_save_callback_asm();
     }
     ImGui::Text("time: %d", *g_gameVals.pMatchTimer);
     if (ImGui::Button("save state")) {

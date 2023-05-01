@@ -260,6 +260,7 @@
     <ClInclude Include="src\Game\ReplayStates\FrameState.h" />
     <ClInclude Include="src\Game\EntityData.h" />
     <ClInclude Include="src\Game\ReplayStates\FrameStateOffset.h" />
+    <ClInclude Include="src\Game\ReplayStates\RollbackIntrospection.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="export\dinput8.def">
