@@ -100,6 +100,27 @@ void PaletteManager::ApplyDefaultCustomPalette(CharIndex charIndex, CharPaletteH
 	{
 		foundCustomPalIndex = rand() % m_customPalettes[charIndex].size();
 	}
+	else if (std::strchr(curPalName, ',') != nullptr)
+	{
+		std::vector<std::string> v;
+		std::stringstream ss(curPalName);
+
+		while (ss.good()) {
+			std::string substr;
+			getline(ss, substr, ',');
+			v.push_back(substr);
+		}
+		int ranIndex = rand() % v.size();
+		const char* ranName = v[ranIndex].c_str();
+		for (int i = 0; i < m_customPalettes[charIndex].size(); i++)
+		{
+			if (strncmp(ranName, m_customPalettes[charIndex][i].palInfo.palName, IMPL_PALNAME_LENGTH) == 0)
+			{
+				foundCustomPalIndex = i;
+			}
+		}
+		//foundCustomPalIndex = FindCustomPalIndex(charIndex, ranName.c_str());
+	}
 	else
 	{
 		foundCustomPalIndex = FindCustomPalIndex(charIndex, curPalName);
