@@ -1,12 +1,21 @@
 #pragma once
+#include <list>
+#include <string>
 #include <cstdint>
 // Generated using ReClass 2015
+
+struct PlayersInteractionState
+{
+	int timer = 0;
+	bool started = false;
+};
 
 class CharData
 {
 public:
 	class OBJ_CCharBase* objCharbase; //0x0000
-	char pad_0004[12]; //0x0004
+	int framecount; //0x0004
+	char pad_0004[8]; //0x0008
 	int32_t unknownStatus1; //0x0010
 	char pad_0014[4]; //0x0014
 	int32_t stateChangedCount; //0x0018
@@ -43,7 +52,9 @@ public:
 	char pad_028C[80]; //0x028C
 	int32_t position_x_dupe; //0x02DC
 	int32_t position_y_dupe; //0x02E0
-	char pad_02E4[16]; //0x02E4
+	char pad_02E4[8]; //0x02E4
+	int hitstun; //0x02EC
+	char pad_02F0[4];
 	int32_t offsetX_2; //0x02F4
 	char pad_02F8[4]; //0x02F8
 	int32_t offsetY_2; //0x02FC
@@ -61,7 +72,9 @@ public:
 	char currentAction[20]; //0x2070
 	char pad_2084[452]; //0x2084
 	char char_abbr[4]; //0x2248
-	char pad_224C[14472]; //0x224C
+	char pad_224C[12068]; //0x224C
+	int hitstunLeftover; //0x5170
+	char pad_5174[2400];
 	int32_t heatMeter; //0x5AD4
 	char pad_5AD8[4]; //0x5AD8
 	int32_t heatGainCooldown; //0x5ADC
@@ -80,4 +93,12 @@ public:
 	char pad_20134[32]; //0x20134
 	int32_t Drive3; //0x20154
 	char pad_20158[4972]; //0x20158
-}; //Size: 0x214C4
+	//Size: 0x214C4
+
+	bool isDoingActionInList(const char currentAction[], const std::list<std::string>& listOfActions);
+	bool isIdle(CharData& player);
+	bool isBlocking(CharData& player);
+	bool isInHitstun(CharData& player);
+	void getFrameAdvantage(CharData& player1, CharData& player2, PlayersInteractionState& interaction);
+	void computeFramedataInteractions();
+}; 

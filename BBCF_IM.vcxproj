@@ -18,6 +18,7 @@
     <ClCompile Include="src\CustomGameMode\customGameMode.cpp" />
     <ClCompile Include="src\CustomGameMode\GameModeManager.cpp" />
     <ClCompile Include="src\Game\characters.cpp" />
+    <ClCompile Include="src\Game\CharData.cpp" />
     <ClCompile Include="src\Game\stages.cpp" />
     <ClCompile Include="src\Network\OnlineGameModeManager.cpp" />
     <ClCompile Include="src\Overlay\NotificationBar\NotificationBar.cpp" />

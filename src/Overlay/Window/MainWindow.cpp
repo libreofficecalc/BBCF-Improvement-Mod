@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 
+#include "Game/CharData.h"
 #include "HitboxOverlay.h"
 #include "PaletteEditorWindow.h"
 
@@ -39,8 +40,8 @@ void MainWindow::BeforeDraw()
 			windowSizeConstraints = ImVec2(250, 190);
 			break;
 		case 3:
-			windowSizeConstraints = ImVec2(400, 230);
-			break;
+windowSizeConstraints = ImVec2(400, 230);
+break;
 		default:
 			windowSizeConstraints = ImVec2(330, 230);
 	}
@@ -76,6 +77,7 @@ void MainWindow::Draw()
 	DrawGameplaySettingSection();
 	DrawCustomPalettesSection();
 	DrawHitboxOverlaySection();
+	DrawFrameAdvantageSection();
 	DrawAvatarSection();
 	DrawLoadedSettingsValuesSection();
 	DrawUtilButtons();
@@ -112,8 +114,6 @@ void MainWindow::DrawCurrentPlayersCount() const
 
 void MainWindow::DrawAvatarSection() const
 {
-	
-
 	if (!ImGui::CollapsingHeader("Avatar settings"))
 		return;
 
@@ -129,6 +129,29 @@ void MainWindow::DrawAvatarSection() const
 		ImGui::HorizontalSpacing(); ImGui::SliderByte("Accessory 1", g_gameVals.playerAvatarAcc1, 0, 0xCF);
 		ImGui::HorizontalSpacing(); ImGui::SliderByte("Accessory 2", g_gameVals.playerAvatarAcc2, 0, 0xCF);
 	}
+}
+
+void MainWindow::DrawFrameAdvantageSection() const
+{
+	if (!ImGui::CollapsingHeader("Framedata"))
+		return;
+
+	if (!isInMatch())
+	{
+		ImGui::HorizontalSpacing();
+		ImGui::TextDisabled("YOU ARE NOT IN MATCH!");
+	}
+	else if (!(*g_gameVals.pGameMode == GameMode_Training || *g_gameVals.pGameMode == GameMode_ReplayTheater))
+	{
+		ImGui::HorizontalSpacing();
+		ImGui::TextDisabled("YOU ARE NOT IN TRAINING MODE OR REPLAY THEATER!");
+	}
+
+	/*
+	ImGui::TextUnformatted(g_interfaces.player2.GetData()->currentAction);
+	ImGui::SameLine(); ImGui::HorizontalSpacing();
+	ImGui::TextUnformatted(g_interfaces.player2.GetData()->currentAction);
+	*/
 }
 
 void MainWindow::DrawCustomPalettesSection() const
