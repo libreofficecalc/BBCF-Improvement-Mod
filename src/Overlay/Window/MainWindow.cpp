@@ -1,6 +1,6 @@
 #include "MainWindow.h"
 
-#include "Game/CharData.h"
+#include "Game/framedata.h"
 #include "HitboxOverlay.h"
 #include "PaletteEditorWindow.h"
 
@@ -140,18 +140,19 @@ void MainWindow::DrawFrameAdvantageSection() const
 	{
 		ImGui::HorizontalSpacing();
 		ImGui::TextDisabled("YOU ARE NOT IN MATCH!");
+		return;
 	}
 	else if (!(*g_gameVals.pGameMode == GameMode_Training || *g_gameVals.pGameMode == GameMode_ReplayTheater))
 	{
 		ImGui::HorizontalSpacing();
 		ImGui::TextDisabled("YOU ARE NOT IN TRAINING MODE OR REPLAY THEATER!");
+		return;
 	}
 
-	/*
-	ImGui::TextUnformatted(g_interfaces.player2.GetData()->currentAction);
-	ImGui::SameLine(); ImGui::HorizontalSpacing();
-	ImGui::TextUnformatted(g_interfaces.player2.GetData()->currentAction);
-	*/
+	std::string p1GapsString = "Player 1 gaps: " + (interaction.p1Gap != -1) ? std::to_string(interaction.p1Gap) : std::to_string(-1);
+	ImGui::TextUnformatted(p1GapsString.c_str());
+	std::string p2GapsString = "Player 2 gaps: " + (interaction.p2Gap != -1) ? std::to_string(interaction.p2Gap) : std::to_string(-1);
+	ImGui::TextUnformatted(p2GapsString.c_str());
 }
 
 void MainWindow::DrawCustomPalettesSection() const

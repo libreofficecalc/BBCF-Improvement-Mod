@@ -1,4 +1,5 @@
 #include "MatchState.h"
+#include "framedata.h"
 
 #include "Core/interfaces.h"
 #include "Core/logger.h"
@@ -87,4 +88,6 @@ void MatchState::OnUpdate()
 		g_interfaces.player1.GetPalHandle(),
 		g_interfaces.player2.GetPalHandle()
 	);
+
+	computeFramedataInteractions(); // not synced with in-game match, have to use an in-world value
 }
