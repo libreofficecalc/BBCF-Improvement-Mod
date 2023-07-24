@@ -72,7 +72,7 @@ public:
 	int32_t position_x_dupe; //0x02DC
 	int32_t position_y_dupe; //0x02E0
 	char pad_02E4[8]; //0x02E4
-	int baseHitstun; //0x02EC
+	int u_hitstunRelated; //0x02EC
 	char pad_02F0[4]; //0x02E4
 	int32_t offsetX_2; //0x02F4
 	char pad_02F8[4]; //0x02F8
@@ -92,10 +92,10 @@ public:
 	int32_t attackLevel; //0x048C
 	int32_t moveDamage; //0x0490; raw damage
 	char pad_0494[44]; //0x0494
-	int32_t moveSpecialBlockstun; //0x04C0
-	char pad_04C4[4]; //0x04C4
-	int32_t moveGuardCrushTime; //0x04C8
-	char pad_04CC[8]; //0x04CC
+	int16_t moveSpecialBlockstun; //0x04C0
+	char pad_04C2[6]; //0x04C2
+	int16_t moveGuardCrushTime; //0x04C8
+	char pad_04CA[10]; //0x04CA
 	int32_t vectorcheckX_1; //0x04D0
 	int32_t vectorcheckY_1; //0x04D4
 	int32_t vectorcheckX_2; //0x04D8

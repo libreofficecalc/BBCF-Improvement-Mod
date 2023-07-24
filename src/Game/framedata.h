@@ -11,9 +11,10 @@ struct PlayersInteractionState
 
 	// Gap
 	bool inBlockstring = false;
-	int gap = 0;
 	int p1Gap = -1;
 	int p2Gap = -1;
+	int p1GapDisplay = -1;
+	int p2GapDisplay = -1;
 
 	int prevPlayer1ActionTime = 0;
 	int prevPlayer2ActionTime = 0;
