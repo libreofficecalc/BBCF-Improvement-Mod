@@ -11,7 +11,7 @@ const std::list<std::string> idleWords =
 "CmnActFWalk", "CmnActBWalk",
 "CmnActFDash", "CmnActFDashStop",
 "CmnActJumpLanding", "CmnActLandingStiffEnd",
-"CmnActUkemiNLanding"
+"CmnActUkemiNLanding",
 // Proxi block is triggered when an attack is closing in without being actually blocked
 // If the player.blockstun is = 0, then those animations are still considered idle
 "CmnActCrouchGuardPre", "CmnActCrouchGuardLoop", "CmnActCrouchGuardEnd",                 // Crouch
@@ -58,7 +58,7 @@ bool isBlocking(CharData& player)
 
 bool isInHitstun(CharData& player)
 {
-    if (player.hitstun > 0)
+    if (player.hitstun > 0 && !isDoingActionInList(player.currentAction, idleWords))
         return true;
     return false;
 }
@@ -69,7 +69,7 @@ void getFrameAdvantage(CharData& player1, CharData& player2)
     bool isIdle2 = isIdle(player2);
     bool isStunned = isBlocking(player2) || isInHitstun(player2);
 
-    if (!isIdle1 && !isIdle2 && !interaction.started)
+    if (!isIdle1 && !isIdle2)
     {
         interaction.started = true;
         interaction.timer = 0;
@@ -87,10 +87,11 @@ void getFrameAdvantage(CharData& player1, CharData& player2)
         }
         if (!isIdle2)
         {
-            interaction.timer += 1; // Why does it not take care of gaps?
+            interaction.timer += 1;
         }
     }
 }
+
 
 void computeGaps(CharData& player, int& gapCounter, int& gapResult)
 {
