@@ -149,6 +149,9 @@ void MainWindow::DrawFrameAdvantageSection() const
 		return;
 	}
 
+	if (!g_gameVals.pEntityList)
+		return;
+
 	//if (!g_interfaces.player1.IsCharDataNullPtr() && !g_interfaces.player2.IsCharDataNullPtr())
 	//	return;
 
@@ -156,11 +159,6 @@ void MainWindow::DrawFrameAdvantageSection() const
 	CharData& player2 = *g_interfaces.player2.GetData();
 
 	/* Player 1 */
-	ImGui::HorizontalSpacing();
-	ImGui::TextUnformatted(isIdle(player1) ? "P1 idle" : "P1 not idle");
-	ImGui::HorizontalSpacing();
-	ImGui::TextUnformatted(isInHitstun(player1) ? "P1 hit" : "P1 not hit");
-
 	ImGui::HorizontalSpacing();
 	ImGui::TextUnformatted("P1 gaps:");
 	ImGui::SameLine();
@@ -170,16 +168,13 @@ void MainWindow::DrawFrameAdvantageSection() const
 	ImGui::TextUnformatted("P1 FA:");
 	ImGui::SameLine();
 	std::string str = std::to_string(interaction.frameAdvantageToDisplay);
+	if (interaction.frameAdvantageToDisplay > 0)
+		str = "+" + str;
 	ImGui::TextUnformatted(str.c_str());
 
 	ImGui::VerticalSpacing(10);
 
 	/* Player 2 */
-	ImGui::HorizontalSpacing();
-	ImGui::TextUnformatted(isIdle(player2) ? "P2 idle" : "P2 not idle");
-	ImGui::HorizontalSpacing();
-	ImGui::TextUnformatted(isInHitstun(player2) ? "P2 hit" : "P2 not hit");
-
 	ImGui::HorizontalSpacing();
 	ImGui::TextUnformatted("P2 gaps:");
 	ImGui::SameLine();
@@ -189,6 +184,8 @@ void MainWindow::DrawFrameAdvantageSection() const
 	ImGui::TextUnformatted("P2 FA:");
 	ImGui::SameLine();
 	std::string str2 = std::to_string(-interaction.frameAdvantageToDisplay);
+	if (-interaction.frameAdvantageToDisplay > 0)
+		str2 = "+" + str2;
 	ImGui::TextUnformatted(str2.c_str());
 }
 

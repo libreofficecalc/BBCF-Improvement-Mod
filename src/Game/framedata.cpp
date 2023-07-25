@@ -10,12 +10,12 @@ const std::list<std::string> idleWords =
 "CmnActCrouch", "CmnActCrouchTurn", "CmnActCrouch2Stand",
 "CmnActFWalk", "CmnActBWalk",
 "CmnActFDash", "CmnActFDashStop",
-"CmnActJumpLanding",
+"CmnActJumpLanding", "CmnActLandingStiffEnd",
 "CmnActUkemiNLanding"
 // Proxi block is triggered when an attack is closing in without being actually blocked
 // If the player.blockstun is = 0, then those animations are still considered idle
 "CmnActCrouchGuardPre", "CmnActCrouchGuardLoop", "CmnActCrouchGuardEnd",                 // Crouch
-"CmnActCrouchHeavyGuardPre", "CmnActCrouchHeavyGuardLoop", "CmnActCrouchHeavyGuardLoop", // Crouch Heavy
+"CmnActCrouchHeavyGuardPre", "CmnActCrouchHeavyGuardLoop", "CmnActCrouchHeavyGuardEnd", // Crouch Heavy
 "CmnActMidGuardPre", "CmnActMidGuardLoop", "CmnActMidGuardEnd",                          // Mid
 "CmnActMidHeavyGuardPre", "CmnActMidHeavyGuardLoop", "CmnActMidHeavyGuardEnd",           // Mid Heavy
 "CmnActHighGuardPre", "CmnActHighGuardLoop", "CmnActHighGuardEnd",                       // High
@@ -61,8 +61,6 @@ bool isBlocking(CharData& player)
 
 bool isInHitstun(CharData& player) // not reliable
 {
-    // hitstun alone does not cover air cases (reaches 0 even when the opponent is still in actual hitstun)
-    // hitstunLeftover reflects hitstun in the air as well, except after an emergency tech.
     if (player.hitstun > 0 && !isDoingActionInList(player.currentAction, idleWords))
     {
         return true;
@@ -90,26 +88,13 @@ void getFrameAdvantage(CharData& player1, CharData& player2)
         }
         if (!isIdle1)
         {
-            interaction.timer -= 1; //missing 1F somewhere?
+            interaction.timer -= 1;
         }
         if (!isIdle2)
         {
-            interaction.timer += 1;
+            interaction.timer += 1; // Why does it not take care of gaps?
         }
     }
-}
-
-
-void checkActionTimeDifference(CharData& player1, CharData& player2)
-{
-    int diff1 = player1.actionTime - interaction.prevPlayer1ActionTime;
-    int diff2 = player2.actionTime - interaction.prevPlayer2ActionTime;
-
-    // If one or both players are frozen in time, then the frame advantage should not be impacted.
-    (diff1 == 1 && diff2 == 1) ? interaction.increment = 1 : interaction.increment = 0;
-
-    interaction.prevPlayer1ActionTime = player1.actionTime;
-    interaction.prevPlayer2ActionTime = player2.actionTime;
 }
 
 void computeGaps(CharData& player, int& gapCounter, int& gapResult)
@@ -145,7 +130,6 @@ void computeFramedataInteractions()
         
         computeGaps(player1, interaction.p1Gap, interaction.p1GapDisplay);
         computeGaps(player2, interaction.p2Gap, interaction.p2GapDisplay);
-        checkActionTimeDifference(player1, player2);
         getFrameAdvantage(player1, player2);
     }
 }
