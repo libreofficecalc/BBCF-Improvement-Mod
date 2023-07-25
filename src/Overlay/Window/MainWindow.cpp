@@ -149,15 +149,15 @@ void MainWindow::DrawFrameAdvantageSection() const
 		return;
 	}
 
-	if (!g_interfaces.player1.IsCharDataNullPtr() && !g_interfaces.player2.IsCharDataNullPtr())
-		return;
+	//if (!g_interfaces.player1.IsCharDataNullPtr() && !g_interfaces.player2.IsCharDataNullPtr())
+	//	return;
 
 	CharData& player1 = *g_interfaces.player1.GetData();
 	CharData& player2 = *g_interfaces.player2.GetData();
 
 	/* Player 1 */
 	ImGui::HorizontalSpacing();
-	ImGui::TextUnformatted(isBlocking(player1) ? "P1 blocking" : "P1 not blocking");
+	ImGui::TextUnformatted(isIdle(player1) ? "P1 idle" : "P1 not idle");
 	ImGui::HorizontalSpacing();
 	ImGui::TextUnformatted(isInHitstun(player1) ? "P1 hit" : "P1 not hit");
 
@@ -166,11 +166,17 @@ void MainWindow::DrawFrameAdvantageSection() const
 	ImGui::SameLine();
 	ImGui::TextUnformatted(((interaction.p1GapDisplay != -1) ? std::to_string(interaction.p1GapDisplay) : "").c_str());
 
+	ImGui::HorizontalSpacing();
+	ImGui::TextUnformatted("P1 FA:");
+	ImGui::SameLine();
+	std::string str = std::to_string(interaction.frameAdvantageToDisplay);
+	ImGui::TextUnformatted(str.c_str());
+
 	ImGui::VerticalSpacing(10);
 
 	/* Player 2 */
 	ImGui::HorizontalSpacing();
-	ImGui::TextUnformatted(isBlocking(player2) ? "P2 blocking" : "P2 not blocking");
+	ImGui::TextUnformatted(isIdle(player2) ? "P2 idle" : "P2 not idle");
 	ImGui::HorizontalSpacing();
 	ImGui::TextUnformatted(isInHitstun(player2) ? "P2 hit" : "P2 not hit");
 
@@ -179,6 +185,11 @@ void MainWindow::DrawFrameAdvantageSection() const
 	ImGui::SameLine();
 	ImGui::TextUnformatted(((interaction.p2GapDisplay != -1) ? std::to_string(interaction.p2GapDisplay) : "").c_str());
 
+	ImGui::HorizontalSpacing();
+	ImGui::TextUnformatted("P2 FA:");
+	ImGui::SameLine();
+	std::string str2 = std::to_string(-interaction.frameAdvantageToDisplay);
+	ImGui::TextUnformatted(str2.c_str());
 }
 
 void MainWindow::DrawCustomPalettesSection() const

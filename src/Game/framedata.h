@@ -5,8 +5,10 @@
 
 struct PlayersInteractionState
 {
+	// Frame advantage
 	int increment = 1;
 	int timer = 0;
+	int frameAdvantageToDisplay = 0;
 	bool started = false;
 
 	// Gap

@@ -9,13 +9,18 @@ const std::list<std::string> idleWords =
 { "_NEUTRAL", "CmnActStand", "CmnActStandTurn", "CmnActStand2Crouch",
 "CmnActCrouch", "CmnActCrouchTurn", "CmnActCrouch2Stand",
 "CmnActFWalk", "CmnActBWalk",
+"CmnActFDash", "CmnActFDashStop",
 "CmnActJumpLanding",
+"CmnActUkemiNLanding"
 // Proxi block is triggered when an attack is closing in without being actually blocked
 // If the player.blockstun is = 0, then those animations are still considered idle
-"CmnActMidGuardPre", "CmnActMidHeavyGuardPre",
-"CmnActMidGuardEnd", "CmnActMidHeavyGuardEnd",
-"CmnActCrouchGuardEnd", "CmnActCrouchHeavyGuardLoop",
-"CmnActAirGuardEnd",
+"CmnActCrouchGuardPre", "CmnActCrouchGuardLoop", "CmnActCrouchGuardEnd",                 // Crouch
+"CmnActCrouchHeavyGuardPre", "CmnActCrouchHeavyGuardLoop", "CmnActCrouchHeavyGuardLoop", // Crouch Heavy
+"CmnActMidGuardPre", "CmnActMidGuardLoop", "CmnActMidGuardEnd",                          // Mid
+"CmnActMidHeavyGuardPre", "CmnActMidHeavyGuardLoop", "CmnActMidHeavyGuardEnd",           // Mid Heavy
+"CmnActHighGuardPre", "CmnActHighGuardLoop", "CmnActHighGuardEnd",                       // High
+"CmnActHighHeavyGuardPre", "CmnActHighHeavyGuardLoop", "CmnActHighHeavyGuardEnd",        // High Heavy
+"CmnActAirGuardPre", "CmnActAirGuardLoop", "CmnActAirGuardEnd",
 // Character specifics
 "com3_kamae" // Mai 5xB stance
 };
@@ -36,8 +41,12 @@ bool isDoingActionInList(const char currentAction[], const std::list<std::string
 
 bool isIdle(CharData& player)
 {
-    if (player.u_hitstunRelated == 0 && (isDoingActionInList(player.currentAction, idleWords) || player.hitstun == 0))
+    if (isBlocking(player) || isInHitstun(player))
+        return false;
+
+    if (isDoingActionInList(player.currentAction, idleWords))
     {
+        // not checking if we are in hitstun, since you cannot be in the idle states and be in hitstun
         return true;
     }
     return false;
@@ -50,7 +59,7 @@ bool isBlocking(CharData& player)
     return false;
 }
 
-bool isInHitstun(CharData& player)
+bool isInHitstun(CharData& player) // not reliable
 {
     // hitstun alone does not cover air cases (reaches 0 even when the opponent is still in actual hitstun)
     // hitstunLeftover reflects hitstun in the air as well, except after an emergency tech.
@@ -66,7 +75,6 @@ void getFrameAdvantage(CharData& player1, CharData& player2)
     bool isIdle1 = isIdle(player1);
     bool isIdle2 = isIdle(player2);
     bool isStunned = isBlocking(player2) || isInHitstun(player2);
-    int frameAdvantage;
 
     if (!isIdle1 && !isIdle2 && !interaction.started)
     {
@@ -78,15 +86,15 @@ void getFrameAdvantage(CharData& player1, CharData& player2)
         if (isIdle1 && isIdle2)
         {
             interaction.started = false;
-            frameAdvantage = interaction.timer;
+            interaction.frameAdvantageToDisplay = interaction.timer;
         }
         if (!isIdle1)
         {
-            interaction.timer -= interaction.increment;
+            interaction.timer -= 1; //missing 1F somewhere?
         }
         if (!isIdle2)
         {
-            interaction.timer += interaction.increment;
+            interaction.timer += 1;
         }
     }
 }
