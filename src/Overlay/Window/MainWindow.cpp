@@ -151,12 +151,10 @@ void MainWindow::DrawFrameAdvantageSection() const
 
 	if (!g_gameVals.pEntityList)
 		return;
-
-	//if (!g_interfaces.player1.IsCharDataNullPtr() && !g_interfaces.player2.IsCharDataNullPtr())
-	//	return;
-
-	CharData& player1 = *g_interfaces.player1.GetData();
-	CharData& player2 = *g_interfaces.player2.GetData();
+	ImVec4 color;
+	ImVec4 white(1.0f, 1.0f, 1.0f, 1.0f);
+	ImVec4 red(1.0f, 0.0f, 0.0f, 1.0f);
+	ImVec4 green(0.0f, 1.0f, 0.0f, 1.0f);
 
 	/* Player 1 */
 	ImGui::HorizontalSpacing();
@@ -170,7 +168,15 @@ void MainWindow::DrawFrameAdvantageSection() const
 	std::string str = std::to_string(interaction.frameAdvantageToDisplay);
 	if (interaction.frameAdvantageToDisplay > 0)
 		str = "+" + str;
-	ImGui::TextUnformatted(str.c_str());
+
+	if (interaction.frameAdvantageToDisplay > 0)
+		color = green;
+	else if (interaction.frameAdvantageToDisplay < 0)
+		color = red;
+	else
+		color = white;
+
+	ImGui::TextColored(color, "%s", str.c_str());
 
 	ImGui::VerticalSpacing(10);
 
@@ -184,9 +190,17 @@ void MainWindow::DrawFrameAdvantageSection() const
 	ImGui::TextUnformatted("P2 FA:");
 	ImGui::SameLine();
 	std::string str2 = std::to_string(-interaction.frameAdvantageToDisplay);
-	if (-interaction.frameAdvantageToDisplay > 0)
+	if (interaction.frameAdvantageToDisplay < 0)
 		str2 = "+" + str2;
-	ImGui::TextUnformatted(str2.c_str());
+
+	if (interaction.frameAdvantageToDisplay > 0)
+		color = red;
+	else if (interaction.frameAdvantageToDisplay < 0)
+		color = green;
+	else
+		color = white;
+
+	ImGui::TextColored(color, "%s", str2.c_str());
 }
 
 void MainWindow::DrawCustomPalettesSection() const

@@ -15,12 +15,12 @@ const std::list<std::string> idleWords =
 // Proxi block is triggered when an attack is closing in without being actually blocked
 // If the player.blockstun is = 0, then those animations are still considered idle
 "CmnActCrouchGuardPre", "CmnActCrouchGuardLoop", "CmnActCrouchGuardEnd",                 // Crouch
-"CmnActCrouchHeavyGuardPre", "CmnActCrouchHeavyGuardLoop", "CmnActCrouchHeavyGuardEnd", // Crouch Heavy
+"CmnActCrouchHeavyGuardPre", "CmnActCrouchHeavyGuardLoop", "CmnActCrouchHeavyGuardEnd",  // Crouch Heavy
 "CmnActMidGuardPre", "CmnActMidGuardLoop", "CmnActMidGuardEnd",                          // Mid
 "CmnActMidHeavyGuardPre", "CmnActMidHeavyGuardLoop", "CmnActMidHeavyGuardEnd",           // Mid Heavy
 "CmnActHighGuardPre", "CmnActHighGuardLoop", "CmnActHighGuardEnd",                       // High
 "CmnActHighHeavyGuardPre", "CmnActHighHeavyGuardLoop", "CmnActHighHeavyGuardEnd",        // High Heavy
-"CmnActAirGuardPre", "CmnActAirGuardLoop", "CmnActAirGuardEnd",
+"CmnActAirGuardPre", "CmnActAirGuardLoop", "CmnActAirGuardEnd",                          // Air
 // Character specifics
 "com3_kamae" // Mai 5xB stance
 };
@@ -45,10 +45,7 @@ bool isIdle(CharData& player)
         return false;
 
     if (isDoingActionInList(player.currentAction, idleWords))
-    {
-        // not checking if we are in hitstun, since you cannot be in the idle states and be in hitstun
         return true;
-    }
     return false;
 }
 
@@ -59,12 +56,10 @@ bool isBlocking(CharData& player)
     return false;
 }
 
-bool isInHitstun(CharData& player) // not reliable
+bool isInHitstun(CharData& player)
 {
-    if (player.hitstun > 0 && !isDoingActionInList(player.currentAction, idleWords))
-    {
+    if (player.hitstun > 0)
         return true;
-    }
     return false;
 }
 
@@ -126,8 +121,6 @@ void computeFramedataInteractions()
         CharData& player1 = *g_interfaces.player1.GetData();
         CharData& player2 = *g_interfaces.player2.GetData();
 
-        // Crash if framedata window is opened in VS screen and transitions into training mode
-        
         computeGaps(player1, interaction.p1Gap, interaction.p1GapDisplay);
         computeGaps(player2, interaction.p2Gap, interaction.p2GapDisplay);
         getFrameAdvantage(player1, player2);
