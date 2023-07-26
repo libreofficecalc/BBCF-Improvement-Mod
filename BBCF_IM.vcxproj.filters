@@ -134,7 +134,7 @@
     <ClCompile Include="src\Overlay\Widget\StageSelectWidget.cpp" />
     <ClCompile Include="src\Overlay\Widget\GameModeSelectWidget.cpp" />
     <ClCompile Include="src\Overlay\Widget\ActiveGameModeWidget.cpp" />
-    <ClCompile Include="src\Game\framedata.cpp" />
+    <ClCompile Include="src\Overlay\Window\framedata.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="depends\imgui\imgui.h" />
@@ -250,7 +250,7 @@
     <ClInclude Include="src\Overlay\Widget\StageSelectWidget.h" />
     <ClInclude Include="src\Overlay\Widget\GameModeSelectWidget.h" />
     <ClInclude Include="src\Overlay\Widget\ActiveGameModeWidget.h" />
-    <ClInclude Include="src\Game\framedata.h" />
+    <ClInclude Include="src\Overlay\Window\framedata.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="export\dinput8.def">

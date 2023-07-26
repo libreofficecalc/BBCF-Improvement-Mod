@@ -1,5 +1,5 @@
 #include "framedata.h"
-#include "CharData.h"
+#include "Game/CharData.h"
 #include "Core/interfaces.h"
 #include "Game/gamestates.h"
 
@@ -144,4 +144,3 @@ void computeFramedataInteractions()
 }
 
 // Fix Checkbox
-// Draw collision boxes as well, CH state too

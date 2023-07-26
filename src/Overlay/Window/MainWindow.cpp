@@ -1,6 +1,6 @@
 #include "MainWindow.h"
 
-#include "Game/framedata.h"
+#include "framedata.h"
 #include "HitboxOverlay.h"
 #include "PaletteEditorWindow.h"
 
@@ -151,6 +151,8 @@ void MainWindow::DrawFrameAdvantageSection() const
 
 	if (!g_gameVals.pEntityList)
 		return;
+
+	computeFramedataInteractions();
 
 	static bool isFrameAdvantageOpen = false;
 	ImGui::Checkbox("Enable", &isFrameAdvantageOpen);

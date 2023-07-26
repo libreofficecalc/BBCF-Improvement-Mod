@@ -18,7 +18,7 @@
     <ClCompile Include="src\CustomGameMode\customGameMode.cpp" />
     <ClCompile Include="src\CustomGameMode\GameModeManager.cpp" />
     <ClCompile Include="src\Game\characters.cpp" />
-    <ClCompile Include="src\Game\framedata.cpp" />
+    <ClCompile Include="src\Overlay\Window\framedata.cpp" />
     <ClCompile Include="src\Game\stages.cpp" />
     <ClCompile Include="src\Network\OnlineGameModeManager.cpp" />
     <ClCompile Include="src\Overlay\NotificationBar\NotificationBar.cpp" />
@@ -89,7 +89,7 @@
     <ClInclude Include="src\CustomGameMode\GameModeManager.h" />
     <ClInclude Include="src\D3D9EXWrapper\d3d9.h" />
     <ClInclude Include="src\Game\characters.h" />
-    <ClInclude Include="src\Game\framedata.h" />
+    <ClInclude Include="src\Overlay\Window\framedata.h" />
     <ClInclude Include="src\Game\stages.h" />
     <ClInclude Include="src\Network\OnlineGameModeManager.h" />
     <ClInclude Include="src\Overlay\NotificationBar\NotificationBar.h" />

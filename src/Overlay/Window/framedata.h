@@ -1,7 +1,7 @@
 #pragma once
 #include <list>
 #include <string>
-#include "CharData.h"
+#include "Game/CharData.h"
 
 struct PlayersInteractionState
 {
