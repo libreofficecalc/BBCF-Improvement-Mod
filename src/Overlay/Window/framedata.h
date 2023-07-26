@@ -29,4 +29,5 @@ bool isBlocking(CharData& player);
 bool isInHitstun(CharData& player);
 void getFrameAdvantage(CharData& player1, CharData& player2);
 void computeGaps(CharData& player, int& gapCounter, int& gapResult);
+bool hasWorldTimeMoved();
 void computeFramedataInteractions();

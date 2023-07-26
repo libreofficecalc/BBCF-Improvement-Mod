@@ -142,5 +142,3 @@ void computeFramedataInteractions()
         }
     }
 }
-
-// Fix Checkbox
