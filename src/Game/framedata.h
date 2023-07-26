@@ -5,6 +5,9 @@
 
 struct PlayersInteractionState
 {
+	// World Time
+	int prevFrameCount = 0;
+	
 	// Frame advantage
 	int timer = 0;
 	int frameAdvantageToDisplay = 0;

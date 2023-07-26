@@ -112,6 +112,18 @@ void computeGaps(CharData& player, int& gapCounter, int& gapResult)
     }
 }
 
+bool hasWorldTimeMoved()
+{
+    if (interaction.prevFrameCount < *g_gameVals.pFrameCount)
+    {
+        interaction.prevFrameCount = *g_gameVals.pFrameCount;
+        return true;
+    }
+
+    interaction.prevFrameCount = *g_gameVals.pFrameCount;
+    return false;
+}
+
 void computeFramedataInteractions()
 {
     if (!isInMatch && !(*g_gameVals.pGameMode == GameMode_Training || *g_gameVals.pGameMode == GameMode_ReplayTheater))
@@ -122,13 +134,14 @@ void computeFramedataInteractions()
         CharData& player1 = *g_interfaces.player1.GetData();
         CharData& player2 = *g_interfaces.player2.GetData();
 
-        computeGaps(player1, interaction.p1Gap, interaction.p1GapDisplay);
-        computeGaps(player2, interaction.p2Gap, interaction.p2GapDisplay);
-        getFrameAdvantage(player1, player2);
-
+        if (hasWorldTimeMoved())
+        {
+            computeGaps(player1, interaction.p1Gap, interaction.p1GapDisplay);
+            computeGaps(player2, interaction.p2Gap, interaction.p2GapDisplay);
+            getFrameAdvantage(player1, player2);
+        }
     }
 }
 
-// TODO: check world time to compute
 // Fix Checkbox
-// Draw collision boxes as well
+// Draw collision boxes as well, CH state too
