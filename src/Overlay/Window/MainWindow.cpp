@@ -151,56 +151,63 @@ void MainWindow::DrawFrameAdvantageSection() const
 
 	if (!g_gameVals.pEntityList)
 		return;
+
+	static bool isFrameAdvantageOpen = false;
+	ImGui::Checkbox("Enable", &isFrameAdvantageOpen);
+
 	ImVec4 color;
 	ImVec4 white(1.0f, 1.0f, 1.0f, 1.0f);
 	ImVec4 red(1.0f, 0.0f, 0.0f, 1.0f);
 	ImVec4 green(0.0f, 1.0f, 0.0f, 1.0f);
 
-	/* Player 1 */
-	ImGui::HorizontalSpacing();
-	ImGui::TextUnformatted("P1 gaps:");
+	/* Window */
+	ImGui::Begin("Framedata", &isFrameAdvantageOpen);
+	ImGui::SetWindowSize(ImVec2(220, 100));
+
+	ImGui::Columns(2, "columns_layout", true);
+
+	// First column
+	if (interaction.frameAdvantageToDisplay > 0)
+		color = green;
+	else if (interaction.frameAdvantageToDisplay < 0)
+		color = red;
+	else
+		color = white;
+
+	ImGui::Text("Player 1");
+	ImGui::TextUnformatted("Gap:");
 	ImGui::SameLine();
 	ImGui::TextUnformatted(((interaction.p1GapDisplay != -1) ? std::to_string(interaction.p1GapDisplay) : "").c_str());
 
-	ImGui::HorizontalSpacing();
-	ImGui::TextUnformatted("P1 FA:");
+	ImGui::TextUnformatted("Advantage:");
 	ImGui::SameLine();
 	std::string str = std::to_string(interaction.frameAdvantageToDisplay);
 	if (interaction.frameAdvantageToDisplay > 0)
 		str = "+" + str;
 
+	ImGui::TextColored(color, "%s", str.c_str());
+
+	// Next column
 	if (interaction.frameAdvantageToDisplay > 0)
-		color = green;
-	else if (interaction.frameAdvantageToDisplay < 0)
 		color = red;
+	else if (interaction.frameAdvantageToDisplay < 0)
+		color = green;
 	else
 		color = white;
 
-	ImGui::TextColored(color, "%s", str.c_str());
-
-	ImGui::VerticalSpacing(10);
-
-	/* Player 2 */
-	ImGui::HorizontalSpacing();
-	ImGui::TextUnformatted("P2 gaps:");
+	ImGui::NextColumn();
+	ImGui::Text("Player 2");
+	ImGui::TextUnformatted("Gap:");
 	ImGui::SameLine();
 	ImGui::TextUnformatted(((interaction.p2GapDisplay != -1) ? std::to_string(interaction.p2GapDisplay) : "").c_str());
 
-	ImGui::HorizontalSpacing();
-	ImGui::TextUnformatted("P2 FA:");
+	ImGui::TextUnformatted("Advantage:");
 	ImGui::SameLine();
 	std::string str2 = std::to_string(-interaction.frameAdvantageToDisplay);
 	if (interaction.frameAdvantageToDisplay < 0)
 		str2 = "+" + str2;
-
-	if (interaction.frameAdvantageToDisplay > 0)
-		color = red;
-	else if (interaction.frameAdvantageToDisplay < 0)
-		color = green;
-	else
-		color = white;
-
 	ImGui::TextColored(color, "%s", str2.c_str());
+	ImGui::End();
 }
 
 void MainWindow::DrawCustomPalettesSection() const

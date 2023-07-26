@@ -71,9 +71,7 @@ public:
 	char pad_028C[80]; //0x028C
 	int32_t position_x_dupe; //0x02DC
 	int32_t position_y_dupe; //0x02E0
-	char pad_02E4[8]; //0x02E4
-	int u_hitstunRelated; //0x02EC
-	char pad_02F0[4]; //0x02E4
+	char pad_02E4[16]; //0x02E4
 	int32_t offsetX_2; //0x02F4
 	char pad_02F8[4]; //0x02F8
 	int32_t offsetY_2; //0x02FC

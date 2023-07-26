@@ -11,7 +11,7 @@ const std::list<std::string> idleWords =
 "CmnActFWalk", "CmnActBWalk",
 "CmnActFDash", "CmnActFDashStop",
 "CmnActJumpLanding", "CmnActLandingStiffEnd",
-"CmnActUkemiLandNLanding",
+"CmnActUkemiLandNLanding", // to fix, 12F too long!
 // Proxi block is triggered when an attack is closing in without being actually blocked
 // If the player.blockstun is = 0, then those animations are still considered idle
 "CmnActCrouchGuardPre", "CmnActCrouchGuardLoop", "CmnActCrouchGuardEnd",                 // Crouch
@@ -125,8 +125,10 @@ void computeFramedataInteractions()
         computeGaps(player1, interaction.p1Gap, interaction.p1GapDisplay);
         computeGaps(player2, interaction.p2Gap, interaction.p2GapDisplay);
         getFrameAdvantage(player1, player2);
+
     }
 }
 
 // TODO: check world time to compute
-// TODO: Display frame advantage near characters
+// Fix Checkbox
+// Draw collision boxes as well
