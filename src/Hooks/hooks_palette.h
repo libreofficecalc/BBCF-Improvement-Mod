@@ -1,9 +1,10 @@
 #pragma once
 #include "CBR/Metadata.h"
+#include "CBR/CbrUtils.h"
 
 bool placeHooks_palette();
 
-std::shared_ptr<Metadata> RecordCbrMetaData(bool);
+std::shared_ptr<Metadata> RecordCbrMetaData(bool, int);
 
 char ReplayCbrData();
 

@@ -96,10 +96,26 @@ void CbrInterface::deleteReversalReplay(int i) {
 AnnotatedReplay* CbrInterface::getReversalReplay(int i) {
 	return &reversalReplays[i];
 }
+/* 
+#define D 128
+#define C 64
+#define B 32
+#define A 16
+#define forward 1100
+#define back 1101
+#define up 1102
+#define down 1103
+std::vector<CommandActions> generalCommands =
+{
+	{ "623", {6,-forward}},
+	{ "236", {2,3}},
+	{ "41236", {4,1}},
+	{ "41236", {4,1}},
+};
+int CbrInterface::determineBufferedInput(std::array<FixedQueue<int, 5>, 2> inputBuffer) {
 
-
-
-
+}
+*/
 
 int CbrInterface::randomReversalReplaySelection() {
 	int combinedPropability = 0;
@@ -745,6 +761,16 @@ bool CbrInterface::threadCheckSaving() {
 		ret = true;
 	}
 	return ret;
+}
+
+std::string CbrInterface::threadStatus() {
+	std::string sRet = "Active:";
+
+	if (processingStoredRecordingsThread.joinable()) {
+		sRet += " processingStoredRecordingsThread";
+	}
+
+	return sRet;
 }
 
 void CbrInterface::saveSettings() {

@@ -19,6 +19,9 @@
 //(800000/2)
 #define maxYDist 400000 
 
+#define maxYVelocity 800000
+#define maxXVelocity 800000
+
 #define maxProration 10000
 #define maxComboTime 200
 
@@ -173,6 +176,128 @@ float  compMaxDistanceAttack(int curP1, int curP2, int caseP1, int caseP2, int m
         return 1; 
     }
     return 0;
+}
+float compDirectionHeld(bool curFwd, bool curBack, bool curUp, bool curDown, bool caseFwd, bool caseBack, bool caseUp, bool caseDown) {
+    float compVal = 0;
+    if (curFwd != caseFwd) {
+        compVal += 0.05;
+    }
+    if (curBack != caseBack) {
+        compVal += 0.05;
+    }
+    if (curUp != caseUp) {
+        compVal += 0.05;
+    }
+    if (curDown != caseDown) {
+        compVal += 0.05;
+    }
+    return compVal;
+}
+float compButtonsHeld(bool curA, bool curB, bool curC, bool curD, bool caseA, bool caseB, bool caseC, bool caseD) {
+    float compVal = 0;
+    if (curA != caseA) {
+        compVal += 0.2;
+    }
+    if (curB != caseB) {
+        compVal += 0.2;
+    }
+    if (curC != caseC) {
+        compVal += 0.2;
+    }
+    if (curD != caseD) {
+        compVal += 0.2;
+    }
+    return compVal;
+}
+
+float compNegativeEdge(bool curA, bool curB, bool curC, bool curD, bool caseA, bool caseB, bool caseC, bool caseD, int charId) {
+    float compVal = 0;
+    switch (charId)
+    {
+    case 15://Makoto
+        if (curD != caseD) {
+            compVal += 1;
+        }
+        break;
+    case 21://bullet
+        if (curD != caseD) {
+            compVal += 1;
+        }
+        break;
+    case 22://Azrael
+        break;
+    case 6://litchi
+        if (curD != caseD) {
+            compVal += 1;
+        }
+        break;
+    case 3://rachel
+        break;
+    case 5://Tager//tagerSpecific
+        break;
+    case 33://ES
+        break;
+    case 11://Nu
+        break;
+    case 27://Lambda
+        break;
+    case 13://Hazama
+        break;
+    case 26://Celica
+        break;
+    case 16://Valk
+        break;
+    case 17://Plat
+        break;
+    case 18://Relius
+        break;
+    case 32://Susanoo
+        break;
+    case 35://Jubei
+        break;
+    case 31://Izanami
+        break;
+    case 29://Nine
+        break;
+    case 9://Carl
+        if (curD != caseD) {
+            compVal += 1;
+        }
+        break;
+    case 12://Tsubaki
+        break;
+    case 24://Kokonoe
+        if (curD != caseD) {
+            compVal += 1;
+        }
+        break;
+    case 19://Izayoi
+        break;
+    case 7://Arakune
+        if (curD != curD) {
+            compVal += 0.25;
+        }
+        if (curC != caseC) {
+            compVal += 0.25;
+        }
+        if (curB != caseB) {
+            compVal += 0.25;
+        }
+        if (curA != caseA) {
+            compVal += 0.25;
+        }
+        break;
+    case 8://Bang
+        break;
+    case 20://Amane
+        if (curD != caseD) {
+            compVal += 1;
+        }
+        break;
+    default:
+        break;
+    }
+    return compVal;
 }
 
 float  compRelativePosY(int curP1, int curP2, int caseP1, int caseP2) {
@@ -565,10 +690,18 @@ CbrData::CbrData(std::string n, std::string p1, int charId) :playerName(n), char
 #define costAmaneDrillMeterEnemy 181//0.4
 #define costAmaneDrillOverheatEnemy 182//0.2
 
-//Generic
-#define costMinDistanceAttack 183//0.5
+//Makoto 
+#define costMakotoDriveCharge 183//0.2
 
-#define costNonNeutralState 184//0.3
+//Generic
+#define costMinDistanceAttack 184//0.5
+
+#define costNonNeutralState 185//0.3
+
+#define costButtonsHeld 186
+#define costNegativeEdge 187
+#define costVelocity 188
+#define costVelocityEnemy 189
 
 void CbrData::initalizeCosts() {
     
@@ -1616,11 +1749,45 @@ void CbrData::initalizeCosts() {
     costs.pressure[costBangNailcountEnemy] = 0.4;
     costs.blocking[costBangNailcountEnemy] = 0.4;
 
+    //Makoto
+    costs.name[costMakotoDriveCharge] = "costMakotoDriveCharge";
+    costs.basic[costMakotoDriveCharge] = 0.2;
+    costs.combo[costMakotoDriveCharge] = 0.2;
+    costs.pressure[costMakotoDriveCharge] = 0.2;
+    costs.blocking[costMakotoDriveCharge] = 0.0;
+    
+    //Generic
     costs.name[costMinDistanceAttack] = "costMinDistanceAttack";
     costs.basic[costMinDistanceAttack] = 0.5;
     costs.combo[costMinDistanceAttack] = 0.5;
     costs.pressure[costMinDistanceAttack] = 0.5;
     costs.blocking[costMinDistanceAttack] = 0.5;
+
+    costs.name[costButtonsHeld] = "costButtonsHeld";
+    costs.basic[costButtonsHeld] = 1;
+    costs.combo[costButtonsHeld] = 1;
+    costs.pressure[costButtonsHeld] = 1;
+    costs.blocking[costButtonsHeld] = 1;
+    
+    costs.name[costNegativeEdge] = "costNegativeEdge";
+    costs.basic[costNegativeEdge] = 0.4;
+    costs.combo[costNegativeEdge] = 0.4;
+    costs.pressure[costNegativeEdge] = 0.4;
+    costs.blocking[costNegativeEdge] = 0.4;
+    
+    costs.name[costVelocity] = "costVelocity";
+    costs.basic[costVelocity] = 0.5;
+    costs.combo[costVelocity] = 0.5;
+    costs.pressure[costVelocity] = 0.5;
+    costs.blocking[costVelocity] = 0.5;
+
+    costs.name[costVelocityEnemy] = "costVelocityEnemy";
+    costs.basic[costVelocityEnemy] = 0.5;
+    costs.combo[costVelocityEnemy] = 0.5;
+    costs.pressure[costVelocityEnemy] = 0.5;
+    costs.blocking[costVelocityEnemy] = 0.5;
+    
+    
 }
 
 
@@ -1785,36 +1952,9 @@ int CbrData::CBRcomputeNextAction(Metadata* curGamestate) {
                 //updateDebugCaseIndex(dci, newDci);
                 if (bufComparison <= bestComparison + maxRandomDiff) {
                     //only doing helperComp if this even has a chance to be the best because it is costly
-                    bufComparison += HelperCompMatch(curGamestate, caseGamestate);
+                    bufComparison += comparisonFunctionSlow(curGamestate, caseGamestate, replayFiles[i], replayFiles[i].getCase(j), i, j, false);
 
                     bestCaseCultivator(bufComparison, i, j);
-                    /*old selection
-                    if (randomDifferenceSelection(bufComparison, bestComparison)) {
-                        if (bufComparison == bestComparison ) {
-                            if (bestCompBufferCase == (j - 1) && bestCompBufferReplay == i) {
-                                bestCompBufferCase = j;
-                                bestFrame = replayFiles[i].getCase(j)->getStartingIndex();
-                            }
-                            else if(RandomInt(0,1)==1){
-                                bestComparison = bufComparison;
-                                bestReplay = i;
-                                bestCase = j;
-                                bestFrame = replayFiles[i].getCase(j)->getStartingIndex();
-                                bestCompBufferCase = j;
-                                bestCompBufferReplay = i;
-                            }
-                     
-                                
-                        }
-                        else {
-                            bestComparison = bufComparison;
-                            bestReplay = i;
-                            bestCase = j;
-                            bestFrame = replayFiles[i].getCase(j)->getStartingIndex();
-                            bestCompBufferCase = j;
-                            bestCompBufferReplay = i;
-                        }
-                    }*/
 
                 }
                 
@@ -1831,7 +1971,7 @@ int CbrData::CBRcomputeNextAction(Metadata* curGamestate) {
             float bufComparison = 9999999;
             float bufComparison2 = 9999999; 
             bufComparison = comparisonFunction(curGamestate, replayFiles[activeReplay].getCase(activeCase + 1)->getMetadata(), replayFiles[activeReplay], replayFiles[activeReplay].getCase(activeCase + 1), activeReplay, activeCase+1, true);
-            bufComparison += HelperCompMatch(curGamestate, replayFiles[activeReplay].getCase(activeCase + 1)->getMetadata());
+            bufComparison += comparisonFunctionSlow(curGamestate, replayFiles[activeReplay].getCase(activeCase + 1)->getMetadata(), replayFiles[activeReplay], replayFiles[activeReplay].getCase(activeCase + 1), activeReplay, activeCase + 1, true);
             if (bestReplay == -1 && bestCase == -1) {
                 if (bufComparison < bestComparison) {
                     bufComparison2 = 9999999;
@@ -1968,7 +2108,7 @@ decltype(std::forward<F>(func)(std::forward<Args>(args)...))
     }
     else {
         auto res = func(args...)* multi;
-        if (res != 0) {
+        if (res != -1) {
             std::stringstream ss;
             //((ss << args), ...);
             ss << res << " = ";
@@ -1995,6 +2135,51 @@ decltype(std::forward<F>(func)(std::forward<Args>(args)...))
     }
 }
 #define PURE_INVOKE(func, ...) (pure_call)(func, #func "(" #__VA_ARGS__ ") ", __VA_ARGS__)
+
+std::string CbrData::compareRandomCases() {
+    if (replayFiles.size() == 0) {
+        return "NoData";
+    }
+    float average = 0;
+    float combined = 0;
+    int comparisonCounter = 0;
+    float highest = 0;
+
+    for (int i = 0; i < replayFiles.size(); i++) {
+        for (int j = 0; j < replayFiles[i].getCaseBaseLength(); j++) {
+            for (int o = 0; o < replayFiles.size(); o++) {
+                for (int k = 0; k < replayFiles[o].getCaseBaseLength(); k++) {
+                    int curReplay = i;
+                    int curCase = j;
+                    int caseReplay = o;
+                    int caseCase = k;
+                    auto val = comparisonFunctionCaseDifference(replayFiles[curReplay].getCase(curCase)->getMetadata(), replayFiles[caseReplay].getCase(caseCase)->getMetadata(), replayFiles[caseReplay], replayFiles[curReplay], replayFiles[caseReplay].getCase(caseCase), replayFiles[curReplay].getCase(curCase), caseReplay, caseCase, curReplay, curCase);
+                    combined += val;
+                    comparisonCounter++;
+                    if (val > highest) { highest = val; }
+                    average = combined / comparisonCounter;
+
+                }
+            }
+        }
+    }
+
+
+    return "Average: " + std::to_string(average) + " - Highest: " + std::to_string(highest);
+}
+
+float CbrData::comparisonFunctionCaseDifference(Metadata* curGamestate, Metadata* caseGamestate, CbrReplayFile& caseReplay, CbrReplayFile& curReplay, CbrCase* caseData, CbrCase* curData, int CaseReplayIndex, int CaseCaseIndex, int curReplayIndex, int curCaseIndex) {
+    curCosts = costs.basic;
+    auto val1 = comparisonFunction(curGamestate, caseGamestate, caseReplay, caseData, CaseReplayIndex, CaseCaseIndex, true);
+    auto val2 = comparisonFunction(caseGamestate, curGamestate, curReplay, curData, curReplayIndex, curCaseIndex, true);
+    
+    if (abs(val1 - val2) >= 100) {
+        auto val1 = comparisonFunction(curGamestate, caseGamestate, caseReplay, caseData, CaseReplayIndex, CaseCaseIndex, true);
+        auto val2 = comparisonFunction(caseGamestate, curGamestate, curReplay, curData, curReplayIndex, curCaseIndex, true);
+    }
+    
+    return abs(val1 - val2);
+}
 
 float CbrData::comparisonFunction(Metadata* curGamestate, Metadata* caseGamestate, CbrReplayFile& caseReplay, CbrCase* caseData, int replayIndex, int caseIndex, bool nextCaseCheck) {
     float compValue = 0;
@@ -2029,6 +2214,22 @@ float CbrData::comparisonFunction(Metadata* curGamestate, Metadata* caseGamestat
     if (compValue > 0) {
         return compValue;
     }
+
+
+    //Velocity
+    if (curGamestate->getFacing() == caseGamestate->getFacing()) {
+        compValue += PURE_INVOKE(compInt, curCosts[costVelocity], curGamestate->velocity[0][0], caseGamestate->velocity[0][0], maxXVelocity);
+        compValue += PURE_INVOKE(compInt, curCosts[costVelocity], curGamestate->velocity[0][1], caseGamestate->velocity[0][1], maxYVelocity);
+        compValue += PURE_INVOKE(compInt, curCosts[costVelocityEnemy], curGamestate->velocity[1][0], caseGamestate->velocity[1][0], maxXVelocity);
+        compValue += PURE_INVOKE(compInt, curCosts[costVelocityEnemy], curGamestate->velocity[1][0], caseGamestate->velocity[1][0], maxYVelocity);
+    }
+    else {
+        compValue += PURE_INVOKE(compInt, curCosts[costVelocity], -curGamestate->velocity[0][0], caseGamestate->velocity[0][0], maxXVelocity);
+        compValue += PURE_INVOKE(compInt, curCosts[costVelocity], curGamestate->velocity[0][1], caseGamestate->velocity[0][1], maxYVelocity);
+        compValue += PURE_INVOKE(compInt, curCosts[costVelocityEnemy], -curGamestate->velocity[1][0], caseGamestate->velocity[1][0], maxXVelocity);
+        compValue += PURE_INVOKE(compInt, curCosts[costVelocityEnemy], curGamestate->velocity[1][0], caseGamestate->velocity[1][0], maxYVelocity);
+    }
+    
 
     compValue += PURE_INVOKE(compInt, curCosts[costAiHp], curGamestate->healthMeter[0], caseGamestate->healthMeter[0], maxHpDiff);
     compValue += PURE_INVOKE(compInt, curCosts[costEnemyHp], curGamestate->healthMeter[1], caseGamestate->healthMeter[1], maxHpDiff);
@@ -2127,6 +2328,9 @@ float CbrData::comparisonFunction(Metadata* curGamestate, Metadata* caseGamestat
  
     switch (caseReplay.getCharIds()[0])
     {
+    case 15://Makoto
+        compValue += PURE_INVOKE(compInt, curCosts[costMakotoDriveCharge], curGamestate->CharSpecific1[0], caseGamestate->CharSpecific1[0], 15);
+        break;
     case 21://bullet
         compValue += PURE_INVOKE(compInt, curCosts[costBuHeat], curGamestate->CharSpecific1[0], caseGamestate->CharSpecific1[0], 2);
         //compValue += compInt(curGamestate->CharSpecific1[0], caseGamestate->CharSpecific1[0], 2) * costBuHeat; //heat
@@ -2586,7 +2790,11 @@ float CbrData::comparisonFunctionDebug(Metadata* curGamestate, Metadata* caseGam
     compValue += REFLECT_INVOKE(compBool, curCosts[costEnemyOverdriveState], curGamestate->overdriveTimeleft[1] > 0, caseGamestate->overdriveTimeleft[1] > 0);
     //compValue += compBool(curGamestate->overdriveTimeleft[1] > 0, caseGamestate->overdriveTimeleft[1] > 0) * costEnemyOverdriveState;
 
-
+    //Velocity
+    compValue += REFLECT_INVOKE(compInt, curCosts[costVelocity], curGamestate->velocity[0][0], caseGamestate->velocity[0][0], maxXVelocity);
+    compValue += REFLECT_INVOKE(compInt, curCosts[costVelocity], curGamestate->velocity[0][1], caseGamestate->velocity[0][1], maxYVelocity);
+    compValue += REFLECT_INVOKE(compInt, curCosts[costVelocityEnemy], curGamestate->velocity[1][0], caseGamestate->velocity[1][0], maxXVelocity);
+    compValue += REFLECT_INVOKE(compInt, curCosts[costVelocityEnemy], curGamestate->velocity[1][0], caseGamestate->velocity[1][0], maxYVelocity);
 
     if (curGamestate->getHit()[0] == true) {
         compValue += REFLECT_INVOKE(compInt, curCosts[costAiProration], curGamestate->getComboProration()[0], caseGamestate->getComboProration()[0], maxProration);
@@ -2614,6 +2822,9 @@ float CbrData::comparisonFunctionDebug(Metadata* curGamestate, Metadata* caseGam
 
     switch (caseReplay.getCharIds()[0])
     {
+    case 15://Makoto
+        compValue += REFLECT_INVOKE(compInt, curCosts[costMakotoDriveCharge], curGamestate->CharSpecific1[0], caseGamestate->CharSpecific1[0], 15);
+        break;
     case 21://bullet
         compValue += REFLECT_INVOKE(compInt, curCosts[costBuHeat], curGamestate->CharSpecific1[0], caseGamestate->CharSpecific1[0], 2);
         //compValue += compInt(curGamestate->CharSpecific1[0], caseGamestate->CharSpecific1[0], 2) * costBuHeat; //heat
@@ -2971,7 +3182,30 @@ float CbrData::comparisonFunctionDebug(Metadata* curGamestate, Metadata* caseGam
     return compValue;
 }
 
+float CbrData::comparisonFunctionSlow(Metadata* curGamestate, Metadata* caseGamestate, CbrReplayFile& caseReplay, CbrCase* caseData, int replayIndex, int caseIndex, bool nextCaseCheck) {
+    float compValue = 0; 
+    compValue += PURE_INVOKE(compDirectionHeld, curCosts[costButtonsHeld], curGamestate->inputFwd, curGamestate->inputBack, curGamestate->inputUp, curGamestate->inputDown, caseGamestate->inputFwd, caseGamestate->inputBack, caseGamestate->inputUp, caseGamestate->inputDown);
+    compValue += PURE_INVOKE(compButtonsHeld, curCosts[costButtonsHeld], curGamestate->inputA, curGamestate->inputB, curGamestate->inputC, curGamestate->inputD, caseGamestate->inputA, caseGamestate->inputB, caseGamestate->inputC, caseGamestate->inputD);
+    compValue += PURE_INVOKE(compNegativeEdge, curCosts[costNegativeEdge], curGamestate->inputA, curGamestate->inputB, curGamestate->inputC, curGamestate->inputD, caseGamestate->inputA, caseGamestate->inputB, caseGamestate->inputC, caseGamestate->inputD, caseReplay.getCharIds()[0]);
+    compValue += HelperCompMatch(curGamestate, caseGamestate);
+    return compValue;
+}
+float CbrData::comparisonFunctionSlowDebug(Metadata* curGamestate, Metadata* caseGamestate, CbrReplayFile& caseReplay, CbrCase* caseData, int replayIndex, int caseIndex, bool nextCaseCheck) {
+    float compValue = 0;
+    compValue += REFLECT_INVOKE(compDirectionHeld, curCosts[costButtonsHeld], curGamestate->inputFwd, curGamestate->inputBack, curGamestate->inputUp, curGamestate->inputDown, caseGamestate->inputFwd, caseGamestate->inputBack, caseGamestate->inputUp, caseGamestate->inputDown);
+    compValue += REFLECT_INVOKE(compButtonsHeld, curCosts[costButtonsHeld], curGamestate->inputA, curGamestate->inputB, curGamestate->inputC, curGamestate->inputD, caseGamestate->inputA, caseGamestate->inputB, caseGamestate->inputC, caseGamestate->inputD);
+    compValue += REFLECT_INVOKE(compNegativeEdge, curCosts[costNegativeEdge], curGamestate->inputA, curGamestate->inputB, curGamestate->inputC, curGamestate->inputD, caseGamestate->inputA, caseGamestate->inputB, caseGamestate->inputC, caseGamestate->inputD, caseReplay.getCharIds()[0]);
 
+
+    
+    float helperVal = HelperCompMatch(curGamestate, caseGamestate);
+    compValue += helperVal;
+    if (helperVal > 0) {
+        debugText += "\nHelper Cost: " + std::to_string(helperVal);
+    }
+
+    return compValue;
+}
 int CbrData::makeCharacterID(std::string charName) {
     if (charName == "es") { return 0; };//es
     if (charName == "ny") { return 1; };//nu
@@ -3355,12 +3589,17 @@ int CbrData::inverseInput(int input) {
     if (buffer == 6 || buffer == 3 || buffer == 9) {
         return input - 2;
     }
-
-    if (buffer == 4 || buffer == 7 || buffer == 1) {
-        return input + 2;
+    else {
+        if (buffer == 4 || buffer == 7 || buffer == 1) {
+            return input + 2;
+        }
     }
+
+    
     return input;
 }
+
+
 
 
 void CbrData::debugPrint(Metadata* curM, int nextCI, int bestCI, int nextRI, int bestRI, std::vector<debugCaseIndex> dci, int FinalBestRI, int FinalBestCI) {
@@ -3379,11 +3618,8 @@ void CbrData::debugPrint(Metadata* curM, int nextCI, int bestCI, int nextRI, int
     float helperVal = -1;
     if (nextRI != -1 && nextCI <= replayFiles[nextRI].getCaseBaseLength() - 1) {
         nextCompVal = comparisonFunctionDebug(curM, replayFiles[nextRI].getCase(nextCI)->getMetadata(), replayFiles[nextRI], replayFiles[nextRI].getCase(nextCI), nextRI, nextCI, true);
-        auto helperVal = HelperCompMatch(curM, replayFiles[nextRI].getCase(nextCI)->getMetadata());
-        nextCompVal += helperVal;
-        if (helperVal > 0) {
-            debugText += "Helper Cost: " + std::to_string(helperVal);
-        }
+        nextCompVal +=  comparisonFunctionSlowDebug(curM, replayFiles[nextRI].getCase(nextCI)->getMetadata(), replayFiles[nextRI], replayFiles[nextRI].getCase(nextCI), nextRI, nextCI, true);
+        
         debugTextArr.push_back(debugText);
         debugText = "";
 
@@ -3406,8 +3642,7 @@ void CbrData::debugPrint(Metadata* curM, int nextCI, int bestCI, int nextRI, int
     str = "";
 
     auto bestCompVal = comparisonFunctionDebug(curM, replayFiles[bestRI].getCase(bestCI)->getMetadata(), replayFiles[bestRI], replayFiles[bestRI].getCase(bestCI), bestRI, bestCI,false);
-    helperVal = HelperCompMatch(curM, replayFiles[bestRI].getCase(bestCI)->getMetadata());
-    bestCompVal += helperVal;
+    bestCompVal += comparisonFunctionSlowDebug(curM, replayFiles[bestRI].getCase(bestCI)->getMetadata(), replayFiles[bestRI], replayFiles[bestRI].getCase(bestCI), bestRI, bestCI, false);
     if (helperVal > 0) {
         debugText += "Helper Cost: " + std::to_string(helperVal);
     }
@@ -3429,11 +3664,7 @@ void CbrData::debugPrint(Metadata* curM, int nextCI, int bestCI, int nextRI, int
 
     for (int i = 0; i < 30 && i < dci.size(); i++) {
         auto bestCompVal = comparisonFunctionDebug(curM, replayFiles[dci[i].replayIndex].getCase(dci[i].caseIndex)->getMetadata(), replayFiles[dci[i].replayIndex], replayFiles[dci[i].replayIndex].getCase(dci[i].caseIndex), dci[i].replayIndex, dci[i].caseIndex, false);
-        helperVal = HelperCompMatch(curM, replayFiles[dci[i].replayIndex].getCase(dci[i].caseIndex)->getMetadata());
-        bestCompVal += helperVal;
-        if (helperVal > 0) {
-            debugText += "Helper Cost: " + std::to_string(helperVal);
-        }
+        bestCompVal += comparisonFunctionSlowDebug(curM, replayFiles[dci[i].replayIndex].getCase(dci[i].caseIndex)->getMetadata(), replayFiles[dci[i].replayIndex], replayFiles[dci[i].replayIndex].getCase(dci[i].caseIndex), dci[i].replayIndex, dci[i].caseIndex, false);
         debugTextArr.push_back(debugText);
         debugText = "";
 

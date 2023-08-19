@@ -375,6 +375,7 @@ void CBRLogic(char* addr, int hirarchy, bool readOnly, bool writeOnly, int playe
 }
 
 int CBRLogic(int input, int playerNr, int controllerNr, bool readOnly, bool writeOnly, bool netplayMemory) {
+	static std::array<int, 2> oldInput{ 5,5 };
 	g_interfaces.cbrInterface.debugNr = playerNr;
 	if (playerNr == 0) {
 		
@@ -384,7 +385,7 @@ int CBRLogic(int input, int playerNr, int controllerNr, bool readOnly, bool writ
 		}
 		if (g_interfaces.cbrInterface.netaPlaying || g_interfaces.cbrInterface.netaRecording || g_interfaces.cbrInterface.autoRecordActive || g_interfaces.cbrInterface.Replaying || g_interfaces.cbrInterface.Recording || g_interfaces.cbrInterface.instantLearning == true || g_interfaces.cbrInterface.instantLearningP2 == true ) {
 
-			auto meta = RecordCbrMetaData(0);
+			auto meta = RecordCbrMetaData(0, oldInput[playerNr]);
 			meta->computeMetaData();
 			RecordCbrHelperData(meta, 0);
 			
@@ -416,14 +417,14 @@ int CBRLogic(int input, int playerNr, int controllerNr, bool readOnly, bool writ
 		LOG_ASM(3, "ActiveCheckP2\n");
 		if (g_interfaces.cbrInterface.netaPlaying || g_interfaces.cbrInterface.netaRecording || g_interfaces.cbrInterface.autoRecordActive || g_interfaces.cbrInterface.ReplayingP2 || g_interfaces.cbrInterface.RecordingP2 || g_interfaces.cbrInterface.instantLearning == true || g_interfaces.cbrInterface.instantLearningP2 == true ) {
 
-			auto meta = RecordCbrMetaData(1);
+			auto meta = RecordCbrMetaData(1, oldInput[playerNr]);
 			meta->computeMetaData();
 			RecordCbrHelperData(meta, 1);
 			//input = reversalLogic(input, meta, 2, readOnly, writeOnly);
 			input = netaLogic(input, meta, 1, readOnly, writeOnly);
 			if (writeOnly && controllerNr >= 0 && (g_interfaces.cbrInterface.ReplayingP2 || g_interfaces.cbrInterface.instantLearning == true)) {
 				input = g_interfaces.cbrInterface.getCbrData(1)->CBRcomputeNextAction(meta.get());
-			}
+			} 
 			LOG_ASM(2, "PreReadP2\n");
 			if (readOnly && ((g_interfaces.cbrInterface.autoRecordActive && ((g_interfaces.cbrInterface.autoRecordGameOwner && controllerNr == 0) || (g_interfaces.cbrInterface.autoRecordAllOtherPlayers && (controllerNr == 1 || controllerNr == -1)))) || g_interfaces.cbrInterface.RecordingP2 || g_interfaces.cbrInterface.instantLearningP2 == true)) {
 				LOG_ASM(2, "ReadP2\n");
@@ -439,13 +440,17 @@ int CBRLogic(int input, int playerNr, int controllerNr, bool readOnly, bool writ
 
 		}
 	}
+	if (writeOnly || readOnly) {
+		oldInput[playerNr] = input;
+	}
 	return input;
 }
 
 int reversalLogic(int input, int playerNR, bool readOnly, bool writeOnly) {
+	static std::array<int, 2> oldInput{ 5,5 };
 	if (g_interfaces.cbrInterface.reversalRecording || g_interfaces.cbrInterface.reversalActive) {
 
-		auto meta = RecordCbrMetaData(0);
+		auto meta = RecordCbrMetaData(0, oldInput[playerNR]);
 		meta->computeMetaData();
 		RecordCbrHelperData(meta, 0);
 
@@ -512,7 +517,7 @@ int reversalLogic(int input, int playerNR, bool readOnly, bool writeOnly) {
 			}
 		}
 	}
-
+	oldInput[playerNR] = input;
 	return input;
 }
 
@@ -538,7 +543,17 @@ int netaLogic(int input, std::shared_ptr<Metadata> meta, int playerNR, bool read
 	return input;
 }
 
-std::shared_ptr<Metadata> RecordCbrMetaData(bool PlayerIndex) {
+#define specialButton 512
+#define tauntButton 256
+#define DButton 128
+#define CButton 64
+#define BButton 32
+#define AButton 16
+std::shared_ptr<Metadata> RecordCbrMetaData(bool PlayerIndex, int input) {
+	//static std::array<FixedQueue<int, 5>, 2> inputBuffer;
+	
+
+
 	CharData* focusCharData;
 	CharData* enemyCharData;
 	if (PlayerIndex == 0) {
@@ -549,7 +564,8 @@ std::shared_ptr<Metadata> RecordCbrMetaData(bool PlayerIndex) {
 		focusCharData = g_interfaces.player2.GetData();
 		enemyCharData = g_interfaces.player1.GetData();
 	}
-	
+
+
 	auto p1X = focusCharData->position_x;
 	auto p1Y = focusCharData->position_y_dupe;
 	auto p2X = enemyCharData->position_x;
@@ -596,13 +612,99 @@ std::shared_ptr<Metadata> RecordCbrMetaData(bool PlayerIndex) {
 	meta->hitMinX = minDist.x;
 	meta->hitMinY = minDist.y;
 
+
+	//Preprocessing inputs
+	auto buffer = input;
+	auto test = buffer - specialButton;
+	if (test > 0) {
+		buffer = test;
+	}
+	test = buffer - tauntButton;
+	if (test > 0) {
+		buffer = test;
+	}
+	test = buffer - DButton;
+	if (test > 0) {
+		buffer = test;
+		meta->inputD = true;
+	}
+	test = buffer - CButton;
+	if (test > 0) {
+		buffer = test;
+		meta->inputC = true;
+	}
+	test = buffer - BButton;
+	if (test > 0) {
+		buffer = test;
+		meta->inputB = true;
+	}
+	test = buffer - AButton;
+	if (test > 0) {
+		buffer = test;
+		meta->inputA = true;
+	}
+	if (facing) {
+		if (buffer == 6 || buffer == 3 || buffer == 9) {
+			buffer = buffer - 2;
+		}
+		else {
+			if (buffer == 4 || buffer == 7 || buffer == 1) {
+				buffer = buffer + 2;
+			}
+		}
+	}
+	//inputBuffer[PlayerIndex].push(buffer);
+	switch (buffer)
+	{
+	default:
+		break;
+	case 1:
+		meta->inputFwd = false, meta->inputUp = false, meta->inputDown = true, meta->inputBack = true;
+		break;
+	case 2:
+		meta->inputFwd = false, meta->inputUp = false, meta->inputDown = true, meta->inputBack = false;
+		break;
+	case 3:
+		meta->inputFwd = true, meta->inputUp = false, meta->inputDown = true, meta->inputBack = false;
+		break;
+	case 4:
+		meta->inputFwd = false, meta->inputUp = false, meta->inputDown = false, meta->inputBack = true;
+		break;
+	case 5:
+		meta->inputFwd = false, meta->inputUp = false, meta->inputDown = false, meta->inputBack = false;
+		break;
+	case 6:
+		meta->inputFwd = true, meta->inputUp = false, meta->inputDown = false, meta->inputBack = false;
+		break;
+	case 7:
+		meta->inputFwd = false, meta->inputUp = true, meta->inputDown = false, meta->inputBack = true;
+		break;
+	case 8:
+		meta->inputFwd = false, meta->inputUp = true, meta->inputDown = false, meta->inputBack = false;
+		break;
+	case 9:
+		meta->inputFwd = true, meta->inputUp = true, meta->inputDown = false, meta->inputBack = false;
+		break;
+	}
+
+	//Velocity
+	static std::array<int, 2> oldPosX{ focusCharData->position_x , enemyCharData->position_x };
+	static std::array<int, 2> oldPosY{ focusCharData->position_y_dupe, enemyCharData->position_y_dupe };
+	meta->velocity[0][0] = focusCharData->position_x - oldPosX[0];
+	meta->velocity[0][1] = focusCharData->position_y_dupe -  oldPosY[0];
+	meta->velocity[1][0] = enemyCharData->position_x - oldPosX[1];
+	meta->velocity[1][1] = enemyCharData->position_y_dupe - oldPosY[1];
+
 	int buffVal = 0;
 	int testVal = 0;
 	switch (focusCharData->charIndex)
 	{
+	case 15://Makoto
+		meta->CharSpecific1[0] = focusCharData->Drive1; //Makoto Drive
+		break;
 	case 3://rachel
 		meta->CharSpecific1[0] = focusCharData->Drive0; //windmeter
-		break;
+		
 	case 5://Tager
 		meta->CharSpecific1[0] = focusCharData->Drive0 == 1000; //SparkBoltRdy
 		meta->CharSpecific2[0] = enemyCharData->TagerMagnetism > 0;//Magnetized
@@ -741,6 +843,9 @@ std::shared_ptr<Metadata> RecordCbrMetaData(bool PlayerIndex) {
 	}
 	switch (enemyCharData->charIndex)
 	{
+	case 15://Makoto
+		meta->CharSpecific1[1] = enemyCharData->Drive1; //Makoto Drive
+		break;
 	case 5://Tager
 		meta->CharSpecific1[1] = enemyCharData->Drive0 == 1000;
 		meta->CharSpecific2[1] = focusCharData->TagerMagnetism > 0;

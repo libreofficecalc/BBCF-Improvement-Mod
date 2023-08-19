@@ -108,8 +108,13 @@ public:
     bool meterCheck(Metadata* curGamestate, int replayIndex, int caseIndex);
     void CbrData::resetCbr();
     
+    std::string CbrData::compareRandomCases();
+    float CbrData::comparisonFunctionCaseDifference(Metadata* curGamestate, Metadata* caseGamestate, CbrReplayFile& caseReplay, CbrReplayFile& curReplay, CbrCase* caseData, CbrCase* curData, int CaseReplayIndex, int CaseCaseIndex, int curReplayIndex, int curCaseIndex);
+
     float CbrData::comparisonFunction(Metadata* curGamestate, Metadata* caseGamestate, CbrReplayFile& caseReplay, CbrCase* caseData, int CaseReplayIndex, int CaseCaseIndex, bool nextCaseCheck);
     float CbrData::comparisonFunctionDebug(Metadata* curGamestate, Metadata* caseGamestate, CbrReplayFile& caseReplay, CbrCase* caseData, int CaseReplayIndex, int CaseCaseIndex, bool nextCaseCheck);
+    float CbrData::comparisonFunctionSlow(Metadata* curGamestate, Metadata* caseGamestate, CbrReplayFile& caseReplay, CbrCase* caseData, int replayIndex, int caseIndex, bool nextCaseCheck);
+    float CbrData::comparisonFunctionSlowDebug(Metadata* curGamestate, Metadata* caseGamestate, CbrReplayFile& caseReplay, CbrCase* caseData, int replayIndex, int caseIndex, bool nextCaseCheck);
 
     void CbrData::debugPrint(Metadata* curM, int nextCI, int bestCI, int nextRI, int bestRI, std::vector<debugCaseIndex> dci, int FinalBestRI, int FinalBestCI);
     std::string debugPrintCompValues(CbrCase* nextC, Metadata* curM);

@@ -22,8 +22,9 @@ protected:
 	virtual void BeforeDraw() {}
 	virtual void Draw() = 0;
 	virtual void AfterDraw() {}
-private:
 	bool* GetWindowOpenPointer();
+private:
+	
 protected:
 	std::string       m_windowTitle;
 	bool              m_windowClosable;

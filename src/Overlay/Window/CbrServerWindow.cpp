@@ -10,7 +10,7 @@
 #include "Overlay/Window/HitboxOverlay.h"
 #include "CBR/json.hpp"
 #include <Overlay/imgui_utils.h>
-
+#include "IWindow.h"
 
 using json = nlohmann::json;
 
@@ -21,6 +21,8 @@ char playerName[128] = "";
 char player_character[128] = "";
 char opponent_character[128] = "";
 char replay_count_min[128] = "";
+
+
 
 void CbrServerWindow::Draw()
 {
@@ -340,3 +342,19 @@ void CbrServerWindow::DrawImGuiSection()
 
 }
 
+void CbrServerWindow::Update()
+{
+	if (!m_windowOpen)
+	{
+		endAllThreads();
+		return;
+	}
+
+	BeforeDraw();
+
+	ImGui::Begin(m_windowTitle.c_str(), GetWindowOpenPointer(), m_windowFlags);
+	Draw();
+	ImGui::End();
+
+	AfterDraw();
+}

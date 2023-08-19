@@ -61,23 +61,15 @@ int CbrReplayFile::getInput(int i) {
 
 
 CbrGenerationError CbrReplayFile::MakeCaseBase(AnnotatedReplay* ar, std::string charName, int startIndex, int endIndex, int insertPoint) {
-    //auto i = inputs.size()-1;
-    CbrGenerationError retError;
-    retError.errorCount = 0;
-    retError.errorDetail = "";
-    //int errorCounter = 0;
-    int debugInt = 0;
-    bool inputBuffering = false;
 
+    //Input command related initalization
     bool facingCommandStart = 0;
-
     auto commands = FetchCommandActions(charName);
     bool carlDoll = false;
     if (charName == "ca") {
         carlDoll = true;
 
     }
-
     input = ar->getInput();
     std::vector < inputMemory> inputResolve = {};
     std::vector < inputMemory> dollResolve = {};
@@ -87,18 +79,13 @@ CbrGenerationError CbrReplayFile::MakeCaseBase(AnnotatedReplay* ar, std::string 
 
     auto neutral = false;
     bool inputNewCaseTrigger = false;
-    
     int framesIdle = 0; //frames character can be in a neutral state 
-
     int frameCount = ar->ViewMetadata(endIndex).getFrameCount();
-    
     int meterRequirement = 0;
     int odRequirement = 0;
     
     //Making sure rollbacks dont cause issues by deleting rolled back frames
     int reduceAmount = 0;
-
-    
     for (std::vector<int>::size_type i = endIndex;
         i != startIndex - 1; i--) {
 
@@ -113,20 +100,33 @@ CbrGenerationError CbrReplayFile::MakeCaseBase(AnnotatedReplay* ar, std::string 
     auto adjustedEndIndex = endIndex - reduceAmount;
     int iteratorIndex = adjustedEndIndex;//last index of the replay
 
-    //TODO: Debug function to test weather netplay inputs work well. Remove this when not needed anymore.
+    
+    //Data structures for debugging
+    CbrGenerationError retError;
+    retError.errorCount = 0;
+    retError.errorDetail = "";
+    //int errorCounter = 0;
+    int debugInt = 0;
+    bool inputBuffering = false;
     std::string debugStructureStr = "";
     for (std::vector<int>::size_type i = startIndex;
         i < adjustedEndIndex - 1; i++) {
         debugStructureStr += ("Input: " + std::to_string(input[i]) + " Player: " + ar->ViewMetadata(i).getCurrentAction()[0] + " - Opp: " + ar->ViewMetadata(i).getCurrentAction()[1] + "\n");
     }
+
+    //minimum attack distance var initalization
     int minx = -1;
     int miny = -1;
     bool nextMinDisResolve = false;
 
+    //The actual creation loop
     for (std::vector<int>::size_type i = adjustedEndIndex;
         i != startIndex - 1; i--) {
-        frameCount = ar->ViewMetadata(i).getFrameCount();
+        
+        //check weather the AI is in a neutral state
+        neutral = ar->ViewMetadata(i).getNeutral()[0];
 
+        //If meter/OD decreased between frames store it as meter/OD requirement to be added to a case
         if (((int)i >= ar->MetadataSize()) && i >= 0) {
             auto difMeter = ar->ViewMetadata(i+1).heatMeter[0] - ar->ViewMetadata(i).heatMeter[0];
             if (difMeter < 0) {
@@ -145,8 +145,8 @@ CbrGenerationError CbrReplayFile::MakeCaseBase(AnnotatedReplay* ar, std::string 
         if ((ar->ViewMetadata(i).getHitThisFrame()[1] || ar->ViewMetadata(i).getBlockThisFrame()[1]) && ar->ViewMetadata(i).hitMinY > 0 && (ar->ViewMetadata(i).hitMinY < miny || miny == -1) && i - 1 >= 0) {
             miny = ar->ViewMetadata(i-1).hitMinY; }
 
-        neutral = ar->ViewMetadata(i).getNeutral()[0];
-
+        //check if an input sequence is currently beeing executed and if so check every input against the sequence untill completion
+        //All cases during an input sequence are marked to prevent them beeing played out of order
         if (inputResolve.size() > 0) {
             debugInt++;
             if (debugInt == 100) {
@@ -158,14 +158,9 @@ CbrGenerationError CbrReplayFile::MakeCaseBase(AnnotatedReplay* ar, std::string 
                 inputResolve = CheckCommandExecution(deconInputs[j], inputResolve);//fix this inputResolve doesnt update from the function.
 
             }
-            if (inputResolve.size() == 0) {
-                inputNewCaseTrigger = true;
-            }
-            else {
-                inputNewCaseTrigger = false;
-            }
         }
 
+        //Same as with the input sequence but specifically for carls doll
         if (carlDoll && dollResolve.size() > 0) {
             debugInt++;
             if (debugInt == 100) {
@@ -177,19 +172,14 @@ CbrGenerationError CbrReplayFile::MakeCaseBase(AnnotatedReplay* ar, std::string 
                 dollResolve = CheckCommandExecution(deconInputs[j], dollResolve);//fix this inputResolve doesnt update from the function.
 
             }
-            if (dollResolve.size() == 0) {
-                inputNewCaseTrigger = true;
-            }
-            else {
-                inputNewCaseTrigger = false;
-            }
         }
 
-        if (CheckCaseEnd(framesIdle, ar->ViewMetadata(i), curState, neutral, commands) || inputNewCaseTrigger) {
-            inputNewCaseTrigger = false;
+        //Making new cases when a case ends
+        if (CheckCaseEnd(framesIdle, ar->ViewMetadata(i), curState, neutral, commands) ) {
+            
+            //Check for command execution in the new state and creat an input sequence that requires to be resolved
             if (stateChangeTrigger == true) {
                 stateChangeTrigger = false;
-
                 if (inputResolve.size() == 0) {
                     if (i+1 >= input.size()) {
                         facingCommandStart = ar->ViewMetadata(i).getFacing();
@@ -232,17 +222,18 @@ CbrGenerationError CbrReplayFile::MakeCaseBase(AnnotatedReplay* ar, std::string 
                 }
 
             }
+
+            //Process variables that happen during the case but need to be stored in the case meta data.
             curState = ar->ViewMetadata(i).getCurrentAction()[0];
             cbrCase.insert(cbrCase.begin()+ insertPoint, CbrCase(std::move(ar->CopyMetadataPtr(i)), (int)i, iteratorIndex));
             if (inputResolve.size() == 0 && dollResolve.size() == 0) {
                 inputBuffering = false;
             }
-
             cbrCase[insertPoint].setInputBufferSequence(inputBuffering);
             cbrCase[insertPoint].heatConsumed = meterRequirement;
             cbrCase[insertPoint].overDriveConsumed = odRequirement;
             if ((minx != -1 || miny != -1) &&nextMinDisResolve == true) {
-                if (cbrCase[insertPoint].getMetadata()->getNeutral()[0]) {
+                //if (cbrCase[insertPoint].getMetadata()->getNeutral()[0]) {
                     cbrCase[insertPoint].getMetadata()->hitMinX = minx;
                     cbrCase[insertPoint].getMetadata()->hitMinY = miny;
                     //Checking if min distance is truely only set in the proper conditions
@@ -251,16 +242,8 @@ CbrGenerationError CbrReplayFile::MakeCaseBase(AnnotatedReplay* ar, std::string 
                             retError.errorCount++;
                              retError.errorDetail += "minDist: \n";
                         }
-                        if (!cbrCase[insertPoint].getMetadata()->getNeutral()[0]) {
-                            retError.errorCount++;
-                            retError.errorDetail += "minDist: \n";
-                        }
                     }
-                }
-                else {
-                    cbrCase[insertPoint].getMetadata()->hitMinX = -1;
-                    cbrCase[insertPoint].getMetadata()->hitMinY = -1;
-                }
+
                 minx = -1; miny = -1;
                 nextMinDisResolve = false;
             }
@@ -273,12 +256,13 @@ CbrGenerationError CbrReplayFile::MakeCaseBase(AnnotatedReplay* ar, std::string 
             }
             
 
+            //reset vars when case is created
             if (inputBuffering == false) { 
                 meterRequirement = 0; 
                 odRequirement = 0;
             }
             
-            
+            //if i is somehow bigger than the array its iterating create an error
             if ((int)i > iteratorIndex) {
                 retError.errorCount++;
                 retError.errorDetail += "Iterator error: " + inputResolveName + "\n";
@@ -292,6 +276,8 @@ CbrGenerationError CbrReplayFile::MakeCaseBase(AnnotatedReplay* ar, std::string 
         
         /* std::cout << someVector[i]; ... */
     }
+
+    //The following is messy code to for finishing the case generation or to make instant learning work
     if (framesIdle > 0){
         if (framesIdle < caseMinTime && cbrCase.size() > 0 && insertPoint > 0) {
             int updatedInsertPoint = insertPoint - 1;
@@ -307,7 +293,7 @@ CbrGenerationError CbrReplayFile::MakeCaseBase(AnnotatedReplay* ar, std::string 
                 cbrCase[updatedInsertPoint].overDriveConsumed = odRequirement;
             }
             if ((minx != -1 || miny != -1) && nextMinDisResolve == true) {
-                if (cbrCase[updatedInsertPoint].getMetadata()->getNeutral()[0]) {
+                //if (cbrCase[updatedInsertPoint].getMetadata()->getNeutral()[0]) {
                     cbrCase[updatedInsertPoint].getMetadata()->hitMinX = minx;
                     cbrCase[updatedInsertPoint].getMetadata()->hitMinY = miny;
                     //Checking if min distance is truely only set in the proper conditions
@@ -316,16 +302,16 @@ CbrGenerationError CbrReplayFile::MakeCaseBase(AnnotatedReplay* ar, std::string 
                             retError.errorCount++;
                             retError.errorDetail += "minDist: \n";
                         }
-                        if (!cbrCase[updatedInsertPoint].getMetadata()->getNeutral()[0]) {
-                            retError.errorCount++;
+                        //if (!cbrCase[updatedInsertPoint].getMetadata()->getNeutral()[0]) {
+                        //    retError.errorCount++;
                             retError.errorDetail += "minDist: \n";
-                        }
+                        //}
                     }
-                }
-                else {
-                    cbrCase[updatedInsertPoint].getMetadata()->hitMinX = -1;
-                    cbrCase[updatedInsertPoint].getMetadata()->hitMinY = -1;
-                }
+                //}
+                //else {
+                //    cbrCase[updatedInsertPoint].getMetadata()->hitMinX = -1;
+                //    cbrCase[updatedInsertPoint].getMetadata()->hitMinY = -1;
+                //}
                 minx = -1; miny = -1;
                 nextMinDisResolve = false;
             }
@@ -368,7 +354,7 @@ CbrGenerationError CbrReplayFile::MakeCaseBase(AnnotatedReplay* ar, std::string 
                 cbrCase[insertPoint].overDriveConsumed = odRequirement;
             }
             if ((minx != -1 || miny != -1) && nextMinDisResolve == true) {
-                if (cbrCase[insertPoint].getMetadata()->getNeutral()[0]) {
+                //if (cbrCase[insertPoint].getMetadata()->getNeutral()[0]) {
                     cbrCase[insertPoint].getMetadata()->hitMinX = minx;
                     cbrCase[insertPoint].getMetadata()->hitMinY = miny;
                     //Checking if min distance is truely only set in the proper conditions
@@ -377,16 +363,16 @@ CbrGenerationError CbrReplayFile::MakeCaseBase(AnnotatedReplay* ar, std::string 
                             retError.errorCount++;
                             retError.errorDetail += "minDist: \n";
                         }
-                        if (!cbrCase[insertPoint].getMetadata()->getNeutral()[0]) {
-                            retError.errorCount++;
-                            retError.errorDetail += "minDist: \n";
-                        }
+                        //if (!cbrCase[insertPoint].getMetadata()->getNeutral()[0]) {
+                        //    retError.errorCount++;
+                        //    retError.errorDetail += "minDist: \n";
+                        //}
                     }
-                }
-                else {
-                    cbrCase[insertPoint].getMetadata()->hitMinX = -1;
-                    cbrCase[insertPoint].getMetadata()->hitMinY = -1;
-                }
+                //}
+                //else {
+                //    cbrCase[insertPoint].getMetadata()->hitMinX = -1;
+                //    cbrCase[insertPoint].getMetadata()->hitMinY = -1;
+                //}
                 minx = -1; miny = -1;
                 nextMinDisResolve = false;
             }
@@ -432,7 +418,7 @@ CbrGenerationError CbrReplayFile::MakeCaseBase(AnnotatedReplay* ar, std::string 
                 cbrCase[i].overDriveConsumed = odRequirement;
             }
             if ((minx != -1 || miny != -1) && nextMinDisResolve == true) {
-                if (cbrCase[i].getMetadata()->getNeutral()[0]) {
+                //if (cbrCase[i].getMetadata()->getNeutral()[0]) {
                     cbrCase[i].getMetadata()->hitMinX = minx;
                     cbrCase[i].getMetadata()->hitMinY = miny;
                     //Checking if min distance is truely only set in the proper conditions
@@ -441,16 +427,16 @@ CbrGenerationError CbrReplayFile::MakeCaseBase(AnnotatedReplay* ar, std::string 
                             retError.errorCount++;
                             retError.errorDetail += "minDist: \n";
                         }
-                        if (!cbrCase[i].getMetadata()->getNeutral()[0]) {
-                            retError.errorCount++;
-                            retError.errorDetail += "minDist: \n";
-                        }
+                        //if (!cbrCase[i].getMetadata()->getNeutral()[0]) {
+                        //    retError.errorCount++;
+                        //    retError.errorDetail += "minDist: \n";
+                        //}
                     }
-                }
-                else {
-                    cbrCase[i].getMetadata()->hitMinX = -1;
-                    cbrCase[i].getMetadata()->hitMinY = -1;
-                }
+               // }
+                //else {
+                //    cbrCase[i].getMetadata()->hitMinX = -1;
+                //    cbrCase[i].getMetadata()->hitMinY = -1;
+                //}
                 minx = -1; miny = -1;
                 nextMinDisResolve = false;
             }
@@ -515,10 +501,10 @@ CbrGenerationError CbrReplayFile::MakeCaseBase(AnnotatedReplay* ar, std::string 
                 retError.errorCount++;
                 retError.errorDetail += "minDist: \n";
             }
-            if (!cbrCase[j].getMetadata()->getNeutral()[0]) {
-                retError.errorCount++;
-                retError.errorDetail += "minDist: \n";
-            }
+            //if (!cbrCase[j].getMetadata()->getNeutral()[0]) {
+            //    retError.errorCount++;
+            //    retError.errorDetail += "minDist: \n";
+            //}
         }
   
     }
@@ -549,14 +535,13 @@ bool CbrReplayFile::CheckCaseEnd(int framesIdle, Metadata ar, std::string prevSt
 
     //if states changed and minimum case time is reached change state
     auto curState = ar.getCurrentAction()[0];
-    
-    if (curState != prevState && (framesIdle >= caseMinTime || !ar.getNeutral()[0] || ContainsCommandState(prevState, commands))) {
+    if (curState != prevState && (framesIdle >= caseMinTime || !ar.getNeutral()[0] )) {
         stateChangeTrigger = true;
         return true;
     }
 
     //if player is hit or hits the opponent also on guard.
-    if ((ar.getHitThisFrame()[0] || ar.getBlockThisFrame()[0] || ar.getHitThisFrame()[1] || ar.getBlockThisFrame()[1])) {
+    if ((ar.getHitThisFrame()[0] || ar.getBlockThisFrame()[0] || ar.getHitThisFrame()[1] )) {
         return true;
     }
 

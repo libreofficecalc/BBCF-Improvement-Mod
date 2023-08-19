@@ -629,7 +629,7 @@ json readCbrMetadata(std::string filename) {
 
 //---- the thread code is an abomination cause i never worked with threads in c++ before, should probably clean it up, which definetly will happen because i love cleaning my code up x.x
 bool serverThreadActive = false;
-boost::thread characterStorageServerThread;
+boost::thread characterStorageServerThread; 
 boost::promise<json> p;
 boost::unique_future<json> f = p.get_future();
 json threadDownloadData(bool run) {
@@ -640,7 +640,6 @@ json threadDownloadData(bool run) {
         serverThreadActive = true;
         characterStorageServerThread = boost::thread(&cbrHTTP_GetTable, std::ref(p));
     }
-    auto test = f.is_ready();
     if (f.is_ready() && serverThreadActive == true && characterStorageServerThread.joinable()) {
         
         characterStorageServerThread.join();
@@ -677,7 +676,7 @@ json threadDownloadFilteredData(bool run, std::string PlayerID, std::string Play
 
 bool localDataUpdating = false;
 bool serverThreadActivityActive = false;
-boost::thread characterStorageDownloadThread;
+boost::thread characterStorageDownloadThread; 
 boost::promise<json> pDownload;
 boost::unique_future<json> fDownload = pDownload.get_future();
 json threadDownloadCharData(bool run, std::string public_id) {
@@ -703,7 +702,7 @@ json threadDownloadCharData(bool run, std::string public_id) {
 }
 
 
-boost::thread characterStorageDeleteThread;
+boost::thread characterStorageDeleteThread; 
 boost::promise<bool> pDelete;
 boost::unique_future<bool> fDelete = pDelete.get_future();
 bool threadDeleteCharData(bool run, std::string public_id) {
@@ -724,7 +723,7 @@ bool threadDeleteCharData(bool run, std::string public_id) {
     return false;
 }
 
-boost::thread localMetadataThread;
+boost::thread localMetadataThread; 
 boost::promise<json> pLocal;
 boost::unique_future<json> fLocal = pLocal.get_future();
 json threadGetLocalMetadata(bool run, std::string PlayerName, std::string PlayerCharacter, std::string OpponentCharacter, std::string ReplayCount) {
@@ -851,4 +850,74 @@ json convertCBRtoJson(CbrData& cbr, std::string uploaderID) {
     return j2;
 }
 
+std::string getThreatStatus() {
+    std::string sRet = "Active:";
 
+    if (characterStorageServerThread.joinable()) {
+        sRet += " characterStorageServerThread";
+    }
+    
+    if (characterStorageDownloadThread.joinable()) {
+        sRet += " characterStorageDownloadThread";
+    }
+    if (characterStorageDeleteThread.joinable()) {
+        sRet += " characterStorageDeleteThread";
+    }
+    if (localMetadataThread.joinable()) {
+        sRet += " localMetadataThread";
+    }
+    if (localUploadThread.joinable()) {
+        sRet += " localUploadThread";
+    }
+    
+    return sRet;
+}
+
+void endAllThreads() {
+    
+    
+    if (f.is_ready() && serverThreadActive == true && characterStorageServerThread.joinable()) {
+
+        characterStorageServerThread.join();
+        serverThreadActive = false;
+        auto retVal = f.get();
+        p = boost::promise<json>();
+        f = p.get_future();
+    }
+
+    if (fDownload.is_ready() && serverThreadActivityActive == true && characterStorageDownloadThread.joinable()) {
+
+        characterStorageDownloadThread.join();
+        serverThreadActivityActive = false;
+        auto retVal = fDownload.get();
+        pDownload = boost::promise<json>();
+        fDownload = pDownload.get_future();
+        localDataUpdating = false;
+        updateLocalWindowVar = true;
+    }
+    if (fDelete.is_ready() && serverThreadActivityActive == true && characterStorageDownloadThread.joinable()) {
+
+        characterStorageDownloadThread.join();
+        serverThreadActivityActive = false;
+        auto retVal = fDelete.get();
+        pDelete = boost::promise<bool>();
+        fDelete = pDelete.get_future();
+    }
+    if (fLocal.is_ready() && serverThreadActivityActive == true && localMetadataThread.joinable()) {
+        localDataUpdating = false;
+        localMetadataThread.join();
+        serverThreadActivityActive = false;
+        auto retVal = fLocal.get();
+        pLocal = boost::promise<json>();
+        fLocal = pLocal.get_future();
+    }
+    if (fLocalUpload.is_ready() && serverThreadActive == true && localUploadThread.joinable()) {
+
+        localUploadThread.join();
+        serverThreadActive = false;
+        auto retVal = fLocalUpload.get();
+        pLocalUpload = boost::promise<bool>();
+        fLocalUpload = pLocalUpload.get_future();
+
+    }
+}

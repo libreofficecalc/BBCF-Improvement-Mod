@@ -45,6 +45,7 @@ public:
 	int getAutoRecordReplayAmount();
 	void clearAutomaticRecordReplays();
 	void CbrInterface::threadSaveReplay(bool save);
+	std::string CbrInterface::threadStatus();
 
 	bool threadCheckSaving();
 
@@ -170,6 +171,8 @@ public:
 	int netaReplayCounter = 0;
 	
 	void CbrInterface::Testbase64(std::string cbr);
+
+	int CbrInterface::determineBufferedInput(std::array<FixedQueue<int, 5>, 2> inputBuffer);
 
 	template<class Archive>
 	void serialize(Archive& a, const unsigned version) {

@@ -34,6 +34,8 @@ bool setUpdateServerWindow(bool reset);
 bool setUpdateLocalWindow(bool reset);
 void threadReturnCheck();
 json convertCBRtoJson(CbrData& cbr, std::string uploaderID);
+std::string getThreatStatus();
+void endAllThreads();
 class CharacterStorage {
 private:
 

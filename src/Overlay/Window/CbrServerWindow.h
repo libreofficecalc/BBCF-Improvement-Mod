@@ -13,7 +13,6 @@ protected:
 
 private:
 	void DrawImGuiSection();
-
-
+	void Update() override;
 	bool m_showDemoWindow = false;
 };

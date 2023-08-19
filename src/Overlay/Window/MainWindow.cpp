@@ -20,8 +20,8 @@
 #include <boost/serialization/vector.hpp>
 #include <boost/filesystem.hpp>
 
-#include <sstream>
 
+#include "CBR/CharacterStorage.h"
 MainWindow::MainWindow(const std::string& windowTitle, bool windowClosable, WindowContainer& windowContainer, ImGuiWindowFlags windowFlags)
 	: IWindow(windowTitle, windowClosable, windowFlags), m_pWindowContainer(&windowContainer)
 {
@@ -177,9 +177,37 @@ void MainWindow::Draw()
 	DrawReversalSection();
 	DrawNetaSection();
 
-	if (ImGui::CollapsingHeader("Experiment")) {
-		static std::string experimentS = "AI Activity: ";
+	if (ImGui::CollapsingHeader("Debugging")) {
+		static std::string debugS = "";
+		static int replay = 0;
+		static int caseIndex = 0;
+		static int playerIndex = 0;
+		ImGui::DragInt("Replay", &replay, 1.0F, 0, 99999);
+		ImGui::SameLine();
+		ImGui::DragInt("Case", &caseIndex);
+		ImGui::DragInt("Player", &playerIndex, 1.0F, 0, 1);
+		ImGui::SameLine();
+		if (ImGui::Button("Display Case")) {
+			auto caseFile = g_interfaces.cbrInterface.getCbrData(playerIndex)->getReplayFiles()->at(replay).getCase(caseIndex);
+			debugS = "";
+			debugS = caseFile->getMetadata()->PrintState();
+			
+			debugS += "\nInput: ";
+			for (int i = caseFile->getStartingIndex(); i <= caseFile->getEndIndex(); i++) {
+				debugS += std::to_string(g_interfaces.cbrInterface.getCbrData(playerIndex)->getReplayFiles()->at(replay).getInput(i)) + ", ";
+			}
+			
+		}
+		ImGui::Text(debugS.c_str());
+/*
+		experimentS = "AI Activity: ";
+		experimentS += "\n" + getThreatStatus();
+		experimentS += "\n" + g_interfaces.cbrInterface.threadStatus();
 		ImGui::Text(experimentS.c_str());
+
+
+
+		
 		ImGui::Separator();
 		ImGui::Text("Test AI:");
 		if (ImGui::Button("Pressure Test")) {
@@ -251,7 +279,7 @@ void MainWindow::Draw()
 			g_interfaces.cbrInterface.EndCbrActivities();
 			g_interfaces.cbrInterface.getCbrData(1)->deleteReplays(0, 1000);
 		}
-
+		*/
 		/*
 		if (!g_interfaces.player1.IsCharDataNullPtr()) {
 			auto focusCharData = g_interfaces.player1.GetData();
@@ -787,6 +815,12 @@ void MainWindow::DrawCBRAiSection() const
 					g_interfaces.cbrInterface.EndCbrActivities();
 				}
 			}
+			static std::string testoooVar = "";
+			if (ImGui::Button("TestOOOOO")) {
+				
+				testoooVar = g_interfaces.cbrInterface.getCbrData(0)->compareRandomCases();
+			}
+			ImGui::Text(testoooVar.c_str());
 			ImGui::Separator();
 		}
 		ImGui::Text(g_interfaces.cbrInterface.WriteAiInterfaceState().c_str());

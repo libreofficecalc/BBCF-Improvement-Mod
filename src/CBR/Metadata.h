@@ -36,6 +36,8 @@ private:
     std::array< bool, 2>BlockThisFrame;
     std::array< bool, 2>air;
     std::array< bool, 2>crouching;
+
+    
     bool facing;
     bool inputBufferActive = false;
     
@@ -55,6 +57,12 @@ public:
     std::array< int, 2> healthMeter = { 10000,10000 };
     int hitMinX = -1;
     int hitMinY = -1;
+
+    bool inputA = false, inputB = false, inputC = false, inputD = false;
+    bool inputFwd = false, inputUp = false, inputDown = false, inputBack = false;
+    int inprocessInputSequence = -1;
+    std::array< std::array< int, 2>, 2> velocity = { 0, 0 };
+
 
     //CharacterSpecific
     std::array< int, 2> CharSpecific1 = { 0, 0 };
@@ -95,6 +103,16 @@ public:
                 neutral & attack & wakeup & blocking & hit & hitThisFrame & BlockThisFrame & air & crouching & inputBufferActive & helpers & matchState &
                 healthMeter & heatMeter & overdriveMeter & overdriveTimeleft &
                 CharSpecific1 & CharSpecific2 & CharSpecific3 & CharSpecific4 & CharSpecific5 & CharSpecific6 & CharSpecific7 & CharSpecific8 & CharSpecific9;
+            break;
+        case 3:
+            a & posX & posY & facing & currentAction & lastAction & currentActionHash & hitMinX &
+                lastActionHash & blockstun & hitstun & attackType & hitstop & timeAfterRecovery &
+                actionTimeNoHitstop & comboProration & starterRating & comboTime &
+                neutral & attack & wakeup & blocking & hit & hitThisFrame & BlockThisFrame & air & crouching & inputBufferActive & helpers & matchState &
+                healthMeter & heatMeter & overdriveMeter & overdriveTimeleft &
+                CharSpecific1 & CharSpecific2 & CharSpecific3 & CharSpecific4 & CharSpecific5 & CharSpecific6 & CharSpecific7 & CharSpecific8 & CharSpecific9 &
+                inputA & inputB & inputC & inputD & inputFwd & inputUp & inputDown & inputBack  & inprocessInputSequence & velocity;
+            
             break;
         }
         
@@ -143,4 +161,4 @@ public:
     std::array< int, 2> getComboTime();
 
 };
-BOOST_CLASS_VERSION(Metadata, 2)
+BOOST_CLASS_VERSION(Metadata, 3)
