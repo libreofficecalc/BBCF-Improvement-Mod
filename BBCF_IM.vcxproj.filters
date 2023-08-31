@@ -140,6 +140,7 @@
     <ClCompile Include="src\Game\ReplayFiles\ReplayFileManager.cpp" />
     <ClCompile Include="src\Game\Playbacks\PlaybackManager.cpp" />
     <ClCompile Include="src\Game\Playbacks\PlaybackSlot.cpp" />
+    <ClCompile Include="src\Overlay\Window\framedata.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="depends\imgui\imgui.h" />
@@ -255,16 +256,6 @@
     <ClInclude Include="src\Overlay\Widget\StageSelectWidget.h" />
     <ClInclude Include="src\Overlay\Widget\GameModeSelectWidget.h" />
     <ClInclude Include="src\Overlay\Widget\ActiveGameModeWidget.h" />
-    <ClInclude Include="src\Game\Scr\ScrStateEntry.h" />
-    <ClInclude Include="src\Game\Scr\CmdList.h" />
-    <ClInclude Include="src\Game\Scr\ScrStateReader.h" />
-    <ClInclude Include="src\Overlay\Window\ScrWindow.h" />
-    <ClInclude Include="src\Game\ReplayStates\FrameState.h" />
-    <ClInclude Include="src\Game\EntityData.h" />
-    <ClInclude Include="src\Game\ReplayFiles\ReplayFile.h" />
-    <ClInclude Include="src\Game\ReplayFiles\ReplayFileManager.h" />
-    <ClInclude Include="src\Game\Playbacks\PlaybackManager.h" />
-    <ClInclude Include="src\Game\Playbacks\PlaybackSlot.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="export\dinput8.def">

@@ -2,6 +2,7 @@
 #include <cstdint>
 // Generated using ReClass 2015
 
+
 class CharData
 {
 public:
@@ -53,7 +54,6 @@ public:
 	char pad_01EC[4];
 	class CharData* enemyChar; //0x01F0 dont know exactly what it is yet, just that it is checked and I need to save it 
 	char pad_01F4[54]; //0x01F4 
-
 	//char pad_01EC[64];
 	class CharData* last_child_entity_spawned; // 0x022C 
 	class CharData* extra_child_entities[7]; // 0x0230 should hold up to 7(?) idk extra child entities
@@ -94,10 +94,10 @@ public:
 	int32_t attackLevel; //0x048C
 	int32_t moveDamage; //0x0490; raw damage
 	char pad_0494[44]; //0x0494
-	int32_t moveSpecialBlockstun; //0x04C0
-	char pad_04C4[4]; //0x04C4
-	int32_t moveGuardCrushTime; //0x04C8
-	char pad_04CC[8]; //0x04CC
+	int16_t moveSpecialBlockstun; //0x04C0
+	char pad_04C2[6]; //0x04C2
+	int16_t moveGuardCrushTime; //0x04C8
+	char pad_04CA[10]; //0x04CA
 	int32_t vectorcheckX_1; //0x04D0
 	int32_t vectorcheckY_1; //0x04D4
 	int32_t vectorcheckX_2; //0x04D8
@@ -135,7 +135,7 @@ public:
 	char pad_1340[3252]; //0x01340
 	char lastAction[20]; //0x1FF4
 	char pad_2008[12]; //0x2008
-	char current_action2 [20];//0x2014 another current action I guess, gets set by the set_action_override
+	char current_action2[20];//0x2014 another current action I guess, gets set by the set_action_override
 	char pad_2028[24]; //0x2028
 	char set_action_override[20]; //0x2040 this sets the current action overriding the script order I guess? not sure, still need more testing
 	char pad_2054[28]; //0x2054

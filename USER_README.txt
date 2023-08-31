@@ -6,6 +6,7 @@ What this mod provides
 - Unlocks the game's region restricted multiplayer
 - Adds extra game modes
 - Adds hitbox overlay
+- Adds framedata advantage info
 - Create and load custom palettes and effects without file modifications
 - See each other's custom palettes in online matches
 - Options to improve the performance of the game even further
@@ -114,6 +115,13 @@ Delete the "menus.ini" file found in the game's root folder to reset the positio
 Keep in mind that the mod may partially, or completely stop working whenever a new official patch of the game is released. (Though unlikely)
 
 Changelog
+==========================
+26-07-2023 -- version 3.05
+===============================
+- Added Framedata window for Practice Mode and Replays Theater
+- Displays gaps on block and on hit, up to 30F gaps
+- Displays frame advantage on block and on hit
+
 ==========================
 23-07-2022 -- version 3.04
 ===============================
