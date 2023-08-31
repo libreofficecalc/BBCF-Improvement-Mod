@@ -256,6 +256,17 @@
     <ClInclude Include="src\Overlay\Widget\StageSelectWidget.h" />
     <ClInclude Include="src\Overlay\Widget\GameModeSelectWidget.h" />
     <ClInclude Include="src\Overlay\Widget\ActiveGameModeWidget.h" />
+    <ClInclude Include="src\Game\Playbacks\PlaybackSlot.h" />
+    <ClInclude Include="src\Game\Playbacks\PlaybackManager.h" />
+    <ClInclude Include="src\Game\EntityData.h" />
+    <ClInclude Include="src\Overlay\Window\ScrWindow.h" />
+    <ClInclude Include="src\Game\ReplayFiles\ReplayFile.h" />
+    <ClInclude Include="src\Game\ReplayFiles\ReplayFileManager.h" />
+    <ClInclude Include="src\Game\Scr\CmdList.h" />
+    <ClInclude Include="src\Game\Scr\ScrStateEntry.h" />
+    <ClInclude Include="src\Game\Scr\ScrStateReader.h" />
+    <ClInclude Include="src\Overlay\Window\framedata.h" />
+    <ClInclude Include="src\Game\ReplayStates\FrameState.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="export\dinput8.def">
@@ -266,5 +277,11 @@
     </None>
     <None Include="src\Core\settings.def" />
     <None Include="resource\palettes.ini" />
+    <None Include=".gitignore" />
+    <None Include="LICENSE" />
+    <None Include="README.md" />
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="USER_README.txt" />
   </ItemGroup>
 </Project>

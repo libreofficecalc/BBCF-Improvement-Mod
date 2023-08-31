@@ -20,7 +20,7 @@
     <ClCompile Include="src\CustomGameMode\customGameMode.cpp" />
     <ClCompile Include="src\CustomGameMode\GameModeManager.cpp" />
     <ClCompile Include="src\Game\characters.cpp" />
-    <ClCompile Include="src\Game\ReplayFiles\ReplayFileManager.cpp"/>
+    <ClCompile Include="src\Game\ReplayFiles\ReplayFileManager.cpp" />
     <ClCompile Include="src\Game\ReplayStates\FrameState.cpp" />
     <ClCompile Include="src\Game\Scr\ScrStateReader.cpp" />
     <ClCompile Include="src\Overlay\Window\framedata.cpp" />
@@ -97,6 +97,12 @@
     <ClInclude Include="src\CustomGameMode\GameModeManager.h" />
     <ClInclude Include="src\D3D9EXWrapper\d3d9.h" />
     <ClInclude Include="src\Game\characters.h" />
+    <ClInclude Include="src\Game\ReplayFiles\ReplayFile.h" />
+    <ClInclude Include="src\Game\ReplayFiles\ReplayFileManager.h" />
+    <ClInclude Include="src\Game\ReplayStates\FrameState.h" />
+    <ClInclude Include="src\Game\Scr\CmdList.h" />
+    <ClInclude Include="src\Game\Scr\ScrStateEntry.h" />
+    <ClInclude Include="src\Game\Scr\ScrStateReader.h" />
     <ClInclude Include="src\Game\stages.h" />
     <ClInclude Include="src\Game\EntityData.h" />
     <ClInclude Include="src\Network\OnlineGameModeManager.h" />
@@ -104,6 +110,7 @@
     <ClInclude Include="src\Overlay\Widget\ActiveGameModeWidget.h" />
     <ClInclude Include="src\Overlay\Widget\GameModeSelectWidget.h" />
     <ClInclude Include="src\Overlay\Widget\StageSelectWidget.h" />
+    <ClInclude Include="src\Overlay\Window\framedata.h" />
     <ClInclude Include="src\Overlay\Window\RoomWindow.h" />
     <ClInclude Include="src\Overlay\Window\ScrWindow.h" />
     <ClInclude Include="src\Palette\CharPaletteHandle.h" />
@@ -162,13 +169,19 @@
     <ClInclude Include="src\Web\url_downloader.h" />
   </ItemGroup>
   <ItemGroup>
+    <None Include=".gitignore" />
     <None Include="export\dinput8.def" />
+    <None Include="LICENSE" />
+    <None Include="README.md" />
     <None Include="resource\palettes.ini" />
     <None Include="resource\settings.ini">
       <FileType>Document</FileType>
       <DeploymentContent>false</DeploymentContent>
     </None>
     <None Include="src\Core\settings.def" />
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="USER_README.txt" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{CB50353A-2EC9-4D1C-89C6-65A621C335C5}</ProjectGuid>
