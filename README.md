@@ -45,6 +45,8 @@ Copy the compiled binary, settings.ini, and palettes.ini files from the bin/ fol
 * Rouzel
 * Dormin
 * NeoStrayCat
+* KDing
+* PCvolt
 * Everybody in the BlazBlue PC community that has given support or feedback of any kind!
 
 ## Extra thanks to
