@@ -674,7 +674,7 @@ bool placeHooks_bbcf()
 	
 	GetGameStateReplayMenuScreenJmpBackAddr = HookManager::SetHook("GetGameStateReplayMenuScreen", "\xc7\x80\x0c\x01\x00\x00\x1a\x00\x00\x00\xe8",
 		"xxxxxxxxxxx", 10, GetGameStateReplayMenuScreen);
-	
+	//this hook seems to be the one crashing it currently
 	WindowMsgHandlerJmpBackAddr = HookManager::SetHook("WindowMsgHandler", "\x8b\x7d\x0c\x8b\xd9\x83\xfe\x10\x77\x00\x74\x00\x8b\xc6",
 		"xxxxxxxxx?x?xx", 5, PassMsgToImGui);
 
