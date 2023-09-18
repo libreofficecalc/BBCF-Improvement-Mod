@@ -15,6 +15,9 @@
     <ClCompile Include="depends\imgui\imgui_demo.cpp" />
     <ClCompile Include="depends\imgui\imgui_draw.cpp" />
     <ClCompile Include="depends\imgui\imgui_impl_dx9.cpp" />
+    <ClCompile Include="depends\imgui\imgui_impl_win32.cpp" />
+    <ClCompile Include="depends\imgui\imgui_tables.cpp" />
+    <ClCompile Include="depends\imgui\imgui_widgets.cpp" />
     <ClCompile Include="src\Game\Playbacks\PlaybackSlot.cpp" />
     <ClCompile Include="src\Game\Playbacks\PlaybackManager.cpp" />
     <ClCompile Include="src\CustomGameMode\customGameMode.cpp" />
@@ -88,7 +91,11 @@
     <ClInclude Include="depends\imgui\imconfig.h" />
     <ClInclude Include="depends\imgui\imgui.h" />
     <ClInclude Include="depends\imgui\imgui_impl_dx9.h" />
+    <ClInclude Include="depends\imgui\imgui_impl_win32.h" />
     <ClInclude Include="depends\imgui\imgui_internal.h" />
+    <ClInclude Include="depends\imgui\imstb_rectpack.h" />
+    <ClInclude Include="depends\imgui\imstb_textedit.h" />
+    <ClInclude Include="depends\imgui\imstb_truetype.h" />
     <ClInclude Include="depends\imgui\stb_rect_pack.h" />
     <ClInclude Include="depends\imgui\stb_textedit.h" />
     <ClInclude Include="depends\imgui\stb_truetype.h" />

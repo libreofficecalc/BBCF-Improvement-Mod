@@ -1,6 +1,6 @@
 #include "Settings.h"
 #include "logger.h"
-
+#include "imgui.h"
 #include "Core/interfaces.h"
 
 #include <atlstr.h>
@@ -150,25 +150,25 @@ void Settings::initSavedSettings()
 short Settings::getButtonValue(std::string button)
 {
 	if (button == "F1")
-		return 112;
+		return ImGuiKey_F1;
 	if (button == "F2")
-		return 113;
+		return ImGuiKey_F2;
 	if (button == "F3")
-		return 114;
+		return ImGuiKey_F3;
 	if (button == "F4")
-		return 115;
+		return ImGuiKey_F4;
 	if (button == "F5")
-		return 116;
+		return ImGuiKey_F5;
 	if (button == "F6")
-		return 117;
+		return ImGuiKey_F6;
 	if (button == "F7")
-		return 118;
+		return ImGuiKey_F7;
 	if (button == "F8")
-		return 119;
+		return ImGuiKey_F8;
 	if (button == "F9")
-		return 120;
+		return ImGuiKey_F9;
 
 	//default to F1
 	button = "F1";
-	return 112;
+	return ImGuiKey_F1;
 }

@@ -14,6 +14,7 @@
 
 #include <imgui.h>
 #include <imgui_impl_dx9.h>
+#include <imgui_impl_win32.h>
 #include <ctime>
 
 #define DEFAULT_ALPHA 0.87f
@@ -53,7 +54,8 @@ bool WindowManager::Initialize(void *hwnd, IDirect3DDevice9 *device)
 		return false;
 	}
 
-	m_initialized = ImGui_ImplDX9_Init(hwnd, device);
+	//m_initialized = ImGui_ImplDX9_Init(hwnd, device);
+	m_initialized = (ImGui_ImplDX9_Init(device) && ImGui_ImplWin32_Init(hwnd));
 	if (!m_initialized)
 	{
 		LOG(2, "ImGui_ImplDX9_Init failed!\n");
@@ -125,7 +127,14 @@ bool WindowManager::Initialize(void *hwnd, IDirect3DDevice9 *device)
 
 	// Calling a frame to initialize beforehand to prevent a crash upon first call of Update() if the game window is not focused.
 	// Simply calling ImGui_ImplDX9_CreateDeviceObjects() might be enough too
+	//
+	//ImGui_ImplDX9_CreateDeviceObjects();
+	//
 	ImGui_ImplDX9_NewFrame();
+	//
+	ImGui_ImplWin32_NewFrame();
+	ImGui::NewFrame();
+	//
 	ImGui::EndFrame();
 	///////
 
@@ -164,6 +173,9 @@ void WindowManager::Shutdown()
 	delete m_instance;
 
 	ImGui_ImplDX9_Shutdown();
+	//
+	ImGui_ImplWin32_Shutdown();
+	//
 }
 
 void WindowManager::InvalidateDeviceObjects()
@@ -175,6 +187,7 @@ void WindowManager::InvalidateDeviceObjects()
 
 	LOG(2, "WindowManager::InvalidateDeviceObjects\n");
 	ImGui_ImplDX9_InvalidateDeviceObjects();
+
 }
 
 void WindowManager::CreateDeviceObjects()
@@ -203,10 +216,14 @@ void WindowManager::Render()
 	LOG(7, "WindowManager::Render\n");
 
 	HandleButtons();
-
+	
 	ImGui_ImplDX9_NewFrame();
-
-	bool isMainWindowOpen =
+	//
+	ImGui_ImplWin32_NewFrame();
+	ImGui::NewFrame();
+	//
+	//bool isMainWindowOpen = true;
+	bool isMainWindowOpen = 
 		m_windowContainer->GetWindow(WindowType_Main)->IsOpen();
 	bool isUpdateNotifierWindowOpen =
 		m_windowContainer->GetWindow(WindowType_UpdateNotifier)->IsOpen();
@@ -224,7 +241,7 @@ void WindowManager::Render()
 		m_windowContainer->GetWindow(WindowType_InputBufferP1)->IsOpen();
 	bool isInputBufferP2WindowOpen =
 		m_windowContainer->GetWindow(WindowType_InputBufferP2)->IsOpen();
-
+	
 	ImGui::GetIO().MouseDrawCursor = isMainWindowOpen || isLogWindowOpen || isPaletteEditorWindowOpen
 		|| isUpdateNotifierWindowOpen || isRoomWindowOpen || isDebugWindowOpen || 
 		isScrWindowOpen || isInputBufferP1WindowOpen || isInputBufferP2WindowOpen;
@@ -241,8 +258,11 @@ void WindowManager::Render()
 	DrawAllWindows();
 
 	g_notificationBar->DrawNotifications();
-
+	//
+	ImGui::EndFrame();
+	//
 	ImGui::Render();
+	ImGui_ImplDX9_RenderDrawData(ImGui::GetDrawData());
 }
 
 void WindowManager::HandleButtons()
@@ -252,17 +272,18 @@ void WindowManager::HandleButtons()
 		return;
 	}
 
-	if (ImGui::IsKeyPressed(keyToggleMainWindow))
+	if (ImGui::IsKeyPressed((ImGuiKey)(keyToggleMainWindow)))
 	{
 		m_windowContainer->GetWindow(WindowType_Main)->ToggleOpen();
+
 	}
 
-	if (ImGui::IsKeyPressed(keyToggleRoomWindow))
+	if (ImGui::IsKeyPressed((ImGuiKey)keyToggleRoomWindow))
 	{
 		m_windowContainer->GetWindow(WindowType_Room)->ToggleOpen();
 	}
 
-	if (ImGui::IsKeyPressed(keyToggleHud) && g_gameVals.pIsHUDHidden)
+	if (ImGui::IsKeyPressed((ImGuiKey)keyToggleHud) && g_gameVals.pIsHUDHidden)
 	{
 		*g_gameVals.pIsHUDHidden ^= 1;
 	}

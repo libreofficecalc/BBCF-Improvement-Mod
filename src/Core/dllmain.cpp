@@ -35,10 +35,11 @@ void CreateCustomDirectories()
 void BBCF_IM_Shutdown()
 {
 	LOG(1, "BBCF_IM_Shutdown\n");
-
+	
 	WindowManager::GetInstance().Shutdown();
 	CleanupInterfaces();
 	closeLogger();
+	ImGui::DestroyContext();
 }
 
 bool LoadOriginalDinputDll()
@@ -76,8 +77,11 @@ bool LoadOriginalDinputDll()
 
 DWORD WINAPI BBCF_IM_Start(HMODULE hModule)
 {
+	//
+	//ImGui::CreateContext();
+	ImGui::SetCurrentContext(ImGui::CreateContext());
+	//
 	openLogger();
-
 	LOG(1, "Starting BBCF_IM_Start thread\n");
 
 	CreateCustomDirectories();
@@ -103,7 +107,9 @@ DWORD WINAPI BBCF_IM_Start(HMODULE hModule)
 	}
 
 	g_interfaces.pPaletteManager = new PaletteManager();
-
+	//
+	//ImGui::NewFrame();
+	//
 	return 0;
 }
 

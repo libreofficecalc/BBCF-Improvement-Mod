@@ -143,6 +143,9 @@
     <ClCompile Include="src\Overlay\Window\framedata.cpp" />
     <ClCompile Include="src\Game\Menus\TrainingSetupMenu.cpp" />
     <ClCompile Include="src\Overlay\Window\InputBufferWindow.cpp" />
+    <ClCompile Include="depends\imgui\imgui_tables.cpp" />
+    <ClCompile Include="depends\imgui\imgui_widgets.cpp" />
+    <ClCompile Include="depends\imgui\imgui_impl_win32.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="depends\imgui\imgui.h" />
@@ -271,6 +274,10 @@
     <ClInclude Include="src\Game\ReplayStates\FrameState.h" />
     <ClInclude Include="src\Game\Menus\TrainingSetupMenu.h" />
     <ClInclude Include="src\Overlay\Window\InputBufferWindow.h" />
+    <ClInclude Include="depends\imgui\imstb_rectpack.h" />
+    <ClInclude Include="depends\imgui\imstb_textedit.h" />
+    <ClInclude Include="depends\imgui\imstb_truetype.h" />
+    <ClInclude Include="depends\imgui\imgui_impl_win32.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="export\dinput8.def">

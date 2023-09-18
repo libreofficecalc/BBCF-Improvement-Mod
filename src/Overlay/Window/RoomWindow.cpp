@@ -13,7 +13,7 @@
 void RoomWindow::BeforeDraw()
 {
 	ImGui::SetWindowPos(m_windowTitle.c_str(), ImVec2(200, 200), ImGuiCond_FirstUseEver);
-
+	//THIS COMMENT BELOW IS UNRELATED TO THE IMGUI UPDATE
 	//ImVec2 windowSizeConstraints;
 	//switch (Settings::settingsIni.menusize)
 	//{
@@ -74,8 +74,9 @@ void RoomWindow::Draw()
 	if (isInMatch())
 	{
 		ImGui::VerticalSpacing(10);
-		WindowManager::GetInstance().GetWindowContainer()->
-			GetWindow<PaletteEditorWindow>(WindowType_PaletteEditor)->ShowAllPaletteSelections("Room");
+		//REMEMEMBER THIS NEEDS TO BE FIXED FOR THE IMGUI UPDATE!!!!!
+		/*WindowManager::GetInstance().GetWindowContainer()->
+			GetWindow<PaletteEditorWindow>(WindowType_PaletteEditor)->ShowAllPaletteSelections("Room");*/
 	}
 
 	if (isInMenu())

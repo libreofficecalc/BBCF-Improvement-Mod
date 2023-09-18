@@ -25,7 +25,7 @@ public:
 protected:
 	void Draw() override;
 private:
-	bool HasNullPointer();
+	/*bool HasNullPointer();
 	void InitializeSelectedCharacters();
 	void CharacterSelection();
 	void PaletteSelection();
@@ -48,7 +48,7 @@ private:
 	void UpdateHighlightArray(int selectedBoxIndex);
 	void CopyImplDataToEditorFields(CharPaletteHandle& charPalHandle);
 	void ShowGradientPopup();
-	void GenerateGradient(int idx1, int idx2, int color1, int color2);
+	void GenerateGradient(int idx1, int idx2, int color1, int color2);*/
 
 	std::vector<std::vector<IMPL_data_t>>& m_customPaletteVector;
 	Player*             m_playerHandles[2];

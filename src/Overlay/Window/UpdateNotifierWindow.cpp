@@ -7,7 +7,8 @@
 
 void UpdateNotifierWindow::BeforeDraw()
 {
-	ImGui::SetNextWindowPosCenter(ImGuiCond_Once);
+	//ImGui::SetNextWindowPosCenter(ImGuiCond_Once);
+	ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Once, ImVec2(0.5f, 0.5f));
 	ImGui::SetNextWindowSizeConstraints(ImVec2(400, 100), ImVec2(500, 500));
 }
 

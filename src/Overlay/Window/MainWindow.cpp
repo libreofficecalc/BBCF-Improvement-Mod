@@ -223,7 +223,8 @@ void MainWindow::DrawFrameAdvantageSection() const
 
 void MainWindow::DrawCustomPalettesSection() const
 {
-	if (!ImGui::CollapsingHeader("Custom palettes"))
+	return;
+	/*if (!ImGui::CollapsingHeader("Custom palettes"))
 		return;
 
 	if (!isInMatch())
@@ -247,7 +248,7 @@ void MainWindow::DrawCustomPalettesSection() const
 
 		if (ImGui::Button("Palette editor"))
 			m_pWindowContainer->GetWindow(WindowType_PaletteEditor)->ToggleOpen();
-	}
+	}*/
 }
 
 void MainWindow::DrawHitboxOverlaySection() const
