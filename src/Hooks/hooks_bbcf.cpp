@@ -181,8 +181,8 @@ void __declspec(naked)PassMsgToImGui()
 		pop ebx
 		pop ebx
 		pop ebx
-		cmp eax, 1
-		je EXIT
+		//cmp eax, 1 //this change was made to stop the crashing, seems to work but probably will have unintended consequences, must look further into
+		//je EXIT //this change was made to stop the crashing, seems to work but probably will have unintended consequences, must look further into
 SKIP:
 		popad
 		jmp[WindowMsgHandlerJmpBackAddr]
@@ -190,9 +190,9 @@ SKIP:
 EXIT:
 	__asm
 	{
-		popad
-		mov eax, 1
-		retn 0Ch
+		popad //this is dead code effectively
+		mov eax, 1//this is dead code effectively
+		retn 0Ch//this is dead code effectively
 	}
 }
 
