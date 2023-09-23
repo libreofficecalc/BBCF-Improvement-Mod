@@ -89,6 +89,7 @@ struct gameVals_t
 
 	Room* pRoom;
 	bool enableForeignPalettes = true;
+	int height = 1080;
 };
 
 struct gameProc_t

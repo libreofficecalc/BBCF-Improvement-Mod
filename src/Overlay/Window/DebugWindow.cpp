@@ -36,8 +36,8 @@ void DebugWindow::DrawImGuiSection()
 		ImVec2 curDisplaySize = ImGui::GetIO().DisplaySize;
 
 		ImGui::Text("Current display size: %.f %.f", curDisplaySize.x, curDisplaySize.y);
-
-		ImGui::InputFloat2("Display size", (float*)&newDisplaySize, 0);
+		ImGui::SliderInt("SliderFInt (600->1080)", &g_gameVals.height, 600, 1080);
+		//ImGui::InputFloat2("Display size", (float*)&newDisplaySize, 0);
 
 		static bool isNewDisplaySet = false;
 		ImGui::Checkbox("Set value", &isNewDisplaySet);

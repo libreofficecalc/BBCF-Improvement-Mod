@@ -216,13 +216,17 @@ void WindowManager::Render()
 	LOG(7, "WindowManager::Render\n");
 
 	HandleButtons();
-	
+	//ImGui::GetIO().DisplaySize = ImVec2(1400, g_gameVals.height);
 	ImGui_ImplDX9_NewFrame();
-	//
+	
 	ImGui_ImplWin32_NewFrame();
+	if (g_gameVals.height) {
+		ImGui::GetIO().DisplaySize = ImVec2(1920, g_gameVals.height);
+	}
 	ImGui::NewFrame();
-	//
+	
 	//bool isMainWindowOpen = true;
+	
 	bool isMainWindowOpen = 
 		m_windowContainer->GetWindow(WindowType_Main)->IsOpen();
 	bool isUpdateNotifierWindowOpen =
@@ -259,7 +263,7 @@ void WindowManager::Render()
 
 	g_notificationBar->DrawNotifications();
 	//
-	ImGui::EndFrame();
+	//ImGui::EndFrame();
 	//
 	ImGui::Render();
 	ImGui_ImplDX9_RenderDrawData(ImGui::GetDrawData());
