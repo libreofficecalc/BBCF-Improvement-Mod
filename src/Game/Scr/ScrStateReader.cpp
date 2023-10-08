@@ -74,6 +74,7 @@ int parse_state(char* addr, std::vector<scrState*>& states_parsed, std::map<std:
 	s->addr = addr;
 	unsigned long CMD;
 	unsigned int offset = 0;
+
 	//memcpy(&s->name, addr + offset, 32);
 	offset += 4;
 	s->name = addr + offset;
@@ -89,22 +90,28 @@ int parse_state(char* addr, std::vector<scrState*>& states_parsed, std::map<std:
 		if (CMD == 0x2) {
 			///sprite call(string[32],char) name of sprite and frames
 
-
-			/*
-			 //here begins the example of how to access it 
 			std::string cmd_str32(addr + offset);
 			auto match = jonbin_map.find(cmd_str32); //try to find the string[32] of the command in the map
-			if (match != jonbin_map.end()) { //safety check
-				JonbDBEntry entry = jonbin_map.at(cmd_str32); // if its in the map access it and do whatever you wanna do with it
-				bool is_active = entry.hitbox_count;
-				...etc
-			}
-			*/
+			
 			
 			offset += 32;
 			unsigned int frames;
 			/////memcpy(&frames, addr + offset, 4);
 			frames = *(addr + offset);
+
+
+			
+			if (match != jonbin_map.end()) { //safety check
+				JonbDBEntry entry = jonbin_map.at(cmd_str32); // if its in the map access it and do whatever you wanna do with it
+				
+				bool is_active = entry.hitbox_count > 0;
+				if (is_active) {
+					s->active_ranges.push_back(s->frames + 1);
+					s->active_ranges.push_back(s->frames + frames);
+					// s->active_ranges.push_back(s->frames);
+					// s->active_ranges.push_back(frames);
+				}
+			}
 
 			offset += 4;
 			s->frames += frames;

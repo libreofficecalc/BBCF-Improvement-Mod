@@ -23,4 +23,7 @@ struct scrState {
 	std::vector<std::string> whiff_cancel = {};
 	std::vector<std::string> hit_or_block_cancel = {};
 	char* replaced_state_script[36]{};
+	// List of active frame ranges for the move
+	// Formatted as such [start_1, end_1, start_2, end_2, ... , start_n, end_n]
+	std::vector<unsigned int> active_ranges;
 };

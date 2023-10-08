@@ -12,6 +12,7 @@
 #include "Overlay/Widget/ActiveGameModeWidget.h"
 #include "Overlay/Widget/GameModeSelectWidget.h"
 #include "Overlay/Widget/StageSelectWidget.h"
+#include "frameHistory.h"
 
 #include <sstream>
 
@@ -78,6 +79,7 @@ void MainWindow::Draw()
 	DrawCustomPalettesSection();
 	DrawHitboxOverlaySection();
 	DrawFrameAdvantageSection();
+	DrawFrameHistorySection();
 	DrawAvatarSection();
 	DrawLoadedSettingsValuesSection();
 	DrawUtilButtons();
@@ -135,6 +137,91 @@ void MainWindow::DrawAvatarSection() const
 	}
 }
 
+void MainWindow::DrawFrameHistorySection() const {
+  if (!ImGui::CollapsingHeader("FrameHistory"))
+    return;
+  // Create the frame history to be updated later
+  static FrameHistory history = FrameHistory();
+
+  if (!isInMatch()) {
+    ImGui::HorizontalSpacing();
+    history.clear();
+    ImGui::TextDisabled("YOU ARE NOT IN MATCH!");
+    return;
+  } else if (!(*g_gameVals.pGameMode == GameMode_Training ||
+               *g_gameVals.pGameMode == GameMode_ReplayTheater)) {
+    ImGui::HorizontalSpacing();
+    ImGui::TextDisabled("YOU ARE NOT IN TRAINING MODE OR REPLAY THEATER!");
+    return;
+  }
+
+
+
+  // May want to come up with our own function to check if time moved.
+  // The current implementation doesn't check if we missed frames.
+  if (!g_interfaces.player1.IsCharDataNullPtr() &&
+      !g_interfaces.player2.IsCharDataNullPtr() && hasWorldTimeMoved()) {
+
+    history.updateHistory();
+  }
+
+  static bool isFrameHistoryOpen = false;
+  ImGui::HorizontalSpacing();
+  ImGui::Checkbox("Enable##framehistory_section", &isFrameHistoryOpen);
+
+  if (isFrameHistoryOpen) {
+
+    ImGui::Begin("Frame history", &isFrameHistoryOpen);
+
+    // borrow the history queue
+    StatePairQueue &queue = history.read();
+
+    // player 1 history. The first element of each array in the queue
+    ImGui::Text("Player 1:");
+
+    for (StatePairQueue::reverse_iterator elem = queue.rbegin(); elem != queue.rend(); ++elem) {
+      ImGui::SameLine();
+	  // determine color
+	  float x = (*elem).front().kind;
+	  float t = x / (x + 1.0);
+
+      ImVec4 color = (ImVec4)ImColor::HSV(t, t, t);
+      ImGui::PushStyleColor(ImGuiCol_Button, color);
+      ImGui::PushStyleColor(ImGuiCol_ButtonHovered, color);
+      ImGui::PushStyleColor(ImGuiCol_ButtonActive, color);
+
+	  // Make the button
+	  char state_name[2];
+	  state_name[0] = kindtoLetter((*elem).front().kind);
+	  state_name[1] = '\0';
+	  ImGui::Button(state_name, ImVec2(20.0f, 20.0f));
+
+      ImGui::PopStyleColor(3);
+    } 
+
+    // the second element for player 2
+    ImGui::Text("Player 2:");
+    for (StatePairQueue::reverse_iterator elem = queue.rbegin(); elem != queue.rend(); ++elem) {
+      ImGui::SameLine();
+	  float x = (*elem).back().kind;
+	  float t = x / (x + 1.0);
+      
+      ImVec4 color = (ImVec4)ImColor::HSV(t, t, t);
+      ImGui::PushStyleColor(ImGuiCol_Button, color);
+      ImGui::PushStyleColor(ImGuiCol_ButtonHovered, color);
+      ImGui::PushStyleColor(ImGuiCol_ButtonActive, color);
+
+	  char state_name[2];
+	  state_name[0] = kindtoLetter((*elem).back().kind);
+	  state_name[1] = '\0';
+      ImGui::Button(state_name, ImVec2(20.0f, 20.0f));
+
+      ImGui::PopStyleColor(3);
+    }
+
+    ImGui::End();
+  }
+}
 void MainWindow::DrawFrameAdvantageSection() const
 {
 	if (!ImGui::CollapsingHeader("Framedata"))
