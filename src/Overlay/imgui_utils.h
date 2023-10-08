@@ -22,4 +22,5 @@ namespace ImGui
 	IMGUI_API bool ColorEdit4On32Bit(const char* label, int idx, unsigned char val[4], ImGuiColorEditFlags flags = 0);
 	IMGUI_API bool ColorButtonOn32Bit(const char* desc_id, int idx, unsigned char val[4], ImGuiColorEditFlags flags = 0, ImVec2 size = ImVec2(0, 0));
 	IMGUI_API bool ColorPicker4On32Bit(const char* label, unsigned char col[4], ImGuiColorEditFlags flags = 0, const float* ref_col = NULL);
+	IMGUI_API void ShowHelpMarker(const char* desc);
 }

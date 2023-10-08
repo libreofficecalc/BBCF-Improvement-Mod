@@ -39,7 +39,8 @@ void PlaybackSlot::load_into_slot(std::vector<char> trimmed_playback) {
 	memcpy(this->frame_len_slot_p, &(frame_len_loaded_file), 4);
 	int iter = 0;
 	for (auto input : trimmed_playback) {
-		memcpy(this->start_of_slot_inputs_p + (iter * 2), &input, 2);
+		memcpy(this->start_of_slot_inputs_p + (iter * 2), &input, 1); //sets the move
+		memset(this->start_of_slot_inputs_p + (iter * 2)+1,0x0 , 1); //zeroes the taunt(?) flag. The next step is to change all the shit regarding playback from chars to uint16, so that the extra byte for taunt(?) is included and not just zeroed
 		iter++;
 	}
 }

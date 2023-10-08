@@ -22,6 +22,7 @@
 #include <windows.h>
 #include "Game/ReplayFiles/ReplayFileManager.h"
 #include "Game/Playbacks/PlaybackManager.h"
+#include "Overlay/imgui_utils.h"
 #include <cstdlib>
 #include <ctime>
 
@@ -301,6 +302,85 @@ void ScrWindow::DrawStatesSection()
             ImGui::Text("Hit_low: %d", selected_state->hit_low);
             ImGui::Text("Hit_air_ublockable: %d", selected_state->hit_air_unblockable);
             ImGui::Text("fatal_counter: %d", selected_state->fatal_counter);
+            if (ImGui::TreeNode("Frame Breakdown")) {
+                ImGui::ShowHelpMarker("Red are active frames, blue are startup/recovery, black are inactive. Some are incorrect, however they should be pretty obvious, around 85% are done so far.");
+                auto iter_scr_frames = 1;
+                float window_visible_x2 = ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x;
+                ImGuiStyle& style = ImGui::GetStyle();
+                for (auto& frame : selected_state->frame_activity_status) {
+
+
+
+                    auto color = IM_COL32(0, 255, 255, 255);
+                    if (frame == "A") {
+                        color = IM_COL32(255, 0, 0, 255);
+                    }
+
+                    ImGui::PushStyleColor(ImGuiCol_Text, color);
+                    //ImGui::PushStyleColor(ImGuiCol_TextBg, ImVec4(0.0f, 1.0f, 0.0f, 1.0f));
+                    ImGui::Text("%d", iter_scr_frames);
+                    ImGui::GetWindowDrawList()->AddRect(ImVec2(ImGui::GetItemRectMin().x - 1.5f, ImGui::GetItemRectMin().y - 1),
+                        ImVec2(ImGui::GetItemRectMax().x + 2, ImGui::GetItemRectMax().y + 1),
+                        IM_COL32(50, 50, 50, 255));//draws the square around
+                    ImGui::PopStyleColor();
+                    float last_button_x2 = ImGui::GetItemRectMax().x;
+                    float next_button_x2 = last_button_x2 + style.ItemSpacing.x + 10.0f; // Expected position if next button was on same line
+                    if (iter_scr_frames < selected_state->frame_activity_status.size() && next_button_x2 < window_visible_x2)
+                        ImGui::SameLine();
+                    iter_scr_frames++;
+                }
+
+                for (auto& ea_state_pair : selected_state->frame_EA_effect_pairs) {
+                    
+                    iter_scr_frames = 1;
+                    auto frames_before_ptr = &ea_state_pair.first;
+                    std::vector<std::string>* frame_activity_status_ptr = &ea_state_pair.second.frame_activity_status;
+                    std::string fstring = "A";
+                    if (!std::any_of(frame_activity_status_ptr->begin(), 
+                        frame_activity_status_ptr->end(), 
+                        [](std::string frame_activity) {
+                            return frame_activity == "A";})
+                        ) {
+                        continue;
+                    }
+                    //if (std::find(frame_activity_status_ptr->begin(), frame_activity_status_ptr->end(), fstring) != frame_activity_status_ptr->end()) {
+                   //     continue;
+                   // }
+                    ImGui::Text("%s", ea_state_pair.second.name.c_str());
+                    //will not draw unless there are active frames on the EA state
+                    
+                    std::vector<std::string> temp_vect = {};
+                    for (int i = 0; i < *frames_before_ptr; i++) {
+                        temp_vect.push_back("P"); //adds the padding frames
+                    }
+                    temp_vect.insert(temp_vect.end(), frame_activity_status_ptr->begin(), frame_activity_status_ptr->end());
+                    for (auto& frame : temp_vect) {
+                        auto color = IM_COL32(0, 255, 255, 255);
+                        if (frame == "A") {
+                            color = IM_COL32(255, 0, 0, 255);
+                        }
+                        else if (frame == "P") {
+                            color = IM_COL32(0, 0, 0, 255);
+                        }
+
+                        ImGui::PushStyleColor(ImGuiCol_Text, color);
+                        //ImGui::PushStyleColor(ImGuiCol_TextBg, ImVec4(0.0f, 1.0f, 0.0f, 1.0f));
+                        ImGui::Text("%d", iter_scr_frames);
+                        ImGui::GetWindowDrawList()->AddRect(ImVec2(ImGui::GetItemRectMin().x - 1.5f, ImGui::GetItemRectMin().y - 1),
+                            ImVec2(ImGui::GetItemRectMax().x + 2, ImGui::GetItemRectMax().y + 1),
+                            IM_COL32(50, 50, 50, 255));//draws the square around
+                        ImGui::PopStyleColor();
+                        float last_button_x2 = ImGui::GetItemRectMax().x;
+                        float next_button_x2 = last_button_x2 + style.ItemSpacing.x + 10.0f; // Expected position if next button was on same line
+                        if (iter_scr_frames < temp_vect.size() && next_button_x2 < window_visible_x2)
+                            ImGui::SameLine();
+                        iter_scr_frames++;
+                    }
+                }
+                ImGui::TreePop();
+            }
+            ImGui::Text("%s", " ");
+            ImGui::Text("%s", " ");
             ImGui::Text("Whiff_cancels:", selected_state->fatal_counter);
             for (std::string name : selected_state->whiff_cancel) {
                 ImGui::Text("    %s", name.c_str());
@@ -762,72 +842,9 @@ std::string interpret_move(char move) {
 
     return move_t;
 }
-void save_to_file(std::vector<char> slot_buffer, char facing_direction, char* fname) {
-    CreateDirectory(L"slots", NULL);
-    
-    std::string fpath = "./slots/";
-    fpath += fname;
-    fpath += ".playback";
-    std::ofstream out(fpath);
-    out << facing_direction;
-    for (const auto& e : slot_buffer) out << e;
-    out.close();
-}
-std::vector<char> load_from_file(char* fname) {
-    std::string fpath = "./slots/";
-    fpath +=fname;
-    if (fpath.find(".playback") == std::string::npos) {
-        fpath += ".playback";
-        //fpath.substr(0, fpath.find(".playback") - 1);
-    }
-    //char* filename = "./slots/" + fpath;
-    std::streampos fileSize;
-    std::ifstream file(fpath, std::ios::binary);
-    if (file.good()) {
-        file.seekg(0, std::ios::end);
-        fileSize = file.tellg();
-        file.seekg(0, std::ios::beg);
 
 
-        std::vector<char> fileData(fileSize);
-        file.read((char*)&fileData[0], fileSize);
-        return fileData;
-    }
 
-    else {
-        std::vector<char> fd{};
-        return fd;
-    }
- 
-
-}
-std::vector<char> trim_playback(std::vector<char> slot_buffer) {
-
-    if (!slot_buffer.empty()) {
-        //trim the start
-        while (!slot_buffer.empty() && slot_buffer[0] == 5) {
-            slot_buffer.erase(slot_buffer.begin());
- 
-        }
-        //trim the end
-        while (!slot_buffer.empty() && slot_buffer.back() == 5) {
-            slot_buffer.pop_back();
-        }
-    }
-
-    return slot_buffer;
-}
-void load_trimmed_playback(std::vector<char> trimmed_playback,char* frame_len_slot_p, char* start_of_slot_inputs) {
-    //trim the start
-    //auto trimmed_playback = trim_playback(slot_buffer);
-    int frame_len_loaded_file = trimmed_playback.size();
-    memcpy(frame_len_slot_p, &(frame_len_loaded_file), 4);
-    int iter = 0;
-    for (auto input : trimmed_playback) {
-        memcpy(start_of_slot_inputs + (iter * 2), &input, 2);
-        iter++;
-    }
-    }
 void treat_random_slot_checkbox(std::vector<int> &slot_vec, bool slot_toggle, int slot_num) {
     if (slot_toggle) {
         slot_vec.push_back(slot_num);
@@ -871,7 +888,7 @@ void ScrWindow::draw_playback_slot_section(int slot) {
 
     std::vector<char> slot_recording_frames = selected_slot.get_slot_buffer();
     if (ImGui::Button("Save")) {
-        save_to_file(slot_recording_frames, facing_direction, fpath);
+        playback_manager.save_to_file(slot_recording_frames, facing_direction, fpath);
     }
     ImGui::SameLine();
     if (ImGui::Button("Load")) {
@@ -936,8 +953,13 @@ void ScrWindow::DrawPlaybackEditor() {
 void ScrWindow::DrawPlaybackSection() {
     char* bbcf_base_adress = GetBbcfBaseAdress();
     char* active_slot = bbcf_base_adress + 0x902C3C;
+    static bool loop_playback = false;
+   
     //ScrWindow::DrawPlaybackEditor();
     if (ImGui::CollapsingHeader("Playback")) {
+        ImGui::Checkbox("Loop current playback", &loop_playback);
+        ImGui::SameLine();
+        ImGui::ShowHelpMarker("This will continuously loop the current recording slot, subject to absolute positioning.");
         ScrWindow::DrawPlaybackEditor();
         if (ImGui::CollapsingHeader("SLOT_1")) {
             draw_playback_slot_section(1);
@@ -946,96 +968,6 @@ void ScrWindow::DrawPlaybackSection() {
         if (ImGui::CollapsingHeader("SLOT_2")) {
             draw_playback_slot_section(2);
         }
-        //if (ImGui::CollapsingHeader("SLOT_2")) {
-
-
-
-
-        //    int time_count_slot_2_addr_offset = 0x9075EC;
-        //    char* frame_len_slot_p = bbcf_base_adress + time_count_slot_2_addr_offset;
-        //    int frame_len_slot;
-        //    memcpy(&frame_len_slot, frame_len_slot_p, 4);
-
-
-        //    int facing_direction_slot_2_addr_offset = 0x9075DC;
-        //    char* facing_direction_p = bbcf_base_adress + facing_direction_slot_2_addr_offset;
-        //    int facing_direction;
-        //    memcpy(&facing_direction, facing_direction_p, 4);
-
-
-        //    //0x960 is 2400 which is the size of the recording slot_1, recording slot_2 has this offset + 0xC relative to start of slot_1
-        //    char* start_of_slot_inputs = bbcf_base_adress + time_count_slot_2_addr_offset + 0x960+ 0xC;
-        //    std::vector<char> slot2_recording_frames{};
-        //    for (int i = 0; i < frame_len_slot; i++) {
-        //        slot2_recording_frames.push_back(*(start_of_slot_inputs + i * 2));
-        //    }
-        //    if (ImGui::Button("Save##slot2")) {
-        //        save_to_file(slot2_recording_frames, facing_direction, fpath_s2);
-        //    }
-        //    ImGui::SameLine();
-        //    if (ImGui::Button("Load##slot2")) {
-        //        auto loaded_file = load_from_file(fpath_s2);
-        //        if (!loaded_file.empty()) {
-        //            char facing_direction = loaded_file[0];
-        //            loaded_file.erase(loaded_file.begin());
-        //            memcpy(facing_direction_p, &(facing_direction), sizeof(char));
-        //        }
-        //        int frame_len_loaded_file = loaded_file.size();
-        //        memcpy(frame_len_slot_p, &(frame_len_loaded_file), 4);
-        //        int iter = 0;
-
-        //        if (!loaded_file.empty()) {
-        //            for (auto input : loaded_file) {
-        //                memcpy(start_of_slot_inputs + (iter * 2), &input, 2);
-        //                iter++;
-        //            }
-        //        }
-        //    }
-        //    
-        //    ImGui::SameLine();
-        //    if (ImGui::Button("Trim Playback##slot2")) {
-        //        slot2_recording_frames = trim_playback(slot2_recording_frames);
-        //        load_trimmed_playback(slot2_recording_frames, frame_len_slot_p, start_of_slot_inputs);
-        //    }
-        //    ImGui::InputText("File Path##slot2", fpath_s2, IM_ARRAYSIZE(fpath_s2));
-        //    ImGui::TextWrapped("All input files expect the .playback extension now, please add the extension to your old playback files. You can still load the files with .playback extension without writing the extension in the field.");
-        //    ImGui::TextWrapped("If the field isn't accepting keyboard input, try alt-tabbing out and back in, if that doesn't work copy and paste should still work(or restarting the game)");
-        //    if (ImGui::Button("Set as gap action##slot2")) {
-        //        slot_gap = 2;
-        //    }
-        //    ImGui::SameLine();
-        //    if (ImGui::Button("Set as wakeup action##slot2")) {
-        //        slot_wakeup= 2;
-        //    }
-        //    if (ImGui::Button("Set as onblock action##slot2")) {
-        //        slot_onblock = 2;
-        //    }
-        //    
-        //    ImGui::SameLine();
-        //    if (ImGui::Button("Set as onhit action::experimental##slot2")) {
-        //        slot_onhit = 2;
-        //    }
-        //    if (ImGui::Button("Reset##slot2")) {
-        //        slot_gap = 0;
-        //        slot_wakeup = 0;
-        //        slot_onblock = 0;
-        //        slot_onhit = 0;
-        //    }
-        //    ImGui::InputInt("Buffer frames ##slot2", &slot_buffer[1]);
-        //    ImGui::TextWrapped("Buffer frames only works currently with non random wakeup actions");
-        //    ImGui::Separator();
-        //    auto old_val = 0; auto frame_counter = 0;
-        //    for (auto el : slot2_recording_frames) {
-        //        frame_counter++;
-        //        if (old_val != el) {
-        //            std::string move_string = interpret_move(el);
-        //            ImGui::Text("frame %d: %s (0x%x)", frame_counter, move_string.c_str(), el);
-        //            old_val = el;
-        //        }
-        //    }
-
-        //
-        //}
         
         if (ImGui::CollapsingHeader("SLOT_3")) {
             draw_playback_slot_section(3);
@@ -1093,7 +1025,15 @@ void ScrWindow::DrawPlaybackSection() {
         }
         ImGui::Columns(1);
         if (!g_interfaces.player2.IsCharDataNullPtr()) {
+            //loops the current playback
+            //memcpy(playback_control_ptr, &val_set, 2);
+            if (loop_playback) {
+                playback_manager.set_playback_control(3);
+            }
 
+
+
+            
             //does gap action for recorded slot
             //can optimize later by checking for same memory address
             std::string current_action = g_interfaces.player2.GetData()->currentAction;

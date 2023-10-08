@@ -907,3 +907,15 @@ bool ImGui::ColorPicker4On32Bit(const char* label, unsigned char val[4], ImGuiCo
 
 	return value_changed && memcmp(backup_initial_col, col2, components * sizeof(float));
 }
+void ImGui::ShowHelpMarker(const char* desc)
+{
+	ImGui::TextDisabled("(?)");
+	if (ImGui::IsItemHovered())
+	{
+		ImGui::BeginTooltip();
+		ImGui::PushTextWrapPos(450.0f);
+		ImGui::TextUnformatted(desc);
+		ImGui::PopTextWrapPos();
+		ImGui::EndTooltip();
+	}
+}

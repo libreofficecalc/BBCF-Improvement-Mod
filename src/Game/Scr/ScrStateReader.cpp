@@ -7,28 +7,46 @@
 
 
 constexpr auto OFFSET_FROM_FPAC = 0x60;
+//constexpr auto EA_PTR_OFFSET_FROM_FPAC = 0x54; //differently from OFFSET_FROM_FPAC, this is an offset to an adress which holds the actual offset, and this offset is from the beginning of the pre_inint, so +0x60 needs to be added to it
 constexpr auto FPAC_OFFSET_FROM_BBCF_P1 = 0x88E6F0;
 constexpr auto FPAC_OFFSET_FROM_BBCF_P2 = 0x88E750;
 constexpr auto PREINIT_OFFSET_FROM_BBCF_P1 = 0xDB6B2C;
 constexpr auto PREINIT_OFFSET_FROM_BBCF_P2 = 0xDB6B5C;
 
+constexpr auto EA_INDEX_OFFSET_FROM_BBCF_P1 = 0xDB6B40;
+constexpr auto EA_PREINIT_OFFSET_FROM_BBCF_P1 = 0xDB6B44; //there is no pre_init in the ea file, but its meaning is the first state definition
+constexpr auto EA_INDEX_OFFSET_FROM_BBCF_P2 = 0xDB6B70;
+constexpr auto EA_PREINIT_OFFSET_FROM_BBCF_P2 = 0xDB6B74; //there is no pre_init in the ea file, but its meaning is the first state definition
+/*the size of each index entry at least in the ea file is 36 bytes with the offset from first state def starting at 
+byte 32 and going to byte 36. the total amount of states is in the first 4 bytes of the index, so to skip the index 
+and reach the start of the states definitions you need to do (36 * total n of states).*/
 
 std::vector<scrState*> parse_scr(char* bbcf_base_addr, int player_num) {
 	char** fpac_load = NULL;
 	char* scr_index = NULL;
 	char** scr_preinit_offset = NULL;
 
+	char* ea_scr_index = NULL;
+	char** ea_scr_preinit_offset = NULL;
+
 	int offset = NULL;
 	if (player_num == 2) {
 		fpac_load = (char**)(bbcf_base_addr + FPAC_OFFSET_FROM_BBCF_P2);
 		scr_index = *fpac_load + OFFSET_FROM_FPAC;
 		scr_preinit_offset = (char**)(bbcf_base_addr + PREINIT_OFFSET_FROM_BBCF_P2);
+
+		ea_scr_index = *(char**)(bbcf_base_addr + EA_INDEX_OFFSET_FROM_BBCF_P2);
+		ea_scr_preinit_offset = (char**)(bbcf_base_addr + EA_PREINIT_OFFSET_FROM_BBCF_P2);
 	}
 	else if (player_num == 1) {
 		
-		 fpac_load = (char**)(bbcf_base_addr + FPAC_OFFSET_FROM_BBCF_P1);
+		fpac_load = (char**)(bbcf_base_addr + FPAC_OFFSET_FROM_BBCF_P1);
 		scr_index = *fpac_load + OFFSET_FROM_FPAC;
 		scr_preinit_offset = (char**)(bbcf_base_addr + PREINIT_OFFSET_FROM_BBCF_P1);
+
+		ea_scr_index = *(char**)(bbcf_base_addr + EA_INDEX_OFFSET_FROM_BBCF_P1);
+		ea_scr_preinit_offset = (char**)(bbcf_base_addr + EA_PREINIT_OFFSET_FROM_BBCF_P1);
+
 		
 
 	}
@@ -37,6 +55,33 @@ std::vector<scrState*> parse_scr(char* bbcf_base_addr, int player_num) {
 	}
 	std::map<std::string, JonbDBEntry> jonbin_map = JonbDBReader().parse_all_jonbins(bbcf_base_addr, player_num);
 	std::vector<scrState*> states_parsed;
+	std::vector<scrState*> ea_states_parsed;
+	/*doing the EA before the main states*/
+	std::map<std::string, scrState*> ea_state_map = {};  //ea_sstate_map to reference in the main state parsing. This way recursive ea_states(ea states called from ea state) won't work, I need to find a better way later.
+	int ea_n_funcs;
+	int ea_func_num = 0;
+	int ea_i = 0;
+	memcpy(&ea_n_funcs, ea_scr_index, 4);
+	ea_i += 4;
+	while (ea_func_num < ea_n_funcs - 1) {
+		char ea_name_index[32];
+		int ea_pos_before_offset;
+		memcpy(ea_name_index, ea_scr_index + ea_i, 32);
+		ea_i += 32;
+		memcpy(&ea_pos_before_offset, ea_scr_index + ea_i, 4);
+		ea_i += 4;
+
+		char* ea_addr = (*ea_scr_preinit_offset + ea_pos_before_offset);
+		parse_state(ea_addr, ea_states_parsed, &jonbin_map, &ea_state_map);
+		ea_func_num += 1;
+	}
+
+	//builds ea_state_map to reference in the main state parsing.
+	for (auto& state : ea_states_parsed) {
+		ea_state_map[state->name] =  state ;
+	}
+
+	/*ending the EA*/
 
 		int n_funcs;
 		int func_num = 0;
@@ -53,28 +98,43 @@ std::vector<scrState*> parse_scr(char* bbcf_base_addr, int player_num) {
 			i += 4;
 
 			char* addr = (*scr_preinit_offset+ pos_before_offset);
-			parse_state(addr, states_parsed, jonbin_map);
+			parse_state(addr, states_parsed, &jonbin_map, &ea_state_map);
 			func_num += 1;
 		}
 
 
-		std::cout << "worked" << std::endl;
-		std::cout << n_funcs << std::endl;
 
-	
+	//states_parsed.insert(states_parsed.end(), ea_states_parsed.begin(), ea_states_parsed.end());
+		
 	return states_parsed;
 }
-
-
-int parse_state(char* addr, std::vector<scrState*>& states_parsed, std::map<std::string, JonbDBEntry> jonbin_map) {
-	scrState* s = new scrState();
-	if (states_parsed.size() == 162) {
-		std::cout << "oi" << std::endl;
+bool is_sprite_active_frame(char* name_addr, std::map<std::string, JonbDBEntry>* jonbin_map) {
+	if (name_addr == nullptr) { return false; }
+	std::string cmd_str32(name_addr);
+	auto match = jonbin_map->find(cmd_str32); //try to find the string[32] of the command in the map
+	if (match != jonbin_map->end()) { //safety check
+		JonbDBEntry entry = jonbin_map->at(cmd_str32); // if its in the map access it and do whatever you wanna do with it
+		return entry.hitbox_count;
+		//bool is_active = entry->hitbox_count;
+		//...etc
 	}
+	return false;
+}
+
+int parse_state(char* addr, 
+				std::vector<scrState*>& states_parsed, 
+				std::map<std::string, JonbDBEntry>* jonbin_map, 
+				std::map<std::string, scrState*>* ea_state_map) {
+	scrState* s = new scrState();
+
 	s->addr = addr;
 	unsigned long CMD;
 	unsigned int offset = 0;
+<<<<<<< HEAD
 
+=======
+	unsigned int prev_frames = 0; //saving the frames before the call to sprite, because functions that apply to those begin at the start of the sprite(), not at the end, such as invuln frames and spawning EA effects
+>>>>>>> 163fa196d030290c6b02b063bd4d5e5deee31d45
 	//memcpy(&s->name, addr + offset, 32);
 	offset += 4;
 	s->name = addr + offset;
@@ -85,19 +145,25 @@ int parse_state(char* addr, std::vector<scrState*>& states_parsed, std::map<std:
 	//CMD = *(addr + offset);
 	offset += 4;
 	//int iter = 0;
+	//PS: I may have been calling uint32 char for some reason here, not sure why tbh, gotta double check before changing the comments
 	while (CMD != 0x1) {
 		///remember to check for the configuration of defaults, 17000 up to 17006
 		if (CMD == 0x2) {
 			///sprite call(string[32],char) name of sprite and frames
 
+<<<<<<< HEAD
 			std::string cmd_str32(addr + offset);
 			auto match = jonbin_map.find(cmd_str32); //try to find the string[32] of the command in the map
 			
 			
+=======
+			bool is_active = is_sprite_active_frame(addr + offset, jonbin_map);//there's some weirdness on some moves, such as izayoi's "CmdActFDash", showing hitboxes when there shouldn't be
+>>>>>>> 163fa196d030290c6b02b063bd4d5e5deee31d45
 			offset += 32;
 			unsigned int frames;
 			/////memcpy(&frames, addr + offset, 4);
 			frames = *(addr + offset);
+<<<<<<< HEAD
 
 
 			
@@ -113,8 +179,33 @@ int parse_state(char* addr, std::vector<scrState*>& states_parsed, std::map<std:
 				}
 			}
 
+=======
+			std::string activity_status = is_active? "A":"I";
+>>>>>>> 163fa196d030290c6b02b063bd4d5e5deee31d45
 			offset += 4;
+			prev_frames = s->frames;
 			s->frames += frames;
+			for (int i = 0; i < frames;  i++) {
+				s->frame_activity_status.push_back(activity_status);
+				if (i > 100) {/*I still don't know why some sprites have absurdly long durations, such as jin's and izayoi's 6B, don't think its a parsing issue tbh*/
+					break;
+				}
+			}
+						
+		}
+		else if (CMD == 4000) {
+			//EA state call(string[32],char); name of EA state and position
+			if (!ea_state_map->empty()) {
+				std::string cmd_str32(addr + offset);
+				auto match = ea_state_map->find(cmd_str32); //try to find the string[32] of the command in the map
+				if (match != ea_state_map->end()) { //safety check
+					scrState* entry = ea_state_map->at(cmd_str32);
+					s->frame_EA_effect_pairs.push_back({ prev_frames, *entry });
+				}
+			}
+			offset += 32;
+			//offsets the position
+			offset += 4;
 		}
 		else if (CMD == 9003) {
 			///Damage call(char) set dmg 
