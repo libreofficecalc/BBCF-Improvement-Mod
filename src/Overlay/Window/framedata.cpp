@@ -11,7 +11,7 @@ const std::list<std::string> idleWords =
 "CmnActFWalk", "CmnActBWalk",
 "CmnActFDash", "CmnActFDashStop",
 "CmnActJumpLanding", "CmnActLandingStiffEnd",
-"CmnActUkemiLandNLanding", // to fix, 12F too long!
+"CmnActUkemiLandNLanding", "CmnActUkemiStagger",
 // Proxi block is triggered when an attack is closing in without being actually blocked
 // If the player.blockstun is = 0, then those animations are still considered idle
 "CmnActCrouchGuardPre", "CmnActCrouchGuardLoop", "CmnActCrouchGuardEnd",                 // Crouch
