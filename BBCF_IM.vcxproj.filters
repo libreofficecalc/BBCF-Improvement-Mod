@@ -276,6 +276,8 @@
     <ClInclude Include="src\Overlay\Window\PlaybackEditorWindow.h" />
     <ClInclude Include="src\Game\Jonb\JonbDBReader.h" />
     <ClInclude Include="src\Game\Jonb\JonbDBEntry.h" />
+    <ClInclude Include="..\..\..\..\Downloads\stb_image.h" />
+    <ClInclude Include="depends\imgui\stb_image.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="export\dinput8.def">

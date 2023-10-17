@@ -341,7 +341,7 @@ void ScrWindow::DrawStatesSection()
             ImGui::Text("Hit_air_ublockable: %d", selected_state->hit_air_unblockable);
             ImGui::Text("fatal_counter: %d", selected_state->fatal_counter);
             if (ImGui::TreeNode("Frame Breakdown")) {
-                ImGui::ShowHelpMarker("Red numbers are active frames, blue numbers are startup/recovery, black numbers are inactive. White borders are full invul/GP, green borders are partial invul/GP(hover for details). Some are incorrect, however they should be pretty obvious, around 85% are done so far.");
+                ImGui::ShowHelpMarker("Red numbers are active frames, blue numbers are startup/recovery, black numbers are inactive. \n\nWhite borders are full invul/GP, green borders are partial invul/GP(hover for details). Projectile invul not yet being displayed.\n\n\"Non-deterministic\" frame length means that it is not fixed, landing recovery for example. After a non-deterministic state all values will be +\"n\", representing that would be n frames after the frames in question. They are not wrong, they just can't be statically computed.  \n\nSome are still incorrect, however they should be for the most part pretty obvious, around ~85% are done so far.");
                 auto iter_scr_frames = 1;
                 float window_visible_x2 = ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x;
                 ImGuiStyle& style = ImGui::GetStyle();
@@ -681,8 +681,11 @@ void ScrWindow::DrawStatesSection()
             //{"CmnActUkemiLandN",30} ,
            {"CmnActUkemiLandNLanding",1},
             {"CmnActUkemiLandF",30 },
-            {"CmnActUkemiLandB",30 } };
-        
+            {"CmnActUkemiLandB",30 },
+            {"CmnActFDown2Stand", 14},
+            {"CmnActBDown2Stand", 14} };
+        //"CmnActFDown2Stand", 14 seems to be 20 so far
+        //"CmnActFDown2Stand", 14
         if (!wakeup_register.empty()) {
             states = g_interfaces.player2.states;
 
@@ -1186,7 +1189,10 @@ void ScrWindow::DrawPlaybackSection() {
             static std::vector<std::tuple<std::string, int>> wakeup_buffer_actions{ 
                 {"ActUkemiLandN",30 } ,
                 {"ActUkemiLandF",30 },
-                {"ActUkemiLandB",30 } };
+                {"ActUkemiLandB",30 },
+            {"ActFDown2Stand", 14},
+            {"ActBDown2Stand", 14} 
+        };
             
             //checks if 
 
@@ -1195,53 +1201,69 @@ void ScrWindow::DrawPlaybackSection() {
             static int frame_count_to_activate = 0; // will start the recording when pFrameCount reaches this number
             static std::string prev_action;
             //will run buffered for non random wakeup slot
-            if (slot_wakeup != 0 && slot_buffer[slot_wakeup - 1] != 0) {
+            if (slot_wakeup != 0 || !random_wakeup.empty()){// && slot_buffer[slot_wakeup - 1] != 0) {
                 if (prev_action != current_action) {
                     //sets the internal frame count to trigger shit
                     for (auto pair : wakeup_buffer_actions) {
                         if (base_frame_count_triggered == 0 && current_action.find(std::get<0>(pair)) != std::string::npos) {
                             //auto tst = current_action.find(std::get<0>(pair));
+                            auto buffer = 0;
+                            if (random_wakeup_slot_toggle && !random_wakeup.empty()) { buffer = 0; }//disable buffer if it is a random action
+                            else { buffer= slot_buffer[slot_wakeup - 1]; }
                             base_frame_count_triggered = *g_gameVals.pFrameCount;
-                            frame_count_to_activate = base_frame_count_triggered + std::get<1>(pair) - slot_buffer[slot_wakeup - 1]; //sets the frame count to activate to base + (len of action- buffer)
+                            frame_count_to_activate = base_frame_count_triggered + std::get<1>(pair) - buffer; //sets the frame count to activate to base + (len of action- buffer)
                             break;
                         }
-                        // if not in listed states reset the internal frame counts
+                        
+                        
+                    }
+                    if (frame_count_to_activate < *g_gameVals.pFrameCount || base_frame_count_triggered > *g_gameVals.pFrameCount) { //sanity check
                         base_frame_count_triggered = 0;
                         frame_count_to_activate = 0;
                     }
 
                 }
-                else if (frame_count_to_activate !=0 && *g_gameVals.pFrameCount == frame_count_to_activate) {
-                    slot = slot_wakeup - 1;
+                if (frame_count_to_activate !=0 && *g_gameVals.pFrameCount == frame_count_to_activate) {
+                    //checks if there is a random slot, for now if its set to random the buffer is not individual to every single random action, still need to implement this.
+                    if (random_wakeup_slot_toggle && !random_wakeup.empty()) {
+                        int random_pos = std::rand() % random_wakeup.size();
+                        slot = random_wakeup[random_pos] - 1;
+                    }
+                    else {
+                        slot = slot_wakeup - 1;
+                    }
                     memcpy(active_slot, &slot, 4);
                     memcpy(playback_control_ptr, &val_set, 2);
+                    // if not in listed states reset the internal frame counts
+                    base_frame_count_triggered = 0;
+                    frame_count_to_activate = 0;
                 }
             }
 
 
 
 
-
+            /* OLD CODE FOR WAKEUP ACTION, JUST LEAVING FOR REFERENCE FOR SOMETHING IM DOING
             //checking for wakeup action
             //std::string substr = "CmnActUkemiLandNLanding";
             // I think I need to change this later to fit the above activation criteria, otherwise it may have ~3 frames gap? needs more testing!
-            auto wakeup_action_trigger_find = current_action.find("CmnActUkemiLandNLanding");
-            if (random_wakeup_slot_toggle && !random_wakeup.empty() && wakeup_action_trigger_find != std::string::npos) {
-                //does randomized
-                int random_pos = std::rand() % random_wakeup.size();
-                slot = random_wakeup[random_pos] - 1;
-                memcpy(active_slot, &slot, 4);
-                memcpy(playback_control_ptr, &val_set, 2);
+            //auto wakeup_action_trigger_find = current_action.find("CmnActUkemiLandNLanding");
+            //if (random_wakeup_slot_toggle && !random_wakeup.empty() && wakeup_action_trigger_find != std::string::npos) {
+            //    //does randomized
+            //    int random_pos = std::rand() % random_wakeup.size();
+            //    slot = random_wakeup[random_pos] - 1;
+            //    memcpy(active_slot, &slot, 4);
+            //    memcpy(playback_control_ptr, &val_set, 2);
 
-            }
-            else if (slot_wakeup != 0 && wakeup_action_trigger_find != std::string::npos) {
-                //does pre-defined
-                slot = slot_wakeup - 1;
-                memcpy(active_slot, &slot, 4);
-                memcpy(playback_control_ptr, &val_set, 2);
-            }
+            //}
+            //else if (slot_wakeup != 0 && wakeup_action_trigger_find != std::string::npos) {
+            //    //does pre-defined
+            //    slot = slot_wakeup - 1;
+            //    memcpy(active_slot, &slot, 4);
+            //    memcpy(playback_control_ptr, &val_set, 2);
+            //}
 
-
+            */
             prev_action = current_action;
             
         }

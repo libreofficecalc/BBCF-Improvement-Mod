@@ -87,6 +87,11 @@ bool WindowManager::Initialize(void *hwnd, IDirect3DDevice9 *device)
 		ImGui::GetIO().Fonts->AddFontFromMemoryCompressedTTF(DroidSans_compressed_data, DroidSans_compressed_size, 20);
 		unicodeFontSize = 25;
 	}
+	else if (Settings::settingsIni.menusize == 4)
+	{
+		ImGui::GetIO().Fonts->AddFontFromMemoryCompressedTTF(DroidSans_compressed_data, DroidSans_compressed_size, 30);
+		unicodeFontSize = 35;
+	}
 	else
 	{
 		ImGui::GetIO().Fonts->AddFontDefault();

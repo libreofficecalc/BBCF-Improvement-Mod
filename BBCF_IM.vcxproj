@@ -87,10 +87,12 @@
     <ClCompile Include="src\Game\Menus\TrainingSetupMenu.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\..\..\..\Downloads\stb_image.h" />
     <ClInclude Include="depends\imgui\imconfig.h" />
     <ClInclude Include="depends\imgui\imgui.h" />
     <ClInclude Include="depends\imgui\imgui_impl_dx9.h" />
     <ClInclude Include="depends\imgui\imgui_internal.h" />
+    <ClInclude Include="depends\imgui\stb_image.h" />
     <ClInclude Include="depends\imgui\stb_rect_pack.h" />
     <ClInclude Include="depends\imgui\stb_textedit.h" />
     <ClInclude Include="depends\imgui\stb_truetype.h" />

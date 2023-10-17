@@ -8,8 +8,71 @@
 #include "Overlay/WindowManager.h"
 #include "Overlay/Window/HitboxOverlay.h"
 #include "Core/info.h"
+
+#define STB_IMAGE_IMPLEMENTATION
+//#include "stb_image.h"
+
+//#include <d3d9.h>
+//#include <imgui_impl_dx9.cpp>
+//#include <d3dx9tex.h> // Include D3DX9Tex header for texture loading
+
+//LPDIRECT3DTEXTURE9 LoadTextureFromFile(LPDIRECT3DDEVICE9 device, const char* filename) {
+//	int width, height, numChannels;
+//	unsigned char* imageData = stbi_load(filename, &width, &height, &numChannels, STBI_rgb_alpha);
+//	if (!imageData) {
+//		return nullptr;
+//	}
+//
+//	LPDIRECT3DTEXTURE9 texture = nullptr;
+//	HRESULT hr = D3DXCreateTextureFromFileInMemoryEx(device, imageData, width * height * 4,
+//		width, height, 1, 0, D3DFMT_A8R8G8B8, D3DPOOL_MANAGED,
+//		D3DX_DEFAULT, D3DX_DEFAULT, 0xFF000000, nullptr, nullptr, &texture);
+//
+//	// Free the loaded image data
+//	stbi_image_free(imageData);
+//
+//	if (FAILED(hr)) {
+//		return nullptr;
+//	}
+//
+//	return texture;
+//}
+
+//bool LoadTextureFromFile(const char* filename, PDIRECT3DTEXTURE9* out_texture, int* out_width, int* out_height)
+//{
+//	// Load texture from disk
+//	auto device = g_interfaces.pD3D9ExWrapper;
+//	PDIRECT3DTEXTURE9 texture;
+//	HRESULT hr = D3DXCreateTextureFromFileA(device, filename, &texture);
+//	if (hr != S_OK)
+//		return false;
+//	// Retrieve description of the texture surface so we can access its size
+//	D3DSURFACE_DESC my_image_desc;
+//	texture->GetLevelDesc(0, &my_image_desc);
+//	*out_texture = texture;
+//	*out_width = (int)my_image_desc.Width;
+//	*out_height = (int)my_image_desc.Height;
+//	return true;
+//}
+//
+
+
+
 void DebugWindow::Draw()
-{
+{	
+	//g_pd3dDevice
+	//auto device = g_interfaces.pD3D9ExWrapper;
+	//std::string path = "jn203_06.png";
+	//int my_image_width = 0;
+	//int my_image_height = 0;
+	//PDIRECT3DTEXTURE9 my_texture = NULL;
+	//bool ret = LoadTextureFromFile("jn203_06.png", &my_texture, &my_image_width, &my_image_height);
+	//if (ret) {
+	//	// Handle loading failure
+	//	// ...
+	//	ImGui::Image((void*)my_texture, ImVec2(my_image_width, my_image_height));
+	//}
+	
 	if (m_showDemoWindow)
 	{
 		ImGui::ShowDemoWindow(&m_showDemoWindow);
