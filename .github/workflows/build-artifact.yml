@@ -24,14 +24,14 @@ jobs:
 
       # this is done to make it so the zip file in the download doesn't have a file structure
       - name: Copy README
-        run: copy ${{ github.workspace }}/USER_README.txt ${{ github.workspace}}/bin/Release/
+        run: copy ${{ github.workspace }}\USER_README.txt ${{ github.workspace}}\bin\Release\
 
       - name: Upload BBCF_IM
         uses: actions/upload-artifact@v3
         with:
           name: BBCF_IM
           path: |
-            ${{ github.workspace}}/bin/Release/dinput8.dll
-            ${{ github.workspace}}/bin/Release/settings.ini
-            ${{ github.workspace}}/bin/Release/palettes.ini
-            ${{ github.workspace}}/bin/Release/USER_README.txt
+            ${{ github.workspace}}\bin\Release\dinput8.dll
+            ${{ github.workspace}}\bin\Release\settings.ini
+            ${{ github.workspace}}\bin\Release\palettes.ini
+            ${{ github.workspace}}\bin\Release\USER_README.txt
