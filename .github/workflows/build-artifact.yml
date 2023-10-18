@@ -24,7 +24,7 @@ jobs:
 
       # this is done to make it so the zip file in the download doesn't have a file structure
       - name: Copy README
-        run: copy ${{ github.workspace }}\USER_README.txt ${{ github.workspace}}\bin\Release\
+        run: copy ${{ github.workspace }}\USER_README.txt ${{ github.workspace }}\bin\Release\
 
       - name: Upload BBCF_IM
         uses: actions/upload-artifact@v3

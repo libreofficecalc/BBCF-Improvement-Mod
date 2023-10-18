@@ -21,7 +21,7 @@ jobs:
         run: msbuild BBCF_IM.sln -property:Configuration=Release
       
       - name: Calculate checksums
-        working-directory: ${{ github.workspace}}\bin\Release\
+        working-directory: ${{ github.workspace }}\bin\Release\
         run: |
           $(CertUtil -hashfile dinput8.dll MD5)[1] -replace " ","" > dinput8.dll.md5
           $(CertUtil -hashfile dinput8.dll SHA256)[1] -replace " ","" > dinput8.dll.sha256
@@ -29,7 +29,7 @@ jobs:
       # action-gh-release has issues with back slashes in file paths
       # working-directory is also not supported
       # see issue https://github.com/softprops/action-gh-release/issues/280
-      # for now, just use "." instead of "${{ github.workspace}}" and
+      # for now, just use "." instead of "${{ github.workspace }}" and
       # use forward slashes
       - name: Release BBCF_IM
         uses: softprops/action-gh-release@v1
