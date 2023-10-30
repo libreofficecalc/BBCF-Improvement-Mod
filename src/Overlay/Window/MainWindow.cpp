@@ -162,6 +162,9 @@ void MainWindow::DrawFrameAdvantageSection() const
 	ImGui::HorizontalSpacing();
 	ImGui::Checkbox("Enable##framedata_section", &isFrameAdvantageOpen);
 
+	ImGui::HorizontalSpacing();
+	ImGui::Checkbox("Advantage on stagger hit", &idleToggles.ukemiStaggerHit);
+
 	if (isFrameAdvantageOpen)
 	{
 		ImVec4 color;
@@ -177,9 +180,9 @@ void MainWindow::DrawFrameAdvantageSection() const
 		ImGui::Columns(2, "columns_layout", true);
 
 		// First column
-		if (interaction.frameAdvantageToDisplay > 0)
+		if (playersInteraction.frameAdvantageToDisplay > 0)
 			color = green;
-		else if (interaction.frameAdvantageToDisplay < 0)
+		else if (playersInteraction.frameAdvantageToDisplay < 0)
 			color = red;
 		else
 			color = white;
@@ -187,20 +190,20 @@ void MainWindow::DrawFrameAdvantageSection() const
 		ImGui::Text("Player 1");
 		ImGui::TextUnformatted("Gap:");
 		ImGui::SameLine();
-		ImGui::TextUnformatted(((interaction.p1GapDisplay != -1) ? std::to_string(interaction.p1GapDisplay) : "").c_str());
+		ImGui::TextUnformatted(((playersInteraction.p1GapDisplay != -1) ? std::to_string(playersInteraction.p1GapDisplay) : "").c_str());
 
 		ImGui::TextUnformatted("Advantage:");
 		ImGui::SameLine();
-		std::string str = std::to_string(interaction.frameAdvantageToDisplay);
-		if (interaction.frameAdvantageToDisplay > 0)
+		std::string str = std::to_string(playersInteraction.frameAdvantageToDisplay);
+		if (playersInteraction.frameAdvantageToDisplay > 0)
 			str = "+" + str;
 
 		ImGui::TextColored(color, "%s", str.c_str());
 
 		// Next column
-		if (interaction.frameAdvantageToDisplay > 0)
+		if (playersInteraction.frameAdvantageToDisplay > 0)
 			color = red;
-		else if (interaction.frameAdvantageToDisplay < 0)
+		else if (playersInteraction.frameAdvantageToDisplay < 0)
 			color = green;
 		else
 			color = white;
@@ -209,12 +212,12 @@ void MainWindow::DrawFrameAdvantageSection() const
 		ImGui::Text("Player 2");
 		ImGui::TextUnformatted("Gap:");
 		ImGui::SameLine();
-		ImGui::TextUnformatted(((interaction.p2GapDisplay != -1) ? std::to_string(interaction.p2GapDisplay) : "").c_str());
+		ImGui::TextUnformatted(((playersInteraction.p2GapDisplay != -1) ? std::to_string(playersInteraction.p2GapDisplay) : "").c_str());
 
 		ImGui::TextUnformatted("Advantage:");
 		ImGui::SameLine();
-		std::string str2 = std::to_string(-interaction.frameAdvantageToDisplay);
-		if (interaction.frameAdvantageToDisplay < 0)
+		std::string str2 = std::to_string(-playersInteraction.frameAdvantageToDisplay);
+		if (playersInteraction.frameAdvantageToDisplay < 0)
 			str2 = "+" + str2;
 		ImGui::TextColored(color, "%s", str2.c_str());
 		ImGui::End();

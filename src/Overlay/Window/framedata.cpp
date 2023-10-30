@@ -3,7 +3,8 @@
 #include "Core/interfaces.h"
 #include "Game/gamestates.h"
 
-PlayersInteractionState interaction;
+IdleToggles idleToggles;
+PlayersInteractionState playersInteraction;
 
 const std::list<std::string> idleWords =
 { "_NEUTRAL", "CmnActStand", "CmnActStandTurn", "CmnActStand2Crouch",
@@ -11,7 +12,7 @@ const std::list<std::string> idleWords =
 "CmnActFWalk", "CmnActBWalk",
 "CmnActFDash", "CmnActFDashStop",
 "CmnActJumpLanding", "CmnActLandingStiffEnd",
-"CmnActUkemiLandNLanding", "CmnActUkemiStagger",
+"CmnActUkemiLandNLanding",
 // Proxi block is triggered when an attack is closing in without being actually blocked
 // If the player.blockstun is = 0, then those animations are still considered idle
 "CmnActCrouchGuardPre", "CmnActCrouchGuardLoop", "CmnActCrouchGuardEnd",                 // Crouch
@@ -24,6 +25,8 @@ const std::list<std::string> idleWords =
 // Character specifics
 "com3_kamae" // Mai 5xB stance
 };
+
+const std::string ukemiStaggerIdle = "CmnActUkemiStagger";
 
 bool isDoingActionInList(const char currentAction[], const std::list<std::string>& listOfActions)
 {
@@ -42,10 +45,23 @@ bool isDoingActionInList(const char currentAction[], const std::list<std::string
 bool isIdle(CharData& player)
 {
     if (isBlocking(player) || isInHitstun(player))
+    {
         return false;
+    }
 
     if (isDoingActionInList(player.currentAction, idleWords))
+    {
         return true;
+    }
+
+    if (idleToggles.ukemiStaggerHit)
+    {
+        if (ukemiStaggerIdle == player.currentAction)
+        {
+            return true;
+        }
+    }
+
     return false;
 }
 
@@ -71,33 +87,32 @@ void getFrameAdvantage(CharData& player1, CharData& player2)
 
     if (!isIdle1 && !isIdle2)
     {
-        interaction.started = true;
-        interaction.timer = 0;
+        playersInteraction.started = true;
+        playersInteraction.timer = 0;
     }
-    if (interaction.started)
+    if (playersInteraction.started)
     {
         if (isIdle1 && isIdle2)
         {
-            interaction.started = false;
-            interaction.frameAdvantageToDisplay = interaction.timer;
+            playersInteraction.started = false;
+            playersInteraction.frameAdvantageToDisplay = playersInteraction.timer;
         }
         if (!isIdle1)
         {
-            interaction.timer -= 1;
+            playersInteraction.timer -= 1;
         }
         if (!isIdle2)
         {
-            interaction.timer += 1;
+            playersInteraction.timer += 1;
         }
     }
 }
 
-
 void computeGaps(CharData& player, int& gapCounter, int& gapResult)
 {
-    interaction.inBlockstring = isBlocking(player) || isInHitstun(player);
+    playersInteraction.inBlockstring = isBlocking(player) || isInHitstun(player);
  
-    if (interaction.inBlockstring)
+    if (playersInteraction.inBlockstring)
     {
         if (gapCounter > 0 && gapCounter <= 30)
         {
@@ -105,7 +120,7 @@ void computeGaps(CharData& player, int& gapCounter, int& gapResult)
         }
         gapCounter = 0; //resets everytime you are in block or hit stun
     }
-    else if (!interaction.inBlockstring)
+    else if (!playersInteraction.inBlockstring)
     {
         ++gapCounter;
         gapResult = -1;
@@ -114,13 +129,13 @@ void computeGaps(CharData& player, int& gapCounter, int& gapResult)
 
 bool hasWorldTimeMoved()
 {
-    if (interaction.prevFrameCount < *g_gameVals.pFrameCount)
+    if (playersInteraction.prevFrameCount < *g_gameVals.pFrameCount)
     {
-        interaction.prevFrameCount = *g_gameVals.pFrameCount;
+        playersInteraction.prevFrameCount = *g_gameVals.pFrameCount;
         return true;
     }
 
-    interaction.prevFrameCount = *g_gameVals.pFrameCount;
+    playersInteraction.prevFrameCount = *g_gameVals.pFrameCount;
     return false;
 }
 
@@ -136,8 +151,8 @@ void computeFramedataInteractions()
 
         if (hasWorldTimeMoved())
         {
-            computeGaps(player1, interaction.p1Gap, interaction.p1GapDisplay);
-            computeGaps(player2, interaction.p2Gap, interaction.p2GapDisplay);
+            computeGaps(player1, playersInteraction.p1Gap, playersInteraction.p1GapDisplay);
+            computeGaps(player2, playersInteraction.p2Gap, playersInteraction.p2GapDisplay);
             getFrameAdvantage(player1, player2);
         }
     }

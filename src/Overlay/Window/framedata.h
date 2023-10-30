@@ -3,6 +3,11 @@
 #include <string>
 #include "Game/CharData.h"
 
+struct IdleToggles
+{
+	bool ukemiStaggerHit = false;
+};
+
 struct PlayersInteractionState
 {
 	// World Time
@@ -21,7 +26,8 @@ struct PlayersInteractionState
 	int p2GapDisplay = -1;
 };
 
-extern PlayersInteractionState interaction;
+extern IdleToggles idleToggles;
+extern PlayersInteractionState playersInteraction;
 
 bool isDoingActionInList(const char currentAction[], const std::list<std::string>& listOfActions);
 bool isIdle(CharData& player);
