@@ -247,7 +247,7 @@ void PaletteEditorWindow::OnMatchInit()
 	m_highlightMode = false;
 	m_showAlpha = false;
 
-	m_history.cursor = 0;
+	ClearUndoHistory();
 
 	CopyPalFileToEditorArray(m_selectedFile, *m_selectedCharPalHandle);
 }
