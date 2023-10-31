@@ -8,6 +8,7 @@
 #include "Overlay/Logger/ImGuiLogger.h"
 
 #include <atlstr.h>
+#include <sstream>
 
 #define MAX_NUM_OF_PAL_SLOTS 24
 
