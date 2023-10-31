@@ -2,7 +2,6 @@
 #include "impl_format.h"
 
 #include "CharPaletteHandle.h"
-#include <sstream>
 
 #include "Game/characters.h"
 #include "Game/Player.h"
