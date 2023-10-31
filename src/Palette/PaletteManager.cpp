@@ -112,13 +112,7 @@ void PaletteManager::ApplyDefaultCustomPalette(CharIndex charIndex, CharPaletteH
 		}
 		int ranIndex = rand() % v.size();
 		const char* ranName = v[ranIndex].c_str();
-		//for (int i = 0; i < m_customPalettes[charIndex].size(); i++)
-		//{
-		//	if (strncmp(ranName, m_customPalettes[charIndex][i].palInfo.palName, IMPL_PALNAME_LENGTH) == 0)
-		//	{
-		//		foundCustomPalIndex = i;
-		//	}
-		//}
+
 		foundCustomPalIndex = FindCustomPalIndex(charIndex, ranName);
 	}
 	else
