@@ -7,6 +7,7 @@
 #include "Game/Player.h"
 
 #include <vector>
+#include <sstream>
 
 class PaletteManager
 {
