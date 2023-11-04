@@ -5,6 +5,8 @@
 
 IdleToggles idleToggles;
 PlayersInteractionState playersInteraction;
+CharDataExtended player1;
+CharDataExtended player2;
 
 const std::list<std::string> idleWords =
 { "_NEUTRAL", "CmnActStand", "CmnActStandTurn", "CmnActStand2Crouch",
@@ -42,21 +44,28 @@ bool isDoingActionInList(const char currentAction[], const std::list<std::string
     return false;
 }
 
-bool isIdle(CharData& player)
+bool isIdle(const CharDataExtended& player)
 {
+    // The landing post neutral tech is not actionable for 1F. It can be considered part of the tech.
+    const std::string currentActionString = player.charData->currentAction;
+    if ("CmnActUkemiLandNLanding" == currentActionString && currentActionString != player.previousAction)
+    {
+        return false;
+    }
+
     if (isBlocking(player) || isInHitstun(player))
     {
         return false;
     }
 
-    if (isDoingActionInList(player.currentAction, idleWords))
+    if (isDoingActionInList(player.charData->currentAction, idleWords))
     {
         return true;
     }
 
     if (idleToggles.ukemiStaggerHit)
     {
-        if (ukemiStaggerIdle == player.currentAction)
+        if (ukemiStaggerIdle == player.charData->currentAction)
         {
             return true;
         }
@@ -65,21 +74,21 @@ bool isIdle(CharData& player)
     return false;
 }
 
-bool isBlocking(CharData& player)
+bool isBlocking(const CharDataExtended& player)
 {
-    if (player.blockstun > 0 || player.moveSpecialBlockstun > 0)
+    if (player.charData->blockstun > 0 || player.charData->moveSpecialBlockstun > 0)
         return true;
     return false;
 }
 
-bool isInHitstun(CharData& player)
+bool isInHitstun(const CharDataExtended& player)
 {
-    if (player.hitstun > 0 && !isDoingActionInList(player.currentAction, idleWords))
+    if (player.charData->hitstun > 0 && !isDoingActionInList(player.charData->currentAction, idleWords))
         return true;
     return false;
 }
 
-void getFrameAdvantage(CharData& player1, CharData& player2)
+void getFrameAdvantage(const CharDataExtended& player1, const CharDataExtended& player2)
 {
     bool isIdle1 = isIdle(player1);
     bool isIdle2 = isIdle(player2);
@@ -108,10 +117,10 @@ void getFrameAdvantage(CharData& player1, CharData& player2)
     }
 }
 
-void computeGaps(CharData& player, int& gapCounter, int& gapResult)
+void computeGaps(const CharDataExtended& player, int& gapCounter, int& gapResult)
 {
     playersInteraction.inBlockstring = isBlocking(player) || isInHitstun(player);
- 
+
     if (playersInteraction.inBlockstring)
     {
         if (gapCounter > 0 && gapCounter <= 30)
@@ -146,14 +155,17 @@ void computeFramedataInteractions()
 
     if (!g_interfaces.player1.IsCharDataNullPtr() && !g_interfaces.player2.IsCharDataNullPtr())
     {
-        CharData& player1 = *g_interfaces.player1.GetData();
-        CharData& player2 = *g_interfaces.player2.GetData();
+        player1.charData = g_interfaces.player1.GetData();
+        player2.charData = g_interfaces.player2.GetData();
 
         if (hasWorldTimeMoved())
         {
             computeGaps(player1, playersInteraction.p1Gap, playersInteraction.p1GapDisplay);
             computeGaps(player2, playersInteraction.p2Gap, playersInteraction.p2GapDisplay);
             getFrameAdvantage(player1, player2);
+
+            player1.updatePreviousAction();
+            player2.updatePreviousAction();
         }
     }
 }
