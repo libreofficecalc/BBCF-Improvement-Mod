@@ -57,12 +57,12 @@ public:
     int getInput(int);
 
     CbrGenerationError MakeCaseBase(AnnotatedReplay*, std::string, int, int, int);
-    bool CbrReplayFile::CheckCaseEnd(int framesIdle, Metadata ar, std::string prevState, bool neutral, std::vector<CommandActions> commands);
+    bool CbrReplayFile::CheckCaseEnd(int framesIdle, Metadata ar, std::string prevState, bool neutral, std::vector<CommandActions>& commands);
     bool CheckNeutralState(std::string);
     std::vector<int> DeconstructInput(int, bool);
     std::vector < inputMemory> CbrReplayFile::CheckCommandExecution(int input, std::vector < inputMemory>& inputBuffer);
-    std::vector < inputMemory> CbrReplayFile::MakeInputArray(std::string move, std::vector<CommandActions> commands, std::string prevState);
-    std::vector<CommandActions> FetchCommandActions(std::string);
+    std::vector < inputMemory> CbrReplayFile::MakeInputArray(std::string& move, std::vector<CommandActions>& commands, std::string prevState);
+    std::vector<CommandActions> FetchCommandActions(std::string&);
     std::vector<CommandActions> CbrReplayFile::FetchNirvanaCommandActions();
     CbrGenerationError instantLearning(AnnotatedReplay*, std::string);
     CbrGenerationError CbrReplayFile::makeFullCaseBase(AnnotatedReplay*, std::string);
@@ -70,9 +70,9 @@ public:
     bool isDirectionInputs(int direction);
     std::array<int, 2>& CbrReplayFile::getCharIds();
     std::array<std::string, 2>& CbrReplayFile::getCharNames();
-    std::vector < inputMemory> CbrReplayFile::MakeInputArraySuperJump(std::string move, std::vector<int> inputs, int startingIndex, std::vector < inputMemory> inVec);
+    std::vector < inputMemory> CbrReplayFile::MakeInputArraySuperJump(std::string move, std::vector<int>& inputs, int startingIndex, std::vector < inputMemory>& inVec);
     std::vector < inputMemory> CbrReplayFile::DeleteCompletedInputs(std::string name, std::vector < inputMemory>& inputBuffer);
-    bool CbrReplayFile::ContainsCommandState(std::string move, std::vector<CommandActions> commands);
+    bool CbrReplayFile::ContainsCommandState(std::string& move, std::vector<CommandActions>& commands);
 };
 
 

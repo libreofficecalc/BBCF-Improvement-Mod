@@ -74,7 +74,7 @@ std::array< std::string, 13> adaActions = { "CmnActStand",
 "CmnActJumpUpperEnd", "CmnActJumpDown",
 "CmnActJumpLanding" };
 
-void Helper::computeMetaData(std::string charName) {
+void Helper::computeMetaData(std::string& charName) {
 	attack = attackType > 0;
 	hit = hitstun > 0;
 	hitThisFrame = (hitstun > 0) && (hitstop > 0) && (actionTimeNoHitstop == 1);
@@ -88,7 +88,7 @@ void Helper::computeMetaData(std::string charName) {
 
 }
 
-bool Helper::CheckNeutralState(std::string state) {
+bool Helper::CheckNeutralState(std::string& state) {
 	for (std::size_t i = 0; i < adaActions.size(); ++i) {
 		if (state == adaActions[i]) {
 			return true;

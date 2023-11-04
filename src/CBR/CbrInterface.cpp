@@ -24,7 +24,6 @@
 
 
 
-
 void CbrInterface::saveDebugPrint() {
 	boost::filesystem::path dir("CBRsave");
 	if (!(boost::filesystem::exists(dir))) {
@@ -62,6 +61,9 @@ void CbrInterface::setCbrData(CbrData c, int i) {
 void CbrInterface::mergeCbrData(CbrData c, int i) {
 	auto vec = c.getReplayFiles();
 	auto vec2 = cbrData[i].getReplayFiles();
+	int start = vec2->size();;
+	int end = start + vec->size();
+	
 	if (vec2->size() > 0) {
 		vec2->insert(
 			vec2->end(),
@@ -78,6 +80,7 @@ void CbrInterface::mergeCbrData(CbrData c, int i) {
 
 		cbrData[i] = c;
 	}
+	cbrData[i].generateTreeFromOldReplayInRange(start, end);	
 }
 
 CbrData* CbrInterface::getCbrData(int i) {
@@ -193,7 +196,7 @@ void CbrInterface::OnMatchInit(CharData& c1, CharData& c2, int gameMode) {
 	
 }
 
-
+bool SaveDataComplete = false;
 void CbrInterface::SaveCbrData(CbrData& cbr) {
 
 	boost::filesystem::path dir("CBRsave");
@@ -244,7 +247,211 @@ void CbrInterface::SaveCbrData(CbrData& cbr) {
 		 }
 		 
 	 }
+	 SaveDataComplete = true;
 	 
+}
+
+
+void SaveDataWithMetadata(const std::string& filename, const std::string& metadata, const std::string& compressedData) {
+	std::ofstream outfile(filename, std::ios_base::binary);
+
+	if (!outfile.is_open()) {
+		std::cerr << "Error: Could not open the file.\n";
+		return;
+	}
+
+	// Write metadata to the file
+	outfile.write(metadata.c_str(), metadata.size());
+
+
+	// Create a filtering stream for compression
+	boost::iostreams::filtering_stream<boost::iostreams::output> f;
+	f.push(boost::iostreams::gzip_compressor(boost::iostreams::gzip_params(boost::iostreams::gzip::best_compression)));
+	f.push(outfile);
+
+	// Write compressed data to the file
+	f.write(compressedData.c_str(), compressedData.size());
+}
+
+
+
+void CbrInterface::SaveCbrDataExperiment(CbrData& cbr) {
+
+	boost::filesystem::path dir("CBRsave");
+	if (!(boost::filesystem::exists(dir))) {
+		boost::filesystem::create_directory(dir);
+	}
+
+	boost::filesystem::path dir2("CBRsave\\Metadata");
+	if (!(boost::filesystem::exists(dir2))) {
+		boost::filesystem::create_directory(dir2);
+	}
+
+	auto filenameReal = u8".\\CBRsave\\" + cbr.getCharName() + cbr.getPlayerName() + ".cbr";
+	auto filename = u8".\\CBRsave\\SaveBuffer.cbr";
+	auto filenameMeta = u8".\\CBRsave\\Metadata\\SaveBuffer.met";
+
+	// Serialize metadata to a string
+	std::ostringstream metadataStream;
+	{
+		FileMetadata meta;
+		auto opponentChar = getOpponentCharNameString(cbr);
+		std::string charName = cbr.getCharName();
+		std::string playerName = cbr.getPlayerName();
+		int rCount = cbr.getReplayCount();
+		meta.rCount = rCount;
+		strcpy(meta.charName, charName.c_str());
+		strcpy(meta.playerName, playerName.c_str());
+		strcpy(meta.opponentChar, opponentChar.c_str());
+		meta.rCount = rCount;
+
+		std::ofstream outfile(filename, std::ios_base::binary);
+		boost::iostreams::filtering_stream<boost::iostreams::output> f;
+		f.push(boost::iostreams::gzip_compressor(boost::iostreams::gzip_params(boost::iostreams::gzip::best_compression)));
+		f.push(outfile);
+		boost::archive::binary_oarchive archive(f);
+		archive << meta;
+	}
+
+	{
+		std::ofstream outfile(filename, std::ios_base::binary);
+		boost::iostreams::filtering_stream<boost::iostreams::output> f;
+		f.push(boost::iostreams::gzip_compressor(boost::iostreams::gzip_params(boost::iostreams::gzip::best_compression)));
+		f.push(outfile);
+		boost::archive::binary_oarchive archive(f);
+		archive << cbr;
+	}
+	auto filenameReal2Meta = "\\CBRsave\\Metadata\\" + cbr.getCharName() + cbr.getPlayerName() + ".met";
+	auto filenameReal2 = "\\CBRsave\\" + cbr.getCharName() + cbr.getPlayerName() + ".cbr";
+	auto filename2 = "\\CBRsave\\SaveBuffer.cbr";
+	auto filename2Meta = "\\CBRsave\\Metadata\\SaveBuffer.met";
+	auto p = boost::filesystem::current_path() / filename2;
+	auto pReal = boost::filesystem::current_path() / filenameReal2;
+	auto pMeta = boost::filesystem::current_path() / filename2Meta;
+	auto pMetaReal = boost::filesystem::current_path() / filenameReal2Meta;
+
+	if (boost::filesystem::exists(pReal)) {
+		boost::filesystem::remove(pReal);
+
+	}
+	if (boost::filesystem::exists(pMetaReal)) {
+		boost::filesystem::remove(pMetaReal);
+	}
+	if (boost::filesystem::exists(p)) {
+		try
+		{
+			boost::filesystem::rename(p, pReal);
+
+		}
+		catch (const std::exception& e)
+		{
+			std::string s = "reversalName";
+		}
+
+	}
+	if (boost::filesystem::exists(pMeta)) {
+		try
+		{
+			boost::filesystem::rename(pMeta, pMetaReal);
+
+		}
+		catch (const std::exception& e)
+		{
+			std::string s = "reversalName";
+		}
+
+	}
+	SaveDataComplete = true;
+
+}
+/*
+void CbrInterface::SaveCbrDataExperiment(CbrData& cbr) {
+
+	boost::filesystem::path dir("CBRsave");
+	if (!(boost::filesystem::exists(dir))) {
+		boost::filesystem::create_directory(dir);
+	}
+
+	auto filenameReal = u8".\\CBRsave\\" + cbr.getCharName() + cbr.getPlayerName() + ".cbr";
+	auto filename = u8".\\CBRsave\\SaveBuffer.cbr";
+
+	// Serialize metadata to a string
+	std::ostringstream metadataStream;
+	{
+		FileMetadata meta;
+		auto opponentChar = getOpponentCharNameString(cbr);
+		std::string charName = cbr.getCharName();
+		std::string playerName = cbr.getPlayerName();
+		int rCount = cbr.getReplayCount();
+		meta.rCount = rCount;
+		strcpy(meta.charName, charName.c_str());
+		strcpy(meta.playerName, playerName.c_str());
+		strcpy(meta.opponentChar, opponentChar.c_str());
+		meta.rCount = rCount;
+
+		boost::archive::text_oarchive metaArchive(metadataStream);
+		metaArchive << meta;
+	}
+
+	{
+		std::ofstream outfile(filename, std::ios_base::binary);
+		boost::iostreams::filtering_stream<boost::iostreams::output> f;
+		f.push(boost::iostreams::gzip_compressor(boost::iostreams::gzip_params(boost::iostreams::gzip::best_compression)));
+		f.push(outfile);
+		boost::archive::binary_oarchive archive(f);
+		archive << cbr;
+
+	}
+
+
+	// Serialize compressed data to a string
+	std::ostringstream compressedDataStream;
+	{
+		boost::archive::binary_oarchive dataArchive(compressedDataStream);
+		dataArchive << cbr;
+	}
+
+	// Save metadata and compressed data to the file
+	SaveDataWithMetadata(filename, metadataStream.str(), compressedDataStream.str());
+
+
+
+	auto filenameReal2 = "\\CBRsave\\" + cbr.getCharName() + cbr.getPlayerName() + ".cbr";
+	auto filename2 = "\\CBRsave\\SaveBuffer.cbr";
+	auto p = boost::filesystem::current_path() / filename2;
+	auto pReal = boost::filesystem::current_path() / filenameReal2;
+
+	if (boost::filesystem::exists(pReal)) {
+		boost::filesystem::remove(pReal);
+	}
+	if (boost::filesystem::exists(p)) {
+		try
+		{
+			boost::filesystem::rename(p, pReal);
+		}
+		catch (const std::exception& e)
+		{
+			std::string s = "reversalName";
+		}
+
+	}
+	SaveDataComplete = true;
+
+}*/
+
+boost::thread SaveDataThread;
+void CbrInterface::SaveCbrDataThreaded(CbrData& cbr, bool run) {
+	if (run && threadActive == false) {
+		threadActive = true;
+		SaveDataComplete = false;
+		SaveDataThread = boost::thread(&CbrInterface::SaveCbrDataExperiment, this, cbr);
+	}
+	if (SaveDataComplete == true && threadActive == true && SaveDataThread.joinable()) {
+		threadActive = false;
+		SaveDataThread.join();
+		SaveDataComplete = false;
+	}
+	return;
 }
 
 void CbrInterface::SaveReversal(AnnotatedReplay& rev) {
@@ -415,23 +622,58 @@ void CbrInterface::Testbase64(std::string cbr) {
 		}
 	}
 }
+bool LoadCbrComplete = false;
+CbrData CbrInterface::LoadCbrDataExec(std::string filename, int playerNr) {
+	auto insert = LoadCbrDataNoThread(filename);
+	insert.generateTreeFromOldReplay();
+	setCbrData(insert, playerNr);
+	//pLoadCbrData.set_value(true);
+	LoadCbrComplete = true;
 
-CbrData CbrInterface::LoadCbrData(std::string playerName, std::string characterName) {
+	return insert;
+}
+CbrData CbrInterface::LoadCbrDataNoThread(std::string playerName, std::string characterName) {
 	std::string filename = ".\\CBRsave\\";
 	filename = filename + characterName + playerName + ".cbr";
-	std::ifstream infile(filename, std::ios_base::binary);
+	return LoadCbrDataNoThread(filename);
+}
+
+CbrData CbrInterface::LoadCbrDataNoThread(std::string filename) {
 	CbrData insert;
+	FileMetadata meta;
 	insert.setPlayerName("-1");
+	auto filenameMeta = filename.substr(0, filename.size() - 3) +"met";
+
+	std::ifstream infile(filename, std::ios_base::binary);
 	if (infile.fail()) {
-		//File does not exist code here
+		std::cerr << "Error: Could not open the file.\n";
+		return insert;
 	}
-	else {
-		//std::string b = "";
-		//infile >> b;
-		
+
+	// Read metadata
+	try
+	{
+		std::ifstream infile2(filenameMeta, std::ios_base::binary);
 		boost::iostreams::filtering_stream<boost::iostreams::input> f;
 		f.push(boost::iostreams::gzip_decompressor());
-		f.push(infile);
+		f.push(infile2);
+		boost::archive::binary_iarchive archive(f);
+		archive >> meta;
+
+
+		boost::iostreams::filtering_stream<boost::iostreams::input> f2;
+		f2.push(boost::iostreams::gzip_decompressor());
+		f2.push(infile);
+		boost::archive::binary_iarchive archive2(f2);
+		archive2 >> insert;
+		return insert;
+	}
+	catch (const std::exception&)
+	{
+		std::ifstream infile2(filename, std::ios_base::binary);
+		boost::iostreams::filtering_stream<boost::iostreams::input> f;
+		f.push(boost::iostreams::gzip_decompressor());
+		f.push(infile2);
 		boost::archive::binary_iarchive archive(f);
 		CbrData insert;
 		std::string charName = "";
@@ -445,23 +687,64 @@ CbrData CbrInterface::LoadCbrData(std::string playerName, std::string characterN
 		archive >> insert;
 		return insert;
 	}
+	
+
 	return insert;
 }
 
-CbrData CbrInterface::LoadCbrData(std::string filename) {
-	std::ifstream infile(filename, std::ios_base::binary);
+/*CbrData CbrInterface::LoadCbrDataNoThread(std::string filename) {
 	CbrData insert;
 	insert.setPlayerName("-1");
-	if (infile.fail()) {
-		//File does not exist code here
-	}
-	else {
-		//std::string b = "";
-		//infile >> b;
 
+	std::ifstream infile(filename, std::ios_base::binary);
+	if (infile.fail()) {
+		std::cerr << "Error: Could not open the file.\n";
+		return insert;
+	}
+
+	// Read metadata
+	std::string metadata;
+	{
+		char ch;
+		// Read metadata
+		while (infile.get(ch) && ch != '\n') {
+			metadata += ch;
+		}
+	}
+
+	// Create a filtering stream for decompression
+	boost::iostreams::filtering_istream f;
+	f.push(boost::iostreams::gzip_decompressor());
+	f.push(infile);
+
+	// Read compressed data
+	std::string compressedData;
+	char buffer[4096];  // Adjust buffer size as needed
+	while (f) {
+		f.read(buffer, sizeof(buffer));
+		compressedData.append(buffer, f.gcount());
+	}
+	try
+	{
+		// Deserialize metadata
+		std::istringstream metadataStream(metadata);
+		FileMetadata meta;
+		boost::archive::text_iarchive metaArchive(metadataStream);
+		metaArchive >> meta;
+
+		// Deserialize compressed data
+		std::istringstream compressedDataStream(compressedData);
+		{
+			boost::archive::binary_iarchive archive(compressedDataStream);
+			archive >> insert;
+		}
+	}
+	catch (const std::exception&)
+	{
+		std::ifstream infile2(filename, std::ios_base::binary);
 		boost::iostreams::filtering_stream<boost::iostreams::input> f;
 		f.push(boost::iostreams::gzip_decompressor());
-		f.push(infile);
+		f.push(infile2);
 		boost::archive::binary_iarchive archive(f);
 		CbrData insert;
 		std::string charName = "";
@@ -475,7 +758,79 @@ CbrData CbrInterface::LoadCbrData(std::string filename) {
 		archive >> insert;
 		return insert;
 	}
+	
+
 	return insert;
+}*/
+
+void CbrInterface::LoadCbrData(std::string playerName, std::string characterName, bool run, int playerNr) {
+	std::string filename = ".\\CBRsave\\";
+	filename = filename + characterName + playerName + ".cbr";
+	LoadCbrData(filename, run, playerNr);
+}
+
+boost::thread LoadCbrDataThread;
+void CbrInterface::LoadCbrData(std::string filename, bool run, int playerNr) {
+	
+	if (run && threadActive == false) {
+		threadActive = true;
+		LoadCbrComplete = false;
+		LoadCbrDataThread = boost::thread(&CbrInterface::LoadCbrDataExec, this, filename, playerNr);
+	}
+	if (LoadCbrComplete == true && threadActive == true && LoadCbrDataThread.joinable()) {
+		threadActive = false;
+		LoadCbrDataThread.join();
+		LoadCbrComplete = false;
+		
+	}
+	return;
+}
+
+bool MergeCbrComplete = false;
+void CbrInterface::MergeCbrDataExec(std::string filename, int playerNr) {
+	auto insert = LoadCbrDataNoThread(filename);
+	mergeCbrData(insert, playerNr);
+	MergeCbrComplete = true;
+	return;
+}
+
+
+boost::thread MergeCbrDataThread;
+void CbrInterface::MergeCbrDataThreaded(std::string filename, bool run, int playerNr) {
+
+	if (run && threadActive == false) {
+		threadActive = true;
+		MergeCbrComplete = false;
+		MergeCbrDataThread = boost::thread(&CbrInterface::MergeCbrDataExec, this, filename, playerNr);
+	}
+	if (MergeCbrComplete == true && threadActive == true && MergeCbrDataThread.joinable()) {
+		threadActive = false;
+		LoadCbrDataThread.join();
+		MergeCbrComplete = false;
+	}
+	return;
+}
+
+bool LoadAndUploadComplete = false;
+boost::thread LoadAndUploadDataThread;
+void CbrInterface::LoadAndUploadData(std::string path) {
+	auto test = LoadCbrDataNoThread(path);
+	auto j2 = convertCBRtoJson(test, playerID);
+	CbrHTTPPostNoThreat(j2);
+	LoadAndUploadComplete = true;
+}
+void CbrInterface::LoadAndUploadDataThreaded(std::string path, bool run) {
+	if (run && threadActive == false) {
+		threadActive = true;
+		LoadAndUploadComplete = false;
+		LoadAndUploadDataThread = boost::thread(&CbrInterface::LoadAndUploadData, this, path);
+	}
+	if (LoadAndUploadComplete == true && threadActive == true && LoadAndUploadDataThread.joinable()) {
+		threadActive = false;
+		LoadAndUploadDataThread.join();
+		LoadAndUploadComplete = false;
+	}
+	return;
 }
 
 CbrData CbrInterface::LoadCbrDataOld(std::string filename) {
@@ -500,7 +855,12 @@ CbrData CbrInterface::LoadCbrDataOld(std::string filename) {
 	return insert;
 }
 
-
+void CbrInterface::clearThreads() {
+	g_interfaces.cbrInterface.SaveCbrDataThreaded(*g_interfaces.cbrInterface.getCbrData(0), false);
+	g_interfaces.cbrInterface.LoadAndUploadDataThreaded("", false);
+	g_interfaces.cbrInterface.MergeCbrDataThreaded("", false, -1);
+	g_interfaces.cbrInterface.LoadCbrData("", false, -1);
+}
 
 int CbrInterface::getAutoRecordReplayAmount() {
 	return recordBufferP1.size() + recordBufferP2.size();
@@ -637,9 +997,11 @@ void CbrInterface::EndCbrActivities(int playerNr) {
 			data->setCharName(anReplay->getCharacterName()[0]);
 		}
 
-		if (data->getReplayCount() > 0) {
-			data->deleteReplays(data->getReplayCount() - 1, data->getReplayCount() - 1);
-		}
+		//if (data->getReplayCount() > 0) {
+		//	data->deleteReplays(data->getReplayCount() - 1, data->getReplayCount() - 1);
+		//}
+		data->resetInstantLearning();
+
 		auto cbrReplay = CbrReplayFile(anReplay->getCharacterName(), anReplay->getCharIds());
 		auto err = cbrReplay.makeFullCaseBase(anReplay, anReplay->getFocusCharName());
 		debugErrorCounter[0] += err.errorCount;
@@ -677,9 +1039,11 @@ void CbrInterface::EndCbrActivities(int playerNr) {
 			setCbrData(CbrData(anReplay->getPlayerName(), anReplay->getPlayerName(), anReplay->getCharIds()[0]), 1);
 		}
 
-		if (data->getReplayCount() > 0) {
-			data->deleteReplays(data->getReplayCount() - 1, data->getReplayCount() - 1);
-		}
+		//if (data->getReplayCount() > 0) {
+		//	data->deleteReplays(data->getReplayCount() - 1, data->getReplayCount() - 1);
+		//}
+		data->resetInstantLearning();
+
 		auto cbrReplay = CbrReplayFile(anReplay->getCharacterName(), anReplay->getCharIds());
 		auto err = cbrReplay.makeFullCaseBase(anReplay, anReplay->getFocusCharName());
 		debugErrorCounter[1] += err.errorCount;
@@ -735,7 +1099,7 @@ void CbrInterface::StartCbrInstantLearning(char* p1charName, char* p2charName, i
 		setCbrData(CbrData(getAnnotatedReplay(ann)->getPlayerName(), getAnnotatedReplay(ann)->getFocusCharName(), getAnnotatedReplay(ann)->getCharIds()[0]), cbr);
 	}
 	auto cbrReplay = CbrReplayFile(getAnnotatedReplay(ann)->getCharacterName(), getAnnotatedReplay(ann)->getCharIds());
-	getCbrData(cbr)->AddReplay(cbrReplay);
+	getCbrData(cbr)->setInstantLearnReplay(cbrReplay);
 }
 
 void CbrInterface::threadSaveReplay(bool save) {
@@ -771,6 +1135,10 @@ std::string CbrInterface::threadStatus() {
 	}
 
 	return sRet;
+}
+
+bool CbrInterface::threadActiveCheck() {
+	return threadActive;
 }
 
 void CbrInterface::saveSettings() {
@@ -864,7 +1232,7 @@ void CbrInterface::saveReplayDataInMenu() {
 				cbrData = CbrData();
 			}
 			ranOnce = true;
-			cbrData = LoadCbrData(anReplay.getPlayerName(), anReplay.getCharacterName()[0]);
+			cbrData = LoadCbrDataNoThread(anReplay.getPlayerName(), anReplay.getCharacterName()[0]);
 			if (cbrData.getPlayerName() == "-1") {
 				cbrData = CbrData(anReplay.getPlayerName(), anReplay.getCharacterName()[0], anReplay.getCharIds()[0]);
 			}
@@ -898,7 +1266,7 @@ void CbrInterface::saveReplayDataInMenu() {
 				cbrData = CbrData();
 			}
 			ranOnce = true;
-			cbrData = LoadCbrData(anReplay.getPlayerName(), anReplay.getCharacterName()[0]);
+			cbrData = LoadCbrDataNoThread(anReplay.getPlayerName(), anReplay.getCharacterName()[0]);
 			if (cbrData.getPlayerName() == "-1") {
 				cbrData = CbrData(anReplay.getPlayerName(), anReplay.getCharacterName()[0], anReplay.getCharIds()[0]);
 			}
@@ -1038,8 +1406,9 @@ void CbrInterface::RestartCbrActivities(char* p1charName, char* p2charName, int 
 	if (instantLearning == true) {
 		auto data = getCbrData(1);
 		auto anReplay = getAnnotatedReplay(0);
-		if (data->getReplayCount() > 0) {
-			data->deleteReplays(data->getReplayCount() - 1, data->getReplayCount() - 1);
+		if (data->getInstantLearnReplay()->getCaseBaseLength() > 0) {
+			//data->deleteReplays(data->getReplayCount() - 1, data->getReplayCount() - 1);
+			data->resetInstantLearning();
 			auto cbrReplay = CbrReplayFile(anReplay->getCharacterName(), anReplay->getCharIds());
 			auto err = cbrReplay.makeFullCaseBase(anReplay, anReplay->getFocusCharName());
 			if (err.structure != "") { saveStructureDebug(err.structure); }
@@ -1066,8 +1435,9 @@ void CbrInterface::RestartCbrActivities(char* p1charName, char* p2charName, int 
 	if (instantLearningP2 == true) {
 		auto data = getCbrData(0);
 		auto anReplay = getAnnotatedReplay(1);
-		if (data->getReplayCount() > 0) {
-			data->deleteReplays(data->getReplayCount() - 1, data->getReplayCount() - 1);
+		if (data->getInstantLearnReplay()->getCaseBaseLength() > 0) {
+			//data->deleteReplays(data->getReplayCount() - 1, data->getReplayCount() - 1);
+			data->resetInstantLearning();
 			auto cbrReplay = CbrReplayFile(anReplay->getCharacterName(), anReplay->getCharIds());
 			auto err = cbrReplay.makeFullCaseBase(anReplay, anReplay->getFocusCharName());
 			if (err.structure != "") { saveStructureDebug(err.structure); }
@@ -1134,104 +1504,117 @@ void CbrInterface::Checkinputs() {
 }
 
 std::string CbrInterface::GetPlayerID() {
-	
-	//Get ProcId of the target process
-	DWORD procId = GetProcId(L"BBCF.exe");
-	//Getmodulebaseaddress
-	uintptr_t moduleBase = GetModuleBaseAddress(procId, L"BBCF.exe");
-	uintptr_t p1NamePtr = moduleBase + 0x662740;
-	HANDLE hProcess = 0;
-	hProcess = OpenProcess(PROCESS_ALL_ACCESS, NULL, procId);
+	try
+	{
+		//Get ProcId of the target process
+		DWORD procId = GetProcId(L"BBCF.exe");
+		//Getmodulebaseaddress
+		uintptr_t moduleBase = GetModuleBaseAddress(procId, L"BBCF.exe");
+		uintptr_t p1NamePtr = moduleBase + 0x662740;
+		HANDLE hProcess = 0;
+		hProcess = OpenProcess(PROCESS_ALL_ACCESS, NULL, procId);
 
-	char playerID[35]{ 0 };
+		char playerID[35]{ 0 };
 
-	ReadProcessMemory(hProcess, (BYTE*)p1NamePtr, &playerID, 34, 0);
-	nameP1 = "";
+		ReadProcessMemory(hProcess, (BYTE*)p1NamePtr, &playerID, 34, 0);
+		nameP1 = "";
 
-	for (int i = 0; i < 35; i++) {
-		debugPrintText += playerID[i];
-	}
-	std::string bufferName = "";
-	for (int i = 0; i < 35; ++i) {
-		if (playerID[i] != 0) {
-			bufferName = nameP1 + playerID[i];
-			if (boost::filesystem::windows_name(bufferName)) {
-				nameP1 += playerID[i];
+		for (int i = 0; i < 35; i++) {
+			debugPrintText += playerID[i];
+		}
+		std::string bufferName = "";
+		for (int i = 0; i < 35; ++i) {
+			if (playerID[i] != 0) {
+				bufferName = nameP1 + playerID[i];
+				if (boost::filesystem::windows_name(bufferName)) {
+					nameP1 += playerID[i];
+				}
+
+			}
+			else {
+				if (i + 1 >= 35 || playerID[i + 1] == 0) {
+					break;
+				}
 			}
 
 		}
-		else {
-			if (i + 1 >= 35 || playerID[i + 1] == 0) {
-				break;
-			}
-		}
+		return nameP1;
+	}
+	catch (const std::exception&)
+	{
 
 	}
-	return nameP1;
+	return "";
 }
 
 void CbrInterface::SetPlayerNames() {
-	//Get ProcId of the target process
-	DWORD procId = GetProcId(L"BBCF.exe");
-	//Getmodulebaseaddress
-	uintptr_t moduleBase = GetModuleBaseAddress(procId, L"BBCF.exe");
-	uintptr_t p1NamePtr = moduleBase + 0x115B51C;
-	uintptr_t p2NamePtr = moduleBase + 0x115B5E6;
-	HANDLE hProcess = 0;
-	hProcess = OpenProcess(PROCESS_ALL_ACCESS, NULL, procId);
-	
-	char p1CharName[35]{ 0 };
-	char p2CharName[35]{ 0 };
+	try
+	{
+		//Get ProcId of the target process
+		DWORD procId = GetProcId(L"BBCF.exe");
+		//Getmodulebaseaddress
+		uintptr_t moduleBase = GetModuleBaseAddress(procId, L"BBCF.exe");
+		uintptr_t p1NamePtr = moduleBase + 0x115B51C;
+		uintptr_t p2NamePtr = moduleBase + 0x115B5E6;
+		HANDLE hProcess = 0;
+		hProcess = OpenProcess(PROCESS_ALL_ACCESS, NULL, procId);
 
-	ReadProcessMemory(hProcess, (BYTE*)p1NamePtr, &p1CharName, 34, 0);
-	ReadProcessMemory(hProcess, (BYTE*)p2NamePtr, &p2CharName, 34, 0);
-	nameP1 = "";
-	nameP2 = "";
+		char p1CharName[35]{ 0 };
+		char p2CharName[35]{ 0 };
 
-	for (int i = 0; i < 35; i++) {
-		debugPrintText += p1CharName[i];
+		ReadProcessMemory(hProcess, (BYTE*)p1NamePtr, &p1CharName, 34, 0);
+		ReadProcessMemory(hProcess, (BYTE*)p2NamePtr, &p2CharName, 34, 0);
+		nameP1 = "";
+		nameP2 = "";
+
+		for (int i = 0; i < 35; i++) {
+			debugPrintText += p1CharName[i];
+		}
+		debugPrintText += "\n";
+		for (int i = 0; i < 35; i++) {
+			debugPrintText += p2CharName[i];
+		}
+		debugPrintText += "\n";
+
+		std::string bufferName = "";
+		for (int i = 0; i < 35; ++i) {
+			if (p1CharName[i] != 0) {
+				bufferName = nameP1 + p1CharName[i];
+				if (boost::filesystem::windows_name(bufferName)) {
+					nameP1 += p1CharName[i];
+				}
+
+			}
+			else {
+				if (i + 1 >= 35 || p1CharName[i + 1] == 0) {
+					break;
+				}
+			}
+
+		}
+		debugPrintText += nameP1 + "\n";
+
+		for (int i = 0; i < 35; ++i) {
+			bufferName = nameP2 + p2CharName[i];
+			if (p2CharName[i] != 0) {
+				if (boost::filesystem::windows_name(bufferName)) {
+					nameP2 += p2CharName[i];
+				}
+			}
+			else {
+				if (i + 1 >= 35 || p2CharName[i + 1] == 0) {
+					break;
+				}
+			}
+
+		}
+		debugPrintText += nameP2 + "\n";
+		saveDebugPrint();
 	}
-	debugPrintText += "\n";
-	for (int i = 0; i < 35; i++) {
-		debugPrintText += p2CharName[i];
-	}
-	debugPrintText += "\n";
-	
-	std::string bufferName = "";
-	for (int i = 0; i < 35; ++i) {
-		if (p1CharName[i] != 0) {
-			bufferName = nameP1 + p1CharName[i];
-			if (boost::filesystem::windows_name(bufferName)) {
-				nameP1 += p1CharName[i];
-			}
-			
-		}
-		else {
-			if (i + 1 >= 35 || p1CharName[i+1] == 0) {
-				break;
-			}
-		}
-		
-	}
-	debugPrintText += nameP1 +"\n";
-	
-	for (int i = 0; i < 35; ++i) {
-		bufferName = nameP2 + p2CharName[i];
-		if (p2CharName[i] != 0) {
-			if (boost::filesystem::windows_name(bufferName)) {
-				nameP2 += p2CharName[i];
-			}
-		}
-		else {
-			if (i + 1 >= 35 || p2CharName[i+1] == 0) {
-				break;
-			}
-		}
+	catch (const std::exception&)
+	{
 
 	}
-	debugPrintText += nameP2 + "\n";
-	saveDebugPrint();
-
 }
 
 DWORD CbrInterface::GetProcId(const wchar_t* procName)

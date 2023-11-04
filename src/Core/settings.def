@@ -14,3 +14,5 @@ SETTING(bool, vsync, "V-sync", "0");
 SETTING(int, menusize, "MenuSize", "2");
 SETTING(bool, notifications, "Notifications", "1");
 SETTING(bool, checkupdates, "CheckUpdates", "1");
+SETTING(std::string, saveCBRbutton, "saveCBRbutton", "F8");
+SETTING(std::string, discardCBRbutton, "discardCBRbutton", "F9");

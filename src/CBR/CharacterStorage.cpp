@@ -525,88 +525,111 @@ json LoadCbrMetadata(std::string PlayerName, std::string PlayerCharacter, std::s
     return container;
 }
 
-
+void createCbrMetadata(FileMetadata meta, std::string filename) {
+    std::ofstream outfile(filename, std::ios_base::binary);
+    boost::iostreams::filtering_stream<boost::iostreams::output> f;
+    f.push(boost::iostreams::gzip_compressor(boost::iostreams::gzip_params(boost::iostreams::gzip::best_compression)));
+    f.push(outfile);
+    boost::archive::binary_oarchive archive(f);
+    archive << meta;
+}
 
 
 json readCbrMetadata(std::string filename) {
+    boost::filesystem::path dir("CBRsave\\Metadata");
+    if (!(boost::filesystem::exists(dir))) {
+        boost::filesystem::create_directory(dir);
+    }
+    auto filenameMeta = metaDataFilepathRename(filename);
+    std::ifstream infile2(filenameMeta, std::ios_base::binary);
+    
+    std::string charName = "";
+    std::string playerName = "";
+    std::string opponentChar = "";
+    int rCount = 0;
+
+    if (!infile2.fail()) {
+        std::ifstream infile2(filenameMeta, std::ios_base::binary);
+        boost::iostreams::filtering_stream<boost::iostreams::input> f;
+        f.push(boost::iostreams::gzip_decompressor());
+        f.push(infile2);
+        boost::archive::binary_iarchive archive(f);
+        FileMetadata insert;
+        archive >> insert;
+        charName = insert.charName;
+        playerName = insert.playerName;
+        rCount = insert.rCount;
+        opponentChar = insert.opponentChar;
+
+        json j2 = {
+          {"player_id", "local"},
+          {"player_name", playerName},
+          {"player_character", charName},
+          {"opponent_character", opponentChar},
+          {"replay_count", rCount},
+          {"path", filename},
+        };
+
+        return j2;
+    }
     std::ifstream infile(filename, std::ios_base::binary);
-    CbrData insert;
-    insert.setPlayerName("-1");
     if (infile.fail()) {
         //File does not exist code here
     }
     else {
         //std::string b = "";
         //infile >> b;
-        std::string charName = "";
-        std::string playerName = "";
-        std::string opponentChar = "";
-        int rCount = 0;
+        
         try
         {
+            std::ifstream infile(filename, std::ios_base::binary);
             boost::iostreams::filtering_stream<boost::iostreams::input> f;
             f.push(boost::iostreams::gzip_decompressor());
             f.push(infile);
             boost::archive::binary_iarchive archive(f);
             CbrData insert;
-            
-            try
-            {
-                archive >> charName;
-            }
-            catch (std::exception& ex) {
+            archive >> insert;
+            charName = insert.getCharName();
+            playerName = insert.getPlayerName();
+            rCount = insert.getReplayCount();
+            opponentChar = getOpponentCharNameString(insert);
 
-            }
-            catch (boost::archive::archive_exception& ex) {
-
-            }
-            try
-            {
-                archive >> playerName;
-            }
-            catch (std::exception& ex) {
-
-            }
-            catch (boost::archive::archive_exception& ex) {
-
-            }
-            try
-            {
-                archive >> opponentChar;
-            }
-            catch (std::exception& ex) {
-
-            }
-            catch (boost::archive::archive_exception& ex) {
-
-            }
-            try
-            {
-                archive >> rCount;
-            }
-            catch (std::exception& ex) {
-
-            }
-            catch (boost::archive::archive_exception& ex) {
-
-            }
-            try
-            {
-                archive >> insert;
-            }
-            catch (std::exception& ex) {
-
-            }
-            catch (boost::archive::archive_exception& ex) {
-
-            }
+            FileMetadata meta;
+            strcpy(meta.charName, charName.c_str());
+            strcpy(meta.playerName, playerName.c_str());
+            strcpy(meta.opponentChar, opponentChar.c_str());
+            meta.rCount = rCount;
+            createCbrMetadata(meta, filenameMeta);
         }
         catch (std::exception& ex) {
+            try
+            {
+                std::ifstream infile2(filename, std::ios_base::binary);
+                boost::iostreams::filtering_stream<boost::iostreams::input> f;
+                f.push(boost::iostreams::gzip_decompressor());
+                f.push(infile2);
+                boost::archive::binary_iarchive archive(f);
+                CbrData insert;
+                archive >> charName;
+                archive >> playerName;
+                archive >> opponentChar;
+                archive >> rCount;
 
-        }
-        catch (boost::archive::archive_exception& ex) {
+                FileMetadata meta;
+                strcpy(meta.charName, charName.c_str());
+                strcpy(meta.playerName, playerName.c_str());
+                strcpy(meta.opponentChar, opponentChar.c_str());
+                meta.rCount = rCount;
+                createCbrMetadata(meta, filenameMeta);
+                //archive >> insert;
+            }
+            catch (const std::exception&)
+            {
 
+            }
+            
         }
+
         
         if (charName == "") {
             return NULL;
@@ -626,6 +649,89 @@ json readCbrMetadata(std::string filename) {
     }
     return NULL;
 }
+
+/*json readCbrMetadata(std::string filename) {
+    std::ifstream infile(filename, std::ios_base::binary);
+    CbrData insert;
+    insert.setPlayerName("-1");
+    if (infile.fail()) {
+        //File does not exist code here
+    }
+    else {
+        //std::string b = "";
+        //infile >> b;
+        std::string charName = "";
+        std::string playerName = "";
+        std::string opponentChar = "";
+        int rCount = 0;
+        try
+        {
+            // Read metadata
+            std::string metadata;
+            {
+                char ch;
+                // Read metadata
+                while (infile.get(ch) && ch != '\n') {
+                    metadata += ch;
+                }
+            }
+
+            // Create a filtering stream for decompression
+            boost::iostreams::filtering_istream f;
+            f.push(boost::iostreams::gzip_decompressor());
+            f.push(infile);
+            // Deserialize metadata
+            std::istringstream metadataStream(metadata);
+            FileMetadata meta;
+            boost::archive::text_iarchive metaArchive(metadataStream);
+            metaArchive >> meta;
+
+            charName = meta.charName;
+            playerName = meta.playerName;
+            opponentChar = meta.opponentChar;
+            rCount = meta.rCount;
+        }
+        catch (std::exception& ex) {
+            try
+            {
+                std::ifstream infile2(filename, std::ios_base::binary);
+                boost::iostreams::filtering_stream<boost::iostreams::input> f;
+                f.push(boost::iostreams::gzip_decompressor());
+                f.push(infile2);
+                boost::archive::binary_iarchive archive(f);
+                CbrData insert;
+                archive >> charName;
+                archive >> playerName;
+                archive >> opponentChar;
+                archive >> rCount;
+                //archive >> insert;
+            }
+            catch (const std::exception&)
+            {
+
+            }
+            
+        }
+
+        
+        if (charName == "") {
+            return NULL;
+        }
+        
+
+        json j2 = {
+          {"player_id", "local"},
+          {"player_name", playerName},
+          {"player_character", charName},
+          {"opponent_character", opponentChar},
+          {"replay_count", rCount},
+          {"path", filename},
+        };
+
+        return j2;
+    }
+    return NULL;
+}*/
 
 //---- the thread code is an abomination cause i never worked with threads in c++ before, should probably clean it up, which definetly will happen because i love cleaning my code up x.x
 bool serverThreadActive = false;

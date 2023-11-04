@@ -142,6 +142,7 @@
     <ClCompile Include="src\CBR\CbrInterface.cpp" />
     <ClCompile Include="src\Overlay\Window\CbrServerWindow.cpp" />
     <ClCompile Include="src\CBR\CharacterStorage.cpp" />
+    <ClCompile Include="src\Hooks\hooks_cbr.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="depends\imgui\imgui.h" />
@@ -270,6 +271,9 @@
     <ClInclude Include="src\CBR\httplib.h" />
     <ClInclude Include="src\CBR\json.hpp" />
     <ClInclude Include="src\CBR\CbrUtils.h" />
+    <ClInclude Include="src\CBR\CbrSearchTree.h" />
+    <ClInclude Include="src\CBR\ComparisonFunction.h" />
+    <ClInclude Include="src\Hooks\hooks_cbr.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="export\dinput8.def">

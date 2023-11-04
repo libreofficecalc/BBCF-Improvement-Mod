@@ -10,6 +10,8 @@
 class Metadata {
 private:
     friend class boost::serialization::access;
+public:
+
     std::array< int, 2>posX;
     std::array< int, 2>posY;
     std::array< std::string, 2>currentAction;
@@ -37,18 +39,11 @@ private:
     std::array< bool, 2>air;
     std::array< bool, 2>crouching;
 
-    
+
     bool facing;
     bool inputBufferActive = false;
-    
-
-
     //helpers
-    std::array<std::vector<std::shared_ptr<Helper>>, 2> helpers = {{}};
-
-    
-
-public:
+    std::array<std::vector<std::shared_ptr<Helper>>, 2> helpers = { {} };
     std::array< int, 2>timeAfterRecovery;
     int matchState = -1;
     std::array< int, 2> heatMeter;
@@ -61,7 +56,7 @@ public:
     bool inputA = false, inputB = false, inputC = false, inputD = false;
     bool inputFwd = false, inputUp = false, inputDown = false, inputBack = false;
     int inprocessInputSequence = -1;
-    std::array< std::array< int, 2>, 2> velocity = { 0, 0 };
+    std::array< std::array< int, 2>, 2> velocity = { { { 0, 0 }, { 0, 0 } } };
 
 
     //CharacterSpecific

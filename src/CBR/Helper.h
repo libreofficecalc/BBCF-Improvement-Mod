@@ -48,7 +48,7 @@ public:
     bool getHit();
     bool getHitThisFrame();
 
-    bool CheckNeutralState(std::string);
-    void computeMetaData(std::string);
+    bool CheckNeutralState(std::string&);
+    void computeMetaData(std::string&);
     std::string PrintState();;
 };

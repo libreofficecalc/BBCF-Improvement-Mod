@@ -109,6 +109,11 @@ bool Settings::loadSettingsFile()
 	if (settingsIni.toggleHUDbutton.length() != 2 || settingsIni.toggleHUDbutton[0] != 'F')
 		settingsIni.toggleHUDbutton = "F3";
 
+	if (settingsIni.saveCBRbutton.length() != 2 || settingsIni.saveCBRbutton[0] != 'F')
+		settingsIni.saveCBRbutton = "F8";
+	if (settingsIni.discardCBRbutton.length() != 2 || settingsIni.discardCBRbutton[0] != 'F')
+		settingsIni.discardCBRbutton = "F9";
+
 	return true;
 }
 

@@ -19,9 +19,8 @@
 #include <boost/archive/text_oarchive.hpp>
 #include <boost/serialization/vector.hpp>
 #include <boost/filesystem.hpp>
-
-
 #include "CBR/CharacterStorage.h"
+
 MainWindow::MainWindow(const std::string& windowTitle, bool windowClosable, WindowContainer& windowContainer, ImGuiWindowFlags windowFlags)
 	: IWindow(windowTitle, windowClosable, windowFlags), m_pWindowContainer(&windowContainer)
 {
@@ -58,92 +57,7 @@ void MainWindow::BeforeDraw()
 
 void MainWindow::Draw()
 {
-	if (!g_interfaces.player1.IsCharDataNullPtr() && !g_interfaces.player2.IsCharDataNullPtr()) {
-		static bool p1Recovering = false;
-		static bool p2Recovering = false;
-		static int p1Adv = 0;
-		static int p2Adv = 0;
-		static bool gapFound = false;
-
-		//TODO: CmnActLandingStiffLoop == cant act but currently not recognized
-
-		if (g_interfaces.player2.GetData()->blockstun <= 0 && g_interfaces.player1.GetData()->attackLevel <= 0) {
-			gapFound = true;
-		}
-
-		if (((g_interfaces.player1.GetData()->blockstun > 0) && (g_interfaces.player1.GetData()->hitstop > 0) && (g_interfaces.player1.GetData()->actionTimeNoHitstop == 1)) || ((g_interfaces.player1.GetData()->hitstun > 0) && (g_interfaces.player1.GetData()->hitstop > 0) && (g_interfaces.player1.GetData()->actionTimeNoHitstop == 1))) {
-			p1Recovering = true;
-			p2Adv = 0;
-			p1Adv = 0;
-			gapFound = false;
-		}
-		if (((g_interfaces.player2.GetData()->blockstun > 0) && (g_interfaces.player2.GetData()->hitstop > 0) && (g_interfaces.player2.GetData()->actionTimeNoHitstop == 1)) || ((g_interfaces.player2.GetData()->hitstun > 0) && (g_interfaces.player2.GetData()->hitstop > 0) && (g_interfaces.player2.GetData()->actionTimeNoHitstop == 1))) {
-			p2Recovering = true;
-			p2Adv = 0;
-			p1Adv = 0;
-			gapFound = false;
-		}
-		if (p1Recovering) {
-			if (!(g_interfaces.player2.GetData()->typeOfAttack > 0)) {
-				if (g_interfaces.player1.GetData()->blockstun > 0) {
-					p2Adv = g_interfaces.player1.GetData()->blockstun;
-					p1Recovering = false;
-				}
-				if (g_interfaces.player1.GetData()->hitstun > 0) {
-					p2Adv = g_interfaces.player1.GetData()->hitstun;
-					p1Recovering = false;
-				}
-			}
-
-			if (!(g_interfaces.player1.GetData()->hitstun > 0) && !(g_interfaces.player1.GetData()->blockstun > 0) && (g_interfaces.player2.GetData()->typeOfAttack > 0)) {
-				p2Adv--;
-			}
-			if ((g_interfaces.player1.GetData()->hitstun == 0) && (g_interfaces.player1.GetData()->blockstun == 0) && (g_interfaces.player2.GetData()->typeOfAttack == 0)) {
-				p1Recovering = false;
-			}
-		}
-
-		if (p2Recovering) {
-
-			if (g_interfaces.player2.GetData()->blockstun <= 0) {
-				gapFound = true;
-			}
-
-
-			if (!(g_interfaces.player1.GetData()->typeOfAttack > 0)) {
-				if (g_interfaces.player2.GetData()->blockstun > 0) {
-					p1Adv = g_interfaces.player2.GetData()->blockstun;
-					p2Recovering = false;
-				}
-				if (g_interfaces.player2.GetData()->hitstun > 0) {
-					p1Adv = g_interfaces.player2.GetData()->hitstun;
-					p2Recovering = false;
-				}
-			}
-
-			if (!(g_interfaces.player2.GetData()->hitstun > 0) && !(g_interfaces.player2.GetData()->blockstun > 0) && (g_interfaces.player1.GetData()->typeOfAttack > 0)) {
-				p1Adv--;
-			}
-			if ((g_interfaces.player2.GetData()->hitstun == 0) && (g_interfaces.player2.GetData()->blockstun == 0) && (g_interfaces.player1.GetData()->typeOfAttack == 0)) {
-				p2Recovering = false;
-			}
-		}
-		static float lastProrationPerDmg = 0;
-		static float lastProration = 0;
-		if (g_interfaces.player2.GetData()->comboProration != 10000) {
-			lastProrationPerDmg = float(g_interfaces.player2.GetData()->comboDamage) / (float(10000 - g_interfaces.player2.GetData()->comboProration));
-			lastProration = g_interfaces.player2.GetData()->comboProration;
-		}
-		auto str = "Dmg/Proration: " + std::to_string(lastProrationPerDmg) + " - " + std::to_string(lastProration);
-		ImGui::Text(str.c_str());
-		
-		str = "FrameAdv: " + std::to_string(p1Adv) + " - " + std::to_string(p2Adv);
-		ImGui::Text(str.c_str());
-		str = "ComboTime: " + std::to_string(g_interfaces.player2.GetData()->comboTime);
-		ImGui::Text(str.c_str());
-		str = "GapFound: " + std::to_string(gapFound);
-		ImGui::Text(str.c_str());
-	}
+	DrawFrameDataSection();
 
 	ImGui::Text("Toggle me with %s", Settings::settingsIni.togglebutton.c_str());
 	ImGui::Text("Toggle Online with %s", Settings::settingsIni.toggleOnlineButton.c_str());
@@ -175,149 +89,8 @@ void MainWindow::Draw()
 	DrawLoadedSettingsValuesSection();
 	DrawCBRAiSection();
 	DrawReversalSection();
-	DrawNetaSection();
-
-	if (ImGui::CollapsingHeader("Debugging")) {
-		static std::string debugS = "";
-		static int replay = 0;
-		static int caseIndex = 0;
-		static int playerIndex = 0;
-		ImGui::DragInt("Replay", &replay, 1.0F, 0, 99999);
-		ImGui::SameLine();
-		ImGui::DragInt("Case", &caseIndex);
-		ImGui::DragInt("Player", &playerIndex, 1.0F, 0, 1);
-		ImGui::SameLine();
-		if (ImGui::Button("Display Case")) {
-			auto caseFile = g_interfaces.cbrInterface.getCbrData(playerIndex)->getReplayFiles()->at(replay).getCase(caseIndex);
-			debugS = "";
-			debugS = caseFile->getMetadata()->PrintState();
-			
-			debugS += "\nInput: ";
-			for (int i = caseFile->getStartingIndex(); i <= caseFile->getEndIndex(); i++) {
-				debugS += std::to_string(g_interfaces.cbrInterface.getCbrData(playerIndex)->getReplayFiles()->at(replay).getInput(i)) + ", ";
-			}
-			
-		}
-		ImGui::Text(debugS.c_str());
-/*
-		experimentS = "AI Activity: ";
-		experimentS += "\n" + getThreatStatus();
-		experimentS += "\n" + g_interfaces.cbrInterface.threadStatus();
-		ImGui::Text(experimentS.c_str());
-
-
-
+	//DrawNetaSection();
 		
-		ImGui::Separator();
-		ImGui::Text("Test AI:");
-		if (ImGui::Button("Pressure Test")) {
-			g_interfaces.cbrInterface.EndCbrActivities();
-			g_interfaces.cbrInterface.setCbrData(g_interfaces.cbrInterface.LoadCbrData("TestAi", g_interfaces.player2.GetData()->char_abbr), 1);
-			if (g_interfaces.cbrInterface.getCbrData(1)->getReplayCount() > 0 && g_interfaces.cbrInterface.ReplayingP2 == false) {
-				g_interfaces.cbrInterface.EndCbrActivities();
-				g_interfaces.cbrInterface.ReplayingP2 = true;
-				experimentS += " Pressure Test";
-			}
-			else {
-				g_interfaces.cbrInterface.EndCbrActivities();
-				experimentS = "AI Activity: ";
-			}
-		}
-		ImGui::Separator();
-		ImGui::Text("Training AIs:");
-		if (ImGui::Button("Drive Training")) {
-			g_interfaces.cbrInterface.EndCbrActivities();
-			g_interfaces.cbrInterface.mergeCbrData(g_interfaces.cbrInterface.LoadCbrData("Drive1", g_interfaces.player2.GetData()->char_abbr), 1);
-			if (g_interfaces.cbrInterface.getCbrData(1)->getReplayCount() > 0 && g_interfaces.cbrInterface.ReplayingP2 == false) {
-				g_interfaces.cbrInterface.EndCbrActivities();
-				g_interfaces.cbrInterface.ReplayingP2 = true;
-				experimentS += " Drive";
-			}
-			else {
-				g_interfaces.cbrInterface.EndCbrActivities();
-			}
-		}
-		if (ImGui::Button("5B Training")) {
-			g_interfaces.cbrInterface.EndCbrActivities();
-			g_interfaces.cbrInterface.mergeCbrData(g_interfaces.cbrInterface.LoadCbrData("5B", g_interfaces.player2.GetData()->char_abbr), 1);
-			if (g_interfaces.cbrInterface.getCbrData(1)->getReplayCount() > 0 && g_interfaces.cbrInterface.ReplayingP2 == false) {
-				g_interfaces.cbrInterface.EndCbrActivities();
-				g_interfaces.cbrInterface.ReplayingP2 = true;
-				experimentS += " 5B";
-			}
-			else {
-				g_interfaces.cbrInterface.EndCbrActivities();
-			}
-		}ImGui::SameLine();
-		if (ImGui::Button("5C Training")) {
-			g_interfaces.cbrInterface.EndCbrActivities();
-			g_interfaces.cbrInterface.mergeCbrData(g_interfaces.cbrInterface.LoadCbrData("5C", g_interfaces.player2.GetData()->char_abbr), 1);
-			if (g_interfaces.cbrInterface.getCbrData(1)->getReplayCount() > 0 && g_interfaces.cbrInterface.ReplayingP2 == false) {
-				g_interfaces.cbrInterface.EndCbrActivities();
-				g_interfaces.cbrInterface.ReplayingP2 = true;
-				experimentS += " 5C";
-			}
-			else {
-				g_interfaces.cbrInterface.EndCbrActivities();
-			}
-		}ImGui::SameLine();
-		if (ImGui::Button("2C Training")) {
-			g_interfaces.cbrInterface.EndCbrActivities();
-			g_interfaces.cbrInterface.mergeCbrData(g_interfaces.cbrInterface.LoadCbrData("2C", g_interfaces.player2.GetData()->char_abbr), 1);
-			if (g_interfaces.cbrInterface.getCbrData(1)->getReplayCount() > 0 && g_interfaces.cbrInterface.ReplayingP2 == false) {
-				g_interfaces.cbrInterface.EndCbrActivities();
-				g_interfaces.cbrInterface.ReplayingP2 = true;
-				experimentS += " 2C";
-			}
-			else {
-				g_interfaces.cbrInterface.EndCbrActivities();
-			}
-		}ImGui::Separator();
-		if (ImGui::Button("Reset AI"))
-		{
-			experimentS = "AI Activity: ";
-			g_interfaces.cbrInterface.EndCbrActivities();
-			g_interfaces.cbrInterface.getCbrData(1)->deleteReplays(0, 1000);
-		}
-		*/
-		/*
-		if (!g_interfaces.player1.IsCharDataNullPtr()) {
-			auto focusCharData = g_interfaces.player1.GetData();
-			ImGui::Text("Drive0 %d", focusCharData->Drive0);
-			ImGui::Text("Drive2 %d", focusCharData->Drive2);
-			ImGui::Text("TagerMagnetism %d", focusCharData->TagerMagnetism);
-			ImGui::Text("LitchiStaffState %d", focusCharData->LitchiStaffState);
-			ImGui::Text("Drive11 %d", focusCharData->Drive11);
-			ImGui::Text("DriveX %d", focusCharData->DriveX);
-			ImGui::Text("Drive10 %d", focusCharData->Drive10);
-			ImGui::Text("Drive1 %d", focusCharData->Drive1);
-			ImGui::Text("Drive1_type %d", focusCharData->Drive1_type);
-			ImGui::Text("Drive12 %d", focusCharData->Drive12);
-			ImGui::Text("UnknownDriveVal0 %d", focusCharData->UnknownDriveVal0);
-			ImGui::Text("UnknownDriveVal1 %d", focusCharData->UnknownDriveVal1);
-			ImGui::Text("Drive20 %d", focusCharData->Drive20);
-			ImGui::Text("Drive30 %d", focusCharData->Drive30);
-
-			focusCharData = g_interfaces.player2.GetData();
-			ImGui::Text("P2------------------------------P2");
-			ImGui::Text("Drive0 %d", focusCharData->Drive0);
-			ImGui::Text("Drive2 %d", focusCharData->Drive2);
-			ImGui::Text("TagerMagnetism %d", focusCharData->TagerMagnetism);
-			ImGui::Text("LitchiStaffState %d", focusCharData->LitchiStaffState);
-			ImGui::Text("Drive11 %d", focusCharData->Drive11);
-			ImGui::Text("DriveX %d", focusCharData->DriveX);
-			ImGui::Text("Drive10 %d", focusCharData->Drive10);
-			ImGui::Text("Drive1 %d", focusCharData->Drive1);
-			ImGui::Text("Drive1_type %d", focusCharData->Drive1_type);
-			ImGui::Text("Drive12 %d", focusCharData->Drive12);
-			ImGui::Text("UnknownDriveVal0 %d", focusCharData->UnknownDriveVal0);
-			ImGui::Text("UnknownDriveVal1 %d", focusCharData->UnknownDriveVal1);
-			ImGui::Text("Drive20 %d", focusCharData->Drive20);
-			ImGui::Text("Drive30 %d", focusCharData->Drive30);
-		}*/
-	}
-		
-
 	
 	DrawUtilButtons();
 	
@@ -583,6 +356,96 @@ void MainWindow::DrawLoadedSettingsValuesSection() const
 }
 
 
+//CBR MOD related -----------------------------------------------------------------------------------------------------------------
+void MainWindow::DrawFrameDataSection() const {
+	if (!g_interfaces.player1.IsCharDataNullPtr() && !g_interfaces.player2.IsCharDataNullPtr()) {
+		static bool p1Recovering = false;
+		static bool p2Recovering = false;
+		static int p1Adv = 0;
+		static int p2Adv = 0;
+		static bool gapFound = false;
+
+		//TODO: CmnActLandingStiffLoop == cant act but currently not recognized
+
+		if (g_interfaces.player2.GetData()->blockstun <= 0 && g_interfaces.player1.GetData()->attackLevel <= 0) {
+			gapFound = true;
+		}
+
+		if (((g_interfaces.player1.GetData()->blockstun > 0) && (g_interfaces.player1.GetData()->hitstop > 0) && (g_interfaces.player1.GetData()->actionTimeNoHitstop == 1)) || ((g_interfaces.player1.GetData()->hitstun > 0) && (g_interfaces.player1.GetData()->hitstop > 0) && (g_interfaces.player1.GetData()->actionTimeNoHitstop == 1))) {
+			p1Recovering = true;
+			p2Adv = 0;
+			p1Adv = 0;
+			gapFound = false;
+		}
+		if (((g_interfaces.player2.GetData()->blockstun > 0) && (g_interfaces.player2.GetData()->hitstop > 0) && (g_interfaces.player2.GetData()->actionTimeNoHitstop == 1)) || ((g_interfaces.player2.GetData()->hitstun > 0) && (g_interfaces.player2.GetData()->hitstop > 0) && (g_interfaces.player2.GetData()->actionTimeNoHitstop == 1))) {
+			p2Recovering = true;
+			p2Adv = 0;
+			p1Adv = 0;
+			gapFound = false;
+		}
+		if (p1Recovering) {
+			if (!(g_interfaces.player2.GetData()->typeOfAttack > 0)) {
+				if (g_interfaces.player1.GetData()->blockstun > 0) {
+					p2Adv = g_interfaces.player1.GetData()->blockstun;
+					p1Recovering = false;
+				}
+				if (g_interfaces.player1.GetData()->hitstun > 0) {
+					p2Adv = g_interfaces.player1.GetData()->hitstun;
+					p1Recovering = false;
+				}
+			}
+
+			if (!(g_interfaces.player1.GetData()->hitstun > 0) && !(g_interfaces.player1.GetData()->blockstun > 0) && (g_interfaces.player2.GetData()->typeOfAttack > 0)) {
+				p2Adv--;
+			}
+			if ((g_interfaces.player1.GetData()->hitstun == 0) && (g_interfaces.player1.GetData()->blockstun == 0) && (g_interfaces.player2.GetData()->typeOfAttack == 0)) {
+				p1Recovering = false;
+			}
+		}
+
+		if (p2Recovering) {
+
+			if (g_interfaces.player2.GetData()->blockstun <= 0) {
+				gapFound = true;
+			}
+
+
+			if (!(g_interfaces.player1.GetData()->typeOfAttack > 0)) {
+				if (g_interfaces.player2.GetData()->blockstun > 0) {
+					p1Adv = g_interfaces.player2.GetData()->blockstun;
+					p2Recovering = false;
+				}
+				if (g_interfaces.player2.GetData()->hitstun > 0) {
+					p1Adv = g_interfaces.player2.GetData()->hitstun;
+					p2Recovering = false;
+				}
+			}
+
+			if (!(g_interfaces.player2.GetData()->hitstun > 0) && !(g_interfaces.player2.GetData()->blockstun > 0) && (g_interfaces.player1.GetData()->typeOfAttack > 0)) {
+				p1Adv--;
+			}
+			if ((g_interfaces.player2.GetData()->hitstun == 0) && (g_interfaces.player2.GetData()->blockstun == 0) && (g_interfaces.player1.GetData()->typeOfAttack == 0)) {
+				p2Recovering = false;
+			}
+		}
+		static float lastProrationPerDmg = 0;
+		static float lastProration = 0;
+		if (g_interfaces.player2.GetData()->comboProration != 10000) {
+			lastProrationPerDmg = float(g_interfaces.player2.GetData()->comboDamage) / (float(10000 - g_interfaces.player2.GetData()->comboProration));
+			lastProration = g_interfaces.player2.GetData()->comboProration;
+		}
+		auto str = "Dmg/Proration: " + std::to_string(lastProrationPerDmg) + " - " + std::to_string(lastProration);
+		ImGui::Text(str.c_str());
+
+		str = "FrameAdv: " + std::to_string(p1Adv) + " - " + std::to_string(p2Adv);
+		ImGui::Text(str.c_str());
+		str = "ComboTime: " + std::to_string(g_interfaces.player2.GetData()->comboTime);
+		ImGui::Text(str.c_str());
+		str = "GapFound: " + std::to_string(gapFound);
+		ImGui::Text(str.c_str());
+	}
+}
+
 int selected_radio;
 int weightsPlayer;
 void MainWindow::DrawCBRAiSection() const
@@ -591,11 +454,16 @@ void MainWindow::DrawCBRAiSection() const
 		return;
 
 	g_interfaces.cbrInterface.loadSettings(&g_interfaces.cbrInterface);
+
 	if (g_interfaces.cbrInterface.debugErrorCounter[0] > 0) {
 		ImGui::Text("ErrorCountP1: %d", g_interfaces.cbrInterface.debugErrorCounter[0]);
 	}
 	if (g_interfaces.cbrInterface.debugErrorCounter[1] > 0) {
 		ImGui::Text("ErrorCountP2: %d", g_interfaces.cbrInterface.debugErrorCounter[1]);
+	}
+	if (g_interfaces.cbrInterface.threadActiveCheck()) {
+		ImGui::TextDisabled("SAVING OR LOADING CBR DATA. \nPLEASE WAIT.");
+		return;
 	}
 	if (!isInMatch() || !(*g_gameVals.pGameMode == GameMode_Training || *g_gameVals.pGameMode == GameMode_Versus || 
 		*g_gameVals.pGameMode == GameMode_Online) )
@@ -673,17 +541,7 @@ void MainWindow::DrawCBRAiSection() const
 					g_interfaces.cbrInterface.EndCbrActivities();
 				}
 			}
-			/*if (ImGui::Button("RecP1 RepP2", buttonSize))
-			{
-				if (g_interfaces.cbrInterface.getCbrData(1)->getReplayCount() > 0 && g_interfaces.cbrInterface.ReplayingP2 == false && g_interfaces.cbrInterface.Recording == false) {
-					g_interfaces.cbrInterface.EndCbrActivities();
-					g_interfaces.cbrInterface.ReplayingP2 = true;
-					g_interfaces.cbrInterface.Recording = true;
-				}
-				else {
-					g_interfaces.cbrInterface.EndCbrActivities();
-				}
-			}*/
+
 		}
 		if (ImGui::Button("Delete", buttonSize))
 		{
@@ -695,7 +553,7 @@ void MainWindow::DrawCBRAiSection() const
 			g_interfaces.cbrInterface.EndCbrActivities();
 			g_interfaces.cbrInterface.getCbrData(0)->setPlayerName(g_interfaces.cbrInterface.playerName);
 			g_interfaces.cbrInterface.getCbrData(0)->setCharName(g_interfaces.player1.GetData()->char_abbr);
-			g_interfaces.cbrInterface.SaveCbrData(*g_interfaces.cbrInterface.getCbrData(0));
+			g_interfaces.cbrInterface.SaveCbrDataThreaded(*g_interfaces.cbrInterface.getCbrData(0), true);
 		}
 		if (ImGui::Button("Load", buttonSize)) {
 			g_interfaces.cbrInterface.EndCbrActivities();
@@ -706,12 +564,10 @@ void MainWindow::DrawCBRAiSection() const
 		}
 		if (ImGui::Button("Load By Name", buttonSize)) {
 			g_interfaces.cbrInterface.EndCbrActivities();
-			g_interfaces.cbrInterface.setCbrData(g_interfaces.cbrInterface.LoadCbrData(g_interfaces.cbrInterface.playerName, g_interfaces.player1.GetData()->char_abbr), 0);
+			g_interfaces.cbrInterface.LoadCbrData(g_interfaces.cbrInterface.playerName, g_interfaces.player1.GetData()->char_abbr,true, 0);
+			//g_interfaces.cbrInterface.setCbrData(g_interfaces.cbrInterface.LoadCbrDataNoThread(g_interfaces.cbrInterface.playerName, g_interfaces.player1.GetData()->char_abbr), 0);
 		}
-		/*if (ImGui::Button("Load+Merge", buttonSize)) {
-			g_interfaces.cbrInterface.EndCbrActivities();
-			g_interfaces.cbrInterface.mergeCbrData(g_interfaces.cbrInterface.LoadCbrData(g_interfaces.cbrInterface.playerName, g_interfaces.player1.GetData()->char_abbr), 0);
-		}*/
+
 		ImGui::NextColumn();
 		ImGui::Text("Replays: %d", g_interfaces.cbrInterface.getCbrData(1)->getReplayCount());
 		ImGui::Text("FramesRecorded: %d", g_interfaces.cbrInterface.getAnnotatedReplay(0)->getInputSize());
@@ -755,17 +611,6 @@ void MainWindow::DrawCBRAiSection() const
 					g_interfaces.cbrInterface.EndCbrActivities();
 				}
 			}
-			/*if (ImGui::Button("RepP1 RecP2", buttonSize))
-			{
-				if (g_interfaces.cbrInterface.getCbrData(0)->getReplayCount() > 0 && g_interfaces.cbrInterface.Replaying == false && g_interfaces.cbrInterface.RecordingP2 == false) {
-					g_interfaces.cbrInterface.EndCbrActivities();
-					g_interfaces.cbrInterface.Replaying = true;
-					g_interfaces.cbrInterface.RecordingP2 = true;
-				}
-				else {
-					g_interfaces.cbrInterface.EndCbrActivities();
-				}
-			}*/
 		}
 		if (ImGui::Button("Delete", buttonSize))
 		{
@@ -777,7 +622,7 @@ void MainWindow::DrawCBRAiSection() const
 			g_interfaces.cbrInterface.EndCbrActivities();
 			g_interfaces.cbrInterface.getCbrData(1)->setPlayerName(g_interfaces.cbrInterface.playerName);
 			g_interfaces.cbrInterface.getCbrData(1)->setCharName(g_interfaces.player2.GetData()->char_abbr);
-			g_interfaces.cbrInterface.SaveCbrData(*g_interfaces.cbrInterface.getCbrData(1));
+			g_interfaces.cbrInterface.SaveCbrDataThreaded(*g_interfaces.cbrInterface.getCbrData(1), true);
 		}
 		if (ImGui::Button("Load", buttonSize)) {
 			g_interfaces.cbrInterface.EndCbrActivities();
@@ -788,17 +633,12 @@ void MainWindow::DrawCBRAiSection() const
 		}
 		if (ImGui::Button("Load By Name", buttonSize)) {
 			g_interfaces.cbrInterface.EndCbrActivities();
-			g_interfaces.cbrInterface.setCbrData(g_interfaces.cbrInterface.LoadCbrData(g_interfaces.cbrInterface.playerName, g_interfaces.player2.GetData()->char_abbr), 1);
+			g_interfaces.cbrInterface.LoadCbrData(g_interfaces.cbrInterface.playerName, g_interfaces.player2.GetData()->char_abbr, true, 1);
+			//g_interfaces.cbrInterface.setCbrData(g_interfaces.cbrInterface.LoadCbrDataNoThread(g_interfaces.cbrInterface.playerName, g_interfaces.player2.GetData()->char_abbr), 1);
 		}
-		/*if (ImGui::Button("Load+Merge", buttonSize)) {
-			g_interfaces.cbrInterface.EndCbrActivities();
-			g_interfaces.cbrInterface.mergeCbrData(g_interfaces.cbrInterface.LoadCbrData(g_interfaces.cbrInterface.playerName, g_interfaces.player2.GetData()->char_abbr), 1);
-		}*/
+
 		ImGui::PopID();
-		//ImGui::Text("Recording: %d ", g_interfaces.cbrInterface.Recording);
-		//ImGui::SameLine();
-		//ImGui::Text("Replaying P1 %d", g_interfaces.cbrInterface.Replaying);
-		//ImGui::Text("InstantLearning %d", g_interfaces.cbrInterface.instantLearning);
+
 		ImGui::Columns(1);
 		ImGui::Separator();
 		if (!(*g_gameVals.pGameMode == GameMode_Versus)) {
@@ -815,12 +655,6 @@ void MainWindow::DrawCBRAiSection() const
 					g_interfaces.cbrInterface.EndCbrActivities();
 				}
 			}
-			static std::string testoooVar = "";
-			if (ImGui::Button("TestOOOOO")) {
-				
-				testoooVar = g_interfaces.cbrInterface.getCbrData(0)->compareRandomCases();
-			}
-			ImGui::Text(testoooVar.c_str());
 			ImGui::Separator();
 		}
 		ImGui::Text(g_interfaces.cbrInterface.WriteAiInterfaceState().c_str());
@@ -832,27 +666,17 @@ void MainWindow::DrawCBRAiSection() const
 		ImGui::PushItemWidth(80);
 		ImGui::DragIntRange2("", &g_interfaces.cbrInterface.deletionStart, &g_interfaces.cbrInterface.deletionEnd, 1.0F, 0);
 		ImGui::PushItemWidth(0);
-
-		//ImGui::Text("DebugInput1: %d", g_interfaces.cbrInterface.debugPrint1);
-		//ImGui::Text("DebugInput2: %d", g_interfaces.cbrInterface.debugPrint2);
-		//ImGui::Text("DebugInput3: %d", g_interfaces.cbrInterface.debugPrint3);
-		//ImGui::Text("DebugInput4: %d", g_interfaces.cbrInterface.debugPrint4);
 		if (!g_interfaces.player1.IsCharDataNullPtr()) {
 			ImGui::TextUnformatted(g_interfaces.player1.GetData()->char_abbr);
 			//ImGui::Text("hitstop %d", g_interfaces.player1.GetData()->hitstop);
 			ImGui::Text("CharNr %d", g_interfaces.player1.GetData()->charIndex);
 		}
-		//ImGui::Text("MatchState: %d", *g_gameVals.pMatchState);
-		//ImGui::Text("MatchState: %d", *g_gameVals.pGameState);
-		//ImGui::Text("MatchState: %d", *g_gameVals.pMatchTimer);
 		
 		ImGui::Text("CaseInstance: %d - %d", g_interfaces.cbrInterface.getCbrData(0)->debugCounter, g_interfaces.cbrInterface.getCbrData(1)->debugCounter);
 		//ImGui::Text(g_interfaces.player1.getCbrData()->debugText.c_str());
 		
 
 		if (!g_interfaces.player1.IsCharDataNullPtr()) {
-			
-
 			/*
 			ImGui::TextUnformatted(g_interfaces.player1.GetData()->currentAction);
 			ImGui::TextUnformatted(g_interfaces.player1.GetData()->lastAction);
@@ -1250,23 +1074,31 @@ void MainWindow::DrawNetaSection() const
 		}
 		ImGui::Text("Recording: %d", g_interfaces.cbrInterface.netaRecording);
 		ImGui::Text("Replaying %d", g_interfaces.cbrInterface.netaPlaying);
-
-		
-		
-			
-			
-			
-			
-			
-			
-			
-			
-			
-			
-			
-			
+	
 	}
+}
+void MainWindow::DrawCBRDebuggingSection() const {
+	if (ImGui::CollapsingHeader("Debugging")) {
+		static std::string debugS = "";
+		static int replay = 0;
+		static int caseIndex = 0;
+		static int playerIndex = 0;
+		ImGui::DragInt("Replay", &replay, 1.0F, 0, 99999);
+		ImGui::SameLine();
+		ImGui::DragInt("Case", &caseIndex);
+		ImGui::DragInt("Player", &playerIndex, 1.0F, 0, 1);
+		ImGui::SameLine();
+		if (ImGui::Button("Display Case")) {
+			auto caseFile = g_interfaces.cbrInterface.getCbrData(playerIndex)->getReplayFiles()->at(replay).getCase(caseIndex);
+			debugS = "";
+			debugS = caseFile->getMetadata()->PrintState();
 
+			debugS += "\nInput: ";
+			for (int i = caseFile->getStartingIndex(); i <= caseFile->getEndIndex(); i++) {
+				debugS += std::to_string(g_interfaces.cbrInterface.getCbrData(playerIndex)->getReplayFiles()->at(replay).getInput(i)) + ", ";
+			}
 
-
+		}
+		ImGui::Text(debugS.c_str());
+	}
 }

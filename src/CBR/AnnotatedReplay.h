@@ -37,7 +37,7 @@ public:
 
     std::string getPlayerName();
     std::string getFocusCharName();
-    std::array< std::string, 2> getCharacterName();
+    std::array< std::string, 2>& getCharacterName();
     int getNextInput(bool);
     void resetReplayIndex();
 

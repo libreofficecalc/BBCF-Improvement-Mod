@@ -6,6 +6,20 @@
 #include <deque>
 #include <iostream>
 
+struct FileMetadata {
+	char charName[100];
+	char playerName[100];
+	char opponentChar[300];
+	int rCount;
+
+	friend class boost::serialization::access;
+	template<class Archive>
+	void serialize(Archive& a, const unsigned version) {
+		a& charName& playerName& opponentChar& rCount;
+	}
+
+};
+
 template <typename T, int MaxLen, typename Container = std::deque<T>>
 class FixedQueue : public std::queue<T, Container> {
 public:
@@ -16,6 +30,44 @@ public:
 		std::queue<T, Container>::push(value);
 	}
 };
+
+inline std::string metaDataFilepathRename(std::string filename) {
+	std::string substringToFind = "CBRsave\\";
+	std::string textToInsert = "Metadata\\";
+	size_t position = filename.find("CBRsave\\");
+	auto filenameMeta = filename;
+	// Check if the substring was found
+	if (position != std::string::npos) {
+		// Insert the text after the found substring
+		filenameMeta.insert(position + substringToFind.length(), textToInsert);
+	}
+	filenameMeta = filenameMeta.substr(0, filenameMeta.size() - 3) + "met";
+	return filenameMeta;
+}
+
+inline std::string getOpponentCharNameString(CbrData& cbr) {
+	std::map<std::string, int> charReplays;
+	for (int i = 0; i < cbr.getReplayCount(); i++) {
+		auto rf = cbr.getReplayFiles();
+		auto& name = rf->at(i).getCharNames()[1];
+		auto ok = charReplays.find(name);
+		if (ok != charReplays.end()) {
+			charReplays[name] += 1;
+		}
+		else {
+			charReplays[name] = 1;
+		}
+	}
+	std::string opponentChar = "";
+	int i = 1;
+	for (auto const& x : charReplays)
+	{
+		opponentChar += x.first + "(" + std::to_string(x.second) + "), ";  // string (key)
+		if (i % 3 == 0) { opponentChar += "\n"; }
+		i++;
+	}
+	return opponentChar;
+}
 
 inline std::string NowToString()
 {
@@ -73,26 +125,3 @@ inline std::string getCharacterNameFromID(int id) {
 	return "";
 }
 
-inline std::string getOpponentCharNameString(CbrData& cbr) {
-	std::map<std::string, int> charReplays;
-	for (int i = 0; i < cbr.getReplayCount(); i++) {
-		auto rf = cbr.getReplayFiles();
-		auto& name = rf->at(i).getCharNames()[1];
-		auto ok = charReplays.find(name);
-		if (ok != charReplays.end()) {
-			charReplays[name] += 1;
-		}
-		else {
-			charReplays[name] = 1;
-		}
-	}
-	std::string opponentChar = "";
-	int i = 1;
-	for (auto const& x : charReplays)
-	{
-		opponentChar += x.first + "(" + std::to_string(x.second) + "), ";  // string (key)
-		if (i % 3 == 0) { opponentChar += "\n"; }
-		i++;
-	}
-	return opponentChar;
-}

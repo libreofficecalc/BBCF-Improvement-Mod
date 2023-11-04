@@ -49,10 +49,24 @@ public:
 
 	bool threadCheckSaving();
 
+
+	void CbrInterface::clearThreads();
 	void CbrInterface::SaveCbrData(CbrData& cbr);
-	CbrData CbrInterface::LoadCbrData(std::string playerName, std::string characterName);
-	CbrData CbrInterface::LoadCbrData(std::string filename);
+	void CbrInterface::SaveCbrDataExperiment(CbrData& cbr);
+	void CbrInterface::SaveCbrDataThreaded(CbrData& cbr, bool run);
+	void CbrInterface::LoadCbrData(std::string playerName, std::string characterName, bool run, int playerNr);
+	void CbrInterface::LoadCbrData(std::string filename, bool run, int playerNr);
+	CbrData CbrInterface::LoadCbrDataExec(std::string filename, int playerNr);
+	CbrData CbrInterface::LoadCbrDataNoThread(std::string filename);
+	CbrData CbrInterface::LoadCbrDataNoThread(std::string playerName, std::string characterName);
 	CbrData CbrInterface::LoadCbrDataOld(std::string filename);
+	void CbrInterface::MergeCbrDataThreaded(std::string filename, bool run, int playerNr);
+	void CbrInterface::MergeCbrDataExec(std::string filename, int playerNr);
+	void CbrInterface::LoadAndUploadData(std::string path);
+	void CbrInterface::LoadAndUploadDataThreaded(std::string path, bool run);
+
+
+
 	std::string CbrInterface::WriteAiInterfaceState();
 
 	int windowLoadNr = -1;
@@ -172,7 +186,9 @@ public:
 	
 	void CbrInterface::Testbase64(std::string cbr);
 
-	int CbrInterface::determineBufferedInput(std::array<FixedQueue<int, 5>, 2> inputBuffer);
+	int CbrInterface::determineBufferedInput(std::array<FixedQueue<int, 5>, 2>& inputBuffer);
+
+	bool CbrInterface::threadActiveCheck();
 
 	template<class Archive>
 	void serialize(Archive& a, const unsigned version) {

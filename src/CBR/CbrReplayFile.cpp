@@ -149,7 +149,7 @@ CbrGenerationError CbrReplayFile::MakeCaseBase(AnnotatedReplay* ar, std::string 
         //All cases during an input sequence are marked to prevent them beeing played out of order
         if (inputResolve.size() > 0) {
             debugInt++;
-            if (debugInt == 100) {
+            if (debugInt == 200) {
                 retError.errorCount++;
                 retError.errorDetail += "\nerror on move: " + inputResolveName + "\n" + "Frame: " + std::to_string(i) + "\n Not resolved in 100 steps\n" ;
             }
@@ -194,6 +194,12 @@ CbrGenerationError CbrReplayFile::MakeCaseBase(AnnotatedReplay* ar, std::string 
                         debugInt = 0;
                         inputResolveName = curState;
                         inputBuffering = true;
+                        if (i + 1 < input.size()) {
+                            auto deconInputs = DeconstructInput(input[i + 1], facingCommandStart);
+                            for (std::vector<int>::size_type j = 0; j < deconInputs.size(); ++j) {
+                                inputResolve = CheckCommandExecution(deconInputs[j], inputResolve);//fix this inputResolve doesnt update from the function.
+                            }
+                        }
                         auto deconInputs = DeconstructInput(input[i], facingCommandStart);
                         for (std::vector<int>::size_type j = 0; j < deconInputs.size(); ++j) {
                             inputResolve = CheckCommandExecution(deconInputs[j], inputResolve);//fix this inputResolve doesnt update from the function.
@@ -214,6 +220,12 @@ CbrGenerationError CbrReplayFile::MakeCaseBase(AnnotatedReplay* ar, std::string 
                         debugInt = 0;
                         inputResolveName = curState;
                         inputBuffering = true;
+                        if (i + 1 < input.size()) {
+                            auto deconInputs = DeconstructInput(input[i+1], facingCommandStart);
+                            for (std::vector<int>::size_type j = 0; j < deconInputs.size(); ++j) {
+                                dollResolve = CheckCommandExecution(deconInputs[j], dollResolve);//fix this inputResolve doesnt update from the function.
+                            }
+                        }
                         auto deconInputs = DeconstructInput(input[i], facingCommandStart);
                         for (std::vector<int>::size_type j = 0; j < deconInputs.size(); ++j) {
                             dollResolve = CheckCommandExecution(deconInputs[j], dollResolve);//fix this inputResolve doesnt update from the function.
@@ -531,22 +543,25 @@ CbrGenerationError CbrReplayFile::MakeCaseBase(AnnotatedReplay* ar, std::string 
 }
 
 
-bool CbrReplayFile::CheckCaseEnd(int framesIdle, Metadata ar, std::string prevState, bool neutral, std::vector<CommandActions> commands) {
-
+bool CbrReplayFile::CheckCaseEnd(int framesIdle, Metadata ar, std::string prevState, bool neutral, std::vector<CommandActions>& commands) {
     //if states changed and minimum case time is reached change state
     auto curState = ar.getCurrentAction()[0];
-    if (curState != prevState && (framesIdle >= caseMinTime || !ar.getNeutral()[0] )) {
+    bool command = ContainsCommandState(prevState, commands);
+    
+    bool dashing = curState == "CmnActFDash" || curState == "CmnActBDash" || curState == "CmnActAirFDash" || curState == "CmnActAirBDash";
+
+    if (curState != prevState && (framesIdle >= caseMinTime || !ar.getNeutral()[0] || command) ) {
         stateChangeTrigger = true;
         return true;
     }
 
     //if player is hit or hits the opponent also on guard.
-    if ((ar.getHitThisFrame()[0] || ar.getBlockThisFrame()[0] || ar.getHitThisFrame()[1] )) {
+    if ((ar.getHitThisFrame()[0] || ar.getBlockThisFrame()[0] || ar.getHitThisFrame()[1] || ar.getBlockThisFrame()[1])) {
         return true;
     }
 
     // if in neutral state for longer than caseNeutralTime end case
-    if (neutral && (framesIdle >= caseNeutralTime)) {
+    if (neutral && !dashing && (framesIdle >= caseNeutralTime)) {
         return true;
     }
     return false;
@@ -577,7 +592,18 @@ CbrGenerationError CbrReplayFile::makeFullCaseBase(AnnotatedReplay* ar, std::str
     ret.errorDetail = "";
     int start = 0;
     int end = ar->getInput().size() - 1;
+
+    if (end <= 0) {
+        ret.errorCount = 1;
+        ret.errorDetail = "0 size replay";
+        return ret;
+    }
+
+    auto testCopy = *ar;
     ret = MakeCaseBase(ar, charName, start, end, 0);
+    if (ret.errorCount > 0) {
+        ret = MakeCaseBase(&testCopy, charName, start, end, 0);
+    }
     return ret;
 }
 
@@ -758,14 +784,15 @@ bool CbrReplayFile::checkDirectionInputs(int direction, int input) {
     }
     return false;
 }
-bool CbrReplayFile::ContainsCommandState(std::string move, std::vector<CommandActions> commands) {
+bool CbrReplayFile::ContainsCommandState(std::string& move, std::vector<CommandActions>& commands) {
     for (std::size_t i = 0; i < commands.size(); ++i) {
         if (commands[i].moveName == move) {
             return true;
         }
     }
+    return false;
 }
-std::vector < inputMemory> CbrReplayFile::MakeInputArray(std::string move, std::vector<CommandActions> commands, std::string prevState) {
+std::vector < inputMemory> CbrReplayFile::MakeInputArray(std::string& move, std::vector<CommandActions>& commands, std::string prevState) {
     int lastInput = -1;
     bool threeSixty = false;
 
@@ -796,7 +823,7 @@ std::vector<CommandActions> superjumpCommands = {
 {
     "CmnActJumpPre", {down, up}},
 };
-std::vector < inputMemory> CbrReplayFile::MakeInputArraySuperJump(std::string move, std::vector<int> inputs, int startingIndex, std::vector < inputMemory> inVec) {
+std::vector < inputMemory> CbrReplayFile::MakeInputArraySuperJump(std::string move, std::vector<int>& inputs, int startingIndex, std::vector < inputMemory>& inVec) {
 
     
         inputMemory container;
@@ -814,6 +841,7 @@ std::vector < inputMemory> CbrReplayFile::MakeInputArraySuperJump(std::string mo
             if (foundUp > -1) {
                 int foundDown = 999;
                 for (int i = 0; i >= -9; i--) {
+                    if (foundUp + i < 0) { continue; }
                     auto deconInputs = DeconstructInput(inputs[foundUp + i], false);
                     for (int o = 0; o < deconInputs.size(); o++) {
                         if (checkDirectionInputs(down, deconInputs[o])) {
@@ -1286,10 +1314,10 @@ std::vector<CommandActions> bulletCommands =
     { "CommandThrow", {s360_8,B}},
     { "CommandThrowAddAttack", {6,3,1,4,D}},
     { "CommandThrowAddAttack", {6,2,4,D}},
-    { "UltimateAssault", {2,3,6,3,1,4,C}},
-    { "UltimateAssaultOD", {2,3,6,3,1,4,C}},
-    { "UltimateAssault", {2,6,2,4,C}},
-    { "UltimateAssaultOD", {2,6,2,4,C}},
+    { "UltimateAssault",    {2,3,6,3,1,4,C}},
+    { "UltimateAssaultOD",  {2,3,6,3,1,4,C}},
+    { "UltimateAssault",    {2,6,2,4,C}},
+    { "UltimateAssaultOD",  {2,6,2,4,C}},
     { "UltimateThrow", {s720_1,A}},
     { "UltimateThrow", {s720_2,A}},
     { "UltimateThrow", {s720_3,A}},
@@ -2179,7 +2207,7 @@ std::vector<CommandActions> nirvanaCommands =
     { "NirvanaStrike", {2,4,2,D,4,-D}},
 };
 
-std::vector<CommandActions> CbrReplayFile::FetchCommandActions(std::string charName) {
+std::vector<CommandActions> CbrReplayFile::FetchCommandActions(std::string& charName) {
     if (charName == "es") { return esCommands; };//es
     if (charName == "ny") { return nuCommands; };//nu
     if (charName == "ma") { return maiCommands; };// mai

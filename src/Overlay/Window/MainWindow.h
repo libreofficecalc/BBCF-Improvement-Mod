@@ -24,11 +24,16 @@ private:
 	void DrawHitboxOverlaySection() const;
 	void DrawGameplaySettingSection() const;
 	void DrawAvatarSection() const;
-	void DrawCBRAiSection()const;
-	void DrawReversalSection()const;
 
-	void DrawNetaSection() const;
 
 	const ImVec2 BTN_SIZE = ImVec2(60, 20);
 	WindowContainer* m_pWindowContainer = nullptr;
+
+
+	//CbrMod Stuff
+	void DrawFrameDataSection()const;
+	void DrawCBRAiSection()const;
+	void DrawReversalSection()const;
+	void DrawNetaSection() const;
+	void MainWindow::DrawCBRDebuggingSection() const;
 };

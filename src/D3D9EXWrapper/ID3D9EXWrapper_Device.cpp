@@ -4,6 +4,7 @@
 #include "Core/logger.h"
 #include "Game/MatchState.h"
 #include "Hooks/hooks_bbcf.h"
+#include "Hooks/hooks_cbr.h"
 #include "Hooks/hooks_customGameModes.h"
 #include "Hooks/hooks_palette.h"
 #include "Overlay/WindowManager.h"
@@ -25,6 +26,7 @@ Direct3DDevice9ExWrapper::Direct3DDevice9ExWrapper(IDirect3DDevice9Ex **ppReturn
 	//place all other hooks that can only be placed after steamDRM unpacks the .exe in memory!!!
 	placeHooks_bbcf();
 	placeHooks_palette();
+	placeHooks_cbr();
 	placeHooks_CustomGameModes();
 }
 

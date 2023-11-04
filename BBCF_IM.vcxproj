@@ -23,6 +23,7 @@
     <ClCompile Include="src\CBR\Helper.cpp" />
     <ClCompile Include="src\CBR\Metadata.cpp" />
     <ClCompile Include="src\CBR\CharacterStorage.cpp" />
+    <ClCompile Include="src\Hooks\hooks_cbr.cpp" />
     <ClCompile Include="src\Overlay\Window\CbrServerWindow.cpp" />
     <ClCompile Include="src\CustomGameMode\customGameMode.cpp" />
     <ClCompile Include="src\CustomGameMode\GameModeManager.cpp" />
@@ -74,8 +75,11 @@
     <ClCompile Include="src\Palette\PaletteManager.cpp" />
     <ClInclude Include="src\CBR\CbrUtils.h" />
     <ClInclude Include="src\CBR\CharacterStorage.h" />
+    <ClInclude Include="src\CBR\CbrSearchTree.h" />
+    <ClInclude Include="src\CBR\ComparisonFunction.h" />
     <ClInclude Include="src\CBR\httplib.h" />
     <ClInclude Include="src\CBR\json.hpp" />
+    <ClInclude Include="src\Hooks\hooks_cbr.h" />
     <ClInclude Include="src\Palette\impl_templates.h" />
     <ClCompile Include="src\SteamApiWrapper\SteamApiHelper.cpp" />
     <ClCompile Include="src\SteamApiWrapper\SteamFriendsWrapper.cpp" />

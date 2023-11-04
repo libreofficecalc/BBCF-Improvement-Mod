@@ -96,7 +96,8 @@ void CbrServerWindow::DrawImGuiSection()
 	if (j4 != NULL) {
 		std::string data = j4.at("data");
 		auto cbrData = ConvertCbrDataFromBase64(data);
-		g_interfaces.cbrInterface.SaveCbrData(cbrData);
+		j4 = NULL;
+		g_interfaces.cbrInterface.SaveCbrDataThreaded(cbrData, true);
 	}
 
 
@@ -114,7 +115,7 @@ void CbrServerWindow::DrawImGuiSection()
 
 			if (bufferData != NULL) { serverJsonData = bufferData; }
 
-			if (isCbrServerBusy()) {
+			if (isCbrServerBusy() || g_interfaces.cbrInterface.threadActiveCheck()) {
 				ImGui::TextDisabled("Loading data please wait");
 			}
 			else {
@@ -185,7 +186,8 @@ void CbrServerWindow::DrawImGuiSection()
 								auto j4 = bufferJson;
 								std::string data = j4.at("data");
 								auto cbrData = ConvertCbrDataFromBase64(data);
-								g_interfaces.cbrInterface.SaveCbrData(cbrData);
+								bufferJson = NULL;
+								g_interfaces.cbrInterface.SaveCbrDataThreaded(cbrData, true);
 							}
 						};
 						if (serverJsonData[it].at("player_id") == g_interfaces.cbrInterface.playerID || g_interfaces.cbrInterface.playerID == "KDing") {
@@ -226,7 +228,7 @@ void CbrServerWindow::DrawImGuiSection()
 		}
 
 
-		if (isCbrLocalDataUpdating()) {
+		if (isCbrLocalDataUpdating() || g_interfaces.cbrInterface.threadActiveCheck()) {
 			ImGui::TextDisabled("Loading data please wait");
 		}
 		else {
@@ -278,10 +280,10 @@ void CbrServerWindow::DrawImGuiSection()
 							std::string path = localJsonData[it].at("path");
 							//'{ "player_id": "player_id", "player_name": "player_name", "player_character": "player_character", "opponent_character": "opponent_character", "replay_count": 42, "data": "aGVsbG8gd29ybGQK" }'
 							g_interfaces.cbrInterface.EndCbrActivities();
-
-							auto test = g_interfaces.cbrInterface.LoadCbrData(path);
-							auto j2 = convertCBRtoJson(test, g_interfaces.cbrInterface.playerID);
-							threadUploadCharData(j2);
+							g_interfaces.cbrInterface.LoadAndUploadDataThreaded(path, true);
+							//auto test = g_interfaces.cbrInterface.LoadCbrDataNoThread(path);
+							//auto j2 = convertCBRtoJson(test, g_interfaces.cbrInterface.playerID);
+							//threadUploadCharData(j2);
 						}; ImGui::SameLine();
 					}
 
@@ -289,6 +291,8 @@ void CbrServerWindow::DrawImGuiSection()
 					if (ImGui::Button((std::string("Delete ").c_str()))) {
 						std::string path = localJsonData[it].at("path");
 						auto b = remove(path.c_str()) != -1;
+						auto filenameMeta = metaDataFilepathRename(path);
+						remove(filenameMeta.c_str());
 						if (b) {
 							localJsonData.erase(localJsonData.begin() + it);
 						}
@@ -298,19 +302,19 @@ void CbrServerWindow::DrawImGuiSection()
 						
 						if (ImGui::Button(("Load"))) {
 							if (g_interfaces.cbrInterface.windowLoadNr == 0) {
-								g_interfaces.cbrInterface.setCbrData(g_interfaces.cbrInterface.LoadCbrData(localJsonData[it].at("path")), 0);
+								g_interfaces.cbrInterface.LoadCbrData(localJsonData[it].at("path"),true, 0);
 							}
 							if (g_interfaces.cbrInterface.windowLoadNr == 1) {
-								g_interfaces.cbrInterface.setCbrData(g_interfaces.cbrInterface.LoadCbrData(localJsonData[it].at("path")), 1);
+								g_interfaces.cbrInterface.LoadCbrData(localJsonData[it].at("path"), true, 1);
 							}
 							Close();
 						}ImGui::SameLine();
 						if (ImGui::Button(("Load+Merge"))) {
 							if (g_interfaces.cbrInterface.windowLoadNr == 0) {
-								g_interfaces.cbrInterface.mergeCbrData(g_interfaces.cbrInterface.LoadCbrData(localJsonData[it].at("path")), 0);
+								g_interfaces.cbrInterface.MergeCbrDataThreaded(localJsonData[it].at("path"), true, 0);
 							}
 							if (g_interfaces.cbrInterface.windowLoadNr == 1) {
-								g_interfaces.cbrInterface.mergeCbrData(g_interfaces.cbrInterface.LoadCbrData(localJsonData[it].at("path")), 1);
+								g_interfaces.cbrInterface.MergeCbrDataThreaded(localJsonData[it].at("path"), true, 1);
 							}
 							Close();
 						}
@@ -344,8 +348,10 @@ void CbrServerWindow::DrawImGuiSection()
 
 void CbrServerWindow::Update()
 {
+	g_interfaces.cbrInterface.clearThreads();
 	if (!m_windowOpen)
 	{
+		
 		endAllThreads();
 		return;
 	}

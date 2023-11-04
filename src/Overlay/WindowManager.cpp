@@ -22,6 +22,8 @@
 int keyToggleMainWindow;
 int keyToggleRoomWindow;
 int keyToggleHud;
+int keyCBRsave;
+int keyCBRdiscard;
 
 WindowManager* WindowManager::m_instance = nullptr;
 
@@ -129,6 +131,9 @@ bool WindowManager::Initialize(void *hwnd, IDirect3DDevice9 *device)
 
 	keyToggleHud = 114;
 
+	keyCBRsave = Settings::getButtonValue(Settings::settingsIni.saveCBRbutton);
+	keyCBRdiscard = Settings::getButtonValue(Settings::settingsIni.discardCBRbutton);
+
 	// Load custom palettes
 
 	g_interfaces.pPaletteManager->LoadAllPalettes();
@@ -215,10 +220,10 @@ void WindowManager::Render()
 	HandleButtons();
 
 	if (g_interfaces.cbrInterface.autoRecordFinished == true) {
-		g_notificationBar->AddNotification("Currently %s replays unsaved. Press F8 to save them or Press F9 to discard them.", std::to_string(g_interfaces.cbrInterface.getAutoRecordReplayAmount()).c_str());
+		g_notificationBar->AddNotification("Currently %s replays unsaved. Press %s to save them or Press %s to discard them.", std::to_string(g_interfaces.cbrInterface.getAutoRecordReplayAmount()).c_str(), Settings::settingsIni.saveCBRbutton.c_str(), Settings::settingsIni.discardCBRbutton.c_str());
 		g_interfaces.cbrInterface.autoRecordFinished = false;
 	}
-	if (ImGui::IsKeyPressed(119, false)) {
+	if (ImGui::IsKeyPressed(keyCBRsave, false)) {
 		if (g_interfaces.cbrInterface.recordBufferP1.size() > 0 || g_interfaces.cbrInterface.recordBufferP2.size() > 0) {
 			if (!isInMatch()) {
 				g_notificationBar->AddNotification("Replays beeing saved, please dont close the game or save untill finished");
@@ -233,7 +238,7 @@ void WindowManager::Render()
 		}
 		
 	}
-	if (ImGui::IsKeyPressed(120, false)) {
+	if (ImGui::IsKeyPressed(keyCBRdiscard, false)) {
 		if (g_interfaces.cbrInterface.recordBufferP1.size() > 0 || g_interfaces.cbrInterface.recordBufferP2.size() > 0) {
 			g_notificationBar->AddNotification("Replays Deleted");
 			g_interfaces.cbrInterface.clearAutomaticRecordReplays();

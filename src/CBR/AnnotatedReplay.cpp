@@ -76,7 +76,7 @@ std::string AnnotatedReplay::getPlayerName() {
 std::string AnnotatedReplay::getFocusCharName() {
     return characterName[0];
 }
-std::array< std::string, 2> AnnotatedReplay::getCharacterName() {
+std::array< std::string, 2>& AnnotatedReplay::getCharacterName() {
     return characterName;
 }
 int AnnotatedReplay::getNextInput(bool facing) {
