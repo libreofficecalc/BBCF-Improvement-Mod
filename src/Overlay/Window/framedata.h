@@ -26,9 +26,10 @@ struct PlayersInteractionState
 	int p2GapDisplay = -1;
 };
 
-struct CharDataExtended
+class PlayerExtendedData
 {
-	CharDataExtended()
+public:
+	PlayerExtendedData()
 	{
 		this->charData = charData;
 		this->previousAction = "";
@@ -46,14 +47,14 @@ struct CharDataExtended
 
 extern IdleToggles idleToggles;
 extern PlayersInteractionState playersInteraction;
-extern CharDataExtended player1;
-extern CharDataExtended player2;
+extern PlayerExtendedData player1;
+extern PlayerExtendedData player2;
 
 bool isDoingActionInList(const char currentAction[], const std::list<std::string>& listOfActions);
-bool isIdle(const CharDataExtended& player);
-bool isBlocking(const CharDataExtended& player);
-bool isInHitstun(const CharDataExtended& player);
-void getFrameAdvantage(const CharDataExtended& player1, const CharDataExtended& player2);
-void computeGaps(const CharDataExtended& player, int& gapCounter, int& gapResult);
+bool isIdle(const PlayerExtendedData& player);
+bool isBlocking(const PlayerExtendedData& player);
+bool isInHitstun(const PlayerExtendedData& player);
+void getFrameAdvantage(const PlayerExtendedData& player1, const PlayerExtendedData& player2);
+void computeGaps(const PlayerExtendedData& player, int& gapCounter, int& gapResult);
 bool hasWorldTimeMoved();
 void computeFramedataInteractions();

@@ -5,8 +5,8 @@
 
 IdleToggles idleToggles;
 PlayersInteractionState playersInteraction;
-CharDataExtended player1;
-CharDataExtended player2;
+PlayerExtendedData player1;
+PlayerExtendedData player2;
 
 const std::list<std::string> idleWords =
 { "_NEUTRAL", "CmnActStand", "CmnActStandTurn", "CmnActStand2Crouch",
@@ -44,7 +44,7 @@ bool isDoingActionInList(const char currentAction[], const std::list<std::string
     return false;
 }
 
-bool isIdle(const CharDataExtended& player)
+bool isIdle(const PlayerExtendedData& player)
 {
     // The landing post neutral tech is not actionable for 1F. It can be considered part of the tech.
     const std::string currentActionString = player.charData->currentAction;
@@ -74,21 +74,21 @@ bool isIdle(const CharDataExtended& player)
     return false;
 }
 
-bool isBlocking(const CharDataExtended& player)
+bool isBlocking(const PlayerExtendedData& player)
 {
     if (player.charData->blockstun > 0 || player.charData->moveSpecialBlockstun > 0)
         return true;
     return false;
 }
 
-bool isInHitstun(const CharDataExtended& player)
+bool isInHitstun(const PlayerExtendedData& player)
 {
     if (player.charData->hitstun > 0 && !isDoingActionInList(player.charData->currentAction, idleWords))
         return true;
     return false;
 }
 
-void getFrameAdvantage(const CharDataExtended& player1, const CharDataExtended& player2)
+void getFrameAdvantage(const PlayerExtendedData& player1, const PlayerExtendedData& player2)
 {
     bool isIdle1 = isIdle(player1);
     bool isIdle2 = isIdle(player2);
@@ -117,7 +117,7 @@ void getFrameAdvantage(const CharDataExtended& player1, const CharDataExtended& 
     }
 }
 
-void computeGaps(const CharDataExtended& player, int& gapCounter, int& gapResult)
+void computeGaps(const PlayerExtendedData& player, int& gapCounter, int& gapResult)
 {
     playersInteraction.inBlockstring = isBlocking(player) || isInHitstun(player);
 
