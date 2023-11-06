@@ -12,45 +12,42 @@
 // maximum number of frames to be kept track of in the history
 const size_t HISTORY_DEPTH = 100;
 
-
-
 /// An arbitrary, and abstract categorization of player state, several of these
 /// are difficult to determine, they are here as a reminder to future
 /// implementors
 enum class FrameKind {
-    Idle = 0x00,
-    Startup = 0x01,
-    Recovery = 0x02,
-    Active = 0x04, // Indicates that there is an active hitbox
-    Blockstun = 0x08,
-    Hitstun = 0x10,
-    // For moves which cannot be said to have a recovery, but which still don't
-    // give enough cancel options to be called idle e.g. Izayoi teleports
-    Special = 0x20,
-    NotSpecial = ~Special,
-    // States that rely on something other than character script to determine
-    // length
-    NonDeterministicAcive =
-    0x40 | Active, // used for the cases where the sprite length is 32767
-    NonDeterministicRecovery =
-    0x40 | Recovery, // used for the cases where the sprite length is 32767
-    HardLanding = 0x80,
-    Disarmed = Blockstun | Hitstun | Startup | Recovery | Active,
-    // This is here to help with display
-    Offense = Startup | Active | Recovery,
-    Defense = Blockstun | Hitstun,
-    // TODO: Come up with a better way to categorize these
-    Misc = Special | HardLanding | 0x40,
+  Idle = 0x00,
+  Startup = 0x01,
+  Recovery = 0x02,
+  Active = 0x04, // Indicates that there is an active hitbox
+  Blockstun = 0x08,
+  Hitstun = 0x10,
+  // For moves which cannot be said to have a recovery, but which still don't
+  // give enough cancel options to be called idle e.g. Izayoi teleports
+  Special = 0x20,
+  NotSpecial = ~Special,
+  // States that rely on something other than character script to determine
+  // length
+  NonDeterministicAcive =
+      0x40 | Active, // used for the cases where the sprite length is 32767
+  NonDeterministicRecovery =
+      0x40 | Recovery, // used for the cases where the sprite length is 32767
+  HardLanding = 0x80,
+  Disarmed = Blockstun | Hitstun | Startup | Recovery | Active,
+  // This is here to help with display
+  Offense = Startup | Active | Recovery,
+  Defense = Blockstun | Hitstun,
+  // TODO: Come up with a better way to categorize these
+  Misc = Special | HardLanding | 0x40,
 };
 inline FrameKind operator|(FrameKind a, FrameKind b) {
   return static_cast<FrameKind>(static_cast<int>(a) | static_cast<int>(b));
 }
 inline FrameKind operator&(FrameKind a, FrameKind b) {
-    return static_cast<FrameKind>(static_cast<int>(a) & static_cast<int>(b));
+  return static_cast<FrameKind>(static_cast<int>(a) & static_cast<int>(b));
 }
 char kindtoLetter(FrameKind kind);
 std::array<float, 3> kindtoColor(FrameKind kind);
-
 
 // General purpose attribute class for invul/guardpoint/attack attribute
 enum class Attribute {
@@ -85,17 +82,13 @@ public:
   // Boolean to signify that this frame is the first from the current state
   bool is_new = false;
 
-  // PlayerState(bool player_1, unsigned int frame, std::map<std::string,
-  // JonbDBEntry>* jonbin_map);
-  PlayerFrameState(scrState *state, unsigned int frames, CharData *player, bool active);
+  PlayerFrameState(scrState *state, unsigned int frames, CharData *player,
+                   bool active);
+  PlayerFrameState();
 };
-
 
 typedef std::array<PlayerFrameState, 2> StatePair;
 typedef std::deque<StatePair> StatePairQueue;
-
-// const StatePair BOTH_IDLE = {PlayerState::idle(), PlayerState(SAR::Idle, 0,
-// 0, 0)};
 
 struct FrameHistory {
 public:
@@ -128,10 +121,6 @@ private:
   int32_t p1_stateChangedCount = -1;
   int32_t p2_stateChangedCount = -1;
 
-  /* int32_t actionTime; //0x0160
-  int32_t actionTime2; //0x0164
-  int32_t actionTimeNoHitstop; //0x0170 */
-
   unsigned int p1_frames = 0;
   unsigned int p2_frames = 0;
 
@@ -141,6 +130,6 @@ private:
   std::map<std::string, scrState *> p1_StateMap = {};
   std::map<std::string, scrState *> p2_StateMap = {};
 
-  StatePair getPlayerFrameStates(CharData *player1, CharData *player2);
+  bool getPlayerFrameStates(CharData *player1, CharData *player2, StatePair*);
   void loadCharData();
 };

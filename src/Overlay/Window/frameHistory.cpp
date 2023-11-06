@@ -3,38 +3,49 @@
 #include <cstddef>
 
 // thanks to PCVolt
-const std::list<std::string> idleWords =
-{ "_NEUTRAL", "CmnActStand", "CmnActStandTurn", "CmnActStand2Crouch",
-"CmnActCrouch", "CmnActCrouchTurn", "CmnActCrouch2Stand",
-"CmnActFWalk", "CmnActBWalk",
-"CmnActFDash", "CmnActFDashStop", "CmnActJumpUpper","CmnActJumpDown","CmnActJumpUpperEnd",
-"CmnActJumpLanding", "CmnActLandingStiffEnd",
-"CmnActUkemiLandNLanding", // to fix, 12F too long!
-// Proxi block is triggered when an attack is closing in without being actually blocked
-// If the player.blockstun is = 0, then those animations are still considered idle
-"CmnActCrouchGuardPre", "CmnActCrouchGuardLoop", "CmnActCrouchGuardEnd",                 // Crouch
-"CmnActCrouchHeavyGuardPre", "CmnActCrouchHeavyGuardLoop", "CmnActCrouchHeavyGuardEnd",  // Crouch Heavy
-"CmnActMidGuardPre", "CmnActMidGuardLoop", "CmnActMidGuardEnd",                          // Mid
-"CmnActMidHeavyGuardPre", "CmnActMidHeavyGuardLoop", "CmnActMidHeavyGuardEnd",           // Mid Heavy
-"CmnActHighGuardPre", "CmnActHighGuardLoop", "CmnActHighGuardEnd",                       // High
-"CmnActHighHeavyGuardPre", "CmnActHighHeavyGuardLoop", "CmnActHighHeavyGuardEnd",        // High Heavy
-"CmnActAirGuardPre", "CmnActAirGuardLoop", "CmnActAirGuardEnd",                          // Air
-// Character specifics
-"com3_kamae" // Mai 5xB stance
+const std::list<std::string> idleWords = {
+    "_NEUTRAL", "CmnActStand", "CmnActStandTurn", "CmnActStand2Crouch",
+    "CmnActCrouch", "CmnActCrouchTurn", "CmnActCrouch2Stand", "CmnActFWalk",
+    "CmnActBWalk", "CmnActFDash", "CmnActFDashStop", "CmnActJumpUpper",
+    "CmnActJumpDown", "CmnActJumpUpperEnd", "CmnActJumpLanding",
+    "CmnActLandingStiffEnd",
+    "CmnActUkemiLandNLanding", // to fix, 12F too long!
+    // Proxi block is triggered when an attack is closing in without being
+    // actually blocked If the player.blockstun is = 0, then those animations
+    // are still considered idle
+    "CmnActCrouchGuardPre", "CmnActCrouchGuardLoop",
+    "CmnActCrouchGuardEnd", // Crouch
+    "CmnActCrouchHeavyGuardPre", "CmnActCrouchHeavyGuardLoop",
+    "CmnActCrouchHeavyGuardEnd", // Crouch Heavy
+    "CmnActMidGuardPre", "CmnActMidGuardLoop", "CmnActMidGuardEnd", // Mid
+    "CmnActMidHeavyGuardPre", "CmnActMidHeavyGuardLoop",
+    "CmnActMidHeavyGuardEnd", // Mid Heavy
+    "CmnActHighGuardPre", "CmnActHighGuardLoop", "CmnActHighGuardEnd", // High
+    "CmnActHighHeavyGuardPre", "CmnActHighHeavyGuardLoop",
+    "CmnActHighHeavyGuardEnd", // High Heavy
+    "CmnActAirGuardPre", "CmnActAirGuardLoop", "CmnActAirGuardEnd", // Air
+    // Character specifics
+    "com3_kamae" // Mai 5xB stance
 };
 
 std::array<float, 3> kindtoColor(FrameKind kind) {
-    std::array<float, 3> res;
-    auto distribution = [](float x, float scale) { return pow(log(x + 1) / log(scale + 1), 2.); };
-    res[0] = distribution(static_cast<int>(FrameKind::Offense & kind), static_cast<int>(FrameKind::Offense));
-    res[1] = distribution(static_cast<int>(FrameKind::Defense & kind), static_cast<int>(FrameKind::Defense));
-    res[2] = distribution(static_cast<int>(FrameKind::Misc & kind), static_cast<int>(FrameKind::Misc));
-    return res;
+  std::array<float, 3> res;
+  auto distribution = [](float x, float scale) {
+    return pow(log(x + 1) / log(scale + 1), 2.);
+  };
+  res[0] = distribution(static_cast<int>(FrameKind::Offense & kind),
+                        static_cast<int>(FrameKind::Offense));
+  res[1] = distribution(static_cast<int>(FrameKind::Defense & kind),
+                        static_cast<int>(FrameKind::Defense));
+  res[2] = distribution(static_cast<int>(FrameKind::Misc & kind),
+                        static_cast<int>(FrameKind::Misc));
+  return res;
 }
 
 char kindtoLetter(FrameKind kind) {
   // Disregard determinism and landing (they only affect colors
-  int res = static_cast<int>(kind) & (~(0x40 | static_cast<int>(FrameKind::HardLanding)));
+  int res = static_cast<int>(kind) &
+            (~(0x40 | static_cast<int>(FrameKind::HardLanding)));
   switch (static_cast<FrameKind>(res)) {
   case FrameKind::Idle:
     return 'I';
@@ -55,75 +66,73 @@ char kindtoLetter(FrameKind kind) {
   }
 }
 int first_det_active(std::vector<FrameActivity> &activity_status) {
-    for (size_t i = 0; i < activity_status.size(); i++)
-    {
-        if (activity_status[i] == FrameActivity::Active) {
-            return i;
-        }
+  for (size_t i = 0; i < activity_status.size(); i++) {
+    if (activity_status[i] == FrameActivity::Active) {
+      return i;
     }
-    return -1;
+  }
+  return -1;
 }
-PlayerFrameState::PlayerFrameState(scrState* state, unsigned int frame,
-    CharData* player, bool active) {
-    // TODO: Make this more robust.
+PlayerFrameState::PlayerFrameState(scrState *state, unsigned int frame,
+                                   CharData *player, bool active) {
+  // TODO: Make this more robust.
 
-    int active_1;
-    if (state == nullptr) {
-        active_1 = -1;
-    }
-    else {
-        active_1 = first_det_active(state->frame_activity_status);
-    }
-    is_new = frame == 0;
-    
-    if (isDoingActionInList(player->currentAction, idleWords)) {
-        kind = FrameKind::Idle;
-    }
-    else {
-        kind = FrameKind::Special;
-    }
-    if (active)
-    {
-        kind = FrameKind::Active | kind;
-    }
-    if (player->blockstun > 0) {
-        kind = FrameKind::Blockstun | kind;
-    }
-    if (player->hitstun > 0) {
-        kind = FrameKind::Hitstun | kind;
-    }
+  int active_1;
+  if (state == nullptr) {
+    active_1 = -1;
+  } else {
+    active_1 = first_det_active(state->frame_activity_status);
+  }
+  is_new = frame == 0;
 
-    if (player->hardLandingRecovery > 0) {
-        kind = FrameKind::HardLanding | kind;
-    }
-    // NOTE: Startup is only defined in a context with deterministic active frames
-    if (active_1 > -1 && !active) {
-        if (frame < active_1) {
-            kind = FrameKind::Startup | kind;
-        }
-        else {
-            kind = FrameKind::Recovery | kind;
-        }
-    }
-    
-    // Clear the "Special" specification, if the state is already well defined
-    if  ((kind & FrameKind::Disarmed) != FrameKind::Idle) {
-      kind = FrameKind::NotSpecial & kind;
-    }
+  if (isDoingActionInList(player->currentAction, idleWords)) {
+    kind = FrameKind::Idle;
+  } else {
+    kind = FrameKind::Special;
+  }
+  if (active) {
+    kind = FrameKind::Active | kind;
+  }
+  if (player->blockstun > 0) {
+    kind = FrameKind::Blockstun | kind;
+  }
+  if (player->hitstun > 0) {
+    kind = FrameKind::Hitstun | kind;
+  }
 
-    // invul = static_cast<Attribute>(state->frame_invuln_status[frame]);
+  if (player->hardLandingRecovery > 0) {
+    kind = FrameKind::HardLanding | kind;
+  }
+  // NOTE: Startup is only defined in a context with deterministic active frames
+  if (active_1 > -1 && !active) {
+    if (frame < active_1) {
+      kind = FrameKind::Startup | kind;
+    } else {
+      kind = FrameKind::Recovery | kind;
+    }
+  }
+
+  // Clear the "Special" specification, if the state is already well defined
+  if ((kind & FrameKind::Disarmed) != FrameKind::Idle) {
+    kind = FrameKind::NotSpecial & kind;
+  }
+
+  // invul = static_cast<Attribute>(state->frame_invuln_status[frame]);
   return;
 }
+PlayerFrameState::PlayerFrameState() {
 
-StatePair FrameHistory::getPlayerFrameStates(CharData *player1,
-                                             CharData *player2) {
+};
+bool FrameHistory::getPlayerFrameStates(CharData *player1,
+                                             CharData *player2, StatePair* res) {
   // get the state
   // we need the amount of frames spent on the current state
   // Suppose we know the frame count for state n, if we changed states, start
   // another count otherwise, add the difference between our framecount, and the
-  // global frame count. I could use the global frame count for this, or the
-  // global players, I am just going to write something.
+  // global frame count.
 
+    // TODO: Give better names/explain
+    bool condition1 = p1_frames == player1->actionTime - 1;
   if (player1->stateChangedCount != p1_stateChangedCount) {
     // if it is not, fetch the new states from the map
     auto p1_new_state = p1_StateMap.find(player1->currentAction);
@@ -134,10 +143,11 @@ StatePair FrameHistory::getPlayerFrameStates(CharData *player1,
     }
     p1_frames = 0;
   } else {
-    // could instead use the difference, to increment this
-    p1_frames += 1;
+    // could instead use the difference between local and global framecounts, to
+    // increment this If there is hitstop, do not add a frame.
+    p1_frames = player1->actionTime - 1;
   }
-
+  bool condition2 = p2_frames == player2->actionTime - 1;
   if (player2->stateChangedCount != p2_stateChangedCount) {
     auto p2_new_state = p2_StateMap.find(player2->currentAction);
     if (p2_new_state != p2_StateMap.end()) {
@@ -147,11 +157,23 @@ StatePair FrameHistory::getPlayerFrameStates(CharData *player1,
     }
     p2_frames = 0;
   } else {
-    p2_frames += 1;
+    p2_frames = player2->actionTime -1;
   }
 
-  return {PlayerFrameState(p1_State, p1_frames, player1, player1->hitboxCount > 0),
-          PlayerFrameState(p2_State, p2_frames, player2, player2->hitboxCount > 0)};
+  // Note that frame calculation is first performed, because we don't want to
+  // miss a state switch because of hitstop
+
+  // Only skip writing to the grid, if both players are experiencing hitstop
+  // (might be redundant)
+  if (condition1 && condition2) {
+      return false;
+  } else {
+      *res = {PlayerFrameState(p1_State, p1_frames, player1,
+          player1->hitboxCount > 0),
+          PlayerFrameState(p2_State, p2_frames, player2,
+              player2->hitboxCount > 0)};
+      return true; 
+  }
 }
 
 /// update the history queue with the new player states. Only call after the
@@ -165,7 +187,11 @@ void FrameHistory::updateHistory() {
   }
 
   // update the player states, return their parsed versions
-  StatePair states = getPlayerFrameStates(p1, p2);
+  StatePair states = {   };
+
+  if (getPlayerFrameStates(p1, p2, &states) == false) {
+    return;
+  }
 
   // sync up everything
   p1_frameCountMinus_1 = p1->frame_count_minus_1;
