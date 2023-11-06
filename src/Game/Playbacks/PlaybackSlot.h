@@ -11,7 +11,7 @@ public:
 	void load_into_slot(std::vector<char> trimmed_playback); //this is the "load_trimmed_playback" function back in ScrWindow.cpp
 
 	std::vector<char> get_slot_buffer();
-	
+	char get_facing_direction();
 	
 	
 

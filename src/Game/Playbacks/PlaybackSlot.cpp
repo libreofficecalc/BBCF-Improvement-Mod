@@ -54,3 +54,8 @@ std::vector<char> PlaybackSlot::get_slot_buffer() {
 	return slot1_recording_frames;
 }
 
+char PlaybackSlot::get_facing_direction()
+{
+	return *(this->facing_direction_p);
+}
+

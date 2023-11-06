@@ -79,7 +79,12 @@ void PlaybackManager::load_into_slot(std::vector<char> trimmed_playback, int slo
     //the playback is not necessarily trimmed btw, just leaving for reference until I overhaul scrwindow
     this->slots[slot - 1].load_into_slot(trimmed_playback);
 }
-
+//this version of the function takes the facing_left argument to set the direction byte as well
+void PlaybackManager::load_into_slot(std::vector<char> trimmed_playback, int facing_left, int slot) {
+    //the playback is not necessarily trimmed btw, just leaving for reference until I overhaul scrwindow
+    *(PlaybackSlot(slot).facing_direction_p) = facing_left;
+    this->slots[slot - 1].load_into_slot(trimmed_playback);
+}
 void PlaybackManager::load_from_file_into_slot(char* fname, int slot)
 {
     std::vector<char>loaded_file = this->load_from_file(fname);
