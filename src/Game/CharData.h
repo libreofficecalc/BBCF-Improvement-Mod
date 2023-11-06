@@ -148,7 +148,9 @@ public:
 	int32_t blockstun; //0x2274
 	char pad_2278[12024]; //0x2278
 	int32_t hitstun; //0x5170
-	char pad_5174[160]; //0x5174
+	char pad_5174[140]; //0x5174
+	uint32_t hardLandingRecovery;
+	char pad_5204[16]; //0x5204
 	int32_t defaultProration[6]; //0x5214-0x5227, for Lv0-Lv5
 	char pad_5228[1348]; //0x5228
 	int32_t hitCount; //0x5770

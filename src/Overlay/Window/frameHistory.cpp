@@ -7,7 +7,7 @@ const std::list<std::string> idleWords =
 { "_NEUTRAL", "CmnActStand", "CmnActStandTurn", "CmnActStand2Crouch",
 "CmnActCrouch", "CmnActCrouchTurn", "CmnActCrouch2Stand",
 "CmnActFWalk", "CmnActBWalk",
-"CmnActFDash", "CmnActFDashStop",
+"CmnActFDash", "CmnActFDashStop", "CmnActJumpUpper","CmnActJumpDown","CmnActJumpUpperEnd",
 "CmnActJumpLanding", "CmnActLandingStiffEnd",
 "CmnActUkemiLandNLanding", // to fix, 12F too long!
 // Proxi block is triggered when an attack is closing in without being actually blocked
@@ -23,10 +23,18 @@ const std::list<std::string> idleWords =
 "com3_kamae" // Mai 5xB stance
 };
 
+std::array<float, 3> kindtoColor(FrameKind kind) {
+    std::array<float, 3> res;
+    auto distribution = [](float x, float scale) { return pow(log(x + 1) / log(scale + 1), 2.); };
+    res[0] = distribution(static_cast<int>(FrameKind::Offense & kind), static_cast<int>(FrameKind::Offense));
+    res[1] = distribution(static_cast<int>(FrameKind::Defense & kind), static_cast<int>(FrameKind::Defense));
+    res[2] = distribution(static_cast<int>(FrameKind::Misc & kind), static_cast<int>(FrameKind::Misc));
+    return res;
+}
 
 char kindtoLetter(FrameKind kind) {
-  // Disregard determinism
-  int res = static_cast<int>(kind) & (~0x40);
+  // Disregard determinism and landing (they only affect colors
+  int res = static_cast<int>(kind) & (~(0x40 | static_cast<int>(FrameKind::HardLanding)));
   switch (static_cast<FrameKind>(res)) {
   case FrameKind::Idle:
     return 'I';
@@ -43,55 +51,67 @@ char kindtoLetter(FrameKind kind) {
   case FrameKind::Special:
     return 'P';
   default:
-    break;
+    return 'U';
   }
 }
+int first_det_active(std::vector<FrameActivity> &activity_status) {
+    for (size_t i = 0; i < activity_status.size(); i++)
+    {
+        if (activity_status[i] == FrameActivity::Active) {
+            return i;
+        }
+    }
+    return -1;
+}
+PlayerFrameState::PlayerFrameState(scrState* state, unsigned int frame,
+    CharData* player, bool active) {
+    // TODO: Make this more robust.
 
-PlayerFrameState::PlayerFrameState(scrState *state, unsigned int frame,
-                                   CharData *player) {
-  // TODO: Make this more robust.
-
-  if (state == nullptr) {
-    return;
-  }
-  int active = -1;
-  for (size_t i = 0; i < state->frame_activity_status.size(); i++)
-  {
-      if (static_cast<int>(state->frame_activity_status[i]) & static_cast<int>(FrameActivity::Active)) {
-          active = i;
-          break;
-      }
-  }
-
-  if (player->blockstun > 0) {
-    kind = FrameKind::Blockstun | kind;
-  }
-  if (player->hitstun > 0) {
-      kind = FrameKind::Hitstun | kind;
-  }
-  if (isDoingActionInList(state->name.c_str(), idleWords)) {
-      kind = FrameKind::Idle;
-  } 
-  if (len != 0) {
-    // HACK: kind of hacky :/, might change later
-    for (size_t i = 0; i < len; i += 2) {
-      if (state->active_ranges[i] <= frame &&
-          state->active_ranges[i + 1] >= frame) {
-        kind |= ACTIVE;
-        break;
-      }
+    int active_1;
+    if (state == nullptr) {
+        active_1 = -1;
+    }
+    else {
+        active_1 = first_det_active(state->frame_activity_status);
+    }
+    is_new = frame == 0;
+    
+    if (isDoingActionInList(player->currentAction, idleWords)) {
+        kind = FrameKind::Idle;
+    }
+    else {
+        kind = FrameKind::Special;
+    }
+    if (active)
+    {
+        kind = FrameKind::Active | kind;
+    }
+    if (player->blockstun > 0) {
+        kind = FrameKind::Blockstun | kind;
+    }
+    if (player->hitstun > 0) {
+        kind = FrameKind::Hitstun | kind;
     }
 
-    if ((kind & ACTIVE) == 0) {
-      if (frame < state->active_ranges[0]) {
-        kind |= STARTUP;
-      } else {
-        kind |= RECOVERY;
-      }
+    if (player->hardLandingRecovery > 0) {
+        kind = FrameKind::HardLanding | kind;
     }
-  } else {
-    kind |= SPECIAL;
-  }
+    // NOTE: Startup is only defined in a context with deterministic active frames
+    if (active_1 > -1 && !active) {
+        if (frame < active_1) {
+            kind = FrameKind::Startup | kind;
+        }
+        else {
+            kind = FrameKind::Recovery | kind;
+        }
+    }
+    
+    // Clear the "Special" specification, if the state is already well defined
+    if  ((kind & FrameKind::Disarmed) != FrameKind::Idle) {
+      kind = FrameKind::NotSpecial & kind;
+    }
+
+    // invul = static_cast<Attribute>(state->frame_invuln_status[frame]);
   return;
 }
 
@@ -130,8 +150,8 @@ StatePair FrameHistory::getPlayerFrameStates(CharData *player1,
     p2_frames += 1;
   }
 
-  return {PlayerFrameState(p1_State, p1_frames, player1),
-          PlayerFrameState(p2_State, p2_frames, player2)};
+  return {PlayerFrameState(p1_State, p1_frames, player1, player1->hitboxCount > 0),
+          PlayerFrameState(p2_State, p2_frames, player2, player2->hitboxCount > 0)};
 }
 
 /// update the history queue with the new player states. Only call after the

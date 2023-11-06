@@ -182,10 +182,9 @@ void MainWindow::DrawFrameHistorySection() const {
     for (StatePairQueue::reverse_iterator elem = queue.rbegin(); elem != queue.rend(); ++elem) {
       ImGui::SameLine();
 	  // determine color
-	  float x = static_cast<int>((*elem).front().kind);
-	  float t = x / (x + 1.0);
+	  std::array<float, 3> col_arr = kindtoColor((*elem).front().kind);
 
-      ImVec4 color = (ImVec4)ImColor::HSV(t, t, t);
+	  ImVec4 color = ImVec4(col_arr[0], col_arr[1], col_arr[2], 1.);
       ImGui::PushStyleColor(ImGuiCol_Button, color);
       ImGui::PushStyleColor(ImGuiCol_ButtonHovered, color);
       ImGui::PushStyleColor(ImGuiCol_ButtonActive, color);
@@ -203,10 +202,10 @@ void MainWindow::DrawFrameHistorySection() const {
     ImGui::Text("Player 2:");
     for (StatePairQueue::reverse_iterator elem = queue.rbegin(); elem != queue.rend(); ++elem) {
       ImGui::SameLine();
-	  float x = static_cast<int>((*elem).back().kind);
-	  float t = x / (x + 1.0);
       
-      ImVec4 color = (ImVec4)ImColor::HSV(t, t, t);
+	  std::array<float, 3> col_arr = kindtoColor((*elem).back().kind);
+
+	  ImVec4 color = ImVec4(col_arr[0], col_arr[1], col_arr[2], 1.);
       ImGui::PushStyleColor(ImGuiCol_Button, color);
       ImGui::PushStyleColor(ImGuiCol_ButtonHovered, color);
       ImGui::PushStyleColor(ImGuiCol_ButtonActive, color);

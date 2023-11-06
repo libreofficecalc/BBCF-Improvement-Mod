@@ -12,41 +12,55 @@
 // maximum number of frames to be kept track of in the history
 const size_t HISTORY_DEPTH = 100;
 
-char kindtoLetter(FrameKind kind);
 
-// An arbitrary, and abstract categorization of player state, several of these
-// are difficult to determine, they are here as a reminder to future
-// implementors
+
+/// An arbitrary, and abstract categorization of player state, several of these
+/// are difficult to determine, they are here as a reminder to future
+/// implementors
 enum class FrameKind {
-  Idle = 0x00,
-  Startup = 0x01,
-  Recovery = 0x02,
-  Active = 0x04, // Indicates that there is an active hitbox
-  Blockstun = 0x08,
-  Hitstun = 0x10,
-  // For moves which cannot be said to have a recovery, but which still don't
-  // give enough cancel options to be called idle e.g. Izayoi teleports
-  Special = 0x20,
-  // States that rely on something other than character script to determine
-  // length
-  NonDeterministicAcive =
-      0x40 | Active, // used for the cases where the sprite length is 32767
-  NonDeterministicRecovery =
-      0x40 | Recovery // used for the cases where the sprite length is 32767
+    Idle = 0x00,
+    Startup = 0x01,
+    Recovery = 0x02,
+    Active = 0x04, // Indicates that there is an active hitbox
+    Blockstun = 0x08,
+    Hitstun = 0x10,
+    // For moves which cannot be said to have a recovery, but which still don't
+    // give enough cancel options to be called idle e.g. Izayoi teleports
+    Special = 0x20,
+    NotSpecial = ~Special,
+    // States that rely on something other than character script to determine
+    // length
+    NonDeterministicAcive =
+    0x40 | Active, // used for the cases where the sprite length is 32767
+    NonDeterministicRecovery =
+    0x40 | Recovery, // used for the cases where the sprite length is 32767
+    HardLanding = 0x80,
+    Disarmed = Blockstun | Hitstun | Startup | Recovery | Active,
+    // This is here to help with display
+    Offense = Startup | Active | Recovery,
+    Defense = Blockstun | Hitstun,
+    // TODO: Come up with a better way to categorize these
+    Misc = Special | HardLanding | 0x40,
 };
 inline FrameKind operator|(FrameKind a, FrameKind b) {
   return static_cast<FrameKind>(static_cast<int>(a) | static_cast<int>(b));
 }
+inline FrameKind operator&(FrameKind a, FrameKind b) {
+    return static_cast<FrameKind>(static_cast<int>(a) & static_cast<int>(b));
+}
+char kindtoLetter(FrameKind kind);
+std::array<float, 3> kindtoColor(FrameKind kind);
+
 
 // General purpose attribute class for invul/guardpoint/attack attribute
 enum class Attribute {
 
   // Move attributes
-  F = 0x01,
+  H = 0x01,
   B = 0x02,
-  H = 0x04,
-  P = 0x08,
-  T = 0x10,
+  F = 0x04,
+  T = 0x08,
+  P = 0x10,
   // Doll property
   D = 0x20,
   // Burst property, some weird things with this one
@@ -61,23 +75,22 @@ inline Attribute operator|(Attribute a, Attribute b) {
   return static_cast<Attribute>(static_cast<int>(a) | static_cast<int>(b));
 }
 
-struct PlayerFrameState {
+// TODO: Represent invul, guardp, attack, and is_new
+class PlayerFrameState {
 public:
-  // these are bitfields. Check values above
-  // TODO: Justify the use of a bitfield for 'kind'
   FrameKind kind = FrameKind::Idle;
   Attribute invul = Attribute::N;
   Attribute guardp = Attribute::N;
   Attribute attack = Attribute::N;
-  // Boolean to signify that this move
+  // Boolean to signify that this frame is the first from the current state
   bool is_new = false;
 
   // PlayerState(bool player_1, unsigned int frame, std::map<std::string,
   // JonbDBEntry>* jonbin_map);
-  PlayerFrameState(scrState *state, unsigned int frames, CharData *player);
+  PlayerFrameState(scrState *state, unsigned int frames, CharData *player, bool active);
 };
 
-// TODO: Change this name
+
 typedef std::array<PlayerFrameState, 2> StatePair;
 typedef std::deque<StatePair> StatePairQueue;
 
