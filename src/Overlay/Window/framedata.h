@@ -35,14 +35,16 @@ public:
 		this->previousAction = "";
 	};
 
-	void updatePreviousAction()
+	void updatePreviousState()
 	{
 		const std::string currentActionString = charData->currentAction;
 		previousAction = currentActionString;
+		previousPositionY = charData->position_y;
 	}
 
 	CharData* charData;
 	std::string previousAction;
+	int32_t previousPositionY;
 };
 
 extern IdleToggles idleToggles;
@@ -53,6 +55,7 @@ extern PlayerExtendedData player2;
 bool isDoingActionInList(const char currentAction[], const std::list<std::string>& listOfActions);
 bool isIdle(const PlayerExtendedData& player);
 bool isBlocking(const PlayerExtendedData& player);
+bool isAirborne(const PlayerExtendedData& player);
 bool isInHitstun(const PlayerExtendedData& player);
 void getFrameAdvantage(const PlayerExtendedData& player1, const PlayerExtendedData& player2);
 void computeGaps(const PlayerExtendedData& player, int& gapCounter, int& gapResult);

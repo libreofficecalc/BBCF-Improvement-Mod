@@ -30,6 +30,10 @@ const std::list<std::string> idleWords =
 
 const std::string ukemiStaggerIdle = "CmnActUkemiStagger";
 
+const std::list<std::string> airIdleWords =
+{ "_NEUTRAL",
+"Flying_Start" }; // Izanami float
+
 bool isDoingActionInList(const char currentAction[], const std::list<std::string>& listOfActions)
 {
     const std::string currentActionString = currentAction;
@@ -44,8 +48,34 @@ bool isDoingActionInList(const char currentAction[], const std::list<std::string
     return false;
 }
 
+bool isAirborne(const PlayerExtendedData& player)
+{
+    // The character is "glued" to the ground (y = 0) one frame before actually landing, so it isn't sufficient alone.
+    return 0 < player.charData->position_y;
+}
+
+bool isMovingVertically(const PlayerExtendedData& player)
+{
+    return 0 != player.charData->offsetY_2;
+}
+
 bool isIdle(const PlayerExtendedData& player)
 {
+    if (isAirborne(player) || 0 < player.previousPositionY)
+    {
+        // These actions are air idle, but for the sake of computing ground frame advantage, we will count them as non idle.
+        if (isDoingActionInList(player.charData->currentAction, airIdleWords))
+        {
+            // Izanami's float must be considered idle.
+            if (player.charData->charIndex == CharIndex::CharIndex_Izanami && player.charData->isIzanamiFloating == 1)
+            {
+                return true;
+            }
+
+            return !isMovingVertically(player);
+        }
+    }
+
     // The landing post neutral tech is not actionable for 1F. It can be considered part of the tech.
     const std::string currentActionString = player.charData->currentAction;
     if ("CmnActUkemiLandNLanding" == currentActionString && currentActionString != player.previousAction)
@@ -164,8 +194,8 @@ void computeFramedataInteractions()
             computeGaps(player2, playersInteraction.p2Gap, playersInteraction.p2GapDisplay);
             getFrameAdvantage(player1, player2);
 
-            player1.updatePreviousAction();
-            player2.updatePreviousAction();
+            player1.updatePreviousState();
+            player2.updatePreviousState();
         }
     }
 }

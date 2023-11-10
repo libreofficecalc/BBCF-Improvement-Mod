@@ -120,7 +120,6 @@ public:
 	int32_t moveCounterHitAirPushbackY; //0x06D4
 	char pad_06D8[760]; //0x06D8
 
-
 	int32_t previousHP; //0x09D0
 	int32_t currentHP; //0x09D4
 	int32_t maxHP; //0x09D8
@@ -189,10 +188,11 @@ public:
 	char pad_5AFC[8]; //0x5AFC
 	int32_t barrier; //0x5B04
 	//char pad_5B08[102072]; //0x5b08
-	char pad_5B08[101524]; //0x5b08
+	char pad_5B08[10364]; //0x5b08
 
 
-
+	int32_t isIzanamiFloating; //0x8384
+	char pad_8388[91156]; //0x8388
 
 
 	/*input buffers*/
