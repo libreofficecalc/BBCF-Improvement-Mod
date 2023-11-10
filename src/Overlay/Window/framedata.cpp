@@ -23,7 +23,6 @@ const std::list<std::string> idleWords =
 "CmnActMidHeavyGuardPre", "CmnActMidHeavyGuardLoop", "CmnActMidHeavyGuardEnd",           // Mid Heavy
 "CmnActHighGuardPre", "CmnActHighGuardLoop", "CmnActHighGuardEnd",                       // High
 "CmnActHighHeavyGuardPre", "CmnActHighHeavyGuardLoop", "CmnActHighHeavyGuardEnd",        // High Heavy
-"CmnActAirGuardPre", "CmnActAirGuardLoop", "CmnActAirGuardEnd",                          // Air
 // Character specifics
 "com3_kamae" // Mai 5xB stance
 };
@@ -32,6 +31,7 @@ const std::string ukemiStaggerIdle = "CmnActUkemiStagger";
 
 const std::list<std::string> airIdleWords =
 { "_NEUTRAL",
+"CmnActAirGuardPre", "CmnActAirGuardLoop", "CmnActAirGuardEnd", // Air
 "Flying_Start" }; // Izanami float
 
 bool isDoingActionInList(const char currentAction[], const std::list<std::string>& listOfActions)
