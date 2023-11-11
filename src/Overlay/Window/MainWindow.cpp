@@ -1,6 +1,6 @@
 #include "MainWindow.h"
 
-#include "framedata.h"
+#include "FrameAdvantage/FrameAdvantage.h"
 #include "HitboxOverlay.h"
 #include "PaletteEditorWindow.h"
 
@@ -163,7 +163,7 @@ void MainWindow::DrawFrameAdvantageSection() const
 	ImGui::Checkbox("Enable##framedata_section", &isFrameAdvantageOpen);
 
 	ImGui::HorizontalSpacing();
-	ImGui::Checkbox("Advantage on stagger hit", &idleToggles.ukemiStaggerHit);
+	ImGui::Checkbox("Advantage on stagger hit", &idleActionToggles.ukemiStaggerHit);
 
 	if (isFrameAdvantageOpen)
 	{
