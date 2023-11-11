@@ -191,7 +191,7 @@ public:
 	char pad_5B08[10364]; //0x5b08
 
 
-	int32_t isIzanamiFloating; //0x8384
+	int32_t SLOT_unknown1; //0x8384 // Izanami float (0 or 1), possibly other stuff
 	char pad_8388[91156]; //0x8388
 
 

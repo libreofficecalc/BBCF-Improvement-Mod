@@ -93,8 +93,10 @@ bool PlayerExtendedData::isIdle() const
         if (::isDoingActionInList(charData->currentAction, airIdleWords))
         {
             // Izanami's float must be considered idle.
+
+            bool isIzanamiFloating = charData->SLOT_unknown1;
             if (charData->charIndex == CharIndex::CharIndex_Izanami
-                && charData->isIzanamiFloating == 1)
+                && isIzanamiFloating)
             {
                 return true;
             }
