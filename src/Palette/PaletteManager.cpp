@@ -179,15 +179,12 @@ void PaletteManager::ApplyDefaultCustomPalette(CharIndex charIndex, CharPaletteH
 			getline(ss, substr, ',');
 			v.push_back(substr);
 		}
-		int ranIndex = rand() % v.size();
+		std::random_device rd;
+		std::mt19937 gen(rd());
+		std::uniform_int_distribution<int> dist(0, v.size() - 1); // uniform, unbiased
+
+		int ranIndex = dist(gen);
 		const char* ranName = v[ranIndex].c_str();
-		//for (int i = 0; i < m_customPalettes[charIndex].size(); i++)
-		//{
-		//	if (strncmp(ranName, m_customPalettes[charIndex][i].palInfo.palName, IMPL_PALNAME_LENGTH) == 0)
-		//	{
-		//		foundCustomPalIndex = i;
-		//	}
-		//}
 		foundCustomPalIndex = FindCustomPalIndex(charIndex, ranName);
 	}
 	else
