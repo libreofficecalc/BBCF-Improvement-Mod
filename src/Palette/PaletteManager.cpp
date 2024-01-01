@@ -10,6 +10,7 @@
 
 #include <atlstr.h>
 #include <sstream>
+#include <random>
 
 #define MAX_NUM_OF_PAL_SLOTS 24
 const char* implTemplates[]
@@ -139,7 +140,19 @@ void PaletteManager::ApplyDefaultCustomPalette(CharIndex charIndex, CharPaletteH
 
 	if (strncmp(curPalName, "Random", IMPL_PALNAME_LENGTH) == 0)
 	{
-		foundCustomPalIndex = rand() % m_customPalettes[charIndex].size();
+		std::random_device rd;
+		std::mt19937 gen(rd());
+		std::uniform_int_distribution<int> dist(0, m_customPalettes[charIndex].size()-1); // uniform, unbiased
+
+		foundCustomPalIndex = dist(gen);
+	}
+	else if (strncmp(curPalName, "Random_Exclude_Default", IMPL_PALNAME_LENGTH) == 0)
+	{
+		std::random_device rd;
+		std::mt19937 gen(rd());
+		std::uniform_int_distribution<int> dist(1, m_customPalettes[charIndex].size()-1); // uniform, unbiased
+
+		foundCustomPalIndex = dist(gen);
 	}
 	else if (std::strchr(curPalName, ',') != nullptr)
 	{
