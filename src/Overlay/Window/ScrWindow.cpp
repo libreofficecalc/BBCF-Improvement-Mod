@@ -231,6 +231,14 @@ std::string interpret_frame_invuln_enum(FrameInvuln value) {
         return "Unknown";
     }
 }
+bool find_substring_in_vector(std::vector<std::string> string_vector, std::string substr) {
+    for (auto& str : string_vector) {
+        if (substr.find(str) != std::string::npos) {
+            return true;
+        }
+    };
+    return false;
+}
 void ScrWindow::DrawStatesSection()
 {
     if (*g_gameVals.pGameMode == GameMode_Training) {
@@ -683,7 +691,8 @@ void ScrWindow::DrawStatesSection()
             {"CmnActUkemiLandF",30 },
             {"CmnActUkemiLandB",30 },
             {"CmnActFDown2Stand", 14},
-            {"CmnActBDown2Stand", 14} };
+            {"CmnActBDown2Stand", 14},
+            {"CmnActUkemiStagger",7} }; //this in theory should be an on hit trigger, but its an ukemi so i'll consider it wakeup due to how it works
         //"CmnActFDown2Stand", 14 seems to be 20 so far
         //"CmnActFDown2Stand", 14
         if (!wakeup_register.empty()) {
@@ -815,9 +824,13 @@ void ScrWindow::DrawStatesSection()
         if (!onhit_register.empty()) {
             states = g_interfaces.player2.states;
             int random_pos = std::rand() % onhit_register.size();
-            if (g_interfaces.player2.GetData()->hitstun == 1
-
-                ) {
+            static std::vector<std::string>loops_bound{ "Loop" , "Bound", "CmnActBDownCrash", "CmnActBDownDown"};/*necessary to stop the on hit actions from activating in a ukemi situation, once ukemi
+                                                                                              comes into play it becomes a wakeup action.
+                                                                                              Only reason CmdActBDownCrash is being fully specified and not as a substring is because 
+                                                                                              a lot of moves prob have "Crash" in the name*/
+            std::string curr_action = g_interfaces.player2.GetData()->currentAction;
+            
+            if ((g_interfaces.player2.GetData()->hitstun == 1) & !find_substring_in_vector(loops_bound,curr_action)) {
                 memcpy(&(g_interfaces.player2.GetData()->nextScriptLineLocationInMemory), &(onhit_register[random_pos]->addr), 4);
                 memcpy(&(g_interfaces.player2.GetData()->currentAction), &(onhit_register[random_pos]->name[0]), 20);
             }
@@ -1156,7 +1169,7 @@ void ScrWindow::DrawPlaybackSection() {
             }
 
             auto onhit_action_trigger_find = [&]()-> size_t {
-                for (auto& el : std::vector<std::string>{ "CmnActHit", "CmnActBDown", "CmnActFDown", "CmnActVDown" }) {
+                for (auto& el : std::vector<std::string>{ "CmnActHit", "CmnActBDown", "CmnActFDown", "CmnActVDown", "CmnActStaggerLoop"}) {
                     if (current_action.find(el) != std::string::npos) {
                         return current_action.find(el);
                     }

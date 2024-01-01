@@ -9,6 +9,7 @@
 #include "impl_templates.cpp"
 
 #include <atlstr.h>
+#include <sstream>
 
 #define MAX_NUM_OF_PAL_SLOTS 24
 const char* implTemplates[]

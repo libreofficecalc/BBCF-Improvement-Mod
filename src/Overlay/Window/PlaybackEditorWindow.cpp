@@ -7,16 +7,24 @@ void PlaybackEditorWindow::Draw() {
                                                                     PlaybackSlot(3).get_slot_buffer(),
                                                                     PlaybackSlot(4).get_slot_buffer()
     };
+    static std::vector<char> facing_direction_slot_buffers = { PlaybackSlot(1).get_facing_direction(),
+                                                                    PlaybackSlot(2).get_facing_direction(),
+                                                                    PlaybackSlot(3).get_facing_direction(),
+                                                                    PlaybackSlot(4).get_facing_direction()
+    };
     static int selected_slot = 0;
+    static char facing_direction = 0;
     const char* slots[] = { "1", "2", "3", "4" };
     auto selected_slot_buffer = &playback_slot_buffers[selected_slot];
     ImGui::Combo("Slot##playback_editor_window", &selected_slot, slots, IM_ARRAYSIZE(slots));
-    ImGui::SameLine();
     if(ImGui::Button("Refresh##playback_editor_window")) {
         playback_slot_buffers[selected_slot] = PlaybackSlot(selected_slot+1).get_slot_buffer();
+        facing_direction_slot_buffers[selected_slot] = PlaybackSlot(selected_slot + 1).get_facing_direction();
     }
-   
-   
+    ImGui::Text("Recording side: %c", facing_direction_slot_buffers[selected_slot]? 'R': 'L');
+    if (ImGui::Button("Switch recording side")) {
+        facing_direction_slot_buffers[selected_slot] = !facing_direction_slot_buffers[selected_slot];
+    }
     ImGui::BeginChild("asdfasdfasdf", ImVec2(-1, ImGui::GetContentRegionAvail().y * 0.95f),true);
     ImGui::Columns(1);
     ImGui::Separator();
@@ -100,7 +108,7 @@ void PlaybackEditorWindow::Draw() {
     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - 60);
     
     if (ImGui::Button("SAVE##playback_editor", ImVec2(60, 29))) {
-        PlaybackEditorWindow::playback_manager.load_into_slot(*selected_slot_buffer, selected_slot + 1);
+        PlaybackEditorWindow::playback_manager.load_into_slot(*selected_slot_buffer, facing_direction_slot_buffers[selected_slot], selected_slot + 1);
     }
     return;
 }

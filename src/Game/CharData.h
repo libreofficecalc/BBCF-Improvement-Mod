@@ -35,6 +35,24 @@ public:
 	int32_t actionTimeNoHitstop; //0x0170
 	char pad_0174[56]; //0x0174
 
+/*
+to double check, just note.
+	char pad_0174[8]; //0x0174
+	int32_t SLOT_31; //0x17C //EsBuff
+ 	int32_t SLOT_51; //0x0180 //bang kite float time
+ 	int32_t SLOT_52; //0x0184
+ 	int32_t SLOT_53; //0x0188
+ 	int32_t SLOT_54; //0x018C
+ 	int32_t SLOT_55; //0x0190
+ 	int32_t SLOT_56; //0x0194
+ 	int32_t SLOT_57; //0x0198
+ 	int32_t SLOT_58; //0x019C
+	int32_t SLOT_59; //0x1A0 //bang seal //azrael fireball /Plat item type
+	int32_t SLOT_60; //0x1A4 //bang seal
+	int32_t SLOT_61; //0x1A8 //bang seal
+	int32_t SLOT_62; //0x01AC//bang seal /lambda_nu_drive_hitcount
+
+*/
 	int32_t lambda_nu_drive_hitcount; //0x01AC
 	char pad_01B0[16]; //0x01B0
 	int32_t overdriveTimeleft; //0x01C0
@@ -120,7 +138,6 @@ public:
 	int32_t moveCounterHitAirPushbackY; //0x06D4
 	char pad_06D8[760]; //0x06D8
 
-
 	int32_t previousHP; //0x09D0
 	int32_t currentHP; //0x09D4
 	int32_t maxHP; //0x09D8
@@ -148,7 +165,9 @@ public:
 	int32_t blockstun; //0x2274
 	char pad_2278[12024]; //0x2278
 	int32_t hitstun; //0x5170
-	char pad_5174[160]; //0x5174
+	char pad_5174[140]; //0x5174
+	uint32_t hardLandingRecovery; //0x5200, represents the amount of stiffLanding recovery frames to be applied on landing. Probably the amount to loop in CmnActLandingStiffLoop specifically
+	char pad_5204[16]; //0x5204
 	int32_t defaultProration[6]; //0x5214-0x5227, for Lv0-Lv5
 	char pad_5228[1348]; //0x5228
 	int32_t hitCount; //0x5770
@@ -189,10 +208,11 @@ public:
 	char pad_5AFC[8]; //0x5AFC
 	int32_t barrier; //0x5B04
 	//char pad_5B08[102072]; //0x5b08
-	char pad_5B08[101524]; //0x5b08
+	char pad_5B08[10364]; //0x5b08
 
 
-
+	int32_t SLOT_unknown1; //0x8384 // Izanami float (0 or 1), possibly other stuff
+	char pad_8388[91156]; //0x8388
 
 
 	/*input buffers*/

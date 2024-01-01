@@ -15,6 +15,7 @@
     <ClCompile Include="depends\imgui\imgui_demo.cpp" />
     <ClCompile Include="depends\imgui\imgui_draw.cpp" />
     <ClCompile Include="depends\imgui\imgui_impl_dx9.cpp" />
+    <ClCompile Include="src\Overlay\Window\FrameAdvantage\PlayerExtendedData.cpp" />
     <ClCompile Include="src\Game\Jonb\JonbDBReader.cpp" />
     <ClCompile Include="src\Game\Playbacks\PlaybackSlot.cpp" />
     <ClCompile Include="src\Game\Playbacks\PlaybackManager.cpp" />
@@ -24,7 +25,7 @@
     <ClCompile Include="src\Game\ReplayFiles\ReplayFileManager.cpp" />
     <ClCompile Include="src\Game\ReplayStates\FrameState.cpp" />
     <ClCompile Include="src\Game\Scr\ScrStateReader.cpp" />
-    <ClCompile Include="src\Overlay\Window\framedata.cpp" />
+    <ClCompile Include="src\Overlay\Window\FrameAdvantage\FrameAdvantage.cpp" />
     <ClCompile Include="src\Game\stages.cpp" />
     <ClCompile Include="src\Network\OnlineGameModeManager.cpp" />
     <ClCompile Include="src\Overlay\NotificationBar\NotificationBar.cpp" />
@@ -96,6 +97,7 @@
     <ClInclude Include="depends\imgui\stb_rect_pack.h" />
     <ClInclude Include="depends\imgui\stb_textedit.h" />
     <ClInclude Include="depends\imgui\stb_truetype.h" />
+    <ClInclude Include="src\Overlay\Window\FrameAdvantage\PlayerExtendedData.h" />
     <ClInclude Include="src\Game\Jonb\JonbDBEntry.h" />
     <ClInclude Include="src\Game\Jonb\JonbDBReader.h" />
     <ClInclude Include="src\Game\Playbacks\PlaybackSlot.h" />
@@ -118,7 +120,7 @@
     <ClInclude Include="src\Overlay\Widget\ActiveGameModeWidget.h" />
     <ClInclude Include="src\Overlay\Widget\GameModeSelectWidget.h" />
     <ClInclude Include="src\Overlay\Widget\StageSelectWidget.h" />
-    <ClInclude Include="src\Overlay\Window\framedata.h" />
+    <ClInclude Include="src\Overlay\Window\FrameAdvantage\FrameAdvantage.h" />
     <ClInclude Include="src\Overlay\Window\InputBufferWindow.h" />
     <ClInclude Include="src\Overlay\Window\PlaybackEditorWindow.h" />
     <ClInclude Include="src\Overlay\Window\RoomWindow.h" />
