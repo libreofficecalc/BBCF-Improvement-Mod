@@ -7,6 +7,13 @@
 
 #include <wininet.h>
 
+
+#include <Windows.h>
+#include <iostream>
+#include <tchar.h>
+#include "Core/interfaces.h"
+#include <atlstr.h>
+
 #pragma comment(lib,"wininet.lib")
 
 std::string DownloadUrl(std::wstring& wUrl)
@@ -98,3 +105,155 @@ unsigned long DownloadUrlBinary(std::wstring& wUrl, void** outBuffer)
 
 	return returnedBytesRead;
 }
+
+
+
+int UploadReplayBinary() {
+    HINTERNET hInternet = NULL, hConnect = NULL, hRequest = NULL;
+    //const wchar_t* serverAddress = L"50.118.225.175"; // IP address
+    CA2W pszwide (g_modVals.uploadReplayDataHost.c_str());
+    const wchar_t* serverAddress = pszwide;
+    //INTERNET_PORT port = 5000; // Port number
+    INTERNET_PORT port = g_modVals.uploadReplayDataPort;
+    //const wchar_t* urlPath = L"/upload"; // Path on the server
+    CA2W pszwide2 (g_modVals.uploadReplayDataEndpoint.c_str());
+    const wchar_t* urlPath = pszwide2;
+
+    // Step 1: Open Internet session
+    hInternet = InternetOpen(L"im", INTERNET_OPEN_TYPE_DIRECT, NULL, NULL, 0);
+    if (!hInternet) {
+        // std::cerr << "Failed to open internet session: " << GetLastError() << std::endl;
+        DWORD error_num = GetLastError();
+        g_imGuiLogger->Log("[error] UploadReplayBinary failed. Failed to open internet session.\n\thost: '%s'\n\tendpoint: '%s'\n\tport: %d\n\terror code: %d\n", 
+            g_modVals.uploadReplayDataHost.c_str(),
+            g_modVals.uploadReplayDataEndpoint.c_str(), 
+            g_modVals.uploadReplayDataPort,
+            error_num);
+        return error_num;
+    }
+
+    // Step 2: Connect to the server
+    hConnect = InternetConnect(hInternet, serverAddress, port, NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
+    if (!hConnect) {
+        //std::cerr << "Failed to connect to the server: " << GetLastError() << std::endl;
+        InternetCloseHandle(hInternet);
+        DWORD error_num = GetLastError();
+        g_imGuiLogger->Log("[error] UploadReplayBinary failed. Failed to connect to the server.\n\thost: '%s'\n\tendpoint: '%s'\n\tport: %d\n\terror code: %d\n",
+            g_modVals.uploadReplayDataHost.c_str(),
+            g_modVals.uploadReplayDataEndpoint.c_str(),
+            g_modVals.uploadReplayDataPort,
+            error_num);
+        return GetLastError();
+    }
+
+    // Step 3: Open the request
+    hRequest = HttpOpenRequest(hConnect, L"POST", urlPath, NULL, NULL, NULL, 0, 0);
+    if (!hRequest) {
+        // std::cerr << "Failed to open HTTP request: " << GetLastError() << std::endl;
+        InternetCloseHandle(hConnect);
+        InternetCloseHandle(hInternet);
+        DWORD error_num = GetLastError();
+        g_imGuiLogger->Log("[error] UploadReplayBinary failed. Failed to open HTTP request.\n\thost: '%s'\n\tendpoint: '%s'\nport: %d\n\terror code: %d\n",
+            g_modVals.uploadReplayDataHost.c_str(),
+            g_modVals.uploadReplayDataEndpoint.c_str(),
+            g_modVals.uploadReplayDataPort,
+            error_num);     
+        return GetLastError();
+    }
+
+    // Step 4: Set request headers
+    LPCWSTR headers = L"Content-Type: application/octet-stream\r\n";//L"Content-Type: multipart/form-data"; //L"Content-Type: application/octet-stream\r\n";
+    if (!HttpAddRequestHeaders(hRequest, headers, wcslen(headers), HTTP_ADDREQ_FLAG_REPLACE | HTTP_ADDREQ_FLAG_ADD)) {
+        // std::cerr << "Failed to set request headers: " << GetLastError() << std::endl;
+        InternetCloseHandle(hRequest);
+        InternetCloseHandle(hConnect);
+        InternetCloseHandle(hInternet);
+        DWORD error_num = GetLastError();
+        g_imGuiLogger->Log("[error] UploadReplayBinary failed. Failed to set request headers.\n\thost: '%s'\n\tendpoint: '%s'\n\tport: %d\n\terror code: %d\n",
+            g_modVals.uploadReplayDataHost.c_str(),
+            g_modVals.uploadReplayDataEndpoint.c_str(),
+            g_modVals.uploadReplayDataPort,
+            error_num);
+        return GetLastError();
+    }
+
+
+
+
+    // Open the file
+    //const wchar_t* filePath = L"I:\\SteamLibrary\\steamapps\\common\\BlazBlue Centralfiction\\Save\\Replay\\replay00.dat";
+   // HANDLE hFile = CreateFile(filePath, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+   // if (hFile == INVALID_HANDLE_VALUE) {
+        //std::cerr << "Failed to open file: " << GetLastError() << std::endl;
+   //     InternetCloseHandle(hRequest);
+  //      InternetCloseHandle(hConnect);
+   //     InternetCloseHandle(hInternet);
+   //     return GetLastError();
+  //  }
+
+    // // Get the file size
+    // DWORD fileSize = GetFileSize(hFile, NULL);
+     //if (fileSize == INVALID_FILE_SIZE) {
+         //std::cerr << "Failed to get file size: " << GetLastError() << std::endl;
+     //    CloseHandle(hFile);
+    //     InternetCloseHandle(hRequest);
+     //    InternetCloseHandle(hConnect);
+     //    InternetCloseHandle(hInternet);
+     //    return GetLastError();
+   //  }
+
+
+
+     //Get replay file data adress from memory
+    int bbcf_base_adress = (int)GetBbcfBaseAdress();
+    char* file_data_in_mem = (char*)(bbcf_base_adress + 0x115b478);
+    DWORD fileSize = 0x10000; //all replays without exception are 64kib
+    // Allocate memory for file data
+    LPBYTE fileData = new BYTE[fileSize];
+    // DWORD bytesRead;
+    if (! *file_data_in_mem) {
+        delete[] fileData;
+        return 1;
+    }
+    memcpy(fileData, file_data_in_mem, fileSize);
+    // (!ReadFile(hFile, fileData, fileSize, &bytesRead, NULL)) {
+        //std::cerr << "Failed to read file: " << GetLastError() << std::endl;
+   //     CloseHandle(hFile);
+ //       delete[] fileData;
+  //      InternetCloseHandle(hRequest);
+  //      InternetCloseHandle(hConnect);
+  //      InternetCloseHandle(hInternet);
+  //      return GetLastError();
+    //}
+    
+
+    // Step 5: Send the request
+    if (!HttpSendRequest(hRequest, NULL, 0, fileData, fileSize)) {
+        //std::cerr << "Failed to send request: " << GetLastError() << std::endl;
+        InternetCloseHandle(hRequest);
+        InternetCloseHandle(hConnect);
+        InternetCloseHandle(hInternet);
+        delete[] fileData;
+        DWORD error_num = GetLastError();
+        g_imGuiLogger->Log("[error] UploadReplayBinary failed. Failed to send request.\n\thost: '%s'\n\tendpoint: '%s'\n\tport: %d\n\terror code: %d\n",
+            g_modVals.uploadReplayDataHost.c_str(),
+            g_modVals.uploadReplayDataEndpoint.c_str(),
+            g_modVals.uploadReplayDataPort,
+            error_num);
+        return GetLastError();
+    }
+
+    
+
+    // Step 6: Close handles
+    InternetCloseHandle(hRequest);
+    InternetCloseHandle(hConnect);
+    InternetCloseHandle(hInternet);
+    delete[] fileData;
+    g_imGuiLogger->Log("UploadReplayBinary successful.\n\thost: '%s'\n\tendpoint: '%s'\n\tport: %d\n",
+        g_modVals.uploadReplayDataHost.c_str(),
+        g_modVals.uploadReplayDataEndpoint.c_str(),
+        g_modVals.uploadReplayDataPort);
+    return 0;
+}
+	

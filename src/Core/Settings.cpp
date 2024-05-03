@@ -5,6 +5,7 @@
 
 #include <atlstr.h>
 #include <ctime>
+#include "stringapiset.h""
 
 #define VIEWPORT_DEFAULT 1
 
@@ -39,6 +40,15 @@ void Settings::applySettingsIni(D3DPRESENT_PARAMETERS* pPresentationParameters)
 	g_modVals.save_states_save_keycode = Settings::getButtonValue(settingsIni.saveStateKeybind);
 	g_modVals.save_states_load_keycode = Settings::getButtonValue(settingsIni.loadStateKeybind);
 	g_modVals.replay_takeover_load_keycode = Settings::getButtonValue(settingsIni.loadReplayStateKeybind);
+	g_modVals.uploadReplayData = Settings::settingsIni.uploadReplayData;
+
+	
+	//CA2W pszwide (host_c_str);
+	g_modVals.uploadReplayDataHost = Settings::settingsIni.uploadReplayDataHost;;
+	//std::string str2 = Settings::settingsIni.uploadReplayDataEndpoint;
+	//CA2W pszwide2(str2.c_str());
+	g_modVals.uploadReplayDataEndpoint = Settings::settingsIni.uploadReplayDataEndpoint;
+	g_modVals.uploadReplayDataPort = Settings::settingsIni.uploadReplayDataPort;
 	//pPresentationParameters->Windowed = !Settings::settingsIni.fullscreen;
 
 	pPresentationParameters->PresentationInterval = settingsIni.vsync ? D3DPRESENT_INTERVAL_DEFAULT : D3DPRESENT_INTERVAL_IMMEDIATE;

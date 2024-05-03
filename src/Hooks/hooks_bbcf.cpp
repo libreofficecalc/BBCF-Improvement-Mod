@@ -12,6 +12,7 @@
 #include "SteamApiWrapper/steamApiWrappers.h"
 #include "Core/info.h"
 #include <string>
+#include "Web/update_check.h"
 
 
 
@@ -650,9 +651,52 @@ void __declspec(naked)SetDumpfileCommentString()
 	}
 }
 
+DWORD UploadReplayToEndpointJmpBackAddr = 0;
+void __declspec(naked)UploadReplayToEndpoint()
+{
+	//_asm {
+	//	mov EAX, [01440C40h]
+	//	pushad
+	//}
+	//static int bbcf_base = (int)GetBbcfBaseAdress();
+	//static int tgt = (int)bbcf_base + 0x5e0c40;
+	//_asm {
+	//	mov [EBX+44h], EAX
+	//	mov EAX, [bbcf_base + 0x5e0c40]
+//		pushad
+//	}
+	//_asm {
+	//	mov ECX,00000008d
+	//	mov ESI, EDX
+	//	REP MOVSD
+	//	pushad
+	//}
+	_asm {
+		mov esi,ecx
+		mov[esi + 18h], 00000001h
+		pushad
+	}
+	LOG_ASM(2, "UploadReplayToEndpoint\n");
+	//static char* format_string = "\n GameMode: %d, GameScene: %d, GameSceneStatus: %d \n Improvement Mod loaded \n Version: "  MOD_VERSION_NUM;
+	StartAsyncReplayUpload();
+	
+	_asm
+	{
+		popad
+		jmp[UploadReplayToEndpointJmpBackAddr]
+	}
+}
 
+DWORD DirectHookTestJmpBackAddr = 0;
+void __declspec(naked)DirectHookTest() {
+	_asm {
+		pushad
+		mov eax, 01h
+		popad
+		jmp[DirectHookTestJmpBackAddr]
+	}
 
-
+}
 bool placeHooks_bbcf()
 {
 	LOG(2, "placeHooks_bbcf\n");
@@ -738,5 +782,16 @@ bool placeHooks_bbcf()
 	g_gameVals.pGameMoney = (int*)HookManager::GetBytesFromAddr("GetMoneyAddr", 2, 4);
 
 	SetDumpfileCommentStringJmpBackAddr = HookManager::SetHook("SetDumpfileCommentString", "\x68\x04\x8f\xe6\x00", "xxx??", 5, SetDumpfileCommentString);
+
+	//HookManager::RegisterHook
+	//UploadReplayToEndpointJmpBackAddr = HookManager::SetHook("UploadReplayToEndpoint", "\xA1\x40\x0C\x44\x01", "xxxxx", 5, UploadReplayToEndpoint);
+	//UploadReplayToEndpointJmpBackAddr = HookManager::SetHook("UploadReplayToEndpoint", "\x89\x43\x44", "xxx", 3, UploadReplayToEndpoint);
+	//UploadReplayToEndpointJmpBackAddr = HookManager::SetHook("UploadReplayToEndpoint", "\xB9\x08\x00\x00\x00\x8B\xF2\xF3\xA5\x8B\x42\x04", "xxxxxxxxxxxx", 12, UploadReplayToEndpoint);
+	UploadReplayToEndpointJmpBackAddr = HookManager::SetHook("UploadReplayToEndpoint", "\x8B\xF1\xC7\x46\x18\x01\x00\x00\x00", "xxxxxxxxx", 9, UploadReplayToEndpoint);
+
+	//DirectHookTestJmpBackAddr = HookManager::SetHook("DirectHookTest",(DWORD)(GetBbcfBaseAdress() + 0x37c3b3) , 6, DirectHookTest);
+
+
+
 	return true;
 }
