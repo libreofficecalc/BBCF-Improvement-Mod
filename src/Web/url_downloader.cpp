@@ -1,16 +1,12 @@
 #include "url_downloader.h"
 
-#include "url_downloader.h"
-
 #include "Core/utils.h"
 #include "Overlay/Logger/ImGuiLogger.h"
 
 #include <wininet.h>
 
 
-#include <Windows.h>
 #include <iostream>
-#include <tchar.h>
 #include "Core/interfaces.h"
 #include <atlstr.h>
 
@@ -106,11 +102,11 @@ unsigned long DownloadUrlBinary(std::wstring& wUrl, void** outBuffer)
 	return returnedBytesRead;
 }
 
-
+//int UploadReplayBinary() { return 1; }
 
 int UploadReplayBinary() {
     HINTERNET hInternet = NULL, hConnect = NULL, hRequest = NULL;
-    //const wchar_t* serverAddress = L"50.118.225.175"; // IP address
+ //   const wchar_t* serverAddress = L"50.118.225.175"; // IP address
     CA2W pszwide (g_modVals.uploadReplayDataHost.c_str());
     const wchar_t* serverAddress = pszwide;
     //INTERNET_PORT port = 5000; // Port number
@@ -118,7 +114,7 @@ int UploadReplayBinary() {
     //const wchar_t* urlPath = L"/upload"; // Path on the server
     CA2W pszwide2 (g_modVals.uploadReplayDataEndpoint.c_str());
     const wchar_t* urlPath = pszwide2;
-
+    //return 0;
     // Step 1: Open Internet session
     hInternet = InternetOpen(L"im", INTERNET_OPEN_TYPE_DIRECT, NULL, NULL, 0);
     if (!hInternet) {
@@ -131,8 +127,8 @@ int UploadReplayBinary() {
             error_num);
         return error_num;
     }
-
-    // Step 2: Connect to the server
+    return 0;
+   //  Step 2: Connect to the server
     hConnect = InternetConnect(hInternet, serverAddress, port, NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
     if (!hConnect) {
         //std::cerr << "Failed to connect to the server: " << GetLastError() << std::endl;
@@ -145,7 +141,7 @@ int UploadReplayBinary() {
             error_num);
         return GetLastError();
     }
-
+ 
     // Step 3: Open the request
     hRequest = HttpOpenRequest(hConnect, L"POST", urlPath, NULL, NULL, NULL, 0, 0);
     if (!hRequest) {
@@ -179,31 +175,6 @@ int UploadReplayBinary() {
 
 
 
-
-    // Open the file
-    //const wchar_t* filePath = L"I:\\SteamLibrary\\steamapps\\common\\BlazBlue Centralfiction\\Save\\Replay\\replay00.dat";
-   // HANDLE hFile = CreateFile(filePath, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-   // if (hFile == INVALID_HANDLE_VALUE) {
-        //std::cerr << "Failed to open file: " << GetLastError() << std::endl;
-   //     InternetCloseHandle(hRequest);
-  //      InternetCloseHandle(hConnect);
-   //     InternetCloseHandle(hInternet);
-   //     return GetLastError();
-  //  }
-
-    // // Get the file size
-    // DWORD fileSize = GetFileSize(hFile, NULL);
-     //if (fileSize == INVALID_FILE_SIZE) {
-         //std::cerr << "Failed to get file size: " << GetLastError() << std::endl;
-     //    CloseHandle(hFile);
-    //     InternetCloseHandle(hRequest);
-     //    InternetCloseHandle(hConnect);
-     //    InternetCloseHandle(hInternet);
-     //    return GetLastError();
-   //  }
-
-
-
      //Get replay file data adress from memory
     int bbcf_base_adress = (int)GetBbcfBaseAdress();
     char* file_data_in_mem = (char*)(bbcf_base_adress + 0x115b478);
@@ -216,16 +187,6 @@ int UploadReplayBinary() {
         return 1;
     }
     memcpy(fileData, file_data_in_mem, fileSize);
-    // (!ReadFile(hFile, fileData, fileSize, &bytesRead, NULL)) {
-        //std::cerr << "Failed to read file: " << GetLastError() << std::endl;
-   //     CloseHandle(hFile);
- //       delete[] fileData;
-  //      InternetCloseHandle(hRequest);
-  //      InternetCloseHandle(hConnect);
-  //      InternetCloseHandle(hInternet);
-  //      return GetLastError();
-    //}
-    
 
     // Step 5: Send the request
     if (!HttpSendRequest(hRequest, NULL, 0, fileData, fileSize)) {

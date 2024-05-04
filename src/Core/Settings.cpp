@@ -5,7 +5,7 @@
 
 #include <atlstr.h>
 #include <ctime>
-#include "stringapiset.h""
+#include "stringapiset.h"
 
 #define VIEWPORT_DEFAULT 1
 
