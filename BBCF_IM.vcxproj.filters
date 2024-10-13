@@ -140,12 +140,16 @@
     <ClCompile Include="src\Game\ReplayFiles\ReplayFileManager.cpp" />
     <ClCompile Include="src\Game\Playbacks\PlaybackManager.cpp" />
     <ClCompile Include="src\Game\Playbacks\PlaybackSlot.cpp" />
-    <ClCompile Include="src\Overlay\Window\framedata.cpp" />
+    <ClCompile Include="src\Overlay\Window\FrameAdvantage\FrameAdvantage.cpp" />
     <ClCompile Include="src\Game\Menus\TrainingSetupMenu.cpp" />
     <ClCompile Include="src\Overlay\Window\InputBufferWindow.cpp" />
     <ClCompile Include="src\Overlay\Window\PlaybackEditorWindow.cpp" />
     <ClCompile Include="src\Game\Jonb\JonbDBReader.cpp" />
-    <ClCompile Include="src\Overlay\Window\frameHistory.cpp" />
+    <ClCompile Include="src\Overlay\Window\FrameAdvantage\PlayerExtendedData.cpp" />
+    <ClCompile Include="src\Overlay\Window\ComboDataWindow.cpp" />
+    <ClCompile Include="src\Game\SnapshotApparatus\SnapshotApparatus.cpp" />
+    <ClCompile Include="src\Network\ReplayUploadManager.cpp" />
+    <ClCompile Include="src\Overlay\Window\ReplayDBPopupWindow.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="depends\imgui\imgui.h" />
@@ -270,7 +274,7 @@
     <ClInclude Include="src\Game\Scr\CmdList.h" />
     <ClInclude Include="src\Game\Scr\ScrStateEntry.h" />
     <ClInclude Include="src\Game\Scr\ScrStateReader.h" />
-    <ClInclude Include="src\Overlay\Window\framedata.h" />
+    <ClInclude Include="src\Overlay\Window\FrameAdvantage\FrameAdvantage.h" />
     <ClInclude Include="src\Game\ReplayStates\FrameState.h" />
     <ClInclude Include="src\Game\Menus\TrainingSetupMenu.h" />
     <ClInclude Include="src\Overlay\Window\InputBufferWindow.h" />
@@ -279,7 +283,12 @@
     <ClInclude Include="src\Game\Jonb\JonbDBEntry.h" />
     <ClInclude Include="..\..\..\..\Downloads\stb_image.h" />
     <ClInclude Include="depends\imgui\stb_image.h" />
-    <ClInclude Include="src\Overlay\Window\frameHistory.h" />
+    <ClInclude Include="src\Overlay\Window\FrameAdvantage\PlayerExtendedData.h" />
+    <ClInclude Include="src\Overlay\Window\ComboDataWindow.h" />
+    <ClInclude Include="src\Game\GhidraDefs.h" />
+    <ClInclude Include="src\Game\SnapshotApparatus\SnapshotApparatus.h" />
+    <ClInclude Include="src\Network\ReplayUploadManager.h" />
+    <ClInclude Include="src\Overlay\Window\ReplayDBPopupWindow.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="export\dinput8.def">

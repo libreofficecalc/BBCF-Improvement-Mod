@@ -5,6 +5,8 @@
 class PlaybackManager
 {
 public:
+
+
 	PlaybackManager();
 	char* bbcf_base_adress; // pointer to the base adress of bbcf
 	char* playback_control_p; //bbcf_base_adress + 0x1392d10 + 0x1ac2c; set to 3 to start playback without direction adjustment, 0 for dummy, 1 for recording standby, 2 for bugged recording, 3 for playback, 4 for controller, 5 for cpu, 6 for continuous playback
@@ -21,7 +23,8 @@ public:
 	void load_from_file_into_slot(char* fname, int slot); /*loads from a file into a slot doing the necessary checks to ensure the file is valid, the facing byte is correctly set and won't crash*/
 	void set_active_slot(int slot);
 	void set_playback_control(int playback_control); /*set to 3 to start playback without direction adjustment, 0 for dummy, 1 for recording standby, 2 for bugged recording, 3 for playback, 4 for controller, 5 for cpu, 6 for continuous playback*/
-
+	void set_playback_position(int frame_position);
+	void set_playback_type(int playback_type);
 
 private:
 	int playback_control_offset = 0x1392d10 + 0x1ac2c;// playback_control_p = bbcf_base_adress + playback_control_offset

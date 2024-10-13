@@ -8,7 +8,7 @@ Join the [BB Improvement Mod Discord Server](https://discord.gg/j2mCX9s) to disc
 ## What this mod provides
 - Adds extra game modes
 - Adds hitbox overlay
-
+- Adds replay takeover
 - Adds P2 State Library
 - Adds wakeup action thru state library
 - Adds gap action thru state library
@@ -27,7 +27,7 @@ Join the [BB Improvement Mod Discord Server](https://discord.gg/j2mCX9s) to disc
 - Freely adjustable ingame currency value
 
 ## Installing
-Download dinput8.dll from the latest release and put it in your BlazBlue Centralfiction folder. There is no need to compile it yourself for regular usage.
+Download dinput8.dll, settings.ini and optionally palettes.ini from the latest release and put it in your BlazBlue Centralfiction folder. There is no need to compile it yourself for regular usage.
 
 
 ## Compiling and usage

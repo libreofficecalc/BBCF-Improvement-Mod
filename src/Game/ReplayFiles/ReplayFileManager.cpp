@@ -68,15 +68,13 @@ void replace_all(
             if (fpath.find(".dat") == std::string::npos) {
                 fpath += ".dat";
             }
- 
+   
             std::streampos fileSize;
             std::ifstream file(fpath, std::ios::binary);
             if (file.good()) {
                 file.seekg(0, std::ios::end);
                 fileSize = file.tellg();
                 file.seekg(0, std::ios::beg);
-
-
 
                 file.read((char*)&replay_file, fileSize);
                 isLoaded = true;
@@ -89,7 +87,8 @@ void replace_all(
             }
 
 
-        }
+        } 
+
 	
 	std::string ReplayFileManager::build_file_name() {
         std::wstring p1ws = std::wstring(replay_file.p1_name);

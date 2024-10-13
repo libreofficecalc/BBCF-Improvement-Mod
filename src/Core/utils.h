@@ -25,4 +25,5 @@ bool utils_WriteFile(const char* path, void* inBuffer, unsigned long bufferSize,
 bool utils_ReadFile(const char* path, void* outBuffer, unsigned long bufferSize, bool binaryFile = false);
 
 std::string utf16_to_utf8(const std::wstring & wstr);
+std::wstring utf8_to_utf16(const std::string & utf8_str);
 int SafeDereferencePtr(int* ptr);

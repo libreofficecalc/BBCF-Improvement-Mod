@@ -108,7 +108,7 @@ void InputBufferWindow::Draw()
 		ImGui::Text("%x buffer_L_22 : %d", &(g_interfaces.player2.GetData()->buffer_L_22), g_interfaces.player2.GetData()->buffer_L_22);//0x1E856, + ba
 		ImGui::Text("%x buffer_L_46 : %d", &(g_interfaces.player2.GetData()->buffer_L_46), g_interfaces.player2.GetData()->buffer_L_46); //0x1E857, + bb
 
-		ImGui::Text("%x buffer_L_2H6 : %d", &(g_interfaces.player2.GetData()->buffer_L_2H6), g_interfaces.player2.GetData()->buffer_L_2H6); //0x1E859, + BD 2H6 -> hold 2 -> 6, charge(?)
+		ImGui::Text("%x buffer_L_2H8jinastral : %d", &(g_interfaces.player2.GetData()->buffer_L_2H8jinastral), g_interfaces.player2.GetData()->buffer_L_2H8jinastral); //0x1E859, + BD 2H6 -> hold 2 -> 6, charge(?)
 		ImGui::Text("%x buffer_L_6428 : %d", &(g_interfaces.player2.GetData()->buffer_L_6428), g_interfaces.player2.GetData()->buffer_L_6428);//0x1E85A, +BE
 		ImGui::Text("%x buffer_L_4H128 : %d", &(g_interfaces.player2.GetData()->buffer_L_4H128), g_interfaces.player2.GetData()->buffer_L_4H128);//0x1E85B, + BF taokaka astral
 		ImGui::Text("%x buffer_L_64641236 : %d", &(g_interfaces.player2.GetData()->buffer_L_64641236), g_interfaces.player2.GetData()->buffer_L_64641236);//0x1E85C, + C0 carl astral
@@ -179,7 +179,7 @@ void InputBufferWindow::initialize_buffer_maps(CharData* player_data) {
 		{std::string("L_22 : %d"), &(player_data->buffer_L_22)},
 		{std::string("L_46 : %d"), &(player_data->buffer_L_46)},
 
-		{std::string("L_2H6 : %d"), &(player_data->buffer_L_2H6)},
+		{std::string("L_2H8jinastral : %d"), &(player_data->buffer_L_2H8jinastral)},
 		{std::string("L_6428 : %d"), &(player_data->buffer_L_6428)},
 		{std::string("L_4H128 : %d"), &(player_data->buffer_L_4H128)},
 		{std::string("L_64641236 : %d"), &(player_data->buffer_L_64641236)},
@@ -244,7 +244,7 @@ void InputBufferWindow::initialize_buffer_maps(CharData* player_data) {
 		{std::string("R_22 : %d"), &(player_data->buffer_R_22)},
 		{std::string("R_46 : %d"), &(player_data->buffer_R_46)},
 
-		{std::string("R_2H6 : %d"), &(player_data->buffer_R_2H6)},
+		{std::string("R_2H8jinastral : %d"), &(player_data->buffer_R_2H8jinastral)},
 		{std::string("R_6428 : %d"), &(player_data->buffer_R_6428)},
 		{std::string("R_4H128 : %d"), &(player_data->buffer_R_4H128)},
 		{std::string("R_64641236 : %d"), &(player_data->buffer_R_64641236)},

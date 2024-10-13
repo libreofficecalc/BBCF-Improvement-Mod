@@ -33,9 +33,25 @@ public:
 	int32_t actionTime; //0x0160
 	int32_t actionTime2; //0x0164
 	int32_t actionTimeNoHitstop; //0x0170
-	char pad_0174[56]; //0x0174
+	//char pad_0174[56]; //0x0174
 
-	int32_t lambda_nu_drive_hitcount; //0x01AC
+	char pad_0174[8]; //0x0174
+	int32_t SLOT_31; //0x17C //EsBuff
+ 	int32_t SLOT_51; //0x0180 //bang kite float time
+ 	int32_t SLOT_52; //0x0184
+ 	int32_t SLOT_53; //0x0188
+ 	int32_t SLOT_54; //0x018C
+ 	int32_t SLOT_55; //0x0190
+ 	int32_t SLOT_56; //0x0194
+ 	int32_t SLOT_57; //0x0198
+ 	int32_t SLOT_58; //0x019C
+	int32_t SLOT_59; //0x1A0 //bang seal //azrael fireball /Plat item type
+	int32_t SLOT_60; //0x1A4 //bang seal
+	int32_t SLOT_61; //0x1A8 //bang seal
+	int32_t SLOT_62; //0x01AC//bang seal /lambda_nu_drive_hitcount
+
+
+	//int32_t lambda_nu_drive_hitcount; //0x01AC
 	char pad_01B0[16]; //0x01B0
 	int32_t overdriveTimeleft; //0x01C0
 	int32_t overdriveTimerStartedAt; //0x01C4
@@ -53,14 +69,16 @@ public:
 	//exp
 	char pad_01EC[4];
 	class CharData* enemyChar; //0x01F0 dont know exactly what it is yet, just that it is checked and I need to save it 
-	char pad_01F4[54]; //0x01F4 
+	char pad_01F4[54]; //0x01F4 maybe this should be 56?
 	//char pad_01EC[64];
 	class CharData* last_child_entity_spawned; // 0x022C 
 	class CharData* extra_child_entities[7]; // 0x0230 should hold up to 7(?) idk extra child entities
 	class CharData* main_child_entity; // 0x024C holds the main child entity, varies by character but its the puppets, arakune curse circle over enemy, etc. Some characters dont have it
-	char pad_0250[20]; // 0x0250
-
+	//char pad_0250[20]; // 0x0250
+	char pad_0250[0xC];// 0x0250
 	//0x0254 significant?
+	uint32_t bitflags_for_curr_state_properties_or_smth; // 0x025c holds some properties of attacks it seems in something like bitfields. To check for inactive hitboxes from multihits use the mask xxxxx400.
+	char pad_0260[4];//0x0260
 	//exp 
 	int32_t facingLeft; //0x0264 is it not facing right?
 	int32_t position_x; //0x0268
@@ -120,7 +138,6 @@ public:
 	int32_t moveCounterHitAirPushbackY; //0x06D4
 	char pad_06D8[760]; //0x06D8
 
-
 	int32_t previousHP; //0x09D0
 	int32_t currentHP; //0x09D4
 	int32_t maxHP; //0x09D8
@@ -142,14 +159,16 @@ public:
 	char currentAction[20]; //0x2070
 	char pad_2084[452]; //0x2084
 	char char_abbr[4]; //0x2248
-	char pad_224C[40]; //0x224C
-
+	//char pad_224C[40]; //0x224C
+	char pad_224C[20]; //0x224C
+	int facingLeft2; //0x2260 used for checking if playback should flip side or not?
+	char pad2264[16];//0x2264
 	//thanks to kding0
 	int32_t blockstun; //0x2274
 	char pad_2278[12024]; //0x2278
 	int32_t hitstun; //0x5170
 	char pad_5174[140]; //0x5174
-	uint32_t hardLandingRecovery;
+	uint32_t hardLandingRecovery; //0x5200, represents the amount of stiffLanding recovery frames to be applied on landing. Probably the amount to loop in CmnActLandingStiffLoop specifically
 	char pad_5204[16]; //0x5204
 	int32_t defaultProration[6]; //0x5214-0x5227, for Lv0-Lv5
 	char pad_5228[1348]; //0x5228
@@ -191,10 +210,11 @@ public:
 	char pad_5AFC[8]; //0x5AFC
 	int32_t barrier; //0x5B04
 	//char pad_5B08[102072]; //0x5b08
-	char pad_5B08[101524]; //0x5b08
+	char pad_5B08[10364]; //0x5b08
 
 
-
+	int32_t SLOT_unknown1; //0x8384 // Izanami float (0 or 1), possibly other stuff
+	char pad_8388[91156]; //0x8388
 
 
 	/*input buffers*/
@@ -219,7 +239,7 @@ public:
 	int8_t buffer_L_22;//0x1E856, + ba
 	int8_t buffer_L_46; //0x1E857, + bb
 	char padding_1e858;//0x1E858, + bc
-	int8_t buffer_L_2H6; //0x1E859, + BD 2H6 -> hold 2 -> 6, charge(?) its actually 2H8 it seems for an unreleased kagura special?
+	int8_t buffer_L_2H8jinastral; //0x1E859, + BD 2H8 -> hold 2 -> 8, 30f 28 charge, used for jin's astral?
 	int8_t buffer_L_6428;//0x1E85A, +BE
 	int8_t buffer_L_4H128;//0x1E85B, + BF taokaka astral
 	int8_t buffer_L_64641236;//0x1E85C, + C0 carl astral
@@ -287,7 +307,7 @@ public:
 	int8_t buffer_R_22;//0x1E960, + ba +10A
 	int8_t buffer_R_46; //0x1E961, + bb +10A
 	char padding_1E962;//0x1E962, + bc +10A
-	int8_t buffer_R_2H6; //0x1E963, + BD +10A 2H6 -> hold 2 -> 6, charge(?) its actually 2H8 it seems for an unreleased kagura special?
+	int8_t buffer_R_2H8jinastral; //0x1E859, + BD 2H8 -> hold 2 -> 8, 30f 28 charge, used for jin's astral?
 	int8_t buffer_R_6428;//0x1E964, +BE +10A
 	int8_t buffer_R_4H128;//0x1E965, + BF +10A taokaka astral
 	int8_t buffer_R_64641236;//0x1E966, + C0 +10A carl astral
@@ -348,4 +368,6 @@ public:
 	char pad_20134[32]; //0x20134
 	int32_t Drive3; //0x20154
 	char pad_20158[4972]; //0x20158
-}; //Size: 0x214C4
+	char pad_214c4[0x34b4]; //0x214c4
+}; //Size: 0x24978 
+// old: Size: 0x214C4 !actual size seems to be 0x24978

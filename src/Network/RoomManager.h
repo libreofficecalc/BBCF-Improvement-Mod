@@ -44,6 +44,7 @@ public:
 	void JoinRoom(Room* pRoom);
 	bool IsRoomFunctional() const;
 	void SendPacketToSameMatchIMPlayers(Packet* packet);
+	void SendPacketToSameMatchIMPlayersNonSpectator(Packet* packet);
 	bool IsPacketFromSameRoom(Packet* packet) const;
 	bool IsPacketFromSameMatchNonSpectator(Packet* packet) const;
 	bool IsThisPlayerSpectator() const;
@@ -55,6 +56,9 @@ public:
 	std::vector<IMPlayer> GetIMPlayersInCurrentMatch() const;
 	std::vector<IMPlayer> GetIMPlayersInCurrentRoom() const;
 	std::vector<const RoomMemberEntry*> GetOtherRoomMemberEntriesInCurrentMatch() const;
+
+	std::vector<IMPlayer> GetIMPlayersInCurrentMatchNonSpec() const;
+
 
 private:
 	void SendAnnounce();

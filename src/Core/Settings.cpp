@@ -5,6 +5,9 @@
 
 #include <atlstr.h>
 #include <ctime>
+#include <iostream>
+#include <fstream>
+#include "stringapiset.h"
 
 #define VIEWPORT_DEFAULT 1
 
@@ -35,7 +38,19 @@ void Settings::applySettingsIni(D3DPRESENT_PARAMETERS* pPresentationParameters)
 	default:
 		break;
 	}
-	g_gameVals.enableForeignPalettes = Settings::settingsIni.loadforeignpalettes;
+	g_modVals.enableForeignPalettes = Settings::settingsIni.loadforeignpalettes;
+	g_modVals.save_states_save_keycode = Settings::getButtonValue(settingsIni.saveStateKeybind);
+	g_modVals.save_states_load_keycode = Settings::getButtonValue(settingsIni.loadStateKeybind);
+	g_modVals.replay_takeover_load_keycode = Settings::getButtonValue(settingsIni.loadReplayStateKeybind);
+	g_modVals.uploadReplayData = Settings::settingsIni.uploadReplayData;
+
+	
+	//CA2W pszwide (host_c_str);
+	g_modVals.uploadReplayDataHost = Settings::settingsIni.uploadReplayDataHost;;
+	//std::string str2 = Settings::settingsIni.uploadReplayDataEndpoint;
+	//CA2W pszwide2(str2.c_str());
+	g_modVals.uploadReplayDataEndpoint = Settings::settingsIni.uploadReplayDataEndpoint;
+	g_modVals.uploadReplayDataPort = Settings::settingsIni.uploadReplayDataPort;
 	//pPresentationParameters->Windowed = !Settings::settingsIni.fullscreen;
 
 	pPresentationParameters->PresentationInterval = settingsIni.vsync ? D3DPRESENT_INTERVAL_DEFAULT : D3DPRESENT_INTERVAL_IMMEDIATE;
@@ -109,6 +124,12 @@ bool Settings::loadSettingsFile()
 	if (settingsIni.toggleHUDbutton.length() != 2 || settingsIni.toggleHUDbutton[0] != 'F')
 		settingsIni.toggleHUDbutton = "F3";
 
+
+
+	
+	
+	//modValuessettingsIni.loadStateKeybind
+	
 	return true;
 }
 
@@ -171,4 +192,57 @@ short Settings::getButtonValue(std::string button)
 	//default to F1
 	button = "F1";
 	return 112;
+}
+//int Settings::changeSetting(std::string setting_name, std::string new_value) { return 1; }
+int Settings::changeSetting(std::string setting_name, std::string new_value) {
+	//return 1;
+	std::string filename = "settings.ini";
+	std::string tempfilename = "temp_settings.ini";
+
+	std::fstream inputFile(filename, std::ios::in);
+	std::fstream tempFile(tempfilename, std::ios::out);
+
+	
+	if (!(inputFile.is_open() && tempFile.is_open())) {
+		LOG(2, "[error] Settings::changeSetting: Unable to open the file.");
+		return 1;
+	}
+	else{
+
+		bool found_flag = false;
+		std::string line;
+		while (getline(inputFile, line)) {
+			if (line.find(setting_name) == 0) {
+				tempFile << setting_name << " = " << new_value << std::endl;
+				found_flag = true;
+			}
+			else {
+				tempFile << line << std::endl;
+			}
+		}
+		if (found_flag == false) {
+			//if the setting is not found, add it
+			tempFile << "# " << setting_name << " added automatically #" << std::endl;
+			tempFile << setting_name << " = " << new_value << std::endl;
+		}
+		inputFile.close();
+		tempFile.close();
+
+		if (remove(filename.c_str()) != 0) {
+			//perror("Error deleting original file");
+			LOG(2, "[error] Settings::changeSetting:Error deleting original file");
+			return 1;
+		}
+
+		if (rename(tempfilename.c_str(), filename.c_str()) != 0) {
+			//perror("Error renaming temporary file");
+			LOG(2, "[error]  Settings::changeSetting: Error renaming temporary file");
+			return 1;
+		}
+
+		LOG(2, "Settings::changeSetting: File updated successfully.");
+		std::cout << "File updated successfully." << std::endl;
+	}
+	
+	return 0;
 }
