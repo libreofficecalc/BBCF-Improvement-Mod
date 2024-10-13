@@ -63,8 +63,8 @@ void HitboxOverlay::Draw()
 
 void HitboxOverlay::AfterDraw()
 {
-	ImGui::PopStyleColor();
-	ImGui::PopStyleVar(2);
+ImGui::PopStyleColor();
+ImGui::PopStyleVar(2);
 }
 
 bool HitboxOverlay::IsOwnerEnabled(CharData* ownerCharInfo)
@@ -152,8 +152,17 @@ void HitboxOverlay::DrawCollisionAreas(const CharData* charObj, const ImVec2 pla
 {
 	std::vector<JonbEntry> entries = JonbReader::getJonbEntries(charObj);
 
-	for (const JonbEntry &entry : entries)
+	for (const JonbEntry& entry : entries)
 	{
+		//this will skip the drawing of an inactive hitbox due to multihit(ID 2002) script call.
+		if (entry.type == JonbChunkType_Hitbox
+			&&
+			((charObj->bitflags_for_curr_state_properties_or_smth & 0xF00) == 0x400)
+			 )
+{
+			continue;
+		}
+		
 		float scaleX = charObj->scaleX / 1000.0f;
 		float scaleY = charObj->scaleY / 1000.0f;
 		float offsetX =  floor(entry.offsetX * m_scale * scaleX);

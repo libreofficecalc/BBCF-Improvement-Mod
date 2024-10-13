@@ -292,6 +292,17 @@ std::string utf16_to_utf8(const std::wstring& wstr)
 	return strTo;
 }
 
+std::wstring utf8_to_utf16(const std::string& utf8_str) {
+	if (utf8_str.empty()) return std::wstring();
+	int size_needed = MultiByteToWideChar(CP_UTF8, 0, utf8_str.c_str(), -1, nullptr, 0);
+	std::wstring utf16_str(size_needed, L'\0');
+	MultiByteToWideChar(CP_UTF8, 0, utf8_str.c_str(), -1, &utf16_str[0], size_needed);
+	//removing null terminator
+	utf16_str.resize(size_needed - 1);
+
+	return utf16_str;
+}
+
 int SafeDereferencePtr(int* ptr)
 {
 	if (ptr != nullptr)

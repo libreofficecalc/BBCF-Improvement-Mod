@@ -45,6 +45,11 @@ void MatchState::OnMatchInit()
 		{
 			g_interfaces.pSteamFriendsWrapper->SetPlayedWith(CSteamID(player->steamId));
 		}
+
+		// Send the broadcast to other players regarding telling if you have replay upload disabled or not.
+		g_interfaces.pReplayUploadManager->OnMatchInit();
+
+		
 	}
 
 	g_gameVals.isFrameFrozen = false;
@@ -77,6 +82,10 @@ void MatchState::OnMatchEnd()
 
 	g_interfaces.pOnlinePaletteManager->ClearSavedPalettePacketQueues();
 	g_interfaces.pOnlineGameModeManager->ClearPlayerGameModeChoices();
+	
+	//resets the upload veto
+	g_interfaces.pReplayUploadManager->OnMatchEnd();
+	
 }
 
 void MatchState::OnUpdate()

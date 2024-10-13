@@ -137,6 +137,15 @@ bool WindowManager::Initialize(void *hwnd, IDirect3DDevice9 *device)
 	srand(time(NULL));
 
 	StartAsyncUpdateCheck();
+	//StartAsyncReplayUpload();
+
+	if (g_modVals.uploadReplayData == -1)
+	{
+		m_windowContainer->GetWindow(WindowType_ReplayDBPopup)->Open();
+	}
+
+
+
 
 	std::string notificationText = MOD_WINDOW_TITLE;
 	notificationText += " ";
@@ -231,11 +240,13 @@ void WindowManager::Render()
 		m_windowContainer->GetWindow(WindowType_InputBufferP2)->IsOpen();
 	bool isPlaybackEditorWindowOpen =
 		m_windowContainer->GetWindow(WindowType_PlaybackEditor)->IsOpen();
+	bool isComboDataWindowOpen =
+		m_windowContainer->GetWindow(WindowType_ComboData)->IsOpen();
 
 	ImGui::GetIO().MouseDrawCursor = isMainWindowOpen || isLogWindowOpen || isPaletteEditorWindowOpen
 		|| isUpdateNotifierWindowOpen || isRoomWindowOpen || isDebugWindowOpen || 
 		isScrWindowOpen || isInputBufferP1WindowOpen || isInputBufferP2WindowOpen
-		|| isPlaybackEditorWindowOpen;
+		|| isPlaybackEditorWindowOpen || isComboDataWindowOpen;
 
 	if (Settings::settingsIni.viewport == 2)
 	{

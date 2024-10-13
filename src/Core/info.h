@@ -1,5 +1,5 @@
 #pragma once
-#define MOD_VERSION "v3.0600"
+#define MOD_VERSION "v3.0970"
 #define MOD_VERSION_NUM	MOD_VERSION " BO BLEIS edition"
 #define MOD_WINDOW_TITLE "BBCF Improvement Mod BO BLEIS"
 
@@ -10,4 +10,4 @@
 #define MOD_LINK_FORUM L"https://steamcommunity.com/app/586140/discussions/0/3195868146163014015/"
 #define MOD_LINK_GITHUB L"https://github.com/libreofficecalc/BBCF-Improvement-Mod/releases"
 #define MOD_LINK_API_GITHUB_RELEASE L"https://api.github.com/repos/libreofficecalc/BBCF-Improvement-Mod/releases"
-
+#define REPLAY_DB_FRONTEND L"http://50.118.225.175:2000/"

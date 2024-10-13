@@ -5,6 +5,9 @@
 SETTING(std::string, togglebutton, "ToggleButton", "F1");
 SETTING(std::string, toggleOnlineButton, "ToggleOnlineButton", "F2");
 SETTING(std::string, toggleHUDbutton, "ToggleHUDButton", "F3");
+SETTING(std::string, saveStateKeybind, "SaveStateKeybind", "F5");
+SETTING(std::string, loadStateKeybind, "LoadStateKeybind", "F9");
+SETTING(std::string, loadReplayStateKeybind, "LoadReplayStateKeybind", "F4");
 SETTING(std::string, dinputDllWrapper, "DinputDllWrapper", "none");
 SETTING(int, renderwidth, "RenderingWidth", "1920");
 SETTING(int, renderheight, "RenderingHeight", "1080");
@@ -15,3 +18,8 @@ SETTING(int, menusize, "MenuSize", "2");
 SETTING(bool, notifications, "Notifications", "1");
 SETTING(bool, checkupdates, "CheckUpdates", "1");
 SETTING(bool, loadforeignpalettes, "LoadForeignPalettesToggleDefault", "1");
+SETTING(int, uploadReplayData, "UploadReplayData", "-1");
+SETTING(std::string, uploadReplayDataHost, "UploadReplayDataHost", "50.118.225.175");
+SETTING(std::string, uploadReplayDataEndpoint, "UploadReplayDataEndpoint", "/upload");
+SETTING(int, uploadReplayDataPort, "UploadReplayDataPort", "5000");
+// SETTING(std::string, replayDatabaseFrontendUrl "ReplayDatabaseFrontendUrl", "http://50.118.225.175:2000/");

@@ -1,5 +1,27 @@
 #pragma once
-
+enum GameSceneStatus {
+	/*
+	* These are just tests, might be wildly incorrect.
+	* By "run" I mean passing thru the function on bbcf + 14f9b0
+	seems like status 0->6 run sequencially, with each having just one "run".
+	status 7 appears to be the loading screen and runs while it is active. It is also sequencial.
+	status 8 appears to "run" once after the loading screen. It is also sequencial.
+	status 9 appears to "run" for the duration of the "normal" behaviour of a SCENE
+	wasn't able to trigger status 10 and 11 so far
+	*/
+	GameSceneStatus_0_idk = 0,
+	GameSceneStatus_1_idk = 1,
+	GameSceneStatus_2_idk = 2,
+	GameSceneStatus_3_idk = 3,
+	GameSceneStatus_4_idk = 4,
+	GameSceneStatus_5_idk = 5,
+	GameSceneStatus_6_idk = 6,
+	GameSceneStatus_LoadingScreen = 7,
+	GameSceneStatus_Initialization = 8, //only seems to appear for 1 "run"
+	GameSceneStatus_Running = 9,
+	GameSceneStatus_10_idk = 10, //
+	GameSceneStatus_11_idk = 11 //
+};
 enum MatchState_
 {
 	MatchState_NotStarted = 0,
@@ -7,9 +29,10 @@ enum MatchState_
 	MatchState_Fight = 3,
 	MatchState_FinishSign = 4,
 	MatchState_WinLoseSign = 5,
-	MatchState_VictoryScreen = 7
+	MatchState_VictoryScreen = 7,
+	MatchState_Initialization = 8
 };
-
+//GameState=GameScene ON DUMPFILE
 enum GameState
 {
 	GameState_ArcsysLogo = 2,

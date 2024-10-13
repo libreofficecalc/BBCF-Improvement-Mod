@@ -111,3 +111,12 @@ void PlaybackManager::set_playback_control(int playback_control)
     memcpy(this->playback_control_p, &playback_control, 2);
 }
 
+void PlaybackManager::set_playback_position(int frame_position) {
+    *(int*)(this->bbcf_base_adress + 0x13AD940) = frame_position; //needs to be cast to int* because the value is a uint32_t
+}
+
+void PlaybackManager::set_playback_type(int playback_type)
+//sets playback type on training menu as random or normal
+{
+    *(this->bbcf_base_adress + 0x902BDC + 0x54 + 0xc + 0x4) = playback_type;
+}

@@ -16,6 +16,7 @@ private:
 	void DrawImGuiSection();
 	void DrawGameValuesSection();
 	void DrawRoomSection();
+	void DrawSettingsSection();
 	void DrawNotificationSection();
 
 	bool m_showDemoWindow = false;
