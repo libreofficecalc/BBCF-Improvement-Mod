@@ -137,90 +137,182 @@ void MainWindow::DrawAvatarSection() const
 	}
 }
 
-void MainWindow::DrawFrameHistorySection() const {
-  if (!ImGui::CollapsingHeader("FrameHistory"))
-    return;
-  // Create the frame history to be updated later
-  static FrameHistory history = FrameHistory();
+std::vector<std::array<ImVec2, 2>> DottedLine(ImVec2 start, ImVec2 end, int divisions, float empty_ratio) {
+	std::vector<std::array<ImVec2, 2>> dotted_line = std::vector<std::array<ImVec2, 2>>();
+	ImVec2 direction = ImVec2(end.x - start.x, end.y - start.y);
+	float length = std::sqrt(direction.x * direction.x + direction.y * direction.y);
 
-  if (!isInMatch()) {
-    ImGui::HorizontalSpacing();
-    history.clear();
-    ImGui::TextDisabled("YOU ARE NOT IN MATCH!");
-    return;
-  } else if (!(*g_gameVals.pGameMode == GameMode_Training ||
-               *g_gameVals.pGameMode == GameMode_ReplayTheater)) {
-    ImGui::HorizontalSpacing();
-    ImGui::TextDisabled("YOU ARE NOT IN TRAINING MODE OR REPLAY THEATER!");
-    return;
-  }
+	direction.x /= length;
+	direction.y /= length;
+
+	float seg_len = length / divisions;
+	float sep_len = seg_len * empty_ratio;
+	seg_len *= 1 - empty_ratio;
 
 
-
-  // May want to come up with our own function to check if time moved.
-  // The current implementation doesn't check if we missed frames.
-  if (!g_interfaces.player1.IsCharDataNullPtr() &&
-      !g_interfaces.player2.IsCharDataNullPtr() && hasWorldTimeMoved()) {
-
-    history.updateHistory();
-  }
-
-  static bool isFrameHistoryOpen = false;
-  ImGui::HorizontalSpacing();
-  ImGui::Checkbox("Enable##framehistory_section", &isFrameHistoryOpen);
-
-  if (isFrameHistoryOpen) {
-
-    ImGui::Begin("Frame history", &isFrameHistoryOpen);
-
-    // borrow the history queue
-    StatePairQueue &queue = history.read();
-
-    // player 1 history. The first element of each array in the queue
-    ImGui::Text("Player 1:");
-
-    for (StatePairQueue::reverse_iterator elem = queue.rbegin(); elem != queue.rend(); ++elem) {
-      ImGui::SameLine();
-	  // determine color
-	  std::array<float, 3> col_arr = kindtoColor((*elem).front().kind);
-
-	  ImVec4 color = ImVec4(col_arr[0], col_arr[1], col_arr[2], 1.);
-      ImGui::PushStyleColor(ImGuiCol_Button, color);
-      ImGui::PushStyleColor(ImGuiCol_ButtonHovered, color);
-      ImGui::PushStyleColor(ImGuiCol_ButtonActive, color);
-
-	  // Make the button
-	  char state_name[2];
-	  state_name[0] = kindtoLetter((*elem).front().kind);
-	  state_name[1] = '\0';
-	  ImGui::Button(state_name, ImVec2(20.0f, 20.0f));
-
-      ImGui::PopStyleColor(3);
-    } 
-
-    // the second element for player 2
-    ImGui::Text("Player 2:");
-    for (StatePairQueue::reverse_iterator elem = queue.rbegin(); elem != queue.rend(); ++elem) {
-      ImGui::SameLine();
-      
-	  std::array<float, 3> col_arr = kindtoColor((*elem).back().kind);
-
-	  ImVec4 color = ImVec4(col_arr[0], col_arr[1], col_arr[2], 1.);
-      ImGui::PushStyleColor(ImGuiCol_Button, color);
-      ImGui::PushStyleColor(ImGuiCol_ButtonHovered, color);
-      ImGui::PushStyleColor(ImGuiCol_ButtonActive, color);
-
-	  char state_name[2];
-	  state_name[0] = kindtoLetter((*elem).back().kind);
-	  state_name[1] = '\0';
-      ImGui::Button(state_name, ImVec2(20.0f, 20.0f));
-
-      ImGui::PopStyleColor(3);
-    }
-
-    ImGui::End();
-  }
+	for (int i = 0; i < divisions; ++i) {
+		std::array<ImVec2, 2> segment = {
+		  ImVec2(start.x + direction.x * i * (seg_len + sep_len), start.y + direction.y * i * (seg_len + sep_len)),
+		  ImVec2(start.x + direction.x * (i + 1) * (seg_len + sep_len) - sep_len * direction.x, start.y + direction.y * (i + 1) * (seg_len + sep_len) - sep_len * direction.y
+				 ) };
+		dotted_line.push_back(segment);
+	}
+	return dotted_line;
 }
+
+ImVec2 MakeBox(ImColor color, ImVec2 offset, float width, float height) {
+
+	float BoxWidth = width;
+	float BoxHeight = height;
+	// Get the current ImGui cursor position
+	// ImVec2 p = ImGui::GetCursorScreenPos();
+	ImVec2 p = offset;
+
+	ImDrawList* draw_list = ImGui::GetWindowDrawList();
+
+	// Draw a rectangle with color
+	draw_list->AddRectFilled(
+		p, ImVec2(p.x + width, p.y + height),
+		(ImU32)color);
+
+	// Advance the ImGui cursor to claim space in the window (otherwise the window
+	// will appear small and needs to be resized)
+	ImGui::Dummy(ImVec2(BoxWidth, BoxHeight));
+
+	return ImVec2(p.x + BoxWidth, p.y + BoxHeight);
+}
+
+
+void MainWindow::DrawFrameHistorySection() const {
+	if (!ImGui::CollapsingHeader("FrameHistory"))
+		return;
+	// Create the frame history to be updated later
+	static FrameHistory history = FrameHistory();
+
+	if (!isInMatch()) {
+		ImGui::HorizontalSpacing();
+		history.clear();
+		ImGui::TextDisabled("YOU ARE NOT IN MATCH!");
+		return;
+	}
+	else if (!(*g_gameVals.pGameMode == GameMode_Training ||
+		*g_gameVals.pGameMode == GameMode_ReplayTheater)) {
+		ImGui::HorizontalSpacing();
+		ImGui::TextDisabled("YOU ARE NOT IN TRAINING MODE OR REPLAY THEATER!");
+		return;
+	}
+
+	const float WIDTH = 6.;
+	const float HEIGHT = 6.;
+
+	// May want to come up with our own function to check if time moved.
+	// The current implementation doesn't check if we missed frames.
+	if (!g_interfaces.player1.IsCharDataNullPtr() &&
+		!g_interfaces.player2.IsCharDataNullPtr() && hasWorldTimeMoved()) {
+
+		history.updateHistory();
+	}
+
+	static bool isFrameHistoryOpen = false;
+	ImGui::HorizontalSpacing();
+	ImGui::Checkbox("Enable##framehistory_section", &isFrameHistoryOpen);
+
+	if (isFrameHistoryOpen) {
+
+		ImGui::Begin("Frame history p1", &isFrameHistoryOpen);
+
+		// borrow the history queue
+		StatePairQueue& queue = history.read();
+		int frame_idx = 0;
+
+		// player 1 history. The first element of each array in the queue
+		//ImGui::Text("Player 1:");
+		// Be careful where you place this
+		ImVec2 cursor_p = ImGui::GetCursorScreenPos();
+
+		for (StatePairQueue::reverse_iterator elem = queue.rbegin(); elem != queue.rend(); ++elem) {
+			PlayerFrameState p1state = elem->front();
+			PlayerFrameState p2state = elem->back();
+			const int rows = 4;
+			// determine colors
+			std::array<float, 3 * rows> col_arr;
+
+			std::array<float, 3> color;
+			color = kindtoColor(p1state.kind);
+			std::copy(std::begin(color), std::end(color), std::begin(col_arr));
+			color = attributetoColor(p1state.invul);
+			std::copy(std::begin(color), std::end(color), std::begin(col_arr) + 3 * 1);
+			//color = attributetoColor(p1state.guardp);
+			//std::copy(std::begin(color), std::end(color), std::begin(col_arr) + 3 * 2);
+			//color = attributetoColor(p1state.attack);
+			//std::copy(std::begin(color), std::end(color), std::begin(col_arr) + 3 * 3);
+
+			color = kindtoColor(p2state.kind);
+			std::copy(std::begin(color), std::end(color), std::begin(col_arr) + 3 * 2);
+			color = attributetoColor(p2state.invul);
+			std::copy(std::begin(color), std::end(color), std::begin(col_arr) + 3 * 3);
+
+
+
+			ImVec2 prev_cursor_p = cursor_p;
+			float spacing = 10.;
+			float next_x;
+
+			// BUG: This continually claims space. The screen cursor is not at all being moved, and yet this creates so much blank space below
+			// draw a box, mind how much it has moved beyond the (width, height)
+			// Draw box & write the new cursor pos
+			cursor_p = MakeBox(ImColor(col_arr[0], col_arr[1], col_arr[2]), cursor_p, WIDTH, HEIGHT);
+
+			next_x = cursor_p.x + spacing;
+
+			for (int i = 1; i < rows; ++i) {
+				// carriage return 
+				cursor_p = ImVec2(prev_cursor_p.x, cursor_p.y + spacing);
+				cursor_p = MakeBox(ImColor(col_arr[i * 3 + 0], col_arr[i * 3 + 1], col_arr[i * 3 + 2]), cursor_p, WIDTH, HEIGHT);
+			}
+			cursor_p.x = next_x;
+			cursor_p.y = prev_cursor_p.y;
+
+			ImVec2 midpoint = ImVec2((prev_cursor_p.x + cursor_p.x + WIDTH) * 0.5, cursor_p.y);
+
+
+			// Draw markings, use a different thickness based on i
+			if ((frame_idx + 1) % 4 == 0 && (frame_idx + 1) != 0) {
+				float emptiness = 0.5;
+				int dashes = 10;
+				if ((frame_idx + 1) % 16 == 0) {
+					dashes = 1;
+					emptiness = 0.;
+				}
+
+				ImDrawList* draw_list = ImGui::GetWindowDrawList();
+
+				// halfway between the boxes
+				std::vector<std::array<ImVec2, 2>> dotted_line = DottedLine(
+					ImVec2(0., HEIGHT * -0.25),
+					// take off the last bit of spacing
+					ImVec2(0., (rows - 1) * (HEIGHT + spacing) + HEIGHT * 1.25),
+					dashes,
+					emptiness);
+				for (auto line : dotted_line) {
+					ImVec2 seg_start = line[0];
+					ImVec2 seg_end = line[1];
+					seg_start.x += midpoint.x;
+					seg_end.x += midpoint.x;
+					seg_start.y += midpoint.y;
+					seg_end.y += midpoint.y;
+					draw_list->AddLine(seg_start, seg_end, IM_COL32(255, 255, 255, 255), 1.);
+				}
+
+			}
+
+			++frame_idx;
+		}
+
+		ImGui::End();
+	}
+}
+
 void MainWindow::DrawFrameAdvantageSection() const
 {
 	if (!ImGui::CollapsingHeader("Framedata"))

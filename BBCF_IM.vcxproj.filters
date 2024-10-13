@@ -150,6 +150,7 @@
     <ClCompile Include="src\Game\SnapshotApparatus\SnapshotApparatus.cpp" />
     <ClCompile Include="src\Network\ReplayUploadManager.cpp" />
     <ClCompile Include="src\Overlay\Window\ReplayDBPopupWindow.cpp" />
+    <ClCompile Include="src\Overlay\Window\frameHistory.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="depends\imgui\imgui.h" />
@@ -289,6 +290,7 @@
     <ClInclude Include="src\Game\SnapshotApparatus\SnapshotApparatus.h" />
     <ClInclude Include="src\Network\ReplayUploadManager.h" />
     <ClInclude Include="src\Overlay\Window\ReplayDBPopupWindow.h" />
+    <ClInclude Include="src\Overlay\Window\frameHistory.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="export\dinput8.def">
