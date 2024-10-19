@@ -316,6 +316,9 @@ void MainWindow::DrawHitboxOverlaySection() const
 
 		ImGui::HorizontalSpacing();
 		ImGui::Checkbox("Freeze frame:", &g_gameVals.isFrameFrozen);
+		if (ImGui::IsKeyPressed(g_modVals.freeze_frame_keycode))
+			g_gameVals.isFrameFrozen ^= 1;
+
 		if (g_gameVals.pFrameCount)
 		{
 			ImGui::SameLine();
@@ -332,7 +335,7 @@ void MainWindow::DrawHitboxOverlaySection() const
 		{
 			static int framesToStep = 1;
 			ImGui::HorizontalSpacing();
-			if (ImGui::Button("Step frames"))
+			if (ImGui::Button("Step frames") || ImGui::IsKeyPressed(g_modVals.step_frames_keycode))
 			{
 				g_gameVals.framesToReach = *g_gameVals.pFrameCount + framesToStep;
 			}

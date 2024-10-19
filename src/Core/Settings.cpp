@@ -1,5 +1,6 @@
 #include "Settings.h"
 #include "logger.h"
+#include "keycodes.h"
 
 #include "Core/interfaces.h"
 
@@ -13,6 +14,7 @@
 
 settingsIni_t Settings::settingsIni = {};
 savedSettings_t Settings::savedSettings = {};
+
 
 void Settings::applySettingsIni(D3DPRESENT_PARAMETERS* pPresentationParameters)
 {
@@ -42,6 +44,8 @@ void Settings::applySettingsIni(D3DPRESENT_PARAMETERS* pPresentationParameters)
 	g_modVals.save_states_save_keycode = Settings::getButtonValue(settingsIni.saveStateKeybind);
 	g_modVals.save_states_load_keycode = Settings::getButtonValue(settingsIni.loadStateKeybind);
 	g_modVals.replay_takeover_load_keycode = Settings::getButtonValue(settingsIni.loadReplayStateKeybind);
+	g_modVals.freeze_frame_keycode = Settings::getButtonValue(Settings::settingsIni.freezeFrameKeybind);
+	g_modVals.step_frames_keycode = Settings::getButtonValue(Settings::settingsIni.stepFramesKeybind);
 	g_modVals.uploadReplayData = Settings::settingsIni.uploadReplayData;
 
 	
@@ -170,28 +174,12 @@ void Settings::initSavedSettings()
 
 short Settings::getButtonValue(std::string button)
 {
-	if (button == "F1")
+	auto maybe_keycode = keycode_mapper.find(button);
+	if (maybe_keycode != keycode_mapper.end())
+		return maybe_keycode->second;
+	else
 		return 112;
-	if (button == "F2")
-		return 113;
-	if (button == "F3")
-		return 114;
-	if (button == "F4")
-		return 115;
-	if (button == "F5")
-		return 116;
-	if (button == "F6")
-		return 117;
-	if (button == "F7")
-		return 118;
-	if (button == "F8")
-		return 119;
-	if (button == "F9")
-		return 120;
 
-	//default to F1
-	button = "F1";
-	return 112;
 }
 //int Settings::changeSetting(std::string setting_name, std::string new_value) { return 1; }
 int Settings::changeSetting(std::string setting_name, std::string new_value) {

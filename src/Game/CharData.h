@@ -150,14 +150,13 @@ public:
 	int32_t linesReadInCurrentState; //0x01334 counts the amount of "lines" read from the start of the script, in looping actions take the modulo
 	int64_t currentSprite; // 0x01338 the name of the current sprite
 	char pad_1340[3252]; //0x01340
-	char lastAction[20]; //0x1FF4
-	char pad_2008[12]; //0x2008
-	char current_action2[20];//0x2014 another current action I guess, gets set by the set_action_override
-	char pad_2028[24]; //0x2028
-	char set_action_override[20]; //0x2040 this sets the current action overriding the script order I guess? not sure, still need more testing
-	char pad_2054[28]; //0x2054
-	char currentAction[20]; //0x2070
-	char pad_2084[452]; //0x2084
+	char lastAction[32]; // 0x1FF4
+	char current_action2[32];// 0x2014 another current action I guess, gets set by the set_action_override
+	char pad_2034[12]; // 0x2034
+	char set_action_override[32]; // 0x2040 this sets the current action overriding the script order I guess? not sure, still need more testing
+	char pad_2060[16]; // 0x2060
+	char currentAction[32]; // 0x2070
+	char pad_2090[440]; // 0x2090
 	char char_abbr[4]; //0x2248
 	//char pad_224C[40]; //0x224C
 	char pad_224C[20]; //0x224C
