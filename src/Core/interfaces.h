@@ -103,6 +103,8 @@ struct modValues_t {
 	int save_states_save_keycode;
 	int save_states_load_keycode;
 	int replay_takeover_load_keycode;
+	int freeze_frame_keycode;
+	int step_frames_keycode;
 	int uploadReplayData;
 	std::string uploadReplayDataHost; 
 	std::string uploadReplayDataEndpoint;
