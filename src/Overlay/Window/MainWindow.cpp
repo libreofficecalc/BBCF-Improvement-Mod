@@ -78,8 +78,8 @@ void MainWindow::Draw()
 	DrawGameplaySettingSection();
 	DrawCustomPalettesSection();
 	DrawHitboxOverlaySection();
-	DrawFrameAdvantageSection();
 	DrawFrameHistorySection();
+	DrawFrameAdvantageSection();
 	DrawAvatarSection();
 	DrawLoadedSettingsValuesSection();
 	DrawUtilButtons();
@@ -160,6 +160,14 @@ std::vector<std::array<ImVec2, 2>> DottedLine(ImVec2 start, ImVec2 end, int divi
 	return dotted_line;
 }
 
+void DrawSegWithOffset(ImDrawList* drawlist, ImVec2 offset, ImVec2 seg_start, ImVec2 seg_end) {
+	seg_start.x += offset.x;
+	seg_end.x += offset.x;
+	seg_start.y += offset.y;
+	seg_end.y += offset.y;
+	drawlist->AddLine(seg_start, seg_end, IM_COL32(255, 255, 255, 255), 1.);
+}
+
 ImVec2 MakeBox(ImColor color, ImVec2 offset, float width, float height) {
 
 	float BoxWidth = width;
@@ -175,9 +183,7 @@ ImVec2 MakeBox(ImColor color, ImVec2 offset, float width, float height) {
 		p, ImVec2(p.x + width, p.y + height),
 		(ImU32)color);
 
-	// Advance the ImGui cursor to claim space in the window (otherwise the window
-	// will appear small and needs to be resized)
-	ImGui::Dummy(ImVec2(BoxWidth, BoxHeight));
+
 
 	return ImVec2(p.x + BoxWidth, p.y + BoxHeight);
 }
@@ -218,22 +224,30 @@ void MainWindow::DrawFrameHistorySection() const {
 	ImGui::Checkbox("Enable##framehistory_section", &isFrameHistoryOpen);
 
 	if (isFrameHistoryOpen) {
-
-		ImGui::Begin("Frame history p1", &isFrameHistoryOpen);
+		// TODO: Try using beginchild instead.
+		ImGui::Begin("Frame history", &isFrameHistoryOpen);
 
 		// borrow the history queue
 		StatePairQueue& queue = history.read();
 		int frame_idx = 0;
 
-		// player 1 history. The first element of each array in the queue
-		//ImGui::Text("Player 1:");
-		// Be careful where you place this
+		ImGui::Text("Player 1:");
+		// Rows starting point. Be careful where you place this
 		ImVec2 cursor_p = ImGui::GetCursorScreenPos();
+		float spacing = 10.;
+		float text_vertical_spacing = 20.;
+		const int rows = 4;
 
+
+
+
+		// Reclaim space after player 1 rows so Player 2 appears below
+		ImGui::Dummy(ImVec2(0, (HEIGHT + spacing) * ((rows >> 1) - 1) + HEIGHT));
+		ImGui::Text("Player 2:");
 		for (StatePairQueue::reverse_iterator elem = queue.rbegin(); elem != queue.rend(); ++elem) {
 			PlayerFrameState p1state = elem->front();
 			PlayerFrameState p2state = elem->back();
-			const int rows = 4;
+
 			// determine colors
 			std::array<float, 3 * rows> col_arr;
 
@@ -255,7 +269,7 @@ void MainWindow::DrawFrameHistorySection() const {
 
 
 			ImVec2 prev_cursor_p = cursor_p;
-			float spacing = 10.;
+
 			float next_x;
 
 			// BUG: This continually claims space. The screen cursor is not at all being moved, and yet this creates so much blank space below
@@ -265,7 +279,13 @@ void MainWindow::DrawFrameHistorySection() const {
 
 			next_x = cursor_p.x + spacing;
 
-			for (int i = 1; i < rows; ++i) {
+			for (int i = 1; i < (rows >> 1); ++i) {
+				// carriage return 
+				cursor_p = ImVec2(prev_cursor_p.x, cursor_p.y + spacing);
+				cursor_p = MakeBox(ImColor(col_arr[i * 3 + 0], col_arr[i * 3 + 1], col_arr[i * 3 + 2]), cursor_p, WIDTH, HEIGHT);
+			}
+			cursor_p.y += text_vertical_spacing;
+			for (int i = (rows >> 1); i < rows; ++i) {
 				// carriage return 
 				cursor_p = ImVec2(prev_cursor_p.x, cursor_p.y + spacing);
 				cursor_p = MakeBox(ImColor(col_arr[i * 3 + 0], col_arr[i * 3 + 1], col_arr[i * 3 + 2]), cursor_p, WIDTH, HEIGHT);
@@ -273,7 +293,12 @@ void MainWindow::DrawFrameHistorySection() const {
 			cursor_p.x = next_x;
 			cursor_p.y = prev_cursor_p.y;
 
-			ImVec2 midpoint = ImVec2((prev_cursor_p.x + cursor_p.x + WIDTH) * 0.5, cursor_p.y);
+			ImVec2 line_start = ImVec2(0., HEIGHT * -0.25);
+			ImVec2 line_end = ImVec2(0., ((rows - 1) >> 1) * (HEIGHT + spacing) + HEIGHT * 1.25);
+			float length_y = line_end.y - line_start.y;
+
+			ImVec2 midpoint_p1 = ImVec2((prev_cursor_p.x + cursor_p.x + WIDTH) * 0.5, cursor_p.y);
+			ImVec2 midpoint_p2 = ImVec2(midpoint_p1.x, midpoint_p1.y + length_y + text_vertical_spacing + spacing - HEIGHT * 0.25);
 
 
 			// Draw markings, use a different thickness based on i
@@ -287,24 +312,21 @@ void MainWindow::DrawFrameHistorySection() const {
 
 				ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
+
 				// halfway between the boxes
 				std::vector<std::array<ImVec2, 2>> dotted_line = DottedLine(
-					ImVec2(0., HEIGHT * -0.25),
-					// take off the last bit of spacing
-					ImVec2(0., (rows - 1) * (HEIGHT + spacing) + HEIGHT * 1.25),
+					line_start,
+					// take off the last bit of spacing (notice we add height at the end)
+					line_end,
 					dashes,
 					emptiness);
 				for (auto line : dotted_line) {
-					ImVec2 seg_start = line[0];
-					ImVec2 seg_end = line[1];
-					seg_start.x += midpoint.x;
-					seg_end.x += midpoint.x;
-					seg_start.y += midpoint.y;
-					seg_end.y += midpoint.y;
-					draw_list->AddLine(seg_start, seg_end, IM_COL32(255, 255, 255, 255), 1.);
+					DrawSegWithOffset(draw_list, midpoint_p1, line[0], line[1]);
+					DrawSegWithOffset(draw_list, midpoint_p2, line[0], line[1]);
 				}
 
 			}
+
 
 			++frame_idx;
 		}
@@ -338,7 +360,8 @@ void MainWindow::DrawFrameAdvantageSection() const
 
 	static bool isFrameAdvantageOpen = false;
 	ImGui::HorizontalSpacing();
-	ImGui::Checkbox("Enable##framedata_section", &isFrameAdvantageOpen);
+	ImGui::Checkbox(isFrameAdvantageOpen? "Disable##framedata_section" : "Enable##framedata_section", &isFrameAdvantageOpen);
+	//ImGui::Checkbox("Enable##framedata_section", &isFrameAdvantageOpen);
 
 	ImGui::HorizontalSpacing();
 	ImGui::Checkbox("Advantage on stagger hit", &idleActionToggles.ukemiStaggerHit);
@@ -494,6 +517,11 @@ void MainWindow::DrawHitboxOverlaySection() const
 
 		ImGui::HorizontalSpacing();
 		ImGui::Checkbox("Freeze frame:", &g_gameVals.isFrameFrozen);
+
+		if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_::ImGuiKey_C))) {
+    		g_gameVals.isFrameFrozen ^= true;
+		}
+		
 		if (g_gameVals.pFrameCount)
 		{
 			ImGui::SameLine();

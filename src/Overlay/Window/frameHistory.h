@@ -34,7 +34,7 @@ enum class FrameKind {
     NonDeterministicRecovery =
     0x40 | Recovery, // used for the cases where the sprite length is 32767
     HardLanding = 0x80,
-    Disarmed = Blockstun | Hitstun | Startup | Recovery | Active | HardLanding | 0x40,
+    Disarmed = Blockstun | Hitstun | Startup | Recovery | Active | HardLanding,
     // This is here to help with display
     Offense = Startup | Active | Recovery,
     Defense = Blockstun | Hitstun,
@@ -145,7 +145,7 @@ private:
 
     bool getPlayerFrameStates(CharData* player1, CharData* player2, StatePair*);
     void loadCharData();
-    void backupPlayers();
+    void backupChars();
 };
 
 std::array<float, 3> kindtoColor(FrameKind kind);

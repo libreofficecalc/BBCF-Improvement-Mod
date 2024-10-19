@@ -1,15 +1,15 @@
 #include "frameHistory.h"
 #include "FrameAdvantage/PlayerExtendedData.h"
 #include <cstddef>
-#include <list>
+
 
 // thanks to PCVolt
-const std::list<std::string> idleWords = {
+const std::vector<std::string> idleWords = {
     "_NEUTRAL", "CmnActStand", "CmnActStandTurn", "CmnActStand2Crouch",
     "CmnActCrouch", "CmnActCrouchTurn", "CmnActCrouch2Stand", "CmnActFWalk",
     "CmnActBWalk", "CmnActFDash", "CmnActFDashStop", "CmnActJumpUpper",
     "CmnActJumpDown", "CmnActJumpUpperEnd", "CmnActJumpLanding",
-    // "CmnActLandingStiffEnd", // Testing whether this is actually hard landing
+    "CmnActLandingStiffEnd",
     "CmnActUkemiLandNLanding", // to fix, 12F too long!
     // Proxi block is triggered when an attack is closing in without being
     // actually blocked If the player.blockstun is = 0, then those animations
@@ -47,7 +47,12 @@ std::array<float, 3> kindtoColor(FrameKind kind) {
     switch (cleankind)
     {
     case FrameKind::Idle:
-        res = BLACK;
+        if (static_cast<int>(kind & FrameKind::HardLanding) != 0) {
+            res = BLUSH;
+        }
+        else {
+            res = BLACK;
+        }
         break;
     case FrameKind::Startup:
         res = GREEN;
@@ -57,7 +62,7 @@ std::array<float, 3> kindtoColor(FrameKind kind) {
             res = BLUSH;
         }
         else {
-            res = PURPLE;
+            res = BLUE;
         }
         break;
     case FrameKind::Active:
@@ -67,16 +72,10 @@ std::array<float, 3> kindtoColor(FrameKind kind) {
         res = YELLOW;
         break;
     case FrameKind::Hitstun:
-        res = BLUE;
+        res = PURPLE;
         break;
     case FrameKind::Special:
-        // TODO: new condition: if hardlanding last frame, and we are in the state right after that on special
-        if (static_cast<int>(kind & FrameKind::HardLanding) != 0) {
-            res = BLUSH;
-        }
-        else {
-            res = AQUAMARINE;
-        }
+        res = AQUAMARINE;
         break;
     default:
         if (static_cast<int>(cleankind & FrameKind::Active) != 0) {
@@ -85,7 +84,6 @@ std::array<float, 3> kindtoColor(FrameKind kind) {
 
         else if (static_cast<int>(cleankind & FrameKind::Startup) != 0) {
             res = GREEN;
-
         }
         else if (static_cast<int>(cleankind & FrameKind::Recovery) != 0) {
             res = PURPLE;
@@ -111,10 +109,12 @@ int first_det_active(std::vector<FrameActivity>& activity_status) {
     return -1;
 }
 
+
 PlayerFrameState::PlayerFrameState(scrState* state, unsigned int frame,
     CharData* player, BackedUpCharData old_data) {
     // TODO: Make this more robust.
 
+    std::string currentAction = std::string(player->currentAction);
     int active_1;
     if (state == nullptr) {
         active_1 = -1;
@@ -126,10 +126,10 @@ PlayerFrameState::PlayerFrameState(scrState* state, unsigned int frame,
     }
     is_new = frame == 0;
     // BUG: Check if dereferencing player causes a crash here (mirror matches)
-    if (is_new && player->currentAction == "CmnActUkemiLandNLanding") {
+    if (is_new && currentAction == "CmnActUkemiLandNLanding") {
         kind = FrameKind::Recovery;
     }
-    else if (std::find(std::begin(idleWords), std::end(idleWords), player->currentAction) != std::end(idleWords)) {
+    else if (std::find(std::begin(idleWords), std::end(idleWords), currentAction) != std::end(idleWords)) {
         kind = FrameKind::Idle;
     }
     else {
@@ -146,7 +146,7 @@ PlayerFrameState::PlayerFrameState(scrState* state, unsigned int frame,
     }
 
     // hardlanding is set even if the player is still airborn. We only want to flag the *landing* portion
-    if (player->hardLandingRecovery > 0 && player->position_y + old_data.position_y == 0) {
+    if (/*player->hardLandingRecovery > 0 && player->position_y + old_data.position_y == 0 && */currentAction == "CmnActLandingStiffLoop") {
         kind = FrameKind::HardLanding | kind;
     }
     // NOTE: Startup is only defined in a context with deterministic active frames
@@ -177,14 +177,14 @@ bool FrameHistory::getPlayerFrameStates(CharData* player1,
     // Suppose we know the frame count for state n, if we changed states, start
     // another count otherwise, add the difference between our framecount, and the
     // global frame count.
-
+    std::string currentAction = std::string(player1->currentAction);
     // If the actionTime hasn't yet changed, don't register this frame.
     bool condition1 = p1_frames == player1->actionTime - 1;
     if (player1->stateChangedCount != p1_stateChangedCount) {
         // if it is not, fetch the new states from the map
-        auto p1_new_state = p1_StateMap.find(player1->currentAction);
+        auto p1_new_state = p1_StateMap.find(currentAction);
         if (p1_new_state != p1_StateMap.end()) {
-            p1_State = p1_StateMap.at(player1->currentAction);
+            p1_State = p1_StateMap.at(currentAction);
         }
         else {
             p1_State = nullptr;
@@ -196,11 +196,12 @@ bool FrameHistory::getPlayerFrameStates(CharData* player1,
         // increment this If there is hitstop, do not add a frame.
         p1_frames = player1->actionTime - 1;
     }
+    currentAction = std::string(player2->currentAction);
     bool condition2 = p2_frames == player2->actionTime - 1;
     if (player2->stateChangedCount != p2_stateChangedCount) {
-        auto p2_new_state = p2_StateMap.find(player2->currentAction);
+        auto p2_new_state = p2_StateMap.find(currentAction);
         if (p2_new_state != p2_StateMap.end()) {
-            p2_State = p2_StateMap.at(player2->currentAction);
+            p2_State = p2_StateMap.at(currentAction);
         }
         else {
             p2_State = nullptr;
@@ -269,10 +270,10 @@ void FrameHistory::updateHistory() {
         is_old = false;
     }
     // after doing updates, store this information for later.
-    backupPlayers();
+    backupChars();
 }
 
-void FrameHistory::backupPlayers()
+void FrameHistory::backupChars()
 {
     CharData* p1 = g_interfaces.player1.GetData();
     CharData* p2 = g_interfaces.player2.GetData();
@@ -312,6 +313,10 @@ void FrameHistory::loadCharData() {
 
 void FrameHistory::clear() { queue.clear(); }
 
-FrameHistory::FrameHistory() { queue = std::deque<StatePair>(); }
+FrameHistory::FrameHistory() {
+    queue = std::deque<StatePair>();
+    p1_old_data = BackedUpCharData();
+    p2_old_data = BackedUpCharData();
+}
 
 FrameHistory::~FrameHistory() {}
