@@ -25,6 +25,7 @@ private:
 	void DrawGameplaySettingSection() const;
 	void DrawAvatarSection() const;
 	void DrawFrameAdvantageSection() const;
+	void DrawControllerSettingSection() const;
 
 	const ImVec2 BTN_SIZE = ImVec2(60, 20);
 	WindowContainer* m_pWindowContainer = nullptr;
