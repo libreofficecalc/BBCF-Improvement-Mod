@@ -8,6 +8,7 @@
 #include "Core/info.h"
 #include "Core/interfaces.h"
 #include "Game/gamestates.h"
+#include "Core/utils.h"
 #include "Overlay/imgui_utils.h"
 #include "Overlay/Widget/ActiveGameModeWidget.h"
 #include "Overlay/Widget/GameModeSelectWidget.h"
@@ -81,6 +82,7 @@ void MainWindow::Draw()
 	DrawFrameHistorySection();
 	DrawFrameAdvantageSection();
 	DrawAvatarSection();
+	DrawControllerSettingSection();
 	DrawLoadedSettingsValuesSection();
 	DrawUtilButtons();
 
@@ -594,7 +596,27 @@ void MainWindow::DrawGameplaySettingSection() const
 		ImGui::Checkbox("Hide HUD", (bool*)g_gameVals.pIsHUDHidden);
 	}
 }
-
+void MainWindow::DrawControllerSettingSection() const {
+	if (!ImGui::CollapsingHeader("Controller Settings"))
+		return;
+	static bool controller_position_swapped = false;
+	
+	if(ImGui::Checkbox("Keyboard + Controller/ Swap controller pos", &controller_position_swapped)) {
+		//make the battle_key_controller into a proper struck later
+		char*** battle_key_controller = (char***)(GetBbcfBaseAdress() + 0x8929c8);
+		char** menu_control_p1 = (char**)((char*)*battle_key_controller + 0x10);     
+		char** menu_control_p2 = (char**)((char*)*battle_key_controller + 0x14);    
+		char** unknown_p1 = (char**)((char*)*battle_key_controller + 0x1C);       
+		char** unknown_p2 = (char**)((char*)*battle_key_controller + 0x20);         
+		char** char_control_p1 = (char**)((char*)*battle_key_controller + 0x24);    
+		char** char_control_p2 = (char**)((char*)*battle_key_controller + 0x28);    
+		std::swap(*menu_control_p1, *menu_control_p2);
+		std::swap(*char_control_p1, *char_control_p2);
+		std::swap(*unknown_p1, *unknown_p2);
+	}
+	ImGui::SameLine();
+	ImGui::ShowHelpMarker("Swap the p1 and p2 controller positions. This can be used to play locally with a single controller and a keyboard as this will force the single controller to be in p2 position while the keyboard is always p1.");
+}
 void MainWindow::DrawLinkButtons() const
 {
 	//ImGui::ButtonUrl("Replay Database", REPLAY_DB_FRONTEND, BTN_SIZE);
