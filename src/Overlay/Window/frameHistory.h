@@ -51,6 +51,8 @@ inline FrameKind operator~(FrameKind a) {
     return static_cast<FrameKind>(~static_cast<int>(a));
 }
 
+// TODO: Consider changing this representation to be more in line with the game's
+
 // General purpose attribute class for invul/guardpoint/attack attribute
 enum class Attribute {
 
@@ -73,6 +75,9 @@ inline Attribute operator|(Attribute a, Attribute b) {
 }
 inline Attribute operator&(Attribute a, Attribute b) {
     return static_cast<Attribute>(static_cast<int>(a) & static_cast<int>(b));
+}
+inline Attribute operator&(Attribute a, uint32 b) {
+    return static_cast<Attribute>(static_cast<uint32>(a) & b);
 }
 
 struct BackedUpCharData {
@@ -149,7 +154,7 @@ private:
 };
 
 std::array<float, 3> kindtoColor(FrameKind kind);
-std::array<float, 3> attributetoColor(Attribute attr);
+std::array<float, 3> attributetoColor(Attribute attr, std::array<Attribute, 3> rgb_attr);
 
 const std::array<float, 3> GREEN = { 0, 1, 0 };
 const std::array<float, 3> RED = { 1, 0, 0 };

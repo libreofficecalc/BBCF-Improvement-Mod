@@ -238,7 +238,7 @@ void MainWindow::DrawFrameHistorySection() const {
 		ImVec2 cursor_p = ImGui::GetCursorScreenPos();
 		float spacing = 10.;
 		float text_vertical_spacing = 20.;
-		const int rows = 4;
+		const int rows = 6;
 
 
 
@@ -253,20 +253,29 @@ void MainWindow::DrawFrameHistorySection() const {
 			// determine colors
 			std::array<float, 3 * rows> col_arr;
 
+			// TODO: Change design to a box for tpo and an inscribed circle for hbf
+			// One row for each set of attributes
+			std::array<Attribute, 3> hbf = { Attribute::H, Attribute::B, Attribute::F };
+			std::array<Attribute, 3> tpo = { Attribute::T, Attribute::P, Attribute::O };
+
 			std::array<float, 3> color;
 			color = kindtoColor(p1state.kind);
 			std::copy(std::begin(color), std::end(color), std::begin(col_arr));
-			color = attributetoColor(p1state.invul);
+			color = attributetoColor(p1state.invul, hbf);
 			std::copy(std::begin(color), std::end(color), std::begin(col_arr) + 3 * 1);
+			color = attributetoColor(p1state.invul, tpo);
+			std::copy(std::begin(color), std::end(color), std::begin(col_arr) + 3 * 2);
 			//color = attributetoColor(p1state.guardp);
 			//std::copy(std::begin(color), std::end(color), std::begin(col_arr) + 3 * 2);
 			//color = attributetoColor(p1state.attack);
 			//std::copy(std::begin(color), std::end(color), std::begin(col_arr) + 3 * 3);
 
 			color = kindtoColor(p2state.kind);
-			std::copy(std::begin(color), std::end(color), std::begin(col_arr) + 3 * 2);
-			color = attributetoColor(p2state.invul);
 			std::copy(std::begin(color), std::end(color), std::begin(col_arr) + 3 * 3);
+			color = attributetoColor(p2state.invul, hbf);
+			std::copy(std::begin(color), std::end(color), std::begin(col_arr) + 3 * 4);
+			color = attributetoColor(p2state.invul, tpo);
+			std::copy(std::begin(color), std::end(color), std::begin(col_arr) + 3 * 5);
 
 
 

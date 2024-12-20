@@ -1,6 +1,9 @@
 #include "frameHistory.h"
 #include "FrameAdvantage/PlayerExtendedData.h"
 #include <cstddef>
+#include "Core/logger.h"
+#include "Overlay/Logger/ImGuiLogger.h"
+#define max(a,b)            (((a) > (b)) ? (a) : (b))
 
 
 // thanks to PCVolt
@@ -25,17 +28,16 @@ const std::vector<std::string> idleWords = {
     "com3_kamae" // Mai 5xB stance
 };
 
-std::array<float, 3> attributetoColor(Attribute attr) {
-    std::array<float, 3> res;
+std::array<float, 3> attributetoColor(Attribute attr, std::array<Attribute, 3> rgb_attr) {
+    std::array<float, 3> res = {};
+    
     auto distribution = [](float x, float scale) {
-        return pow(log(x + 1) / log(scale + 1), 2.);
+        return pow(log(x + 1) / max(log(scale + 1), log(2)), 2.);
         };
-    res[0] = distribution(static_cast<int>((Attribute::H)&attr),
-        static_cast<int>(Attribute::H));
-    res[1] = distribution(static_cast<int>((Attribute::B)&attr),
-        static_cast<int>(Attribute::B));
-    res[2] = distribution(static_cast<int>((Attribute::F)&attr),
-        static_cast<int>(Attribute::F));
+    res[0] = static_cast<int>(rgb_attr[0] & attr) > 0;
+    res[1] = static_cast<int>(rgb_attr[1] & attr) > 0;
+    res[2] = static_cast<int>(rgb_attr[2] & attr) > 0;
+    
     return res;
 }
 
@@ -110,20 +112,46 @@ int first_det_active(std::vector<FrameActivity>& activity_status) {
 }
 
 
+Attribute parse_dyn_invul(uint32 invul_field) {
+    if ((invul_field & 0x02) == 0) {
+        return Attribute::N;
+    }
+
+    Attribute invul = Attribute::N;
+    
+    invul = invul | Attribute::H & (~static_cast<uint32>(((invul_field & 0x08) != 0) - 1));
+    invul = invul | Attribute::B & (~static_cast<uint32>(((invul_field & 0x10) != 0) - 1));
+    invul = invul | Attribute::F & (~static_cast<uint32>(((invul_field & 0x20) != 0) - 1));
+    invul = invul | Attribute::P & (~static_cast<uint32>(((invul_field & 0x80000) != 0) - 1));
+    invul = invul | Attribute::T & (~static_cast<uint32>(((invul_field & 0x40) != 0)-1));
+
+    return invul;
+}
+
 PlayerFrameState::PlayerFrameState(scrState* state, unsigned int frame,
     CharData* player, BackedUpCharData old_data) {
     // TODO: Make this more robust.
 
     std::string currentAction = std::string(player->currentAction);
-    int active_1;
+    int fst_det_active;
+    Attribute det_invul = Attribute::N;
     if (state == nullptr) {
-        active_1 = -1;
+        fst_det_active = -1;
     }
     else {
-        active_1 = first_det_active(state->frame_activity_status);
-        if (state->frame_invuln_status.size() > frame)
-            invul = static_cast<Attribute>(state->frame_invuln_status.at(frame));
+        fst_det_active = first_det_active(state->frame_activity_status);
+        // if (state->frame_invuln_status.size() > frame)
+        //     det_invul = static_cast<Attribute>(state->frame_invuln_status.at(frame));
     }
+    // invul = det_invul;
+    invul = parse_dyn_invul(*((uint32*) (((char*) player) + 0x998)));
+//    uint32 invul_field = *((uint32*)(((char*)player) + 0x998));
+//#ifdef ENABLE_LOGGING
+//    if (invul_field != 0x000BBDF9) {
+//        g_imGuiLogger->Log("[debug] Invul: %x\n", invul);
+//    }
+//#endif
+
     is_new = frame == 0;
     // BUG: Check if dereferencing player causes a crash here (mirror matches)
     if (is_new && currentAction == "CmnActUkemiLandNLanding") {
@@ -150,8 +178,8 @@ PlayerFrameState::PlayerFrameState(scrState* state, unsigned int frame,
         kind = FrameKind::HardLanding | kind;
     }
     // NOTE: Startup is only defined in a context with deterministic active frames
-    if (active_1 > -1 && player->hitboxCount <= 0) {
-        if (frame < active_1) {
+    if (fst_det_active > -1 && player->hitboxCount <= 0) {
+        if (frame < fst_det_active) {
             kind = FrameKind::Startup | kind;
         }
         else {
@@ -163,6 +191,7 @@ PlayerFrameState::PlayerFrameState(scrState* state, unsigned int frame,
     if ((kind & FrameKind::Disarmed) != FrameKind::Idle) {
         kind = FrameKind::NotSpecial & kind;
     }
+
 
     return;
 }
