@@ -80,6 +80,7 @@ unsigned long DownloadUrlBinary(std::wstring& wUrl, void** outBuffer)
 	DWORD numberOfBytesRead = 0;
 	DWORD returnedBytesRead = 0;
 	bool result = false;
+    char* inspection = (char*)*outBuffer;
 	do
 	{
 		char buffer[2000];
