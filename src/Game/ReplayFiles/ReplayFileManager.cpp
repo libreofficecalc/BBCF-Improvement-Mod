@@ -9,9 +9,9 @@
 #include "Game/characters.h"
 
 
-#define REPLAY_FILE_SIZE 65536
-#define REPLAY_FOLDER_PATH "./Save/Replay/"
-#define REPLAY_ARCHIVE_FOLDER_PATH "./Save/Replay/archive/"
+//#define REPLAY_FILE_SIZE 65536
+//#define REPLAY_FOLDER_PATH "./Save/Replay/"
+//#define REPLAY_ARCHIVE_FOLDER_PATH "./Save/Replay/archive/"
     
 
 
@@ -47,7 +47,9 @@ void replace_all(
     ReplayFileManager::ReplayFileManager(std::string file_path) {
         isLoaded = load_replay(file_path);
     }
+
     bool ReplayFileManager::save_replay(std::string file_path) {
+        //std::wstring file_path2 = utf8_to_utf16(file_path);
         if (isLoaded) {
                 std::ofstream out(file_path,std::ios::binary);
                 if (out.is_open()) {
@@ -89,7 +91,6 @@ void replace_all(
 
         } 
 
-	
 	std::string ReplayFileManager::build_file_name() {
         std::wstring p1ws = std::wstring(replay_file.p1_name);
         std::wstring p2ws = std::wstring(replay_file.p2_name);
@@ -120,9 +121,9 @@ void replace_all(
         replace_all(month, "Dec", "12");
         //auto fin = year + "_" + month+ "_"+ day+"T"+time + "_" + "("+ p1_toonstr+ ")"+  p1n + "_V_" + "(" + p2_toonstr + ")"+ p2n + ".dat";
         auto fin = year + month + day + "T" + time + "_"  + p1n + "_V_" + p2n + ".dat";
+        
         replace_all(fin, ":", "_");
         replace_all(fin, " ", "_");
-        
 
 
 
@@ -146,6 +147,7 @@ void replace_all(
         CreateDirectory(L"./Save/Replay/archive/", NULL);
         for (auto el : replay_paths) {
             load_replay(el);
+            //load_replay("test.dat");
             auto new_fname = build_file_name();
             save_replay(replay_archive_folder_path + new_fname);
         }

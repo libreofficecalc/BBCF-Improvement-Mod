@@ -9,8 +9,10 @@
 #include "Overlay/WindowManager.h"
 #include "Overlay/Window/HitboxOverlay.h"
 #include "Core/info.h"
+#include "Web/url_downloader.h"
 //#include "Game/GhidraDefs.h"
 #include "Game/SnapshotApparatus/SnapshotApparatus.h"
+#include "Game/ReplayFiles/ReplayFileManager.h"
 #define STB_IMAGE_IMPLEMENTATION
 //#include "stb_image.h"
 
@@ -143,6 +145,43 @@ void DebugWindow::DrawGameValuesSection()
 	//bbcf.exe+0x612888
 	//static unsigned char savedstate_mine[10][0xa10000] = {};
 	char* base_addr = GetBbcfBaseAdress();
+	if (ImGui::TreeNode("replay download testing")) {
+		//static char replay_file_download_staging[REPLAY_FILE_SIZE];
+
+		//CA2W pszwide(g_modVals.uploadReplayDataHost.c_str());
+		if (ImGui::Button("download")) {
+			char *replay_file_download_staging = new char[REPLAY_FILE_SIZE];
+			char* out = replay_file_download_staging;
+			auto narrow_addr = "http://"+ g_modVals.uploadReplayDataHost + "/uploads" + "/e812493f92cfa6256224e288b.dat";
+			std::wstring wide_addr = utf8_to_utf16(narrow_addr);
+
+			
+			auto ret = DownloadUrlBinary(wide_addr, (void**)out);
+			int a = 0;
+		}
+
+
+		else if (ImGui::Button("download2")) {
+				char* replay_file_download_staging = new char[REPLAY_FILE_SIZE];
+				//char* preplay = replay_file_download_staging;
+				char** ppreplay = &replay_file_download_staging;
+				auto narrow_addr = "http://" + g_modVals.uploadReplayDataHost + "/uploads" + "/e812493f92cfa6256224e288b.dat";
+				std::wstring wide_addr = utf8_to_utf16(narrow_addr);
+
+
+				auto ret = DownloadUrlBinary(wide_addr, (void**)ppreplay);
+				//path
+				//REPLAY_FOLDER_PATH
+				std::string base(REPLAY_FOLDER_PATH);
+				std::string fname("e812493f92cfa6256224e288b.dat");
+				std::string path = base + fname;
+				const char* cp_path = path.c_str();
+				utils_WriteFile(cp_path, replay_file_download_staging, REPLAY_FILE_SIZE, true);
+				int b = 0;
+				delete replay_file_download_staging;
+			}
+			ImGui::TreePop();
+		}
 	if (ImGui::TreeNode("replay rewind testing")) {
 		ImGui::TreePop();
 	}

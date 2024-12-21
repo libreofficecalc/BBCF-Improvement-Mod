@@ -17,22 +17,39 @@ enum class FrameInvuln {
 	Body = 0x2,
 	Foot = 0x4,
 	Throw = 0x8,
+	//Proj = 0x10,
+
 	// permutations
 	HeadBody = Head | Body,
 	HeadFoot = Head | Foot,
 	HeadThrow = Head | Throw,
+	//HeadProj = Head | Proj,
 
 	BodyFoot = Body | Foot,
 	BodyThrow = Body | Throw,
+	//BodyProj = Body | Proj,
 
 	FootThrow = Foot | Throw,
+	//FootProj = Foot | Proj,
+
+	//ThrowProj = Throw | Proj,
 
 	HeadBodyFoot = HeadBody | Foot,
 	HeadBodyThrow = HeadBody | Throw,
+	//HeadBodyProj = HeadBody | Proj,
 	HeadFootThrow = Head | Foot | Throw,
+	//HeadFootProj = Head | Foot | Proj,
+
 	BodyFootThrow = Body | Foot | Throw,
+	//BodyFootProj = Body | Foot | Proj,
+
+	//HeadBodyFootThrow = Head | Body | Foot | Throw,
+	//HeadBodyFootProj = Head | Body | Foot | Proj,
+	
+	//BodyFootThrowProj = Body | Foot | Throw | Proj,
 
 	All = Head | Body | Foot | Throw,
+	//All = Head | Body | Foot | Throw | Proj, 
 	// missing projectile invuln
 };
 //gotta remember to clean up the memory afterwards

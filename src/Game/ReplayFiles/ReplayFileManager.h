@@ -5,6 +5,9 @@
 #include <vector>
 #include <string>
 #define _SILENCE_EXPERIMENTAL_FILESYSTEM_DEPRECATION_WARNING
+#define REPLAY_FILE_SIZE 65536
+#define REPLAY_FOLDER_PATH "./Save/Replay/"
+#define REPLAY_ARCHIVE_FOLDER_PATH "./Save/Replay/archive/"
 class ReplayFileManager {
 public:
 	ReplayFile replay_file;
