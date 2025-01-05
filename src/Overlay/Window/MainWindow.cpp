@@ -190,6 +190,27 @@ ImVec2 MakeBox(ImColor color, ImVec2 offset, float width, float height) {
 	return ImVec2(p.x + BoxWidth, p.y + BoxHeight);
 }
 
+ImVec2 MakeBall(ImColor color, float radius_proportion, ImVec2 offset, float width, float height) {
+
+  radius_proportion = MAX(MIN(radius_proportion, 1.), 0.);
+  
+  ImVec2 center = ImVec2(offset.x + width * 0.5, offset.y + height * 0.5);
+
+  float radius = radius_proportion * MIN(width, height) * 0.5;
+
+  ImDrawList *draw_list = ImGui::GetWindowDrawList();
+
+  // Draw a rectangle with color
+  draw_list->AddCircleFilled(
+      center, radius,
+      (ImU32)color);
+
+  // Advance the ImGui cursor to claim space in the window (otherwise the window
+  // will appear small and needs to be resized)
+
+  return ImVec2(offset.x + width, offset.y + height );
+}
+
 
 void MainWindow::DrawFrameHistorySection() const {
 	if (!ImGui::CollapsingHeader("FrameHistory"))
@@ -218,12 +239,14 @@ void MainWindow::DrawFrameHistorySection() const {
 	if (!g_interfaces.player1.IsCharDataNullPtr() &&
 		!g_interfaces.player2.IsCharDataNullPtr() && hasWorldTimeMoved()) {
 
-		history.updateHistory();
+		history.updateHistory(resetting);
 	}
 
 	static bool isFrameHistoryOpen = false;
+	static bool resetting = true;
 	ImGui::HorizontalSpacing();
 	ImGui::Checkbox("Enable##framehistory_section", &isFrameHistoryOpen);
+	ImGui::Checkbox("Enable##Auto_reset", &resetting);
 
 	if (isFrameHistoryOpen) {
 		// TODO: Try using beginchild instead.
@@ -238,7 +261,7 @@ void MainWindow::DrawFrameHistorySection() const {
 		ImVec2 cursor_p = ImGui::GetCursorScreenPos();
 		float spacing = 10.;
 		float text_vertical_spacing = 20.;
-		const int rows = 6;
+		const int rows = 2 * 2;
 
 
 
@@ -284,22 +307,28 @@ void MainWindow::DrawFrameHistorySection() const {
 			float next_x;
 
 			// BUG: This continually claims space. The screen cursor is not at all being moved, and yet this creates so much blank space below
+
 			// draw a box, mind how much it has moved beyond the (width, height)
 			// Draw box & write the new cursor pos
 			cursor_p = MakeBox(ImColor(col_arr[0], col_arr[1], col_arr[2]), cursor_p, WIDTH, HEIGHT);
 
+			// Remember where the box finished drawing, to get the new column
 			next_x = cursor_p.x + spacing;
 
 			for (int i = 1; i < (rows >> 1); ++i) {
 				// carriage return 
 				cursor_p = ImVec2(prev_cursor_p.x, cursor_p.y + spacing);
-				cursor_p = MakeBox(ImColor(col_arr[i * 3 + 0], col_arr[i * 3 + 1], col_arr[i * 3 + 2]), cursor_p, WIDTH, HEIGHT);
+				MakeBox(ImColor(col_arr[i * 6 + 0 - 3], col_arr[i * 6 + 1 - 3], col_arr[i * 6 + 2 - 3]), cursor_p, WIDTH, HEIGHT);
+				// TODO: Skip a row
+				cursor_p = MakeBall(ImColor(col_arr[i * 6 + 0], col_arr[i * 6 + 1], 0.5, col_arr[i * 6 + 2]), cursor_p, WIDTH, HEIGHT);
 			}
 			cursor_p.y += text_vertical_spacing;
-			for (int i = (rows >> 1); i < rows; ++i) {
+			cursor_p = MakeBox(ImColor(col_arr[0], col_arr[1], col_arr[2]), cursor_p, WIDTH, HEIGHT);
+			for (int i = (rows >> 1) + 1; i < rows; ++i) {
 				// carriage return 
 				cursor_p = ImVec2(prev_cursor_p.x, cursor_p.y + spacing);
-				cursor_p = MakeBox(ImColor(col_arr[i * 3 + 0], col_arr[i * 3 + 1], col_arr[i * 3 + 2]), cursor_p, WIDTH, HEIGHT);
+				MakeBox(ImColor(col_arr[i * 6 + 0 - 3], col_arr[i * 6 + 1 - 3], col_arr[i * 6 + 2 - 3]), cursor_p, WIDTH, HEIGHT);
+				cursor_p = MakeBall(ImColor(col_arr[i * 6 + 0], col_arr[i * 6 + 1], col_arr[i * 6 + 2]), 0.5, cursor_p, WIDTH, HEIGHT);
 			}
 			cursor_p.x = next_x;
 			cursor_p.y = prev_cursor_p.y;

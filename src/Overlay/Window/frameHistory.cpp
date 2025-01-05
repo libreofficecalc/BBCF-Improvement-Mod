@@ -258,7 +258,7 @@ bool FrameHistory::getPlayerFrameStates(CharData* player1,
 
 /// update the history queue with the new player states. Only call after the
 /// game time has moved and by NO MORE than 1 frame
-void FrameHistory::updateHistory() {
+void FrameHistory::updateHistory(bool resetting) {
     CharData* p1 = g_interfaces.player1.GetData();
     CharData* p2 = g_interfaces.player2.GetData();
 
@@ -280,21 +280,20 @@ void FrameHistory::updateHistory() {
     p2_stateChangedCount = p2->stateChangedCount;
 
 
+    // Don't log completely idle frames
     if (states[0].kind == FrameKind::Idle && states[1].kind == FrameKind::Idle) {
-        // for the first case, keep the queue as it is. There is nothing of note
-        // to write Signal to later calls that we have had both players be idle
-        // before.
         is_old = true;
     }
     else {
         // if something is happening, push the info. But not before clearing out
-        if (is_old) {
+        if (is_old && resetting) {
             queue.clear();
         }
 
-        if (queue.size() == HISTORY_DEPTH) {
+        while (queue.size() >= HISTORY_DEPTH) {
             queue.pop_front();
         }
+        
         queue.push_back(states);
         is_old = false;
     }
