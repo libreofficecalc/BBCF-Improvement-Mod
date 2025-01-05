@@ -17,6 +17,9 @@
 
 #include <sstream>
 
+#define MAX(a,b)            (((a) > (b)) ? (a) : (b))
+#define MIN(a,b)            (((a) > (b)) ? (b) : (a))
+
 MainWindow::MainWindow(const std::string& windowTitle, bool windowClosable, WindowContainer& windowContainer, ImGuiWindowFlags windowFlags)
 	: IWindow(windowTitle, windowClosable, windowFlags), m_pWindowContainer(&windowContainer)
 {
@@ -172,8 +175,7 @@ void DrawSegWithOffset(ImDrawList* drawlist, ImVec2 offset, ImVec2 seg_start, Im
 
 ImVec2 MakeBox(ImColor color, ImVec2 offset, float width, float height) {
 
-	float BoxWidth = width;
-	float BoxHeight = height;
+
 	// Get the current ImGui cursor position
 	// ImVec2 p = ImGui::GetCursorScreenPos();
 	ImVec2 p = offset;
@@ -187,7 +189,7 @@ ImVec2 MakeBox(ImColor color, ImVec2 offset, float width, float height) {
 
 
 
-	return ImVec2(p.x + BoxWidth, p.y + BoxHeight);
+	return ImVec2(p.x + width, p.y + height);
 }
 
 ImVec2 MakeBall(ImColor color, float radius_proportion, ImVec2 offset, float width, float height) {
@@ -208,7 +210,7 @@ ImVec2 MakeBall(ImColor color, float radius_proportion, ImVec2 offset, float wid
   // Advance the ImGui cursor to claim space in the window (otherwise the window
   // will appear small and needs to be resized)
 
-  return ImVec2(offset.x + width, offset.y + height );
+  return ImVec2(offset.x + width, offset.y + height);
 }
 
 
@@ -231,8 +233,23 @@ void MainWindow::DrawFrameHistorySection() const {
 		return;
 	}
 
-	const float WIDTH = 6.;
-	const float HEIGHT = 6.;
+	static float width = 10.;
+	static float height = 10.;
+	static float spacing = 10.;
+
+	static bool isFrameHistoryOpen = false;
+	static bool resetting = true;
+
+	ImGui::HorizontalSpacing();
+	ImGui::Checkbox("Enable##framehistory_section", &isFrameHistoryOpen);
+	ImGui::HorizontalSpacing();
+	ImGui::Checkbox("Auto Reset##Reset after each idle frame", &resetting);
+	ImGui::HorizontalSpacing();
+	ImGui::SliderFloat("Box width", &width, 1., 100.);
+	ImGui::HorizontalSpacing();
+	ImGui::SliderFloat("Box height", &height, 1., 100.);
+	ImGui::HorizontalSpacing();
+	ImGui::SliderFloat("spacing", &spacing, 1., 100.);
 
 	// May want to come up with our own function to check if time moved.
 	// The current implementation doesn't check if we missed frames.
@@ -241,12 +258,6 @@ void MainWindow::DrawFrameHistorySection() const {
 
 		history.updateHistory(resetting);
 	}
-
-	static bool isFrameHistoryOpen = false;
-	static bool resetting = true;
-	ImGui::HorizontalSpacing();
-	ImGui::Checkbox("Enable##framehistory_section", &isFrameHistoryOpen);
-	ImGui::Checkbox("Enable##Auto_reset", &resetting);
 
 	if (isFrameHistoryOpen) {
 		// TODO: Try using beginchild instead.
@@ -259,15 +270,18 @@ void MainWindow::DrawFrameHistorySection() const {
 		ImGui::Text("Player 1:");
 		// Rows starting point. Be careful where you place this
 		ImVec2 cursor_p = ImGui::GetCursorScreenPos();
-		float spacing = 10.;
+
 		float text_vertical_spacing = 20.;
-		const int rows = 2 * 2;
+		const int rows = 3 * 2;
+		// The number of rows on different elevations
+		const int unmerged_rows = rows - 2;
+		const double circle_proportion = 0.75;
 
 
 
 
 		// Reclaim space after player 1 rows so Player 2 appears below
-		ImGui::Dummy(ImVec2(0, (HEIGHT + spacing) * ((rows >> 1) - 1) + HEIGHT));
+		ImGui::Dummy(ImVec2(0, (height + spacing) * ((unmerged_rows >> 1) - 1) + height));
 		ImGui::Text("Player 2:");
 		for (StatePairQueue::reverse_iterator elem = queue.rbegin(); elem != queue.rend(); ++elem) {
 			PlayerFrameState p1state = elem->front();
@@ -306,39 +320,48 @@ void MainWindow::DrawFrameHistorySection() const {
 
 			float next_x;
 
-			// BUG: This continually claims space. The screen cursor is not at all being moved, and yet this creates so much blank space below
+			// NOTE: Add a -3 to the indices beyond this point (since the loop below expects to surpass 6 indices for each i (iteration)
+			// But, these outside calls only increment by 3
 
 			// draw a box, mind how much it has moved beyond the (width, height)
 			// Draw box & write the new cursor pos
-			cursor_p = MakeBox(ImColor(col_arr[0], col_arr[1], col_arr[2]), cursor_p, WIDTH, HEIGHT);
+			cursor_p = MakeBox(ImColor(col_arr[0], col_arr[1], col_arr[2]), cursor_p, width, height);
 
 			// Remember where the box finished drawing, to get the new column
 			next_x = cursor_p.x + spacing;
 
-			for (int i = 1; i < (rows >> 1); ++i) {
+			for (int i = 1; i < (unmerged_rows >> 1); ++i) {
 				// carriage return 
 				cursor_p = ImVec2(prev_cursor_p.x, cursor_p.y + spacing);
-				MakeBox(ImColor(col_arr[i * 6 + 0 - 3], col_arr[i * 6 + 1 - 3], col_arr[i * 6 + 2 - 3]), cursor_p, WIDTH, HEIGHT);
+				MakeBox(ImColor(col_arr[i * 6 + 0 - 3], col_arr[i * 6 + 1 - 3], col_arr[i * 6 + 2 - 3]), cursor_p, width, height);
 				// TODO: Skip a row
-				cursor_p = MakeBall(ImColor(col_arr[i * 6 + 0], col_arr[i * 6 + 1], 0.5, col_arr[i * 6 + 2]), cursor_p, WIDTH, HEIGHT);
+				cursor_p = MakeBall(ImColor(col_arr[i * 6 + 0], col_arr[i * 6 + 1], col_arr[i * 6 + 2]), circle_proportion, cursor_p, width, height);
 			}
-			cursor_p.y += text_vertical_spacing;
-			cursor_p = MakeBox(ImColor(col_arr[0], col_arr[1], col_arr[2]), cursor_p, WIDTH, HEIGHT);
-			for (int i = (rows >> 1) + 1; i < rows; ++i) {
+			cursor_p.x = prev_cursor_p.x;
+			cursor_p.y += text_vertical_spacing + spacing;
+
+			// add another -3 to the indices beyond this point
+			cursor_p = MakeBox(ImColor(
+				col_arr[(unmerged_rows >> 1) * 6 + 0 - 3], 
+				col_arr[(unmerged_rows >> 1) * 6 + 1 - 3], 
+				col_arr[(unmerged_rows >> 1) * 6 + 2 - 3])
+				, cursor_p, width, height);
+			
+			for (int i = (unmerged_rows >> 1) + 1; i < unmerged_rows; ++i) {
 				// carriage return 
 				cursor_p = ImVec2(prev_cursor_p.x, cursor_p.y + spacing);
-				MakeBox(ImColor(col_arr[i * 6 + 0 - 3], col_arr[i * 6 + 1 - 3], col_arr[i * 6 + 2 - 3]), cursor_p, WIDTH, HEIGHT);
-				cursor_p = MakeBall(ImColor(col_arr[i * 6 + 0], col_arr[i * 6 + 1], col_arr[i * 6 + 2]), 0.5, cursor_p, WIDTH, HEIGHT);
+				MakeBox(ImColor(col_arr[i * 6 + 0 - 6], col_arr[i * 6 + 1 - 6], col_arr[i * 6 + 2 - 6]), cursor_p, width, height);
+				cursor_p = MakeBall(ImColor(col_arr[i * 6 + 0 - 3], col_arr[i * 6 + 1 - 3], col_arr[i * 6 + 2 - 3]), circle_proportion, cursor_p, width, height);
 			}
 			cursor_p.x = next_x;
 			cursor_p.y = prev_cursor_p.y;
 
-			ImVec2 line_start = ImVec2(0., HEIGHT * -0.25);
-			ImVec2 line_end = ImVec2(0., ((rows - 1) >> 1) * (HEIGHT + spacing) + HEIGHT * 1.25);
+			ImVec2 line_start = ImVec2(0., height * -0.25);
+			ImVec2 line_end = ImVec2(0., ((rows - 1) >> 1) * (height + spacing) + height * 1.25);
 			float length_y = line_end.y - line_start.y;
 
-			ImVec2 midpoint_p1 = ImVec2((prev_cursor_p.x + cursor_p.x + WIDTH) * 0.5, cursor_p.y);
-			ImVec2 midpoint_p2 = ImVec2(midpoint_p1.x, midpoint_p1.y + length_y + text_vertical_spacing + spacing - HEIGHT * 0.25);
+			ImVec2 midpoint_p1 = ImVec2((prev_cursor_p.x + cursor_p.x + width) * 0.5, cursor_p.y);
+			ImVec2 midpoint_p2 = ImVec2(midpoint_p1.x, midpoint_p1.y + length_y + text_vertical_spacing + spacing - height * 0.25);
 
 
 			// Draw markings, use a different thickness based on i

@@ -111,7 +111,7 @@ public:
 
     // Update history with new data
     // Overwrites old history if both players have been previously idle
-    void updateHistory();
+    void updateHistory(bool resetting);
 
     StatePairQueue& read();
     // void updateJonBMaps();

@@ -3,7 +3,7 @@
 #include <cstddef>
 #include "Core/logger.h"
 #include "Overlay/Logger/ImGuiLogger.h"
-#define max(a,b)            (((a) > (b)) ? (a) : (b))
+#define MAX(a,b)            (((a) > (b)) ? (a) : (b))
 
 
 // thanks to PCVolt
@@ -28,12 +28,10 @@ const std::vector<std::string> idleWords = {
     "com3_kamae" // Mai 5xB stance
 };
 
+// TODO: Make this use arbitrary bases vectors
 std::array<float, 3> attributetoColor(Attribute attr, std::array<Attribute, 3> rgb_attr) {
     std::array<float, 3> res = {};
     
-    auto distribution = [](float x, float scale) {
-        return pow(log(x + 1) / max(log(scale + 1), log(2)), 2.);
-        };
     res[0] = static_cast<int>(rgb_attr[0] & attr) > 0;
     res[1] = static_cast<int>(rgb_attr[1] & attr) > 0;
     res[2] = static_cast<int>(rgb_attr[2] & attr) > 0;
@@ -43,8 +41,8 @@ std::array<float, 3> attributetoColor(Attribute attr, std::array<Attribute, 3> r
 
 std::array<float, 3> kindtoColor(FrameKind kind) {
     std::array<float, 3> res;
-    // it's not so clear cut. Moves that don't let you be actionable in air maybe still be classified as idle,
-    // because we remove hardlanding from immediate classification. Needs more testing
+    // it's not so clear cut. Moves that don't let you be actionable in air may still be classified as idle,
+    // TODO: because we remove hardlanding from immediate classification. Needs more testing
     FrameKind cleankind = kind & ~(static_cast<FrameKind>(0x40) | FrameKind::HardLanding);
     switch (cleankind)
     {
