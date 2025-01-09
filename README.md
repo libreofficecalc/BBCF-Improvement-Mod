@@ -54,8 +54,8 @@ For each non-idle frame, it displays a column of squares.
         - Head -> red   rectangle
         - Body -> green rectangle
         - Foot -> blue  rectangle
-        - Projectile -> red disk
-        - Throw -> green    disk
+        - Projectile -> green disk
+        - Throw ->      red   disk
 
 
 ## Requirements
