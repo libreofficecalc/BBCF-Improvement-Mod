@@ -25,6 +25,7 @@
 #include "Overlay/imgui_utils.h"
 #include <cstdlib>
 #include <ctime>
+#include <algorithm>
 
 
 
@@ -1496,8 +1497,10 @@ void ScrWindow::DrawReplayTheaterSection() {
         
         static int view_type = 0; // 0 for default, 1 for archive, 2 for db
         static int page = 0;
-        static int character = -1;
-        static char player[200] = "";
+        static int character1 = -1;
+        static char player1[200] = "";
+        static int character2 = -1;
+        static char player2[200] = "";
 
         if (!g_rep_manager.template_modified && view_type == 1)
             view_type = 0; // if replay list was reset to default due to playing a real match, also reset view_type to default
@@ -1539,19 +1542,38 @@ void ScrWindow::DrawReplayTheaterSection() {
 
 
         if (view_type == 2) { // db controls
-            if (ImGui::BeginCombo("character##replay_db_character", character == -1 ? "<any>" : getCharacterNameByIndexA(character).c_str())) {
+            if (ImGui::BeginCombo("character1##replay_db_character", character1 == -1 ? "<any>" : getCharacterNameByIndexA(character1).c_str())) {
 
-                if (ImGui::Selectable("<any>", character == -1)) character = -1;
+                if (ImGui::Selectable("<any>", character1 == -1)) character1 = -1;
 
                 for (int i = 0; i < getCharactersCount(); i++) {
-                    if (ImGui::Selectable(getCharacterNameByIndexA(i).c_str(), character == i))
-                        character = i;
+                    if (ImGui::Selectable(getCharacterNameByIndexA(i).c_str(), character1 == i))
+                        character1 = i;
                 }
 
                 ImGui::EndCombo();
             }
 
-            ImGui::InputText("player##replay_db_player", player, sizeof(player));
+            ImGui::InputText("player1##replay_db_player", player1, sizeof(player1));
+
+
+            ImGui::TextUnformatted("vs");
+            
+
+            if (ImGui::BeginCombo("character2##replay_db_character", character2 == -1 ? "<any>" : getCharacterNameByIndexA(character2).c_str())) {
+
+                if (ImGui::Selectable("<any>", character2 == -1)) character2 = -1;
+
+                for (int i = 0; i < getCharactersCount(); i++) {
+                    if (ImGui::Selectable(getCharacterNameByIndexA(i).c_str(), character2 == i))
+                        character2 = i;
+                }
+
+                ImGui::EndCombo();
+            }
+
+            ImGui::InputText("player2##replay_db_player", player2, sizeof(player2));
+
 
             ImGui::TextUnformatted("page");
 
@@ -1560,7 +1582,7 @@ void ScrWindow::DrawReplayTheaterSection() {
             ImGui::InputInt("##replay_list_page", &page);
 
             if (ImGui::Button("Load##replay_db"))
-                g_rep_manager.load_replay_list_from_db(page, character, player);
+                g_rep_manager.load_replay_list_from_db(page, character1, player1, character2, player2);
             // TODO: instead of Load button, we could use view_changed and debounce
         }
 
@@ -1580,6 +1602,18 @@ void ScrWindow::DrawReplayTheaterSection() {
             ImGui::Text("      vs  %s (lvl%d %s)%s",
                 utf16_to_utf8(rp->p2_name).c_str(), rp->p2_lvl + 1, getCharacterNameByIndexA(rp->p2_toon).c_str(), rp->winner_maybe == 1 ? " (win)" : "");
             // TODO: draw replay levels, winner and other metadata on top of bbcf list ui?
+
+            if (view_type == 2) { // if db
+                if (ImGui::Button("Save selected replay to archive##replay_db")) {
+                    char path[32] = "";
+                    char* replay_file_template = base + 0x4AA66C;
+                    sprintf(path, replay_file_template, selected_index);
+
+                    rep_manager.load_replay(path);
+                    auto new_fname = rep_manager.build_file_name();
+                    rep_manager.save_replay(REPLAY_ARCHIVE_FOLDER_PATH + new_fname);
+                }
+            }
         }
 
         ImGui::Separator();

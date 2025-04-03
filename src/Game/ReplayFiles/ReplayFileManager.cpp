@@ -323,23 +323,25 @@ void ReplayFileManager::load_replay_list_from_archive(int page) {
     bbcf_sort_replay_list();
 }
 
-void ReplayFileManager::load_replay_list_from_db(int page, int character, std::string player) {
+std::string url_escape(std::string s) {
+    replace_all(s, "%", "%25");
+    replace_all(s, "?", "%3F");
+    replace_all(s, "&", "%26");
+    return s;
+}
 
-    std::string request_body =
-        "{\"output\":\"..query-results.children...warning-text-latest.children..\",\"outputs\":[{\"id\":\"query-results\",\"property\":\"children\"},"
-        "{\"id\":\"warning-text-latest\",\"property\":\"children\"}],\"inputs\":[{\"id\":\"query-button\",\"property\":\"n_clicks\",\"value\":4}],"
-        "\"changedPropIds\":[\"query-button.n_clicks\"],\"parsedChangedPropsIds\":[\"query-button.n_clicks\"],\"state\":[{\"id\":\"date-range\","
-        "\"property\":\"start_date\"},{\"id\":\"date-range\",\"property\":\"end_date\"},"
-        "{\"id\":\"p1-input\",\"property\":\"value\"" + std::string(player == "" ? "" : ",\"value\":\"" + player + "\"") + "}," // TODO: escape
-        "{\"id\":\"p1-steamid64-input\",\"property\":\"value\"},"
-        "{\"id\":\"p1-toon\",\"property\":\"value\"" + std::string(character == -1 ? "" : ",\"value\":" + std::to_string(character)) + "}]}";
+void ReplayFileManager::load_replay_list_from_db(int page, int character1, std::string player1, int character2, std::string player2) {
 
     HINTERNET hInternet = NULL, hConnect = NULL, hRequest = NULL;
-    CA2W pszwide(g_modVals.uploadReplayDataHost.c_str());
+    CA2W pszwide("bbreplay.ovh");
     const wchar_t* serverAddress = pszwide;
-    INTERNET_PORT port = 2000; //g_modVals.uploadReplayDataPort;
-    //CA2W pszwide2(g_modVals.uploadReplayDataEndpoint.c_str());
-    const wchar_t* urlPath = L"/_dash-update-component";
+    INTERNET_PORT port = 443;
+
+    std::string urlPath = "/api/replays?page=" + std::to_string(page+1);
+    if (character1 != -1) urlPath += "&p1_character_id=" + std::to_string(character1);
+    if (player1 != "") urlPath += "&p1=" + url_escape(player1);
+    if (character2 != -1) urlPath += "&p2_character_id=" + std::to_string(character2);
+    if (player2 != "") urlPath += "&p2=" + url_escape(player2);
 
     hInternet = InternetOpen(L"im", INTERNET_OPEN_TYPE_DIRECT, NULL, NULL, 0);
     if (!hInternet) {
@@ -352,22 +354,14 @@ void ReplayFileManager::load_replay_list_from_db(int page, int character, std::s
         return;
     }
 
-    hRequest = HttpOpenRequest(hConnect, L"POST", urlPath, NULL, NULL, NULL, 0, 0);
+    hRequest = HttpOpenRequest(hConnect, L"GET", utf8_to_utf16(urlPath).data(), NULL, NULL, NULL, INTERNET_FLAG_SECURE, 0);
     if (!hRequest) {
         InternetCloseHandle(hConnect);
         InternetCloseHandle(hInternet);
         return;
     }
 
-    LPCWSTR headers = L"Content-Type: application/json\r\n";
-    if (!HttpAddRequestHeaders(hRequest, headers, wcslen(headers), HTTP_ADDREQ_FLAG_REPLACE | HTTP_ADDREQ_FLAG_ADD)) {
-        InternetCloseHandle(hRequest);
-        InternetCloseHandle(hConnect);
-        InternetCloseHandle(hInternet);
-        return;
-    }
-
-    if (!HttpSendRequest(hRequest, NULL, 0, (void*)request_body.c_str(), request_body.length())) {
+    if (!HttpSendRequest(hRequest, NULL, 0, NULL, 0)) {
         InternetCloseHandle(hRequest);
         InternetCloseHandle(hConnect);
         InternetCloseHandle(hInternet);
@@ -396,20 +390,18 @@ void ReplayFileManager::load_replay_list_from_db(int page, int character, std::s
 
     int pos = 0;
     while (true) {
-        int p0 = response_body.find("\"href\":\"", pos);
+        int p0 = response_body.find("\"filename\":\"", pos);
         if (p0 == -1) break;
-        int p1 = response_body.find("\"", p0 + 8);
+        int p1 = response_body.find("\"", p0 + 12);
         if (p1 == -1) break;
-        int p2 = response_body.rfind("u002f", p1); // weirdly escaped forward slash
-        if (p2 == -1) p2 = p0 + 8;
-        else p2 = p2 + 5;
+        int p2 = p0 + 12;
         all_filenames.push_back(response_body.substr(p2, p1 - p2));
         pos = p1 + 1;
     }
 
     const int page_size = 100;
-    std::vector<std::string> page_filenames = std::vector<std::string>(all_filenames.begin() + max(0, min(page * page_size, all_filenames.size())),
-        all_filenames.begin() + max(0, min((page + 1) * page_size, all_filenames.size())));
+    std::vector<std::string> page_filenames = std::vector<std::string>(all_filenames.begin(),
+        all_filenames.begin() + min(page_size, all_filenames.size()));
 
 
 
@@ -429,7 +421,7 @@ void ReplayFileManager::load_replay_list_from_db(int page, int character, std::s
         new_name = "Save/Replay/tmp/rp" + std::string(2 - min(2, new_name.length()), '0') + new_name + ".dat";
             
         ReplayFile* rp = 0;
-        DownloadUrlBinary(L"http://" + std::wstring(serverAddress) + L"/uploads/" + utf8_to_utf16(page_filenames[j]), (void**)&rp);
+        DownloadUrlBinary(L"http://" + utf8_to_utf16(g_modVals.uploadReplayDataHost) + L"/uploads/" + utf8_to_utf16(page_filenames[j]), (void**)&rp);
 
         std::ofstream file(new_name, std::fstream::binary);
         file.write((char*)rp, sizeof(*rp));
