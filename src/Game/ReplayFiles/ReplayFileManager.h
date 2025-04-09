@@ -25,7 +25,7 @@ public:
 	void load_replay_list_default();
 	void load_replay_list_default_repair();
 	void load_replay_list_from_archive(int page);
-	void load_replay_list_from_db(int page, int character = -1, std::string player = "");
+	void load_replay_list_from_db(int page, int character1 = -1, std::string player1 = "", int character2 = -1, std::string player2 = "");
 };
 
 extern ReplayFileManager g_rep_manager;
