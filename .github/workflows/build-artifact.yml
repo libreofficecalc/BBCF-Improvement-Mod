@@ -1,0 +1,37 @@
+name: Build artifact on push to master or PR
+
+on:
+  push:
+    branches:
+      - 'master'
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  build:
+    runs-on: windows-2019
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v1.3.1
+
+      - name: Build BBCF_IM
+        run: msbuild BBCF_IM.sln -property:Configuration=Release
+
+      # this is done to make it so the zip file in the download doesn't have a file structure
+      - name: Copy README
+        run: copy ${{ github.workspace }}\USER_README.txt ${{ github.workspace }}\bin\Release\
+
+      - name: Upload BBCF_IM
+        uses: actions/upload-artifact@v3
+        with:
+          name: BBCF_IM
+          path: |
+            ${{ github.workspace}}\bin\Release\dinput8.dll
+            ${{ github.workspace}}\bin\Release\settings.ini
+            ${{ github.workspace}}\bin\Release\palettes.ini
+            ${{ github.workspace}}\bin\Release\USER_README.txt
