@@ -18,6 +18,7 @@
 #include "SteamApiWrapper/SteamUserStatsWrapper.h"
 #include "SteamApiWrapper/SteamUserWrapper.h"
 #include "SteamApiWrapper/SteamUtilsWrapper.h"
+#include "Settings.h"
 
 struct interfaces_t
 {
@@ -89,6 +90,8 @@ struct gameVals_t
 
 	int* pEntityList;
 	int entityCount;
+
+	int onlineDelay;
 
 	Room* pRoom;
 	

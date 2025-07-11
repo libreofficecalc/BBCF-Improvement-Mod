@@ -48,6 +48,15 @@ void Settings::applySettingsIni(D3DPRESENT_PARAMETERS* pPresentationParameters)
 	g_modVals.step_frames_keycode = Settings::getButtonValue(Settings::settingsIni.stepFramesKeybind);
 	g_modVals.uploadReplayData = Settings::settingsIni.uploadReplayData;
 
+	if (Settings::settingsIni.delaySlider > 5) {
+		g_gameVals.onlineDelay = 5;
+	}
+	else if (Settings::settingsIni.delaySlider < 0) {
+		g_gameVals.onlineDelay = 0;
+	}
+	else {
+		g_gameVals.onlineDelay = Settings::settingsIni.delaySlider;
+	}
 	
 	//CA2W pszwide (host_c_str);
 	g_modVals.uploadReplayDataHost = Settings::settingsIni.uploadReplayDataHost;;
@@ -163,7 +172,6 @@ void Settings::initSavedSettings()
 		//in this case the value is set in Direct3DDevice9ExWrapper::CreateRenderTargetEx!
 		break;
 	}
-
 	savedSettings.origViewportRes.x = 0.0;
 	savedSettings.origViewportRes.y = 0.0;
 

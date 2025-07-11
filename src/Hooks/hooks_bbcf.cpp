@@ -696,6 +696,7 @@ void __declspec(naked)DelNetworkReqWatchReplays()
 	}
 	LOG_ASM(2, "DelNetworkReqWatchReplays\n");
 }
+
 //DWORD DirectHookTestJmpBackAddr = 0;
 //void __declspec(naked)DirectHookTest() {
 //	_asm {
@@ -704,6 +705,26 @@ void __declspec(naked)DelNetworkReqWatchReplays()
 //		popad
 //		jmp[DirectHookTestJmpBackAddr]
 //	}
+//}
+
+DWORD GetGGPOSetDelayJmpBackAddr = 0;
+void __declspec(naked)GetGGPOSetDelay()
+{
+	__asm {
+
+		// change online delay parameter
+		push ebx
+		mov ebx, g_gameVals.onlineDelay
+		mov dword ptr[esp + 10h], ebx
+		pop ebx
+
+		// original code
+		push ebp
+		mov ebp, esp
+		mov ecx, [ebp + 08h]
+		jmp[GetGGPOSetDelayJmpBackAddr]
+	}
+}
 
 DWORD BeforeWriteReplayListDatJmpBackAddr = 0;
 void __declspec(naked)BeforeWriteReplayListDat()
@@ -721,7 +742,6 @@ void __declspec(naked)BeforeWriteReplayListDat()
 	LOG_ASM(2, "BeforeWriteReplayListDat\n");
 }
 
-//}
 bool placeHooks_bbcf()
 {
 	LOG(2, "placeHooks_bbcf\n");
@@ -801,6 +821,9 @@ bool placeHooks_bbcf()
 
 	GetFFAMatchThisPlayerIndexJmpBackAddr = HookManager::SetHook("GetFFAMatchThisPlayerIndex", "\xc7\x83\x04\x07\x00\x00\x00\x00\x00\x00\xc7\x83\xd8\x06\x00\x00\x00\x00\x00\x00",
 		"xxxxxxxxxxxxxxxxxxxx", 10, GetFFAMatchThisPlayerIndex);
+
+	GetGGPOSetDelayJmpBackAddr = HookManager::SetHook("GetGGPOSetDelay", "\x55\x8B\xEC\x8B\x4D\x00\x85\xC9\x75\x00\x8D\x41\x00\x5D\xC3\xFF\x75\x00\x8B\x01\xFF\x75\x00\xFF\x50\x00\x5D\xC3\xCC\xCC\xCC\xCC\x55\x8B\xEC\x8B\x4D\x00\x85\xC9\x75\x00\x8D\x41\x00\x5D\xC3\xFF\x75",
+		"xxxxx?xxx?xx?xxxx?xxxx?xx?xxxxxxxxxxx?xxx?xx?xxxx", 6, GetGGPOSetDelay);
 
 	HookManager::RegisterHook("GetMoneyAddr", "\xFF\x35\x00\x00\x00\x00\x8D\x45\x00\x68\x00\x00\x00\x00\x50\xE8\x00\x00\x00\x00\xDB\x45",
 		"xx????xx?x????xx????xx", 6);
