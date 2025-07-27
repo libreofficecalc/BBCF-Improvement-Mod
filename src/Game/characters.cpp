@@ -50,9 +50,10 @@ int getCharactersCount()
 const std::string& getCharacterNameByIndexA(int charIndex)
 {
 	const static std::string UNKNOWN = "Unknown";
-
-	if (charIndex < getCharactersCount())
+	if ((unsigned int)charIndex < (unsigned int)getCharactersCount())
+	{
 		return charNames[charIndex];
+	}
 
 	return UNKNOWN;
 }

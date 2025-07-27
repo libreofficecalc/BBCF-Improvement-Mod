@@ -5,6 +5,14 @@
 #include <Psapi.h>
 
 char* GetBbcfBaseAdress() {
+	static char* bbcf_base = NULL;
+	
+	// no point in calculating this more than once
+	if (bbcf_base != NULL) {
+		return bbcf_base;
+	}
+
+
 	//Get all module related information
 			//Get process name
 	TCHAR szFileName[MAX_PATH + 1];
@@ -22,7 +30,7 @@ char* GetBbcfBaseAdress() {
 	//Having the values right is ESSENTIAL, this makes sure
 	//that we don't scan unwanted memory and leading our game to crash
 	long base = (long)modinfo.lpBaseOfDll;
-	char* bbcf_base = (char*)base;
+	bbcf_base = (char*)base;
 	return bbcf_base;
 }
 void WriteToProtectedMemory(uintptr_t addressToWrite, char* valueToWrite, int byteNum)

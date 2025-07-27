@@ -13,6 +13,7 @@
 #include "Core/info.h"
 #include <string>
 #include "Web/update_check.h"
+#include "Game/ReplayFiles/ReplayFileManager.h"
 
 
 
@@ -72,6 +73,10 @@ void __declspec(naked)GetGameStateMenuScreen()
 	WindowManager::GetInstance().Initialize(g_gameProc.hWndGameWindow, g_interfaces.pD3D9ExWrapper);
 
 	MatchState::OnMatchEnd();
+
+	// shouldn't be needed, but just in case something writes replay_list to file from some odd place, make sure it's kept in the correct state
+	if (g_rep_manager.template_modified)
+		g_rep_manager.load_replay_list_default();
 
 	__asm
 	{
@@ -341,6 +346,11 @@ void __declspec(naked)MatchIntroStartsPlayingFunc()
 	__asm pushad
 
 	g_interfaces.pGameModeManager->InitGameMode();
+
+	if (*g_gameVals.pGameMode != GameMode_ReplayTheater && *g_gameVals.pGameMode != GameMode_Training) {
+		if (g_rep_manager.template_modified)
+			g_rep_manager.load_replay_list_default();
+	}
 
 	__asm
 	{
@@ -686,6 +696,7 @@ void __declspec(naked)DelNetworkReqWatchReplays()
 	}
 	LOG_ASM(2, "DelNetworkReqWatchReplays\n");
 }
+
 //DWORD DirectHookTestJmpBackAddr = 0;
 //void __declspec(naked)DirectHookTest() {
 //	_asm {
@@ -694,8 +705,25 @@ void __declspec(naked)DelNetworkReqWatchReplays()
 //		popad
 //		jmp[DirectHookTestJmpBackAddr]
 //	}
-
 //}
+
+
+DWORD BeforeWriteReplayListDatJmpBackAddr = 0;
+void __declspec(naked)BeforeWriteReplayListDat()
+{
+	if (!g_rep_manager.template_modified) {
+		char* continue_write = GetBbcfBaseAdress() + 0x2C3F20;
+		_asm {
+			call[continue_write]
+		}
+	}
+
+	_asm {
+		jmp[BeforeWriteReplayListDatJmpBackAddr]
+	}
+	LOG_ASM(2, "BeforeWriteReplayListDat\n");
+}
+
 bool placeHooks_bbcf()
 {
 	LOG(2, "placeHooks_bbcf\n");
@@ -776,6 +804,8 @@ bool placeHooks_bbcf()
 	GetFFAMatchThisPlayerIndexJmpBackAddr = HookManager::SetHook("GetFFAMatchThisPlayerIndex", "\xc7\x83\x04\x07\x00\x00\x00\x00\x00\x00\xc7\x83\xd8\x06\x00\x00\x00\x00\x00\x00",
 		"xxxxxxxxxxxxxxxxxxxx", 10, GetFFAMatchThisPlayerIndex);
 
+	
+
 	HookManager::RegisterHook("GetMoneyAddr", "\xFF\x35\x00\x00\x00\x00\x8D\x45\x00\x68\x00\x00\x00\x00\x50\xE8\x00\x00\x00\x00\xDB\x45",
 		"xx????xx?x????xx????xx", 6);
 	g_gameVals.pGameMoney = (int*)HookManager::GetBytesFromAddr("GetMoneyAddr", 2, 4);
@@ -793,7 +823,7 @@ bool placeHooks_bbcf()
 	
 	//DirectHookTestJmpBackAddr = HookManager::SetHook("DirectHookTest",(DWORD)(GetBbcfBaseAdress() + 0x37c3b3) , 6, DirectHookTest);
 
-
+	BeforeWriteReplayListDatJmpBackAddr = HookManager::SetHook("BeforeWriteReplayListDat", (DWORD)(GetBbcfBaseAdress() + 0x2C2AF8), 5, BeforeWriteReplayListDat);
 
 	return true;
 }

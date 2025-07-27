@@ -115,12 +115,334 @@ Delete the "menus.ini" file found in the game's root folder to reset the positio
 Keep in mind that the mod may partially, or completely stop working whenever a new official patch of the game is released. (Though unlikely)
 
 Changelog
-==========================
-26-07-2023 -- version 3.05
+===============================
+16-07-2025 -- version 3.099
+===============================
+Features:
+- Hitbox Overlay:
+- - Added collision, throw range and move range box viewers.
+- - Added brief descriptions of how the checks for throws work on the help markers "(?)"
+
+Replay database download/archive replace (@Tadatys):
+- Focused on populating the replay theater with other replays
+- - Experimental: Added direct replay search+download+load from website db to the game.
+- - Experimental: Added direct loading of replays from archive to replay theater.
+
+- Combo data window:
+- - Added heat cooldown counter.
+- - Last heat gain now persists until a new combo starts.
+
+Bugfixes
+- Hitbox displays should now work properly with "keep aspect ratio" in fullscreen/borderless. It used to bug out in corners.(#45 @MorphRed)
+- Frame advantage viewer now works correctly on a jumping dummy(6f68d0eb78783e53570c244af0a01568929eb3ca).
+- Fixed heat gain on combo data window not taking into account heat cooldown(49b3340fa4c33a410d36c0f344fcb28ec45281a7).
+
+Dev/DEBUG stuff
+- Added charpos control for p1 and p2 in DEBUG window.
+
+
+===============================
+02-11-2024 -- version 3.098
+===============================
+Bugfixes:
+- Fixed some input buffer names showing the incorrect motion.
+
+===============================
+17-08-2024 -- version 3.097
+===============================
+Features:
+- Removal of the need to be connected to the network in order to watch replays in the replay theater
+
+Bugfixes:
+- #42 : Archived replay files would skip the first 2 letter of non-CJK names, fixed.
+Changes:
+- Removed "::experimental" suffix from replay rewind, it is not experimental anymore. Refer to the release https://github.com/libreofficecalc/BBCF-Improvement-Mod/releases/tag/v3.095 for more in-depth info on how it works if needed.
+
+===============================
+15-06-2024 -- version 3.096)bugfix
+===============================
+Bugfixes:
+- If both players had IM BO BLEIS version v3.095, and both had replay upload ENABLED, it wouldn't upload the replay. It should work properly now.
+
+===============================
+30-05-2024 -- version 3.095
+===============================
+Changes:
+- Replay takeover's "load replay state" button will be disabled when in the replay itself and not in the taken over training stage.
+- Rewind until you reach the checkpoint at second 9
+- Now as it reaches the desired position it will have recorded the previous checkpoints in smaller intervals, allowing you to wait less to reach the desired part / analyze the lead up to it.
+- You can see the frames of all saved checkpoints and more advanced info on the Saved Checkpoints Advanced Info" section located above the "rewind" button.
+
+===============================
+21-05-2024 -- version 3.094
+===============================
+Features:
+- Added button to toggle replay upload in game without needing to use settings.ini
+- You now need to choose whether to have the replay database enabled or not on first boot
+Fixes:
+- Disabling replay upload to db previously would not stop someone who had it enabled from uploading, now if you are either p1 or p2 and has it disabled it will disable the uploading from the other players.
+- ps: The website's backend and frontend code is in this repository, anyone that wants to help feel free: https://github.com/libreofficecalc/bbcf-im-replay-server
+
+===============================
+05-05-2024 -- version 3.093
+===============================
+Features:
+- Rough draft of a simple frontend for the database is available using the button "Replay Database" in the main IM window.
+- I will open the code being used for the backend and the scratch frontend later this week once I get more time, any help is appreciated.
+
+===============================
+17-03-2024 -- version 3.092
+===============================
+Features:
+- Removal(for now) of experimental replay rewind that didn't work anyway(for now) and all its baggage.
+
+===============================
+10-03-2024 -- version 3.091
+===============================
+Features:
+- Replay Takeover:
+- Replay takeover now actually works.
+- P1 and P2 takeover.
+- Option to set a delay from load state to it actually running to reposition hands etc.
+
+Bugfixes:
+- Added guardrails to disable save states/replay takeover if searching for a ranked match, due to the issue listed here: #35
+- *: only between F1-F9. Currently there's no support for controllers, use autohotkey to make a simple script to trigger it if you really need it, should be trivial.
+Changes:
+- Does not work when searching for a ranked match(for now).
+- If playback of takeover seems wrong use the "FIX PLAYBACK" button before reporting an issue.
+- Replay Rewind:
+- Only here because I forgot to make a different branch for it, still experimental.
+- A lot of progress but still not 100%, some random crashes still happen and you must keep its tab open for it to record in order to rewind.
+- Should allow you to rewind in 30 second intervals(for now).
+
+===============================
+08-03-2024 -- version 3.090
+===============================
+Features:
+- Replay Takeover:
+- Replay takeover now actually works.
+- P1 and P2 takeover.
+- Option to set a delay from load state to it actually running to reposition hands etc.
+
+Bugfixes:
+- Added guardrails to disable save states/replay takeover if searching for a ranked match, due to the issue listed here: #35
+- *: only between F1-F9. Currently there's no support for controllers, use autohotkey to make a simple script to trigger it if you really need it, should be trivial.
+Changes:
+- Does not work when searching for a ranked match(for now).
+- If playback of takeover seems wrong use the "FIX PLAYBACK" button before reporting an issue.
+- Replay Rewind:
+- Only here because I forgot to make a different branch for it, still experimental.
+- A lot of progress but still not 100%, some random crashes still happen and you must keep its tab open for it to record in order to rewind.
+- Should allow you to rewind in 30 second intervals(for now).
+
+===============================
+25-02-2024 -- version 3.080_guanabara_remembers
+===============================
+Features:
+- Save states:
+- You can now save and playback states in training mode, actually works this time.
+- Option to set a delay from load state to it actually running to reposition hands etc.
+
+Bugfixes:
+- Hitboxes:
+- Fixing longstanding issue with inactive hitboxes showing as active arising from ID code 2001, these include but are no limited to rachel's 4b, jin's 5b and kagura's 6C.
+- States:
+- Fixed on hit state activation on the following "trigger states": "CmnActSlideAir" , "CmnActSkeleton", "CmnActBlowoff". These were found in izanami's 6A, 5C air, 41236D and 214A.
+- Playbacks:
+- Fixed off by one error, making random playbacks in slot 2 refer to the recording in slot1 and so on.
+- *: only between F1-F9. Currently there's no support for controllers, use autohotkey to make a simple script to trigger it if you really need it, should be trivial.
+
+===============================
+28-01-2024 -- version watch=T_soDyOFu9c
+===============================
+Features:
+- Combo Data Window:
+- Added a window containing hitstun, hitstun decay, combo time, proration, starter type and heat gained on combo as well as the same move proration stack. It is usable on training and replays alike for both players.
+- Playback actions:
+- You can now buffer random wakeup actions.
+- Palettes(oJay):
+- **check palettes.ini for further explanation**
+- Added the ability to randomly select between a list of palette names in pallete config file.
+- e.g.
+- [Hakumen]
+- 1="Default"
+- 2="Crimson_Glow,Fulgore,Jetstream_Hakumen"
+- choosing palette 2 will random between "Crimson_Glow", "Fulgore" and "Jetstream_Hakumen"
+- Added the option to exclude the default palette when using random with the use of a new keyword.
+Fixes:
+- Frame advantage fixes(PC_volt):
+- Air _NEUTRAL is not idle with Izanami float as a special case
+- Air Barrier is considered not idle
+
+===============================
+05-11-2023 -- version 3.060
+===============================
+Features:
+- Palettes:
+- Added an undo and redo button to the palette editor(DixiE).
+- You may now use a comma seperated list of palette filenames for a palette index and the mod will load a random palette from this list each match. See the provided palettes.ini file in this release for more information.(OJay)
+- Playback Editor:
+- Added a button to switch the side a playback was recorded using the playback editor.
+
+Bugfixes:
+- Frame advantage fixes(PC_volt):
+- A toggle for stagger on hit and on recovery was added. This allows you to know whether an attack that staggers can be combo'd from, or at which frame advantage it leaves you at if they recover.
+- Frame advantage was fixed on neutral wakeup, it was previously 1F too early because the first frame of landing after teching is still part of the tech. Example: Mai 2B on hit displays as +32F instead of +31F
+- State action fixes:
+- Stagger should now be properly triggered as a **wakeup action**, it is being defined as such due to being an Ukemi state. If you want an action on states after a stagger, set a wakeup action, not a on hit action.
+- Fixed incorrect state onhit actions triggering on certain hard knockdowns, such as tager's j2c and es's double stacked projectile.
+
+===============================
+28-10-2023 -- version 3.056
+===============================
+
+===============================
+14-10-2023 -- version 3.055
+===============================
+Features:
+- Added frame breakdown in the states tab, allowing you to check for active frames and invul properties of moves throughout their duration.
+- Added support for wakeup actions on quick rise for both states and playback.*
+- Added loop recording, to loop a slot recording.
+- Added a fourth option for "MenuSize" in setting.ini(MenuSize=4), for people with higher resolution screens. I do not have a >1080p monito so need to rely on feedback more than ever on this one.
+
+Bugfixes:
+- Fixed longstanding bug with playbacks that would turn any recording you tried to load/modify into taunts and jibberish.
+- Fixed hitbox editor window's frame table skipping all over the place anytime you added or removed an entry. You are now edit the playbacks without wanting to jump off a bridge.
+- *:In states, if you wish to set a normal as a wakeup action for quick rise and have it behave as it would in game you must add a 6 frame delay, this is not necessary for special. This happens because quick rise allows for specials from frame 14, while for normals only from frame 20. The objective of the states tab is to be exploratory and not necessary perfect to the game so this is why "invalid states" like a normal triggering at frame 14 of quick rise are accepted and not auto-corrected, that is down to the user. And yes I know that as of now 14/10/2023 dustloop claims that you can cancel into normals at frame 14, from my testing so far it appears they are incorrect.
+- **this is not relevant to the mod: Little tavo if you have some time pls send us some combo into oki recordings
+
+===============================
+22-09-2023 -- version 3.0540
+===============================
+Features:
+- Playback Editor:
+- Allows for hand editing playbacks to create frame perfect recordings
+- Wakeup Delay and Randomizer:
+- Adds option to delay wakeup both fixed and randomized within a range(skew)
+- Allows for selecting randomization of wakeups (ex:you can choose just to randomize forward and backward rolls)
+- Does not include emergency tech
+- Motion Input Buffer Viewer for P1 and P2
+- Option in settings.ini to set whether the ""ranked fix""" aka load foreign pallets is activated by default or not. Either replace your settings.ini with the one provided in this release or add the line "LoadForeignPalettesToggleDefault =" with either 1 or 0 after the "=", depending on the desired behaviour.
+
+Bugfixes:
+- The dropdown display on the rematch settings should now properly reflect the correct setting after a room is remade
+
+===============================
+02-09-2023 -- version 3.0510
+===============================
+Features:
+- Added throw tech actions for both states and playback
+
+Bugfixes:
+- Fixed playback on hit not triggering for actions in the air or that caused launch states
+- Fixed "Enable" button label conflict that didn't allow the framedata window to open if the hitbox section was open
+- Fixed size of the frame data window resetting to the default every frame
+- Added small indentation to the "Enable" button on the framedata section on the main window
+- A SuperVia deseja a todos uma boa viagem.
+
+===============================
+01-09-2023 -- version 3.05
 ===============================
 - Added Framedata window for Practice Mode and Replays Theater
 - Displays gaps on block and on hit, up to 30F gaps
 - Displays frame advantage on block and on hit
+
+===============================
+12-08-2023 -- version quebraaluneta
+===============================
+
+===============================
+05-08-2023 -- version canseiderefazersala
+===============================
+
+===============================
+02-08-2023 -- version fixing_logging
+===============================
+
+===============================
+30-07-2023 -- version semspoiler
+===============================
+
+===============================
+28-07-2023 -- version preguica
+===============================
+
+===============================
+25-07-2023 -- version superia
+===============================
+
+===============================
+13-05-2023 -- version 3.046_atrasada
+===============================
+
+===============================
+04-05-2023 -- version iagra
+===============================
+
+===============================
+01-05-2023 -- version asdf.asdf2
+===============================
+
+===============================
+26-04-2023 -- version australia.canada.newzealand.uk.us.stopwatchingmyfiles
+===============================
+
+===============================
+16-04-2023 -- version prince.of.persia2.5.apple2
+===============================
+
+===============================
+05-04-2023 -- version prince.of.persia.apple2
+===============================
+
+===============================
+31-03-2023 -- version hate.arcsys
+===============================
+
+===============================
+25-03-2023 -- version alocando.combos.baixados.aleatoriamente
+===============================
+
+===============================
+21-03-2023 -- version alocando.combos.baixados
+===============================
+
+===============================
+20-03-2023 -- version baixando.mais.combos
+===============================
+
+===============================
+19-03-2023 -- version baixando.combos
+===============================
+
+===============================
+18-03-2023 -- version grade.do.zoologico.release
+===============================
+
+===============================
+15-03-2023 -- version erf
+===============================
+
+===============================
+17-03-2023 -- version asdfe
+===============================
+
+===============================
+15-03-2023 -- version asdf
+===============================
+
+===============================
+15-03-2023 -- version t
+===============================
+
+===============================
+13-03-2023 -- version bbcf2
+===============================
+
+===============================
+13-03-2023 -- version bbcf
+===============================
 
 ==========================
 23-07-2022 -- version 3.04

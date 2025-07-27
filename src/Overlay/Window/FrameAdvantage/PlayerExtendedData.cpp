@@ -12,7 +12,7 @@ namespace
     "CmnActFWalk", "CmnActBWalk",
     "CmnActFDash", "CmnActFDashStop",
     "CmnActJumpLanding", "CmnActLandingStiffEnd",
-    "CmnActUkemiLandNLanding",
+    "CmnActUkemiLandNLanding", "CmnActJumpPre",
         // Proxi block is triggered when an attack is closing in without being actually blocked
         // If the player.blockstun is = 0, then those animations are still considered idle
         "CmnActCrouchGuardPre", "CmnActCrouchGuardLoop", "CmnActCrouchGuardEnd",                 // Crouch
