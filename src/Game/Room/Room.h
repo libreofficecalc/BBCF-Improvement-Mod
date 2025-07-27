@@ -64,3 +64,28 @@ public:
 	RoomMemberEntry member7; //0x03D8
 	RoomMemberEntry member8; //0x0470
 }; //Size: 0x0508
+
+/*ROOM SETTINGS(STATIC):
+
+The room settings changed using RoomStatus will revert to the settings in
+ RoomSettingsStatic every time someone enters of leaves the room, so make sure 
+ to update both Room and RoomSettingsStatic when modifying the room settings
+ 
+ Should be static at base + 0x8F7A64
+ 
+ The getter for this static adress is in RoomManager under RoomManager::GetRoomSettingsStaticBaseAdress
+ Curious note: It is part  of a larger struct at base + 0x8F7958 */
+
+enum RoomSettingsRematchStatic:uint32_t{
+	FixedRematchType_Disabled = 0x47,
+	FixedRematchType_Unlimited = 0x48,
+	FixedRematchType_Ft2 = 0x49,
+	FixedRematchType_Ft3 = 0x4A,
+	FixedRematchType_Ft5 = 0x4B,
+	FixedRematchType_Ft10 = 0x4C,
+};
+class RoomSettingsStatic {
+public:
+	char pad_0x0[0x7C]; //0x0000
+	RoomSettingsRematchStatic rematch;//0x07c
+};//Size: 0x80?

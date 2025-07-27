@@ -2,9 +2,11 @@
 
 #include "Core/logger.h"
 
+
+
 RoomManager::RoomManager(NetworkManager* pNetworkManager, ISteamFriends* pSteamFriends, CSteamID steamID)
 	: m_pNetworkManager(pNetworkManager), m_pSteamFriends(pSteamFriends),
-	m_thisPlayerSteamID(steamID), m_pFFAThisPlayerIndex(nullptr), m_pRoom(nullptr)
+	m_thisPlayerSteamID(steamID), m_pFFAThisPlayerIndex(nullptr), m_pRoom(nullptr), m_pRoomSettings(GetRoomSettingsStaticBaseAdress())
 {
 	m_imPlayers.resize(8);
 }
@@ -381,4 +383,45 @@ bool RoomManager::IsPlayerInRoom(const IMPlayer& player) const
 bool RoomManager::IsThisPlayer(const uint64_t otherSteamID) const
 {
 	return otherSteamID == m_thisPlayerSteamID.ConvertToUint64();
+}
+
+RoomSettingsStatic* RoomManager::GetRoomSettingsStaticBaseAdress() {
+
+	return (RoomSettingsStatic*)(GetBbcfBaseAdress() + 0x8F7A64);
+}
+bool RoomManager::ChangeRematchAmnt(signed int new_amnt) {
+	//rematch_count: -1 for unlimited, 0 for no rematch, 2 for ft2, 3 for ft3, 5 for ft5, 10 for ft10
+	if (!IsRoomFunctional()) {
+		return false;
+	}
+	switch (new_amnt) {
+	case (-1):
+		m_pRoom->rematch = RoomRematch::RematchType_Unlimited;
+		m_pRoomSettings->rematch = RoomSettingsRematchStatic::FixedRematchType_Unlimited;
+		return true;
+	case (0):
+		m_pRoom->rematch = RoomRematch::RematchType_Disabled;
+		m_pRoomSettings->rematch = RoomSettingsRematchStatic::FixedRematchType_Disabled;
+		return true;
+	case (2):
+		m_pRoom->rematch = RoomRematch::RematchType_Ft2;
+		m_pRoomSettings->rematch = RoomSettingsRematchStatic::FixedRematchType_Ft2;
+		return true;
+	case (3):
+		m_pRoom->rematch = RoomRematch::RematchType_Ft3;
+		m_pRoomSettings->rematch = RoomSettingsRematchStatic::FixedRematchType_Ft3;
+		return true;
+	case (5):
+		m_pRoom->rematch = RoomRematch::RematchType_Ft5;
+		m_pRoomSettings->rematch = RoomSettingsRematchStatic::FixedRematchType_Ft5;
+		return true;
+	case (10):
+		m_pRoom->rematch = RoomRematch::RematchType_Ft10;
+		m_pRoomSettings->rematch = RoomSettingsRematchStatic::FixedRematchType_Ft10;
+		return true;
+	default:
+		return false;
+
+	}
+	return false;
 }

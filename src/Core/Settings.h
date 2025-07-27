@@ -20,6 +20,7 @@ struct savedSettings_t
 	D3DXVECTOR2 origViewportRes;
 	bool isDuelFieldSprite;
 	bool isFiltering;
+
 };
 
 class Settings

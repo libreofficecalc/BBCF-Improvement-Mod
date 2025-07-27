@@ -290,6 +290,7 @@
     <ClInclude Include="src\Network\ReplayUploadManager.h" />
     <ClInclude Include="src\Overlay\Window\ReplayDBPopupWindow.h" />
     <ClInclude Include="src\Core\keycodes.h" />
+    <ClInclude Include="src\Game\ReplayFiles\ReplayList.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="export\dinput8.def">
