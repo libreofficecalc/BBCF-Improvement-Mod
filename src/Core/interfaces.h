@@ -90,6 +90,7 @@ struct gameVals_t
 	int* pEntityList;
 	int entityCount;
 
+
 	Room* pRoom;
 	
 };

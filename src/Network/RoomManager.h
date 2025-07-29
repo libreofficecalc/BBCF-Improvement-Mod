@@ -2,7 +2,7 @@
 #include "NetworkManager.h"
 
 #include "Game/Room/Room.h"
-
+#include "Core/utils.h"
 #include <isteamfriends.h>
 #include <string>
 #include <vector>
@@ -58,7 +58,8 @@ public:
 	std::vector<const RoomMemberEntry*> GetOtherRoomMemberEntriesInCurrentMatch() const;
 
 	std::vector<IMPlayer> GetIMPlayersInCurrentMatchNonSpec() const;
-
+	static RoomSettingsStatic* GetRoomSettingsStaticBaseAdress();
+	bool ChangeRematchAmnt(signed int new_amnt);
 
 private:
 	void SendAnnounce();
@@ -71,6 +72,7 @@ private:
 	const RoomMemberEntry* GetRoomMemberEntryByIndex(uint16_t index) const;
 	bool IsPlayerInRoom(const IMPlayer& player) const;
 	bool IsThisPlayer(const uint64_t otherSteamID) const;
+	
 	const char* GetPlayerSteamName(uint64_t steamID) const;
 
 	std::vector<IMPlayer> m_imPlayers;
@@ -83,6 +85,7 @@ private:
 	NetworkManager* m_pNetworkManager;
 	ISteamFriends* m_pSteamFriends;
 	Room* m_pRoom;
+	RoomSettingsStatic* m_pRoomSettings;
 
 	// For debug purposes
 	friend class DebugWindow;

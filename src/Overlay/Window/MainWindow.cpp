@@ -573,9 +573,23 @@ void MainWindow::DrawHitboxOverlaySection() const
 		m_pWindowContainer->GetWindow<HitboxOverlay>(WindowType_HitboxOverlay)->DrawRectFillTransparencySlider();
 
 		ImGui::HorizontalSpacing();
+		ImGui::Checkbox("Draw hitbox/hurtbox",
+			&m_pWindowContainer->GetWindow<HitboxOverlay>(WindowType_HitboxOverlay)->drawHitboxHurtbox);
+		ImGui::HorizontalSpacing();
 		ImGui::Checkbox("Draw origin",
 			&m_pWindowContainer->GetWindow<HitboxOverlay>(WindowType_HitboxOverlay)->drawOriginLine);
-
+		ImGui::SameLine();
+		ImGui::ShowHelpMarker("The point in space where your character resides. \nImportant!: This is a single point, the render is composed of two lines to facilitate viewing, the actual point is where the two lines touch.");
+		ImGui::HorizontalSpacing();
+		ImGui::Checkbox("Draw collision",
+			&m_pWindowContainer->GetWindow<HitboxOverlay>(WindowType_HitboxOverlay)->drawCollisionBoxes);
+		ImGui::SameLine();
+		ImGui::ShowHelpMarker("Defines collision between objects/characters. Also used for throw range checks.");
+		ImGui::HorizontalSpacing();
+		ImGui::Checkbox("Draw throw/range boxes",
+			&m_pWindowContainer->GetWindow<HitboxOverlay>(WindowType_HitboxOverlay)->drawRangeCheckBoxes);
+		ImGui::SameLine();
+		ImGui::ShowHelpMarker("Throw Range Box(yellow): All throws require the throw range check. In order to pass this check the throw range box must overlap target's  collision box.\n\nMove Range Box(green): All throws and some moves require the move range check. In order to pass this check the move range box must overlap the target's origin point.\n\n\n\nHow do throws connect?\n\nIn order for a throw to connect you must have satisfy the following conditions:\n1: Both players must be on the ground or in the air. This is decided by their origin position, not sprite.\n2: You must pass the move range check.\n3: You must pass the throw range check.\n4: The hitbox of the throw must overlap the hurtbox of the target.\n5: The target must not be throw immune.\n");
 		ImGui::VerticalSpacing();
 
 		ImGui::HorizontalSpacing();

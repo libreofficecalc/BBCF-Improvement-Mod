@@ -6,6 +6,7 @@
 #include "Game/gamestates.h"
 #include "Game/ReplayStates/FrameState.h"
 #include "Game/ReplayFiles/ReplayFile.h"
+#include "Game/ReplayFiles/ReplayList.h"
 #include "Game/ReplayFiles/ReplayFileManager.h"
 #include "Game/Menus/TrainingSetupMenu.h"
 #include "Overlay/NotificationBar/NotificationBar.h"
@@ -20,11 +21,11 @@
 #include <array>
 #include "Core/info.h"
 #include <windows.h>
-#include "Game/ReplayFiles/ReplayFileManager.h"
 #include "Game/Playbacks/PlaybackManager.h"
 #include "Overlay/imgui_utils.h"
 #include <cstdlib>
 #include <ctime>
+#include <algorithm>
 
 
 
@@ -1485,7 +1486,7 @@ void ScrWindow::DrawReplayTheaterSection() {
     const int FNAME_SIZE_MAX = 31;
     static bool local_replay_loaded = false;
     static std::string local_replay_loaded_name = "";
-    static ReplayFileManager rep_manager = ReplayFileManager();
+    ReplayFileManager& rep_manager = g_rep_manager;
     if (*g_gameVals.pGameMode != GameMode_ReplayTheater && local_replay_loaded) {
         restore_replays(FNAME_SIZE_MAX);
     }
@@ -1493,19 +1494,38 @@ void ScrWindow::DrawReplayTheaterSection() {
         set_local_replay(&local_replay_loaded_name[0], FNAME_SIZE_MAX);
     }
     if (ImGui::CollapsingHeader("Local Replays")) {
-        ImGui::TextWrapped("The replay file must be in Save/Replay/, to load archived replays move them from Save/Replay/archive/ to Save/Replay/. Filenames must not exceed 31 chars. ");
+        
+        static int view_type = 0; // 0 for default, 1 for archive, 2 for db
+        static int page = 0;
+        static int character1 = -1;
+        static char player1[200] = "";
+        static int character2 = -1;
+        static char player2[200] = "";
+
+       
+        
+        
         static char local_replay_name[FNAME_SIZE_MAX] = "fname";
         ImGui::InputText("File Name##replay_theater", local_replay_name, IM_ARRAYSIZE(local_replay_name));
+        ImGui::SameLine();
+        ImGui::ShowHelpMarker("The replay file must be in Save/Replay/, to load archived replays move them from Save/Replay/archive/ to Save/Replay/. Filenames must not exceed 31 chars. ");
+ 
         if (ImGui::Button("Load##replay_theater")) {
             set_local_replay(local_replay_name, FNAME_SIZE_MAX);
             local_replay_loaded = true;
             local_replay_loaded_name = local_replay_name;
         }
         ImGui::SameLine();
+        ImGui::ShowHelpMarker("Loads the specified File Name. Once done you can select any replay from the list and it will play the loaded replay file.");
+        ImGui::SameLine();
+
         if (ImGui::Button("Restore original replays##replay_theater")) {
             restore_replays(FNAME_SIZE_MAX);
             local_replay_loaded = false;
         }
+        ImGui::SameLine();
+        ImGui::ShowHelpMarker("Restores your replays to their original files, reverting the effect of \"Load\".");
+
 
         
         
@@ -1513,10 +1533,133 @@ void ScrWindow::DrawReplayTheaterSection() {
             rep_manager.archive_replays();
 
         }
-        ImGui::TextWrapped("Archiving will copy and rename all current replays to Save/Replay/archive/");
+        ImGui::SameLine();
+        ImGui::ShowHelpMarker("Archiving will copy and rename all current replays to Save/Replay/archive/ .");
 
+
+
+
+
+        if (ImGui::TreeNode("(Experimental)Replay database download/archive replace##local_replays")) {
+            if (!g_rep_manager.template_modified && view_type == 1)
+                view_type = 0; // if replay list was reset to default due to playing a real match, also reset view_type to default
+                // except for db, which does not immediately modify the template
+
+            bool view_changed = false;
+
+            if (ImGui::RadioButton("Recent replays", &view_type, 0))
+                view_changed = true;
+
+            if (ImGui::RadioButton("Replay archive", &view_type, 1))
+                view_changed = true;
+
+            ImGui::RadioButton("Replay db", &view_type, 2);
+
+
+            if (view_type == 0) {
+                if (ImGui::Button("Repair##replay_list"))
+                    g_rep_manager.load_replay_list_default_repair();
+
+                if (view_changed)
+                    g_rep_manager.load_replay_list_default();
+            }
+
+
+            if (view_type == 1) { // archive controls
+                ImGui::TextUnformatted("page");
+
+                ImGui::SameLine();
+
+                if (ImGui::InputInt("##replay_list_page", &page))
+                    view_changed = true;
+
+                // TODO: search?
+
+                if (view_changed)
+                    g_rep_manager.load_replay_list_from_archive(page);
+            }
+
+
+            if (view_type == 2) { // db controls
+                if (ImGui::BeginCombo("character1##replay_db_character", character1 == -1 ? "<any>" : getCharacterNameByIndexA(character1).c_str())) {
+
+                    if (ImGui::Selectable("<any>", character1 == -1)) character1 = -1;
+
+                    for (int i = 0; i < getCharactersCount(); i++) {
+                        if (ImGui::Selectable(getCharacterNameByIndexA(i).c_str(), character1 == i))
+                            character1 = i;
+                    }
+
+                    ImGui::EndCombo();
+                }
+
+                ImGui::InputText("player1##replay_db_player", player1, sizeof(player1));
+
+
+                ImGui::TextUnformatted("vs");
+
+
+                if (ImGui::BeginCombo("character2##replay_db_character", character2 == -1 ? "<any>" : getCharacterNameByIndexA(character2).c_str())) {
+
+                    if (ImGui::Selectable("<any>", character2 == -1)) character2 = -1;
+
+                    for (int i = 0; i < getCharactersCount(); i++) {
+                        if (ImGui::Selectable(getCharacterNameByIndexA(i).c_str(), character2 == i))
+                            character2 = i;
+                    }
+
+                    ImGui::EndCombo();
+                }
+
+                ImGui::InputText("player2##replay_db_player", player2, sizeof(player2));
+
+
+                ImGui::TextUnformatted("page");
+
+                ImGui::SameLine();
+
+                ImGui::InputInt("##replay_list_page", &page);
+
+                if (ImGui::Button("Load##replay_db"))
+                    g_rep_manager.load_replay_list_from_db(page, character1, player1, character2, player2);
+                // TODO: instead of Load button, we could use view_changed and debounce
+            }
+
+
+            // print extra info about selected replay
+            char* base = GetBbcfBaseAdress();
+            ReplayList* replay_list = (ReplayList*)(base + 0xAA9808);
+            int selected_order = *(int*)(base + 0xE9329C); // replay menu item index
+
+            int selected_index = replay_list->order[selected_order]; //*(int*)(replay_list + 8 + 100 * 0x390 + selected_order * 4);
+
+            if (selected_index != -1) {
+                ReplayFile* rp = replay_list->replays[selected_index].data(); // (ReplayFile*)(replay_list + 8 + selected_index * 0x390 - 8); // only first 0x390 bytes match
+
+                ImGui::Text("Selected: %s (lvl%d %s)%s",
+                    utf16_to_utf8(rp->p1_name).c_str(), rp->p1_lvl + 1, getCharacterNameByIndexA(rp->p1_toon).c_str(), rp->winner_maybe == 0 ? " (win)" : "");
+                ImGui::Text("      vs  %s (lvl%d %s)%s",
+                    utf16_to_utf8(rp->p2_name).c_str(), rp->p2_lvl + 1, getCharacterNameByIndexA(rp->p2_toon).c_str(), rp->winner_maybe == 1 ? " (win)" : "");
+                // TODO: draw replay levels, winner and other metadata on top of bbcf list ui?
+
+                if (view_type == 2) { // if db
+                    if (ImGui::Button("Save selected replay to archive##replay_db")) {
+                        char path[32] = "";
+                        char* replay_file_template = base + 0x4AA66C;
+                        sprintf(path, replay_file_template, selected_index);
+
+                        rep_manager.load_replay(path);
+                        auto new_fname = rep_manager.build_file_name();
+                        rep_manager.save_replay(REPLAY_ARCHIVE_FOLDER_PATH + new_fname);
+                    }
+                }
+            }
+
+            ImGui::Separator();
+            ImGui::TreePop();
+        }
     }
-    
+   
 
 }
 void toggle_char_distance_code(bool skip=true) {
@@ -2264,7 +2407,8 @@ void ScrWindow::DrawRoomSection() {
     if (!ImGui::CollapsingHeader("Room Settings"))
         return;
 
-    if (!g_gameVals.pRoom || g_gameVals.pRoom->roomStatus == RoomStatus_Unavailable)
+    if (!g_gameVals.pRoom || g_gameVals.pRoom->roomStatus == RoomStatus_Unavailable 
+        || !(RoomManager::GetRoomSettingsStaticBaseAdress()))
     {
         ImGui::TextUnformatted("Room is not available!");
         return;
@@ -2297,27 +2441,27 @@ void ScrWindow::DrawRoomSection() {
     {
         switch (currentItem) {
         case 0:
-            g_gameVals.pRoom->rematch = RoomRematch::RematchType_Disabled;
+            g_interfaces.pRoomManager->ChangeRematchAmnt(0);
             break;
 
         case 1:
-            g_gameVals.pRoom->rematch = RoomRematch::RematchType_Unlimited;
+            g_interfaces.pRoomManager->ChangeRematchAmnt(-1);
             break;
 
         case 2:
-            g_gameVals.pRoom->rematch = RoomRematch::RematchType_Ft2;
+            g_interfaces.pRoomManager->ChangeRematchAmnt(2);
             break;
 
         case 3:
-            g_gameVals.pRoom->rematch = RoomRematch::RematchType_Ft3;
+            g_interfaces.pRoomManager->ChangeRematchAmnt(3);
             break;
 
         case 4:
-            g_gameVals.pRoom->rematch = RoomRematch::RematchType_Ft5;
+            g_interfaces.pRoomManager->ChangeRematchAmnt(5);
             break;
 
         case 5:
-            g_gameVals.pRoom->rematch = RoomRematch::RematchType_Ft10;
+            g_interfaces.pRoomManager->ChangeRematchAmnt(10);
             break;
 
 

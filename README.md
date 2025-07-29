@@ -70,6 +70,8 @@ For each non-idle frame, it displays a column of squares.
 * NeoStrayCat
 * KDing
 * PC_volt
+* MorphRed
+* Tadatys(sublimacija)
 * Everybody in the BlazBlue PC community that has given support or feedback of any kind!
 
 ## Extra thanks to

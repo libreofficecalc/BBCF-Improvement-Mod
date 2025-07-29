@@ -214,39 +214,27 @@ void WindowManager::Render()
 		return;
 	}
 
+	if (IsIconic(g_gameProc.hWndGameWindow))
+	{
+		return; // don't render when window is minimized, since this sometimes moves ui around
+	}
+
+
 	LOG(7, "WindowManager::Render\n");
 
 	HandleButtons();
 
 	ImGui_ImplDX9_NewFrame();
 
-	bool isMainWindowOpen =
-		m_windowContainer->GetWindow(WindowType_Main)->IsOpen();
-	bool isUpdateNotifierWindowOpen =
-		m_windowContainer->GetWindow(WindowType_UpdateNotifier)->IsOpen();
-	bool isPaletteEditorWindowOpen =
-		m_windowContainer->GetWindow(WindowType_PaletteEditor)->IsOpen();
-	bool isLogWindowOpen =
-		m_windowContainer->GetWindow(WindowType_Log)->IsOpen();
-	bool isRoomWindowOpen =
-		m_windowContainer->GetWindow(WindowType_Room)->IsOpen();
-	bool isDebugWindowOpen =
-		m_windowContainer->GetWindow(WindowType_Debug)->IsOpen();
-	bool isScrWindowOpen =
-		m_windowContainer->GetWindow(WindowType_Scr)->IsOpen();
-	bool isInputBufferP1WindowOpen =
-		m_windowContainer->GetWindow(WindowType_InputBufferP1)->IsOpen();
-	bool isInputBufferP2WindowOpen =
-		m_windowContainer->GetWindow(WindowType_InputBufferP2)->IsOpen();
-	bool isPlaybackEditorWindowOpen =
-		m_windowContainer->GetWindow(WindowType_PlaybackEditor)->IsOpen();
-	bool isComboDataWindowOpen =
-		m_windowContainer->GetWindow(WindowType_ComboData)->IsOpen();
+	ImGui::GetIO().MouseDrawCursor = false;
+	for (auto p : m_windowContainer->GetWindows()) {
+		if (p.first == WindowType_HitboxOverlay) continue; // ignore windows that don't need a mouse
+		if (p.second->IsOpen()) {
+			ImGui::GetIO().MouseDrawCursor = true;
+			break;
+		}
+	}
 
-	ImGui::GetIO().MouseDrawCursor = isMainWindowOpen || isLogWindowOpen || isPaletteEditorWindowOpen
-		|| isUpdateNotifierWindowOpen || isRoomWindowOpen || isDebugWindowOpen || 
-		isScrWindowOpen || isInputBufferP1WindowOpen || isInputBufferP2WindowOpen
-		|| isPlaybackEditorWindowOpen || isComboDataWindowOpen;
 
 	if (Settings::settingsIni.viewport == 2)
 	{

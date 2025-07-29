@@ -145,6 +145,31 @@ void DebugWindow::DrawGameValuesSection()
 	//bbcf.exe+0x612888
 	//static unsigned char savedstate_mine[10][0xa10000] = {};
 	char* base_addr = GetBbcfBaseAdress();
+	if (ImGui::TreeNode("charpos")) {
+		if (g_interfaces.player1.IsCharDataNullPtr() || g_interfaces.player2.IsCharDataNullPtr()) {
+			ImGui::Text("both p1 and p2 must be loaded");
+		}
+		else {
+			CharData* p1 = g_interfaces.player1.GetData();
+			CharData* p2 = g_interfaces.player2.GetData();
+
+
+			ImGui::Text("P1");
+			ImGui::InputInt("X##player1debug", &(p1->position_x), 10000, 10000);
+			ImGui::InputInt("Y##player1debug", &(p1->position_y), 10000, 10000);
+
+			ImGui::Text("P2");
+			ImGui::InputInt("X##player2debug", &(p2->position_x), 10000, 10000);
+			ImGui::InputInt("Y##player2debug", &(p2->position_y), 10000, 10000);
+
+
+			
+		}
+		ImGui::TreePop();
+	}
+
+	
+	
 	if (ImGui::TreeNode("replay download testing")) {
 		//static char replay_file_download_staging[REPLAY_FILE_SIZE];
 

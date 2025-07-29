@@ -116,6 +116,8 @@ public:
 	char pad_04C2[6]; //0x04C2
 	int16_t moveGuardCrushTime; //0x04C8
 	char pad_04CA[10]; //0x04CA
+
+	//Vector checks are set  by moves either using the defaults or Unknown11032(vectorCheckX_1, vectorCheckX_2, vectorCheckY_1, vectorCheckY_2)
 	int32_t vectorcheckX_1; //0x04D0
 	int32_t vectorcheckY_1; //0x04D4
 	int32_t vectorcheckX_2; //0x04D8
