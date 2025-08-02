@@ -12,6 +12,7 @@
 #include "Overlay/Window/PlaybackEditorWindow.h"
 #include "Overlay/Window/ComboDataWindow.h"
 #include "Overlay/Window/ReplayDBPopupWindow.h" 
+#include "Overlay/Window/FrameHistory/FrameHistory.h"
 
 #include "Core/info.h"
 #include "Core/logger.h"
@@ -59,4 +60,7 @@ WindowContainer::WindowContainer()
 
 	AddWindow(WindowType_ReplayDBPopup,
 		new ReplayDBPopupWindow("Replay DB Popup", true, *this, ImGuiWindowFlags_NoTitleBar));
+
+	AddWindow(WindowType_FrameHistory,
+		new FrameHistoryWindow("Frame History", true, *this, ImGuiWindowFlags_AlwaysAutoResize));
 }
