@@ -42,6 +42,17 @@ bool isGameModeSelectorEnabledInCurrentState()
 	return isEnabledInCurrentState && isEnabledInCurrentMode;
 }
 
+bool isFrameHistoryEnabledInCurrentState() {
+	bool isEnabledInCurrentState =
+		*g_gameVals.pGameState == GameState_InMatch;
+
+	bool isEnabledInCurrentMode =
+		*g_gameVals.pGameMode == GameMode_Training ||
+		*g_gameVals.pGameMode == GameMode_ReplayTheater;
+
+	return isEnabledInCurrentMode && isEnabledInCurrentState;
+}
+
 bool isStageSelectorEnabledInCurrentState()
 {
 	return *g_gameVals.pGameState == GameState_CharacterSelectionScreen;

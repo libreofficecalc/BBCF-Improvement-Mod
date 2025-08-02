@@ -1,4 +1,4 @@
-#include "frameHistory.h"
+#include "FrameHistory.h"
 #include "FrameAdvantage/PlayerExtendedData.h"
 #include <cstddef>
 #include "Core/logger.h"
@@ -138,17 +138,9 @@ PlayerFrameState::PlayerFrameState(scrState* state, unsigned int frame,
     }
     else {
         fst_det_active = first_det_active(state->frame_activity_status);
-        // if (state->frame_invuln_status.size() > frame)
-        //     det_invul = static_cast<Attribute>(state->frame_invuln_status.at(frame));
     }
-    // invul = det_invul;
+    
     invul = parse_dyn_invul(*((uint32*) (((char*) player) + 0x998)));
-//    uint32 invul_field = *((uint32*)(((char*)player) + 0x998));
-//#ifdef ENABLE_LOGGING
-//    if (invul_field != 0x000BBDF9) {
-//        g_imGuiLogger->Log("[debug] Invul: %x\n", invul);
-//    }
-//#endif
 
     is_new = frame == 0;
     // BUG: Check if dereferencing player causes a crash here (mirror matches)
@@ -200,10 +192,9 @@ PlayerFrameState::PlayerFrameState()
 bool FrameHistory::getPlayerFrameStates(CharData* player1,
     CharData* player2, StatePair* res) {
     // get the state
-    // we need the amount of frames spent on the current state
-    // Suppose we know the frame count for state n, if we changed states, start
-    // another count otherwise, add the difference between our framecount, and the
-    // global frame count.
+    // we need the amount of frames spent on the current state, in order to index into the state frames.
+    // TODO: Might want to count frames since last update, and add those to the p1_frames. However, what if a state was changed in between updates, then we can't know.
+    // This is all the more reason to query states purely dynamically.
     std::string currentAction = std::string(player1->currentAction);
     // If the actionTime hasn't yet changed, don't register this frame.
     bool condition1 = p1_frames == player1->actionTime - 1;
@@ -220,7 +211,7 @@ bool FrameHistory::getPlayerFrameStates(CharData* player1,
     }
     else {
         // could instead use the difference between local and global framecounts, to
-        // increment this If there is hitstop, do not add a frame.
+        // increment this. If there is hitstop, do not add a frame.
         p1_frames = player1->actionTime - 1;
     }
     currentAction = std::string(player2->currentAction);
