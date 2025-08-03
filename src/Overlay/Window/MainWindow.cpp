@@ -140,7 +140,7 @@ void MainWindow::DrawAvatarSection() const
 }
 
 
-void DrawFrameHistorySection() const
+void MainWindow::DrawFrameHistorySection() const
 {
 	if (!ImGui::CollapsingHeader("FrameHistory"))
 		return;
@@ -153,7 +153,7 @@ void DrawFrameHistorySection() const
 
 	static bool isOpen = false;
 
-	FrameHistoryWindow* frameHistWin = m_pWindowContainer->GetWindow(WindowType_HitboxOverlay);
+	FrameHistoryWindow* frameHistWin = m_pWindowContainer->GetWindow<FrameHistoryWindow>(WindowType_FrameHistory);
 
 
 	ImGui::HorizontalSpacing();

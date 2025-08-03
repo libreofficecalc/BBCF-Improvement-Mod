@@ -47,6 +47,9 @@ void Settings::applySettingsIni(D3DPRESENT_PARAMETERS* pPresentationParameters)
 	g_modVals.freeze_frame_keycode = Settings::getButtonValue(Settings::settingsIni.freezeFrameKeybind);
 	g_modVals.step_frames_keycode = Settings::getButtonValue(Settings::settingsIni.stepFramesKeybind);
 	g_modVals.uploadReplayData = Settings::settingsIni.uploadReplayData;
+	g_modVals.frame_history_width = Settings::settingsIni.FrameHistoryWidth;
+	g_modVals.frame_history_height = Settings::settingsIni.FrameHistoryHeight;
+	g_modVals.frame_history_spacing = Settings::settingsIni.FrameHistorySpacing;
 
 	//CA2W pszwide (host_c_str);
 	g_modVals.uploadReplayDataHost = Settings::settingsIni.uploadReplayDataHost;;

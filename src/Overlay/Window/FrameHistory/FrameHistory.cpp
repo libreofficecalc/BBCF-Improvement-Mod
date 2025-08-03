@@ -1,5 +1,5 @@
 #include "FrameHistory.h"
-#include "FrameAdvantage/PlayerExtendedData.h"
+#include "Overlay/Window/FrameAdvantage/PlayerExtendedData.h"
 #include <cstddef>
 #include "Core/logger.h"
 #include "Overlay/Logger/ImGuiLogger.h"

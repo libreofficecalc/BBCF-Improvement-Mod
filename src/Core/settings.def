@@ -24,4 +24,7 @@ SETTING(int, uploadReplayData, "UploadReplayData", "-1");
 SETTING(std::string, uploadReplayDataHost, "UploadReplayDataHost", "50.118.225.175");
 SETTING(std::string, uploadReplayDataEndpoint, "UploadReplayDataEndpoint", "/upload");
 SETTING(int, uploadReplayDataPort, "UploadReplayDataPort", "5000");
+SETTING(float, FrameHistoryWidth, "FrameHistoryWidth", "10.0");
+SETTING(float, FrameHistoryHeight, "FrameHistoryHeight", "10.0");
+SETTING(float, FrameHistorySpacing, "FrameHistorySpacing", "10.0");
 // SETTING(std::string, replayDatabaseFrontendUrl "ReplayDatabaseFrontendUrl", "http://50.118.225.175:2000/");

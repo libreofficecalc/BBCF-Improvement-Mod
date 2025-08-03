@@ -1,6 +1,15 @@
 #include "FrameHistoryWindow.h"
-#include <vector>
 #include "Game/gamestates.h"
+
+
+#include "Core/interfaces.h"
+#include "Game/gamestates.h"
+#include "imgui_internal.h"
+#include "Core/utils.h"
+
+#include <array>
+#include <vector>
+#include <cmath>
 
 #define MAX(a,b)            (((a) > (b)) ? (a) : (b))
 #define MIN(a,b)            (((a) > (b)) ? (b) : (a))
@@ -78,10 +87,16 @@ ImVec2 MakeBall(ImColor color, float radius_proportion, ImVec2 offset, float wid
   return ImVec2(offset.x + width, offset.y + height);
 }
 
+bool FrameHistoryWindow::hasWorldTimeMoved() {
+	bool res = *g_gameVals.pFrameCount > last_frame;
+	last_frame = *g_gameVals.pFrameCount;
+	return res;
+}
+
 
 void FrameHistoryWindow::Update()
 {
-	if (!m_windowOpen || !isFrameHistoryENabledInCurrentState())
+	if (!m_windowOpen || !isFrameHistoryEnabledInCurrentState())
 	{
 		history.clear();
 		return;
@@ -98,7 +113,7 @@ void FrameHistoryWindow::Update()
 	BeforeDraw();
 
 	// TODO: Try using beginchild instead. If this continues causing problems with other windows.
-	ImGui::Begin("##FrameHistory", nullptr, m_overlayWindowFlags);
+	ImGui::Begin("##FrameHistory", nullptr, m_windowFlags);
 
 	Draw();
 
