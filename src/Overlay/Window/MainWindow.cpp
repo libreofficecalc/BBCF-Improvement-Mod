@@ -157,19 +157,24 @@ void MainWindow::DrawFrameHistorySection() const
 
 
 	ImGui::HorizontalSpacing();
-	if (ImGui::Checkbox("Enable##framehistory_section", &isOpen)) {
-		if (isOpen)
-		{
-			frameHistWin->Open();
-		}
-		else
-		{
-			frameHistWin->Close();
-		}
-		
+	ImGui::Checkbox("Enable##framehistory_section", &isOpen)
+	ImGui::SameLine();
+	ImGui::ShowHelpMarker("For each non-idle frame, display a column of colored rectangles.\r\n \r\n For each player:\r\n = The first row displays player state.\r\n - Startup -> green\r\n - Active -> red\r\n - Recovery -> blue\r\n - Blockstun -> yellow\r\n - Hitstun -> purple\r\n - Hard landing recovery -> blush\r\n - Special: hard to classify states (e.g. dashes) -> Aquamarine\r\n - Unclassified but unable to act -> Byzantium\r\n - Unclassified otherwise -> Burgundy\r\n = Second row is for invulnerability\r\n - H -> red\r\n - B -> green\r\n - F -> blue\r\n = within the second row, the inscribed circle color signifies the following\r\n - Throw -> red\r\n - Projectile -> green\r\n - Burst -> blue\r\n NOTE: The second line displays color combinations of the three primary colors, to indicate invulnerability to the attributes of the combined colors.\r\n");
+
+	if (isOpen)
+	{
+		frameHistWin->Open();
 	}
+	else
+	{
+		frameHistWin->Close();
+	}
+		
 	ImGui::HorizontalSpacing();
 	ImGui::Checkbox("Auto Reset##Reset after each idle frame", &frameHistWin->resetting);
+	ImGui::SameLine();
+	ImGui::ShowHelpMarker("block auto-reset on an idle frame: Do not overwrite automatically after an idle frame.");
+
 	ImGui::HorizontalSpacing();
 	ImGui::SliderFloat("Box width", &frameHistWin->width, 1., 100.);
 	ImGui::HorizontalSpacing();

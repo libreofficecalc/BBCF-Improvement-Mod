@@ -18,7 +18,7 @@ public:
 	FrameHistory history;
 
 	FrameHistoryWindow(const std::string& windowTitle, bool windowClosable,
-		ImGuiWindowFlags windowFlags = 0)
+		ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoTitleBar)
 		: IWindow(windowTitle, windowClosable, windowFlags) {
 			width = g_modVals.frame_history_width;
 			height = g_modVals.frame_history_height;
