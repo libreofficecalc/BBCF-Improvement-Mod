@@ -269,8 +269,16 @@ void FrameHistory::updateHistory(bool resetting) {
     p2_stateChangedCount = p2->stateChangedCount;
 
 
-    // Don't log completely idle frames
-    if (states[0].kind == FrameKind::Idle && states[1].kind == FrameKind::Idle) {
+    // TODO: If you add attack and guardp, add them to this condition
+    // Reset on completely idle frames
+    if (
+         (states[0].kind == FrameKind::Idle
+         && states[0].invul == Attribute::N)
+         &&
+         (states[1].kind == FrameKind::Idle
+         && states[1].invul == Attribute::N)
+       )
+    {
         is_old = true;
     }
     else {
