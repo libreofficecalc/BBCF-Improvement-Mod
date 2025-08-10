@@ -37,8 +37,7 @@ Copy the compiled binary, settings.ini, and palettes.ini files from the bin/ fol
 
 
 ### FrameHistory: 
-frameHistory is a frame meter with three rows for each character.
-For each non-idle frame, it displays a column of squares.
+frameHistory is a frame meter with two rows for each character. For each non-idle frame, it displays a column of rectangles. 
 - For each player:
     + The first row displays player state. The colors are as follows 
         - Hard landing recovery -> blush
