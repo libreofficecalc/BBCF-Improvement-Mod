@@ -137,47 +137,31 @@ void FrameHistoryWindow::Draw() {
 		ImVec2 cursor_p = ImGui::GetCursorScreenPos();
 
 		float text_vertical_spacing = 20.;
-		const int rows = 3 * 2;
-		// The number of rows on different elevations
-		const int unmerged_rows = rows - 2;
-		const double circle_proportion = 0.75;
+		const int rows = 2 * 2;
+
 
 
 
 
 		// Reclaim space after player 1 rows so Player 2 appears below
-		ImGui::Dummy(ImVec2(0, (height + spacing) * ((unmerged_rows >> 1) - 1) + height));
+		ImGui::Dummy(ImVec2(0, (height + spacing) * ((rows >> 1) - 1) + height));
 		ImGui::Text("Player 2:");
-		for (StatePairQueue::reverse_iterator elem = queue.rbegin(); elem != queue.rend(); ++elem) {
+		for (StatePairQueue::iterator elem = queue.begin(); elem != queue.end(); ++elem) {
 			PlayerFrameState p1state = elem->front();
 			PlayerFrameState p2state = elem->back();
 
 			// determine colors
 			std::array<float, 3 * rows> col_arr;
 
-			// TODO: Change design to a box for tpo and an inscribed circle for hbf
-			// One row for each set of attributes
-			std::array<Attribute, 3> hbf = { Attribute::H, Attribute::B, Attribute::F };
-			std::array<Attribute, 3> tpo = { Attribute::T, Attribute::P, Attribute::O };
 
 			std::array<float, 3> color;
 			color = kindtoColor(p1state.kind);
 			std::copy(std::begin(color), std::end(color), std::begin(col_arr));
-			color = attributetoColor(p1state.invul, hbf);
-			std::copy(std::begin(color), std::end(color), std::begin(col_arr) + 3 * 1);
-			color = attributetoColor(p1state.invul, tpo);
-			std::copy(std::begin(color), std::end(color), std::begin(col_arr) + 3 * 2);
-			//color = attributetoColor(p1state.guardp);
-			//std::copy(std::begin(color), std::end(color), std::begin(col_arr) + 3 * 2);
-			//color = attributetoColor(p1state.attack);
-			//std::copy(std::begin(color), std::end(color), std::begin(col_arr) + 3 * 3);
+
 
 			color = kindtoColor(p2state.kind);
-			std::copy(std::begin(color), std::end(color), std::begin(col_arr) + 3 * 3);
-			color = attributetoColor(p2state.invul, hbf);
-			std::copy(std::begin(color), std::end(color), std::begin(col_arr) + 3 * 4);
-			color = attributetoColor(p2state.invul, tpo);
-			std::copy(std::begin(color), std::end(color), std::begin(col_arr) + 3 * 5);
+			std::copy(std::begin(color), std::end(color), std::begin(col_arr) + 3 * 1);
+
 
 
 
@@ -185,7 +169,7 @@ void FrameHistoryWindow::Draw() {
 
 			float next_x;
 
-			// NOTE: Add a -3 to the indices beyond this point (since the loop below expects to surpass 6 indices for each i (iteration)
+			// NOTE: Add a -3 to the indices beyond this point (since the loop below expects to pass 6 indices for each i (iteration)
 			// But, these outside calls only increment by 3
 
 			// draw a box, mind how much it has moved beyond the (width, height)
@@ -195,28 +179,93 @@ void FrameHistoryWindow::Draw() {
 			// Remember where the box finished drawing, to get the new column
 			next_x = cursor_p.x + spacing;
 
-			for (int i = 1; i < (unmerged_rows >> 1); ++i) {
+			for (int i = 1; i < (rows >> 1); ++i) {
 				// carriage return 
 				cursor_p = ImVec2(prev_cursor_p.x, cursor_p.y + spacing);
-				MakeBox(ImColor(col_arr[i * 6 + 0 - 3], col_arr[i * 6 + 1 - 3], col_arr[i * 6 + 2 - 3]), cursor_p, width, height);
-				// TODO: Skip a row
-				cursor_p = MakeBall(ImColor(col_arr[i * 6 + 0], col_arr[i * 6 + 1], col_arr[i * 6 + 2]), circle_proportion, cursor_p, width, height);
+
+				auto cursor_p2 = cursor_p;
+
+				cursor_p = MakeBox(ImColor(0, 0, 0), cursor_p, width, height);
+
+				
+				// TODO: Could do with a more concise implementation
+				auto cursor_tmp = cursor_p2;
+				if (bool(p1state.invul & Attribute::T)) {
+					cursor_tmp.x = cursor_p2.x + width - width / 5;
+					MakeBox(ImColor(255, 255, 255), cursor_tmp, width / 5, height);
+				};
+				if (bool(p1state.invul & Attribute::P)) {
+					cursor_tmp = cursor_p2;
+					cursor_tmp.x = cursor_p2.x;
+					MakeBox(ImColor(255, 255, 255), cursor_tmp, width / 5, height);
+				};
+				if (bool(p1state.invul & Attribute::H)) {
+					// the lines have 1/8th of the element height
+					cursor_tmp = cursor_p2;
+					cursor_tmp.y = cursor_p2.y;
+					MakeBox(ImColor(255, 255, 255), cursor_tmp, width, height / 5);
+				};
+				if (bool(p1state.invul & Attribute::B)) {
+					cursor_tmp = cursor_p2;
+					cursor_tmp.y = cursor_p2.y + height / 2 - ((height / 5) / 2);
+					MakeBox(ImColor(255, 255, 255), cursor_tmp, width, height / 5);
+				}
+				if (bool(p1state.invul & Attribute::F)) {
+					cursor_tmp = cursor_p2;
+					cursor_tmp.y = cursor_p2.y + height - (height / 5);
+					MakeBox(ImColor(255, 255, 255), cursor_tmp, width, height / 5);
+
+				}
+
+
 			}
 			cursor_p.x = prev_cursor_p.x;
 			cursor_p.y += text_vertical_spacing + spacing;
 
 			// add another -3 to the indices beyond this point
 			cursor_p = MakeBox(ImColor(
-				col_arr[(unmerged_rows >> 1) * 6 + 0 - 3], 
-				col_arr[(unmerged_rows >> 1) * 6 + 1 - 3], 
-				col_arr[(unmerged_rows >> 1) * 6 + 2 - 3])
+				col_arr[(rows >> 1) * 3 + 0], 
+				col_arr[(rows >> 1) * 3 + 1], 
+				col_arr[(rows >> 1) * 3 + 2])
 				, cursor_p, width, height);
 			
-			for (int i = (unmerged_rows >> 1) + 1; i < unmerged_rows; ++i) {
+			for (int i = (rows >> 1) + 1; i < rows; ++i) {
+
 				// carriage return 
 				cursor_p = ImVec2(prev_cursor_p.x, cursor_p.y + spacing);
-				MakeBox(ImColor(col_arr[i * 6 + 0 - 6], col_arr[i * 6 + 1 - 6], col_arr[i * 6 + 2 - 6]), cursor_p, width, height);
-				cursor_p = MakeBall(ImColor(col_arr[i * 6 + 0 - 3], col_arr[i * 6 + 1 - 3], col_arr[i * 6 + 2 - 3]), circle_proportion, cursor_p, width, height);
+
+				auto cursor_p2 = cursor_p;
+				
+				cursor_p = MakeBox(ImColor(0, 0, 0), cursor_p, width, height);
+				
+
+				auto cursor_tmp = cursor_p2;
+				if (bool(p2state.invul & Attribute::T)) {
+					cursor_tmp.x = cursor_p2.x + width - width / 5;
+					MakeBox(ImColor(255, 255, 255), cursor_tmp, width / 5, height);
+				};
+				if (bool(p2state.invul & Attribute::P)) {
+					cursor_tmp = cursor_p2;
+					cursor_tmp.x = cursor_p2.x;
+					MakeBox(ImColor(255, 255, 255), cursor_tmp, width / 5, height);
+				};
+				if (bool(p2state.invul & Attribute::H)) {
+					cursor_tmp = cursor_p2;
+					cursor_tmp.y = cursor_p2.y;
+					MakeBox(ImColor(255, 255, 255), cursor_tmp, width, height / 5);
+				};
+				if (bool(p2state.invul & Attribute::B)) {
+					cursor_tmp = cursor_p2;
+					cursor_tmp.y = cursor_p2.y + height / 2 - ((height / 5) / 2);
+					MakeBox(ImColor(250, 255, 255), cursor_tmp, width, height / 5);
+				}
+				if (bool(p2state.invul & Attribute::F)) {
+					cursor_tmp = cursor_p2;
+					cursor_tmp.y = cursor_p2.y + height - (height / 5);
+					MakeBox(ImColor(250, 255, 255), cursor_tmp, width, height / 5);
+
+				}
+
 			}
 			cursor_p.x = next_x;
 			cursor_p.y = prev_cursor_p.y;

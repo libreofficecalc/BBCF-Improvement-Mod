@@ -8,9 +8,13 @@
 
 // thanks to PCVolt
 const std::vector<std::string> idleWords = {
+    // now classified under "Special"
+    // "CmnActFDash",
+
+    
     "_NEUTRAL", "CmnActStand", "CmnActStandTurn", "CmnActStand2Crouch",
     "CmnActCrouch", "CmnActCrouchTurn", "CmnActCrouch2Stand", "CmnActFWalk",
-    "CmnActBWalk", "CmnActFDash", "CmnActFDashStop", "CmnActJumpUpper",
+    "CmnActBWalk", "CmnActFDashStop", "CmnActJumpUpper",
     "CmnActJumpDown", "CmnActJumpUpperEnd", "CmnActJumpLanding",
     "CmnActLandingStiffEnd",
     "CmnActUkemiLandNLanding", // to fix, 12F too long!
