@@ -151,6 +151,8 @@ void FrameHistoryWindow::Draw() {
 			PlayerFrameState p2state = elem->back();
 
 			// determine colors
+			// Need to make it more rubust later, format of the colors:
+			// col_arr[0xb]: [p1_r1_r, p1_r1_g, p1_r1_b, ?, ?, ?, p2_r1_r, p2_r1_g, p2_r1_b, ?, ?, ? ]
 			std::array<float, 3 * rows> col_arr;
 
 
@@ -160,7 +162,7 @@ void FrameHistoryWindow::Draw() {
 
 
 			color = kindtoColor(p2state.kind);
-			std::copy(std::begin(color), std::end(color), std::begin(col_arr) + 3 * 1);
+			std::copy(std::begin(color), std::end(color), std::begin(col_arr) + 6 * 1);
 
 
 
