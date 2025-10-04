@@ -150,7 +150,16 @@ void MainWindow::DrawFrameHistorySection() const
 		ImGui::TextDisabled("YOU ARE NOT IN A MATCH, IN TRAINING MODE OR REPLAY THEATER!");
 		return;
 	}
-
+	if (g_interfaces.player1.IsCharDataNullPtr() || g_interfaces.player2.IsCharDataNullPtr()) {
+		ImGui::HorizontalSpacing();
+		ImGui::TextDisabled("THERE WAS AN ERROR LOADING ONE/BOTH OF THE CHARACTERS");
+		return; 
+	}
+	if (g_interfaces.player1.GetData()->charIndex == g_interfaces.player2.GetData()->charIndex) {
+		ImGui::HorizontalSpacing();
+		ImGui::TextDisabled("THIS FEATURE CURRENTLY DOES NOT SUPPORT MIRRORS! IF IT ISN'T A MIRROR THERE WAS AN ERROR LOADING ONE OF THE CHARACTERS");
+		return;
+	}
 	static bool isOpen = false;
 
 	FrameHistoryWindow* frameHistWin = m_pWindowContainer->GetWindow<FrameHistoryWindow>(WindowType_FrameHistory);
@@ -176,11 +185,17 @@ void MainWindow::DrawFrameHistorySection() const
 	ImGui::ShowHelpMarker("block auto-reset on an idle frame: Do not overwrite automatically after an idle frame.");
 
 	ImGui::HorizontalSpacing();
-	ImGui::SliderFloat("Box width", &frameHistWin->width, 1., 100.);
+	if (ImGui::SliderFloat("Box width", &frameHistWin->width, 1., 100.)) {
+		Settings::changeSetting("FrameHistoryWidth", std::to_string(frameHistWin->width));
+	}
 	ImGui::HorizontalSpacing();
-	ImGui::SliderFloat("Box height", &frameHistWin->height, 1., 100.);
+	if (ImGui::SliderFloat("Box height", &frameHistWin->height, 1., 100.)) {
+		Settings::changeSetting("FrameHistoryHeight", std::to_string(frameHistWin->height));
+	}
 	ImGui::HorizontalSpacing();
-	ImGui::SliderFloat("spacing", &frameHistWin->spacing, 1., 100.);
+	if (ImGui::SliderFloat("spacing", &frameHistWin->spacing, 1., 100.)) {
+		Settings::changeSetting("FrameHistorySpacing", std::to_string(frameHistWin->spacing));
+	};
 
 	
 }
