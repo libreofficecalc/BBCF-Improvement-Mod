@@ -146,7 +146,7 @@ void FrameHistoryWindow::Draw() {
 		// Reclaim space after player 1 rows so Player 2 appears below
 		ImGui::Dummy(ImVec2(0, (height + spacing) * ((rows >> 1) - 1) + height));
 		ImGui::Text("Player 2:");
-		for (StatePairQueue::iterator elem = queue.begin(); elem != queue.end(); ++elem) {
+		for (StatePairQueue::reverse_iterator elem = queue.rbegin(); elem != queue.rend(); ++elem) {
 			PlayerFrameState p1state = elem->front();
 			PlayerFrameState p2state = elem->back();
 
