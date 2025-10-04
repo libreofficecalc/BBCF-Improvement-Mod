@@ -82,6 +82,7 @@ bool isPaletteEditingEnabledInCurrentState();
 bool isHitboxOverlayEnabledInCurrentState();
 bool isGameModeSelectorEnabledInCurrentState();
 bool isStageSelectorEnabledInCurrentState();
+bool isFrameHistoryEnabledInCurrentState();
 
 bool isInMatch();
 bool isInMenu();

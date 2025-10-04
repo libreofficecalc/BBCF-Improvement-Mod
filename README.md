@@ -35,6 +35,28 @@ BBCF Improvement Mod is coded using Visual Studio 2019 (toolset v142). <br>
 To compile, you should only need to load the sln file and compile as-is. No changes should be needed to the solution or source.<br>
 Copy the compiled binary, settings.ini, and palettes.ini files from the bin/ folder into the game's root folder.
 
+
+### FrameHistory: 
+frameHistory is a frame meter with two rows for each character. For each non-idle frame, it displays a column of rectangles. 
+- For each player:
+    + The first row displays player state. The colors are as follows 
+        - Hard landing recovery -> blush
+        - Startup -> green
+        - Active -> red
+        - Recovery -> blue
+        - Blockstun -> yellow
+        - Hitstun -> purple
+        - Special (not so easy to classify states: e.g. dashes) -> Aquamarine
+        - Unclassified but unable to act -> Byzantium
+        - Unclassified otherwise -> Burgundy
+    + Second row is for attribute invulnerability. The colors and shapes are mixed and overlayed respectively.
+        - Head -> red   rectangle
+        - Body -> green rectangle
+        - Foot -> blue  rectangle
+        - Projectile -> green disk
+        - Throw ->      red   disk
+
+
 ## Requirements
 - Visual Studio 2019 (toolset v142) (Windows SDK 10)
 
