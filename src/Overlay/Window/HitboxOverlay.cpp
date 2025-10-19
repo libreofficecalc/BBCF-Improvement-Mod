@@ -302,11 +302,16 @@ void HitboxOverlay::DrawCollisionAreas(const CharData* charObj, const ImVec2 pla
 
 	for (const JonbEntry& entry : entries)
 	{
-		//this will skip the drawing of an inactive hitbox due to multihit(ID 2002) script call.
+		//this will skip the drawing of an inactive hitbox due to multihit/NoAttackDuringSprite(ID 2002) and AttackOff(ID 23027) bbscript commands.
+
 		if (entry.type == JonbChunkType_Hitbox
 			&&
-			((charObj->bitflags_for_curr_state_properties_or_smth & 0xF00) == 0x400)
-			 )
+			(
+				(charObj->bitflags_for_curr_state_properties_or_smth & 0xF00) == 0x400
+				||
+				(charObj->bitflags_for_curr_state_properties_or_smth & 0xF00) == 0x200
+			)
+		)
 {
 			continue;
 		}

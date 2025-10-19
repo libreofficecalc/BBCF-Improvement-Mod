@@ -77,7 +77,9 @@ public:
 	//char pad_0250[20]; // 0x0250
 	char pad_0250[0xC];// 0x0250
 	//0x0254 significant?
-	uint32_t bitflags_for_curr_state_properties_or_smth; // 0x025c holds some properties of attacks it seems in something like bitfields. To check for inactive hitboxes from multihits use the mask xxxxx400.
+	uint32_t bitflags_for_curr_state_properties_or_smth; /* 0x025c holds some properties of attacks it seems in something like bitfields.
+														 To check for inactive hitboxes from multihits use the mask xxxxx400.
+														 To check for inactive hitboxes from non-multihits use the mask xxxxx200.*/
 	char pad_0260[4];//0x0260
 	//exp 
 	int32_t facingLeft; //0x0264 is it not facing right?
