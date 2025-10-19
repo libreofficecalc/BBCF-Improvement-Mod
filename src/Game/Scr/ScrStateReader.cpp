@@ -1,5 +1,6 @@
 #pragma once
 #include "ScrStateReader.h"
+#include "Core/interfaces.h"
 #include "CmdList.h"
 #include <iostream>
 #include <fstream>
@@ -22,6 +23,13 @@ byte 32 and going to byte 36. the total amount of states is in the first 4 bytes
 and reach the start of the states definitions you need to do (36 * total n of states).*/
 
 std::vector<scrState*> parse_scr(char* bbcf_base_addr, int player_num) {
+	CharData* p1 = g_interfaces.player1.GetData();
+	CharData* p2 = g_interfaces.player2.GetData();
+	if (p1 && p2) {
+		if (p1->charIndex == p2->charIndex) {
+			return std::vector<scrState*>{};
+		}
+	}
 	char** fpac_load = NULL;
 	char* scr_index = NULL;
 	char** scr_preinit_offset = NULL;
