@@ -128,6 +128,17 @@ void FrameHistoryWindow::BeforeDraw() {}
 void FrameHistoryWindow::AfterDraw() {}
 
 void FrameHistoryWindow::Draw() {
+		// CharData* p1 = g_interfaces.player1.GetData();
+		// CharData* p2 = g_interfaces.player2.GetData();
+		// if (g_interfaces.player1.IsCharDataNullPtr() || g_interfaces.player2.IsCharDataNullPtr()) {
+		// 	ImGui::TextDisabled("UNABLE TO LOAD CharData");
+		// 	return;
+		// }
+		// if (p1->charIndex == p2->charIndex) {
+		// 	ImGui::TextDisabled("DOES NOT WORK IN MIRRORS!");
+		// 	return;
+		// }
+
 		// borrow the history queue
 		StatePairQueue& queue = history.read();
 		int frame_idx = 0;
@@ -146,11 +157,13 @@ void FrameHistoryWindow::Draw() {
 		// Reclaim space after player 1 rows so Player 2 appears below
 		ImGui::Dummy(ImVec2(0, (height + spacing) * ((rows >> 1) - 1) + height));
 		ImGui::Text("Player 2:");
-		for (StatePairQueue::iterator elem = queue.begin(); elem != queue.end(); ++elem) {
+		for (StatePairQueue::reverse_iterator elem = queue.rbegin(); elem != queue.rend(); ++elem) {
 			PlayerFrameState p1state = elem->front();
 			PlayerFrameState p2state = elem->back();
 
 			// determine colors
+			// Need to make it more rubust later, format of the colors:
+			// col_arr[0xb]: [p1_r1_r, p1_r1_g, p1_r1_b, ?, ?, ?, p2_r1_r, p2_r1_g, p2_r1_b, ?, ?, ? ]
 			std::array<float, 3 * rows> col_arr;
 
 
@@ -160,7 +173,7 @@ void FrameHistoryWindow::Draw() {
 
 
 			color = kindtoColor(p2state.kind);
-			std::copy(std::begin(color), std::end(color), std::begin(col_arr) + 3 * 1);
+			std::copy(std::begin(color), std::end(color), std::begin(col_arr) + 6 * 1);
 
 
 

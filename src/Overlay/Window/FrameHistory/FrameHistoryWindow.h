@@ -9,9 +9,9 @@
 
 class FrameHistoryWindow : public IWindow {
 public:
-	float width = 10.;
-	float height = 10.;
-	float spacing = 10.;
+	float width = 12.;
+	float height = 20.;
+	float spacing = 6.;
 	int last_frame = 0;
 
 	bool resetting = true;

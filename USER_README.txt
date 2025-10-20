@@ -1,4 +1,4 @@
-BBCF Improvement Mod (v3.00) by KoviDomi -- README
+BBCF Improvement Mod (v3.1) by Libreofficecalc -- README
 ==========================
 
 What this mod provides
@@ -115,6 +115,17 @@ Delete the "menus.ini" file found in the game's root folder to reset the positio
 Keep in mind that the mod may partially, or completely stop working whenever a new official patch of the game is released. (Though unlikely)
 
 Changelog
+===============================
+04-10-2025 -- version 3.100
+===============================
+Features:
+- Added Real time frame viewer (+@Unisectyn)
+
+Bugfixes
+- Room rematch setting changed while in room will not reset when a new player enters anymore.
+
+
+
 ===============================
 16-07-2025 -- version 3.099
 ===============================
