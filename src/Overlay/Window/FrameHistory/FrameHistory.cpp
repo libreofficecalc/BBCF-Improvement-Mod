@@ -178,7 +178,10 @@ PlayerFrameState::PlayerFrameState(scrState* state, unsigned int frame,
         kind = FrameKind::HardLanding | kind;
     }
     // NOTE: Startup is only defined in a context with deterministic active frames
-    if (fst_det_active > -1 && player->hitboxCount <= 0 && !is_idle_state) {
+    if (fst_det_active > -1
+        && (player->hitboxCount <= 0 || (player->bitflags_for_curr_state_properties_or_smth & (0x400 | 0x200)) == 0)
+        && !is_idle_state) {
+        
         if (frame < fst_det_active) {
             kind = FrameKind::Startup | kind;
         }
