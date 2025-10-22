@@ -155,11 +155,11 @@ void MainWindow::DrawFrameHistorySection() const
 		ImGui::TextDisabled("THERE WAS AN ERROR LOADING ONE/BOTH OF THE CHARACTERS");
 		return; 
 	}
-	if (g_interfaces.player1.GetData()->charIndex == g_interfaces.player2.GetData()->charIndex) {
-		ImGui::HorizontalSpacing();
-		ImGui::TextDisabled("THIS FEATURE CURRENTLY DOES NOT SUPPORT MIRRORS! IF IT ISN'T A MIRROR THERE WAS AN ERROR LOADING ONE OF THE CHARACTERS");
-		return;
-	}
+	//if (g_interfaces.player1.GetData()->charIndex == g_interfaces.player2.GetData()->charIndex) {
+	//	ImGui::HorizontalSpacing();
+	//	ImGui::TextDisabled("THIS FEATURE CURRENTLY DOES NOT SUPPORT MIRRORS! IF IT ISN'T A MIRROR THERE WAS AN ERROR LOADING ONE OF THE CHARACTERS");
+	//	return;
+	//}
 	static bool isOpen = false;
 
 	FrameHistoryWindow* frameHistWin = m_pWindowContainer->GetWindow<FrameHistoryWindow>(WindowType_FrameHistory);

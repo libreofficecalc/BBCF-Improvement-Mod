@@ -128,16 +128,17 @@ void FrameHistoryWindow::BeforeDraw() {}
 void FrameHistoryWindow::AfterDraw() {}
 
 void FrameHistoryWindow::Draw() {
-		CharData* p1 = g_interfaces.player1.GetData();
-		CharData* p2 = g_interfaces.player2.GetData();
-		if (g_interfaces.player1.IsCharDataNullPtr() || g_interfaces.player2.IsCharDataNullPtr()) {
-			ImGui::TextDisabled("UNABLE TO LOAD CharData");
-			return;
-		}
-		if (p1->charIndex == p2->charIndex) {
-			ImGui::TextDisabled("DOES NOT WORK IN MIRRORS!");
-			return;
-		}
+		// CharData* p1 = g_interfaces.player1.GetData();
+		// CharData* p2 = g_interfaces.player2.GetData();
+		// if (g_interfaces.player1.IsCharDataNullPtr() || g_interfaces.player2.IsCharDataNullPtr()) {
+		// 	ImGui::TextDisabled("UNABLE TO LOAD CharData");
+		// 	return;
+		// }
+		// if (p1->charIndex == p2->charIndex) {
+		// 	ImGui::TextDisabled("DOES NOT WORK IN MIRRORS!");
+		// 	return;
+		// }
+
 		// borrow the history queue
 		StatePairQueue& queue = history.read();
 		int frame_idx = 0;
