@@ -45,7 +45,18 @@ void RoomWindow::Draw()
 	std::string roomTypeName = g_interfaces.pRoomManager->GetRoomTypeName();
 	SetWindowTitleRoomType(roomTypeName);
 
-	ImGui::Text("Online type: %s", roomTypeName.c_str());
+	//ImGui::Text("Online type: %s", roomTypeName.c_str());
+
+
+
+	DrawRoomMembers();
+
+
+	if (ImGui::CollapsingHeader("Chat", ImGuiTreeNodeFlags_DefaultOpen))
+		DrawChat();
+
+
+
 
 	ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 5.0f);
 
@@ -79,7 +90,7 @@ void RoomWindow::Draw()
 			GetWindow<PaletteEditorWindow>(WindowType_PaletteEditor)->ShowAllPaletteSelections("Room");
 	}
 
-	if (isInMenu())
+	/*if (isInMenu())
 	{
 		ImGui::VerticalSpacing(10);
 		DrawRoomImPlayers();
@@ -89,7 +100,18 @@ void RoomWindow::Draw()
 	{
 		ImGui::VerticalSpacing(10);
 		DrawMatchImPlayers();
+	}*/
+
+
+	if (ImGui::Button("Copy Invite URL")) {
+		char* base = GetBbcfBaseAdress();
+		char invite_url[256];
+		uint64_t room_id = *(uint64_t*)(base + 0x00664D00); // base->static_GAMESTEAM_CNetworkServer.lobby_id
+		uint64_t user_id = *(uint64_t*)(base + 0x008ad0c0); // base->static_NetUserData.steam_id
+		sprintf(invite_url, "steam://joinlobby/586140/%lld/%lld", room_id, user_id);
+		ImGui::SetClipboardText(invite_url);
 	}
+
 
 	ImGui::PopStyleVar();
 
@@ -158,3 +180,91 @@ void RoomWindow::DrawMatchImPlayers()
 	ImGui::EndChild();
 	ImGui::EndGroup();
 }
+
+
+// RGBA color looks like ABGR when written as a 32bit hex number
+const unsigned int netcolors[9] = { 0xffffffff, 0xffff00ff, 0xff0088ff, 0xff00ffff, 0xff00ff44, 0xff00cc00, 0xffff4400, 0xffffff00, 0xff000000 };
+
+void RoomWindow::DrawRoomMembers()
+{
+	ImGui::BeginChild("members", ImVec2(0, 150), true);
+	//ImGui::Columns(2);
+
+	auto room = g_interfaces.pRoomManager;
+	for (int i = 0; i < MAX_PLAYERS_IN_ROOM; i++)
+	{
+		const RoomMemberEntry* member = room->GetRoomMemberEntryByIndex(i);
+		if (!member) continue;
+
+
+		if (member->matchId != 0)
+			ImGui::Text("%-3d", member->matchId);
+		else
+			ImGui::TextUnformatted("   ");
+
+		uint8_t netcolor = min(member->netcolor, 8);
+
+		ImGui::SameLine();
+		ImGui::PushStyleColor(ImGuiCol_Text, netcolors[netcolor]);
+		ImGui::Text("#");
+		ImGui::PopStyleColor();
+
+		//ImGui::NextColumn();
+		ImGui::SameLine();
+
+		ShowClickableSteamUser(room->GetPlayerSteamName(member->steamId), member->steamId);
+
+		for (auto p : room->m_imPlayers) {
+			if (p.steamID.ConvertToUint64() == member->steamId) {
+				ImGui::SameLine();
+				ImGui::TextUnformatted("(IM)");
+				break;
+			}
+		}
+	}
+
+	ImGui::EndChild();
+}
+
+void RoomWindow::DrawChat()
+{
+	static char chat_msg[256] = "";
+
+	bool send = ImGui::InputText("##chat_msg", chat_msg, sizeof(chat_msg), ImGuiInputTextFlags_EnterReturnsTrue);
+
+	ImGui::SameLine();
+
+	if (ImGui::Button("Send##chat_send") || send) {
+		std::wstring w = utf8_to_utf16(chat_msg);
+		char* ptr = GetBbcfBaseAdress() + 0x8F7958; // base->static_NetworkStruct
+		std::wstring w0 = w.substr(0, 31);
+		memcpy(ptr + 0x328, w0.c_str(), w0.size() * 2 + 2);
+		*(ptr + 0x438) = 1; // there is no call, this flag is checked on every frame at bbcf.exe+000adef6
+
+		strcpy(chat_msg, utf16_to_utf8(w.substr(w0.size())).c_str());
+	}
+
+	if (strlen(chat_msg) > 31) {
+		ImGui::SameLine();
+		ImGui::PushStyleColor(ImGuiCol_Text, 0xff0000ff);
+		ImGui::Text("%d messages", (strlen(chat_msg) + 30) / 31);
+		ImGui::PopStyleColor();
+	}
+
+
+	ImGui::BeginChild("scrolling", ImVec2(0, 300), false, ImGuiWindowFlags_HorizontalScrollbar);
+
+	char* chat = GetBbcfBaseAdress() + 0x6257B0; // base->static_AASTEAM_CNetworker + 0x28
+
+	for (int i = 0; i < 30; i++)
+	{
+		if (*(chat + 148 * i) == 0) break;
+
+		ImGui::Text("%ls", (wchar_t*)(chat + 148 * i));
+		ImGui::Text("- %ls", (wchar_t*)(chat + 148 * i + 0x40));
+	}
+
+	ImGui::EndChild();
+}
+
+

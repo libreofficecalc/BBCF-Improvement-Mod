@@ -89,4 +89,5 @@ private:
 
 	// For debug purposes
 	friend class DebugWindow;
+	friend class RoomWindow;
 };
