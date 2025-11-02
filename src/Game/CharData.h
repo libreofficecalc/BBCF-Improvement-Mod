@@ -141,8 +141,22 @@ public:
 	int32_t moveP2Overwrite; //0x06A8
 	char pad_06AC[40]; //0x06AC
 	int32_t moveCounterHitAirPushbackY; //0x06D4
-	char pad_06D8[760]; //0x06D8
+	char pad_06D8[704]; //0x06D8
 
+	int32_t invuln_bitfield; // 0x0998
+	/*  Invuln flags for each attribute, pseudocode listing them:
+    if (invul_field & 0x08)        invul = invul | Attribute::H;
+    if (invul_field & 0x10)        invul = invul | Attribute::B;
+    if (invul_field & 0x20)        invul = invul | Attribute::F;
+    if (invul_field & 0x80000)     invul = invul | Attribute::P;
+    if (invul_field & 0x40)        invul = invul | Attribute::T;
+	if (invul_field & 0x200)       invul = invul | Attribute::O; BURST
+
+	
+	*/
+	int32_t guard_point_bitfield; // 0x099C  
+	/*If the first bit is set it means to use guardpoint instead of invuln */
+	char pad_09A0[48]; //0x09A0
 	int32_t previousHP; //0x09D0
 	int32_t currentHP; //0x09D4
 	int32_t maxHP; //0x09D8
