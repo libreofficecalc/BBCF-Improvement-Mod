@@ -115,13 +115,33 @@ Delete the "menus.ini" file found in the game's root folder to reset the positio
 Keep in mind that the mod may partially, or completely stop working whenever a new official patch of the game is released. (Though unlikely)
 
 Changelog
+
+===============================
+02-11-2025 -- version 3.101
+===============================
+Features:
+- Frame history bar can now be used in mirrors (+@Unisectyn)
+- Frame history bar now distinguishes between guard point and invul
+
+Bugfixes:
+- Inactive hitboxes(from bbscript 23047) will not show up on the hitbox viewer anymore, ex: es's j.5a, nine's 5a.
+- Inactive hitboxes(from bbscript 23047) are now listed as inactive on the state's frame breakdown viewer.
+- Bugs related to frame history bar in mirrors (such as crashes when changing to a mirror with it open) are solved.
+- Toggling the replay data upload using the main menu will no longer overwrite the following settings:
+- - UploadReplayDataHost
+- - UploadReplayDataEndpoint
+- - UploadReplayDataPort
+
+Dev/DEBUG stuff:
+- Fixed alignment issue on unknown_status2, which wasn't causing issues by luck(default align). In the future we should pack this stuct.
+
 ===============================
 04-10-2025 -- version 3.100
 ===============================
 Features:
 - Added Real time frame viewer (+@Unisectyn)
 
-Bugfixes
+Bugfixes:
 - Room rematch setting changed while in room will not reset when a new player enters anymore.
 
 
@@ -143,12 +163,12 @@ Replay database download/archive replace (@Tadatys):
 - - Added heat cooldown counter.
 - - Last heat gain now persists until a new combo starts.
 
-Bugfixes
+Bugfixes:
 - Hitbox displays should now work properly with "keep aspect ratio" in fullscreen/borderless. It used to bug out in corners.(#45 @MorphRed)
 - Frame advantage viewer now works correctly on a jumping dummy(6f68d0eb78783e53570c244af0a01568929eb3ca).
 - Fixed heat gain on combo data window not taking into account heat cooldown(49b3340fa4c33a410d36c0f344fcb28ec45281a7).
 
-Dev/DEBUG stuff
+Dev/DEBUG stuff:
 - Added charpos control for p1 and p2 in DEBUG window.
 
 
