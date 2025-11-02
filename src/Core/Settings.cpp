@@ -1,7 +1,7 @@
 #include "Settings.h"
 #include "logger.h"
 #include "keycodes.h"
-
+#include <regex>
 #include "Core/interfaces.h"
 
 #include <atlstr.h>
@@ -200,8 +200,10 @@ int Settings::changeSetting(std::string setting_name, std::string new_value) {
 
 		bool found_flag = false;
 		std::string line;
+		std::regex pattern("^\\s*" + setting_name + "\\s*=");
+
 		while (getline(inputFile, line)) {
-			if (line.find(setting_name) == 0) {
+			if (std::regex_search(line,pattern)) {
 				tempFile << setting_name << " = " << new_value << std::endl;
 				found_flag = true;
 			}
