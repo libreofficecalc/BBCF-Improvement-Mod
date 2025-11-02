@@ -24,6 +24,7 @@ public:
 	char* current_sprite_img; //0x00D8
 	char pad_00DC[120]; //0x00DC
 	char unknown_status2; //0x0154  compared if 2 or not? I think 2 might mean its an entity that is anchored to the character that spawned it 
+	char pad_0155[3]; ///0x0155
 	char pad_0158[8]; ///0x0158
 
 
