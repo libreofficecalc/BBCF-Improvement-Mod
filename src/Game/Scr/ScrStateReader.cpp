@@ -236,11 +236,12 @@ int parse_state(char* addr,
 			}
 
 		}
-		else if (CMD == 2002) {
-			//refreshMultihit(more like disableHitbox)  call() 
+		else if (CMD == 2002 || CMD == 23027) {
+			//refreshMultihit(more like disableHitbox)  call() 2002
+			//DisableAttackRestOfMove() call() 23027
 			//this will disable the hitbox of the last sprite, its listed by dantation as startMultihit but its more akin to disablehitbox.
-			for (int i = prev_frames; i < s->frames; i++) {//when invuln is turned on/off I need to retroactively remove the last sprite length added, since it applies its effect to the start, not end of the sprite
-				if (i < s->frame_activity_status.size()) {//need to check due to edge cases where sprites last absurdly wrong(or are -1)
+			for (int i = prev_frames; i < s->frames; i++) {//when hitbox is disabled I need to retroactively remove the last sprite length added, since it applies its effect to the start, not end of the sprite
+				if (i < s->frame_activity_status.size()) {//need to check due to edge cases where sprites last absurdly long(or are -1)
 				s->frame_activity_status.at(i) = FrameActivity::Inactive;
 			}
 				//else {
@@ -249,7 +250,6 @@ int parse_state(char* addr,
 			}
 		}
 		//still need to get the guard point CMD
-
 		else if (CMD == 9003) {
 			///Damage call(char) set dmg 
 			memcpy(&s->damage, addr + offset, 4);
