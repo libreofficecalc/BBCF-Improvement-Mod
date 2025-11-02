@@ -138,7 +138,9 @@ void FrameHistoryWindow::Draw() {
 		// 	ImGui::TextDisabled("DOES NOT WORK IN MIRRORS!");
 		// 	return;
 		// }
-
+		// Define the colors for invul types
+		ImColor color_inv = ImColor(255, 255, 255);
+		ImColor color_gp = ImColor(122, 85, 61);
 		// borrow the history queue
 		StatePairQueue& queue = history.read();
 		int frame_idx = 0;
@@ -174,9 +176,17 @@ void FrameHistoryWindow::Draw() {
 
 			color = kindtoColor(p2state.kind);
 			std::copy(std::begin(color), std::end(color), std::begin(col_arr) + 6 * 1);
-
-
-
+			
+			/*Setting invuln colors here until we get around to simplifying the way the colors for the non - invul row works,
+				too confusing as of now*/
+			ImColor color_curr_inv_p1 = color_inv;
+			ImColor color_curr_inv_p2 = color_inv;
+			if (bool(p1state.invul & Attribute::GP)) {
+				color_curr_inv_p1 = color_gp;
+			}
+			if (bool(p2state.invul & Attribute::GP)) {
+				color_curr_inv_p2 = color_gp;
+			}
 
 			ImVec2 prev_cursor_p = cursor_p;
 
@@ -188,6 +198,8 @@ void FrameHistoryWindow::Draw() {
 			// draw a box, mind how much it has moved beyond the (width, height)
 			// Draw box & write the new cursor pos
 			cursor_p = MakeBox(ImColor(col_arr[0], col_arr[1], col_arr[2]), cursor_p, width, height);
+			
+		
 
 			// Remember where the box finished drawing, to get the new column
 			next_x = cursor_p.x + spacing;
@@ -205,28 +217,28 @@ void FrameHistoryWindow::Draw() {
 				auto cursor_tmp = cursor_p2;
 				if (bool(p1state.invul & Attribute::T)) {
 					cursor_tmp.x = cursor_p2.x + width - width / 5;
-					MakeBox(ImColor(255, 255, 255), cursor_tmp, width / 5, height);
+					MakeBox(color_curr_inv_p1, cursor_tmp, width / 5, height);
 				};
 				if (bool(p1state.invul & Attribute::P)) {
 					cursor_tmp = cursor_p2;
 					cursor_tmp.x = cursor_p2.x;
-					MakeBox(ImColor(255, 255, 255), cursor_tmp, width / 5, height);
+					MakeBox(color_curr_inv_p1, cursor_tmp, width / 5, height);
 				};
 				if (bool(p1state.invul & Attribute::H)) {
 					// the lines have 1/8th of the element height
 					cursor_tmp = cursor_p2;
 					cursor_tmp.y = cursor_p2.y;
-					MakeBox(ImColor(255, 255, 255), cursor_tmp, width, height / 5);
+					MakeBox(color_curr_inv_p1, cursor_tmp, width, height / 5);
 				};
 				if (bool(p1state.invul & Attribute::B)) {
 					cursor_tmp = cursor_p2;
 					cursor_tmp.y = cursor_p2.y + height / 2 - ((height / 5) / 2);
-					MakeBox(ImColor(255, 255, 255), cursor_tmp, width, height / 5);
+					MakeBox(color_curr_inv_p1, cursor_tmp, width, height / 5);
 				}
 				if (bool(p1state.invul & Attribute::F)) {
 					cursor_tmp = cursor_p2;
 					cursor_tmp.y = cursor_p2.y + height - (height / 5);
-					MakeBox(ImColor(255, 255, 255), cursor_tmp, width, height / 5);
+					MakeBox(color_curr_inv_p1, cursor_tmp, width, height / 5);
 
 				}
 
@@ -255,27 +267,27 @@ void FrameHistoryWindow::Draw() {
 				auto cursor_tmp = cursor_p2;
 				if (bool(p2state.invul & Attribute::T)) {
 					cursor_tmp.x = cursor_p2.x + width - width / 5;
-					MakeBox(ImColor(255, 255, 255), cursor_tmp, width / 5, height);
+					MakeBox(color_curr_inv_p2, cursor_tmp, width / 5, height);
 				};
 				if (bool(p2state.invul & Attribute::P)) {
 					cursor_tmp = cursor_p2;
 					cursor_tmp.x = cursor_p2.x;
-					MakeBox(ImColor(255, 255, 255), cursor_tmp, width / 5, height);
+					MakeBox(color_curr_inv_p2, cursor_tmp, width / 5, height);
 				};
 				if (bool(p2state.invul & Attribute::H)) {
 					cursor_tmp = cursor_p2;
 					cursor_tmp.y = cursor_p2.y;
-					MakeBox(ImColor(255, 255, 255), cursor_tmp, width, height / 5);
+					MakeBox(color_curr_inv_p2, cursor_tmp, width, height / 5);
 				};
 				if (bool(p2state.invul & Attribute::B)) {
 					cursor_tmp = cursor_p2;
 					cursor_tmp.y = cursor_p2.y + height / 2 - ((height / 5) / 2);
-					MakeBox(ImColor(250, 255, 255), cursor_tmp, width, height / 5);
+					MakeBox(color_curr_inv_p2, cursor_tmp, width, height / 5);
 				}
 				if (bool(p2state.invul & Attribute::F)) {
 					cursor_tmp = cursor_p2;
 					cursor_tmp.y = cursor_p2.y + height - (height / 5);
-					MakeBox(ImColor(250, 255, 255), cursor_tmp, width, height / 5);
+					MakeBox(color_curr_inv_p2, cursor_tmp, width, height / 5);
 
 				}
 

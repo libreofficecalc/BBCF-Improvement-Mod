@@ -68,6 +68,7 @@ enum class Attribute {
     // The "no attribute", attribute. Necessary to represent moves with no invul,
     // for example.
     N = 0x00,
+    GP= 0x1000
 };
 
 inline Attribute operator|(Attribute a, Attribute b) {

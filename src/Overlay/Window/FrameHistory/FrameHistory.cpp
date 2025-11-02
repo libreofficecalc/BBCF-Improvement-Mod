@@ -114,18 +114,21 @@ int first_det_active(std::vector<FrameActivity>& activity_status) {
 }
 
 
-Attribute parse_dyn_invul(uint32 invul_field) {
+Attribute parse_dyn_invul(uint32 invul_field, uint32 gp_bitfield) {
     if ((invul_field & 0x02) == 0) {
         return Attribute::N;
     }
 
     Attribute invul = Attribute::N;
-    
-    invul = invul | Attribute::H & (~static_cast<uint32>(((invul_field & 0x08) != 0) - 1));
-    invul = invul | Attribute::B & (~static_cast<uint32>(((invul_field & 0x10) != 0) - 1));
-    invul = invul | Attribute::F & (~static_cast<uint32>(((invul_field & 0x20) != 0) - 1));
-    invul = invul | Attribute::P & (~static_cast<uint32>(((invul_field & 0x80000) != 0) - 1));
-    invul = invul | Attribute::T & (~static_cast<uint32>(((invul_field & 0x40) != 0)-1));
+
+    if (gp_bitfield & 0x01)     invul = invul | Attribute::GP;
+    if (invul_field & 0x08)     invul = invul | Attribute::H;
+    if (invul_field & 0x10)     invul = invul | Attribute::B;
+    if (invul_field & 0x20)     invul = invul | Attribute::F;
+    if (invul_field & 0x80000)  invul = invul | Attribute::P;
+    if (invul_field & 0x40)     invul = invul | Attribute::T;
+
+
 
     return invul;
 }
@@ -134,8 +137,7 @@ PlayerFrameState::PlayerFrameState(scrState* state, unsigned int frame,
     CharData* player, BackedUpCharData old_data) {
 
     // set state variables
-    invul = parse_dyn_invul(*((uint32*) (((char*) player) + 0x998)));
-
+    invul = parse_dyn_invul(player->invuln_bitfield, player->guard_point_bitfield);
     is_new = frame == 0;
     
     
