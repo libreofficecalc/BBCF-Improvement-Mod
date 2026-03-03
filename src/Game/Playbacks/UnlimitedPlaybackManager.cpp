@@ -221,6 +221,14 @@ void UnlimitedPlaybackManager::SetSelectionMode(int mode) {
     }
 }
 
+bool UnlimitedPlaybackManager::GetAutoMirrorOnSideSwap() const {
+    return m_autoMirrorOnSideSwap;
+}
+
+void UnlimitedPlaybackManager::SetAutoMirrorOnSideSwap(bool enabled) {
+    m_autoMirrorOnSideSwap = enabled;
+}
+
 const std::vector<UnlimitedPlaybackManager::PlaybackEntry>& UnlimitedPlaybackManager::GetEntries() const {
     return m_entries;
 }
@@ -359,7 +367,16 @@ bool UnlimitedPlaybackManager::LoadEntryIntoSlot(size_t idx, int slot) {
         return false;
     }
 
-    m_runtimePlaybackManager.load_into_slot(it->second.frames, it->second.facingLeft ? 1 : 0, slot);
+    std::vector<char> frames = it->second.frames;
+    int facingToLoad = it->second.facingLeft ? 1 : 0;
+    if (m_autoMirrorOnSideSwap) {
+        bool currentFacingLeft = false;
+        if (TryGetCurrentFacingLeft(&currentFacingLeft) && currentFacingLeft != it->second.facingLeft) {
+            facingToLoad = currentFacingLeft ? 1 : 0;
+        }
+    }
+
+    m_runtimePlaybackManager.load_into_slot(frames, facingToLoad, slot);
     PushToast("Entry loaded into slot.");
     return true;
 }
@@ -397,6 +414,7 @@ void UnlimitedPlaybackManager::ClearAll() {
         m_triggers[i].cooldownFrames = 1;
         m_triggers[i].lastTriggeredFrame = -999999;
     }
+    m_autoMirrorOnSideSwap = true;
     PushToast("Unlimited playback config cleared.");
 }
 
@@ -415,6 +433,7 @@ bool UnlimitedPlaybackManager::SaveProfile(const std::string& profilePath) {
     out << "version=1\n";
     out << "mode=" << m_mode << "\n";
     out << "selection_mode=" << m_selectionMode << "\n";
+    out << "auto_mirror_side_swap=" << (m_autoMirrorOnSideSwap ? 1 : 0) << "\n";
     for (int i = 0; i < Trigger_Count; ++i) {
         out << "trigger." << TriggerKeyName(static_cast<TriggerType>(i)) << ".enabled=" << (m_triggers[i].enabled ? 1 : 0) << "\n";
         out << "trigger." << TriggerKeyName(static_cast<TriggerType>(i)) << ".cooldown=" << m_triggers[i].cooldownFrames << "\n";
@@ -460,6 +479,7 @@ bool UnlimitedPlaybackManager::LoadProfile(const std::string& profilePath) {
     std::array<TriggerConfig, Trigger_Count> parsedTriggers = m_triggers;
     int parsedMode = m_mode;
     int parsedSelectionMode = m_selectionMode;
+    bool parsedAutoMirror = m_autoMirrorOnSideSwap;
 
     std::string line;
     while (std::getline(in, line)) {
@@ -481,6 +501,10 @@ bool UnlimitedPlaybackManager::LoadProfile(const std::string& profilePath) {
         }
         if (key == "selection_mode") {
             parsedSelectionMode = std::atoi(value.c_str());
+            continue;
+        }
+        if (key == "auto_mirror_side_swap") {
+            parsedAutoMirror = std::atoi(value.c_str()) != 0;
             continue;
         }
 
@@ -533,6 +557,7 @@ bool UnlimitedPlaybackManager::LoadProfile(const std::string& profilePath) {
     m_triggers = parsedTriggers;
     SetMode(parsedMode);
     SetSelectionMode(parsedSelectionMode);
+    SetAutoMirrorOnSideSwap(parsedAutoMirror);
     const size_t slash = p.find_last_of("/\\");
     if (slash != std::string::npos) {
         m_lastLoadedProfileFolder = p.substr(0, slash);
@@ -834,13 +859,65 @@ bool UnlimitedPlaybackManager::TryFireTrigger(TriggerType trigger, int currentFr
         return false;
     }
 
-    m_runtimePlaybackManager.load_into_slot(cacheIt->second.frames, cacheIt->second.facingLeft ? 1 : 0, kRuntimeSlot);
+    std::vector<char> frames = cacheIt->second.frames;
+    int facingToLoad = cacheIt->second.facingLeft ? 1 : 0;
+    bool mirrored = false;
+    if (m_autoMirrorOnSideSwap) {
+        bool currentFacingLeft = false;
+        if (TryGetCurrentFacingLeft(&currentFacingLeft) && currentFacingLeft != cacheIt->second.facingLeft) {
+            facingToLoad = currentFacingLeft ? 1 : 0;
+            mirrored = true;
+        }
+    }
+
+    m_runtimePlaybackManager.load_into_slot(frames, facingToLoad, kRuntimeSlot);
     m_runtimePlaybackManager.set_active_slot(kRuntimeSlot);
     m_runtimePlaybackManager.set_playback_control(3);
 
     config.lastTriggeredFrame = currentFrame;
-    PushToast(std::string("Triggered [") + TriggerDisplayName(trigger) + "]: " + entry.name);
+    PushToast(std::string("Triggered [") + TriggerDisplayName(trigger) + "]: " + entry.name + (mirrored ? " (mirrored)" : ""));
     return true;
+}
+
+bool UnlimitedPlaybackManager::TryGetCurrentFacingLeft(bool* outFacingLeft) const {
+    if (!outFacingLeft || g_interfaces.player2.IsCharDataNullPtr()) {
+        return false;
+    }
+
+    const auto* p2 = g_interfaces.player2.GetData();
+    if (!p2) {
+        return false;
+    }
+
+    int facing = p2->facingLeft2;
+    if (facing != 0 && facing != 1) {
+        facing = p2->facingLeft;
+    }
+
+    *outFacingLeft = facing != 0;
+    return true;
+}
+
+unsigned char UnlimitedPlaybackManager::MirrorDirectionalNibble(unsigned char dir) const {
+    switch (dir) {
+    case 1: return 3;
+    case 3: return 1;
+    case 4: return 6;
+    case 6: return 4;
+    case 7: return 9;
+    case 9: return 7;
+    default: return dir;
+    }
+}
+
+void UnlimitedPlaybackManager::MirrorPlaybackInputsInPlace(std::vector<char>& frames) const {
+    for (char& frameInput : frames) {
+        unsigned char input = static_cast<unsigned char>(frameInput);
+        const unsigned char dir = input & 0x0F;
+        const unsigned char mirroredDir = MirrorDirectionalNibble(dir);
+        input = static_cast<unsigned char>((input & 0xF0) | mirroredDir);
+        frameInput = static_cast<char>(input);
+    }
 }
 
 std::vector<size_t> UnlimitedPlaybackManager::BuildCandidatesForTrigger(TriggerType trigger) {

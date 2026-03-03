@@ -69,6 +69,8 @@ public:
     void SetMode(int mode);
     int GetSelectionMode() const;
     void SetSelectionMode(int mode);
+    bool GetAutoMirrorOnSideSwap() const;
+    void SetAutoMirrorOnSideSwap(bool enabled);
 
     const std::vector<PlaybackEntry>& GetEntries() const;
     std::vector<PlaybackEntry>& GetEntriesMutable();
@@ -126,6 +128,9 @@ private:
     bool ShouldTriggerOnHit();
     bool ShouldTriggerThrowTech();
     std::vector<size_t> BuildCandidatesForTrigger(TriggerType trigger);
+    bool TryGetCurrentFacingLeft(bool* outFacingLeft) const;
+    unsigned char MirrorDirectionalNibble(unsigned char dir) const;
+    void MirrorPlaybackInputsInPlace(std::vector<char>& frames) const;
 
     int m_mode = Mode_Default;
     bool m_initialized = false;
@@ -134,6 +139,7 @@ private:
     std::unordered_map<std::string, CachedPlayback> m_cache;
     std::array<TriggerConfig, Trigger_Count> m_triggers;
     int m_selectionMode = Selection_Random;
+    bool m_autoMirrorOnSideSwap = true;
     std::array<size_t, Trigger_Count> m_sequentialIndex = {};
     std::array<std::vector<size_t>, Trigger_Count> m_nonRepeatPools = {};
     std::string m_statusText;

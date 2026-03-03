@@ -5,6 +5,10 @@
       <Configuration>Debug</Configuration>
       <Platform>Win32</Platform>
     </ProjectConfiguration>
+    <ProjectConfiguration Include="DebugDeploy|Win32">
+      <Configuration>DebugDeploy</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
     <ProjectConfiguration Include="Release|Win32">
       <Configuration>Release</Configuration>
       <Platform>Win32</Platform>
@@ -283,6 +287,13 @@
     <CharacterSet>Unicode</CharacterSet>
     <WholeProgramOptimization>false</WholeProgramOptimization>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='DebugDeploy|Win32'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+    <WholeProgramOptimization>false</WholeProgramOptimization>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
@@ -304,6 +315,9 @@
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='DebugDeploy|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
@@ -319,6 +333,20 @@
     <OutDir>bin\$(Configuration)\</OutDir>
     <IntDir>build\$(Configuration)\</IntDir>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='DebugDeploy|Win32'">
+    <LinkIncremental>true</LinkIncremental>
+    <TargetName>dinput8</TargetName>
+    <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
+    <Attach>true</Attach>
+    <LocalDebuggerAttach>true</LocalDebuggerAttach>
+    <LocalDebuggerCommand>$(BbcfDebuggerCommand)</LocalDebuggerCommand>
+    <LocalDebuggerCommandArguments>$(BbcfDebuggerArguments)</LocalDebuggerCommandArguments>
+    <LocalDebuggerWorkingDirectory>$(BbcfDebuggerWorkingDirectory)</LocalDebuggerWorkingDirectory>
+    <IncludePath>$(SolutionDir)\src;$(SolutionDir)\depends\winhttpclient\Include;$(SolutionDir)\depends\imgui;$(SolutionDir)\depends\detour;$(SolutionDir)\depends\directx_sdk\Include;$(SolutionDir)\depends\steam_api\public\steam;$(IncludePath)</IncludePath>
+    <LibraryPath>$(SolutionDir)\depends\detour;$(SolutionDir)\depends\directx_sdk\Lib\x86;$(SolutionDir)\depends\steam_api\redistributable_bin;$(LibraryPath)</LibraryPath>
+    <OutDir>bin\DebugDeploy\</OutDir>
+    <IntDir>build\DebugDeploy\</IntDir>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <LinkIncremental>false</LinkIncremental>
     <TargetName>dinput8</TargetName>
@@ -330,12 +358,6 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseDeploy|Win32'">
     <LinkIncremental>false</LinkIncremental>
     <TargetName>dinput8</TargetName>
-    <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
-    <Attach>true</Attach>
-    <LocalDebuggerAttach>true</LocalDebuggerAttach>
-    <LocalDebuggerCommand>$(BbcfDebuggerCommand)</LocalDebuggerCommand>
-    <LocalDebuggerCommandArguments>$(BbcfDebuggerArguments)</LocalDebuggerCommandArguments>
-    <LocalDebuggerWorkingDirectory>$(BbcfDebuggerWorkingDirectory)</LocalDebuggerWorkingDirectory>
     <IncludePath>$(SolutionDir)\src;$(SolutionDir)\depends\imgui;$(SolutionDir)\depends\detour;$(SolutionDir)\depends\directx_sdk\Include;$(SolutionDir)\depends\steam_api\public\steam;$(SolutionDir)\depends\winhttpclient\Include;$(IncludePath)</IncludePath>
     <LibraryPath>$(SolutionDir)\depends\detour;$(SolutionDir)\depends\directx_sdk\Lib\x86;$(SolutionDir)\depends\steam_api\redistributable_bin;$(LibraryPath)</LibraryPath>
     <OutDir>bin\Release\</OutDir>
@@ -358,6 +380,29 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>DebugFull</GenerateDebugInformation>
+      <AdditionalDependencies>dinput8.lib;dxguid.lib;comsuppw.lib;winmm.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <ModuleDefinitionFile>export/dinput8.def</ModuleDefinitionFile>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='DebugDeploy|Win32'">
+    <ClCompile>
+      <PrecompiledHeader>
+      </PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>Disabled</Optimization>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;_USRDLL;BBCF_IM_EXPORTS;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <SDLCheck>true</SDLCheck>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <PrecompiledHeaderFile />
+      <PrecompiledHeaderOutputFile />
+      <PreprocessToFile>false</PreprocessToFile>
+      <LanguageStandard>Default</LanguageStandard>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>DebugFull</GenerateDebugInformation>
+      <ImageHasSafeExceptionHandlers>false</ImageHasSafeExceptionHandlers>
       <AdditionalDependencies>dinput8.lib;dxguid.lib;comsuppw.lib;winmm.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <ModuleDefinitionFile>export/dinput8.def</ModuleDefinitionFile>
     </Link>
@@ -428,12 +473,13 @@
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
   <Target Name="AfterBuild">
-    <Delete Files="$(ProjectDir)$(OutDir)$(TargetName).exp;$(ProjectDir)$(OutDir)$(TargetName).lib;$(ProjectDir)$(OutDir)$(TargetName).pdb" />
+    <Delete Files="$(ProjectDir)$(OutDir)$(TargetName).exp;$(ProjectDir)$(OutDir)$(TargetName).lib" />
+    <Delete Files="$(ProjectDir)$(OutDir)$(TargetName).pdb" Condition="'$(Configuration)'!='DebugDeploy'" />
     <Copy SourceFiles="$(ProjectDir)resource\settings.ini" DestinationFolder="$(ProjectDir)$(OutDir)" OverwriteReadOnlyFiles="true" SkipUnchangedFiles="false" />
     <Copy SourceFiles="$(ProjectDir)resource\palettes.ini" DestinationFolder="$(ProjectDir)$(OutDir)" OverwriteReadOnlyFiles="true" SkipUnchangedFiles="false" />
-    <Copy SourceFiles="$(ProjectDir)$(OutDir)$(TargetName).dll" DestinationFolder="$(BbcfInstallDir)" OverwriteReadOnlyFiles="true" SkipUnchangedFiles="false" Condition="'$(Configuration)'=='ReleaseDeploy' and '$(BbcfDeployEnabled)'=='true' and '$(BbcfCopyDll)'=='true' and '$(BbcfInstallDir)'!=''" />
-    <Copy SourceFiles="$(ProjectDir)resource\palettes.ini" DestinationFolder="$(BbcfInstallDir)" OverwriteReadOnlyFiles="true" SkipUnchangedFiles="false" Condition="'$(Configuration)'=='ReleaseDeploy' and '$(BbcfDeployEnabled)'=='true' and '$(BbcfCopyPalettes)'=='true' and '$(BbcfInstallDir)'!=''" />
-    <Copy SourceFiles="$(ProjectDir)resource\settings.ini" DestinationFolder="$(BbcfInstallDir)" OverwriteReadOnlyFiles="true" SkipUnchangedFiles="false" Condition="'$(Configuration)'=='ReleaseDeploy' and '$(BbcfDeployEnabled)'=='true' and '$(BbcfCopySettings)'=='true' and '$(BbcfInstallDir)'!=''" />
-    <Exec Command="$(BbcfLaunchCommand)" Condition="'$(Configuration)'=='ReleaseDeploy' and '$(BbcfDeployEnabled)'=='true' and '$(BbcfLaunchAfterDeploy)'=='true' and '$(BbcfLaunchCommand)'!=''" />
+    <Copy SourceFiles="$(ProjectDir)$(OutDir)$(TargetName).dll" DestinationFolder="$(BbcfInstallDir)" OverwriteReadOnlyFiles="true" SkipUnchangedFiles="false" Condition="('$(Configuration)'=='ReleaseDeploy' or '$(Configuration)'=='DebugDeploy') and '$(BbcfDeployEnabled)'=='true' and '$(BbcfCopyDll)'=='true' and '$(BbcfInstallDir)'!=''" />
+    <Copy SourceFiles="$(ProjectDir)resource\palettes.ini" DestinationFolder="$(BbcfInstallDir)" OverwriteReadOnlyFiles="true" SkipUnchangedFiles="false" Condition="('$(Configuration)'=='ReleaseDeploy' or '$(Configuration)'=='DebugDeploy') and '$(BbcfDeployEnabled)'=='true' and '$(BbcfCopyPalettes)'=='true' and '$(BbcfInstallDir)'!=''" />
+    <Copy SourceFiles="$(ProjectDir)resource\settings.ini" DestinationFolder="$(BbcfInstallDir)" OverwriteReadOnlyFiles="true" SkipUnchangedFiles="false" Condition="('$(Configuration)'=='ReleaseDeploy' or '$(Configuration)'=='DebugDeploy') and '$(BbcfDeployEnabled)'=='true' and '$(BbcfCopySettings)'=='true' and '$(BbcfInstallDir)'!=''" />
+    <Exec Command="$(BbcfLaunchCommand)" Condition="('$(Configuration)'=='ReleaseDeploy' or '$(Configuration)'=='DebugDeploy') and '$(BbcfDeployEnabled)'=='true' and '$(BbcfLaunchAfterDeploy)'=='true' and '$(BbcfLaunchCommand)'!=''" />
   </Target>
 </Project>

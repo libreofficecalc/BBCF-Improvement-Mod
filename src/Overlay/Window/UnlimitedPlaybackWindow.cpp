@@ -179,6 +179,14 @@ void UnlimitedPlaybackWindow::Draw() {
         mgr.SetSelectionMode(selectionMode);
         mgr.PushToast(std::string("Selection mode: ") + selectionModes[selectionMode]);
     }
+    bool autoMirrorOnSideSwap = mgr.GetAutoMirrorOnSideSwap();
+    if (ImGui::Checkbox("Auto-mirror on side swap", &autoMirrorOnSideSwap)) {
+        mgr.SetAutoMirrorOnSideSwap(autoMirrorOnSideSwap);
+        mgr.PushToast(std::string("Auto-mirror: ") + (autoMirrorOnSideSwap ? "ON" : "OFF"));
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Mirrors directional inputs when recorded side and current side differ.");
+    }
 
     ImGui::Separator();
 

@@ -6,4 +6,13 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseDeploy|Win32'">
+    <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
+    <Attach>true</Attach>
+    <LocalDebuggerAttach>true</LocalDebuggerAttach>
+    <LocalDebuggerDebuggerType>NativeOnly</LocalDebuggerDebuggerType>
+    <LocalDebuggerCommand>$(BbcfDebuggerCommand)</LocalDebuggerCommand>
+    <LocalDebuggerCommandArguments>$(BbcfDebuggerArguments)</LocalDebuggerCommandArguments>
+    <LocalDebuggerWorkingDirectory>$(BbcfDebuggerWorkingDirectory)</LocalDebuggerWorkingDirectory>
+  </PropertyGroup>
 </Project>
