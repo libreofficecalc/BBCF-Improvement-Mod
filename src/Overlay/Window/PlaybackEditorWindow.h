@@ -3,6 +3,7 @@
 #include "Game/Playbacks/PlaybackManager.h"
 #include "Game/Playbacks/PlaybackSlot.h"
 #include <string>
+#include <vector>
 
 class PlaybackEditorWindow : public IWindow
 {
@@ -16,6 +17,7 @@ public:
 	~PlaybackEditorWindow() override = default;
 	std::string interpret_move_absolute(char move);
 	std::string interpret_move_L_R(char move, int side);
+	bool OpenUnlimitedEntry(size_t entryIndex);
 
 	PlaybackManager playback_manager;
 	//std::vector<char>::iterator line_edit_ptr;
@@ -27,7 +29,17 @@ protected:
 	//void DrawEditLinePopup();
 
 private:
-
+	enum DataSourceMode {
+		DataSource_CfSlots = 0,
+		DataSource_UnlimitedEntry = 1,
+	};
 
 	const std::string m_origWindowTitle;
+	DataSourceMode m_dataSourceMode = DataSource_CfSlots;
+	size_t m_unlimitedEntryIndex = 0;
+	std::vector<char> m_unlimitedEntryBuffer;
+	std::vector<char> m_unlimitedEntryOriginalBuffer;
+	char m_unlimitedEntryFacingDirection = 0;
+	char m_unlimitedEntryOriginalFacingDirection = 0;
+	std::string m_unlimitedEntryName;
 };

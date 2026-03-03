@@ -36,6 +36,7 @@
     <ClCompile Include="src\Overlay\Window\FrameAdvantage\PlayerExtendedData.cpp" />
     <ClCompile Include="src\Game\Jonb\JonbDBReader.cpp" />
     <ClCompile Include="src\Game\Playbacks\PlaybackSlot.cpp" />
+    <ClCompile Include="src\Game\Playbacks\CompatibilityManager.cpp" />
     <ClCompile Include="src\Game\Playbacks\UnlimitedPlaybackManager.cpp" />
     <ClCompile Include="src\Game\Playbacks\PlaybackManager.cpp" />
     <ClCompile Include="src\CustomGameMode\customGameMode.cpp" />
@@ -148,6 +149,7 @@
     <ClInclude Include="src\Game\Jonb\JonbDBEntry.h" />
     <ClInclude Include="src\Game\Jonb\JonbDBReader.h" />
     <ClInclude Include="src\Game\Playbacks\PlaybackSlot.h" />
+    <ClInclude Include="src\Game\Playbacks\CompatibilityManager.h" />
     <ClInclude Include="src\Game\Playbacks\PlaybackManager.h" />
     <ClInclude Include="src\Game\Playbacks\UnlimitedPlaybackManager.h" />
     <ClInclude Include="src\Core\info.h" />

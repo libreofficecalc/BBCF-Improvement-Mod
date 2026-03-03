@@ -1,6 +1,32 @@
 #include "PlaybackEditorWindow.h"
 #include <vector>
 #include "Core/Localization.h"
+#include "Game/Playbacks/UnlimitedPlaybackManager.h"
+
+bool PlaybackEditorWindow::OpenUnlimitedEntry(size_t entryIndex) {
+	auto& manager = UnlimitedPlaybackManager::Instance();
+	bool facingLeft = false;
+	std::vector<char> frames;
+	if (!manager.ReadEntryPlayback(entryIndex, &facingLeft, &frames)) {
+		manager.PushToast("Failed opening entry in editor.");
+		return false;
+	}
+
+	const auto& entries = manager.GetEntries();
+	if (entryIndex >= entries.size()) {
+		return false;
+	}
+
+	m_dataSourceMode = DataSource_UnlimitedEntry;
+	m_unlimitedEntryIndex = entryIndex;
+	m_unlimitedEntryName = entries[entryIndex].name;
+	m_unlimitedEntryBuffer = frames;
+	m_unlimitedEntryOriginalBuffer = frames;
+	m_unlimitedEntryFacingDirection = facingLeft ? 1 : 0;
+	m_unlimitedEntryOriginalFacingDirection = m_unlimitedEntryFacingDirection;
+	Open();
+	return true;
+}
 
 void PlaybackEditorWindow::Draw() {
 	static std::vector<std::vector<char>> playback_slot_buffers = { PlaybackSlot(1).get_slot_buffer(),
@@ -14,19 +40,32 @@ void PlaybackEditorWindow::Draw() {
 																	PlaybackSlot(4).get_facing_direction()
 	};
 	static int selected_slot = 0;
-	static char facing_direction = 0;
 	const char* slots[] = { "1", "2", "3", "4" };
-	auto selected_slot_buffer = &playback_slot_buffers[selected_slot];
-	ImGui::Combo("Slot##playback_editor_window", &selected_slot, slots, IM_ARRAYSIZE(slots));
-	std::string labelRefresh = std::string(Messages.Refresh()) + "##playback_editor_window";
+	std::vector<char>* selected_slot_buffer = nullptr;
+	char* selected_facing_direction = nullptr;
 
-	if (ImGui::Button(labelRefresh.c_str())) {
-		playback_slot_buffers[selected_slot] = PlaybackSlot(selected_slot + 1).get_slot_buffer();
-		facing_direction_slot_buffers[selected_slot] = PlaybackSlot(selected_slot + 1).get_facing_direction();
+	if (m_dataSourceMode == DataSource_UnlimitedEntry) {
+		selected_slot_buffer = &m_unlimitedEntryBuffer;
+		selected_facing_direction = &m_unlimitedEntryFacingDirection;
+		ImGui::Text("Editing unlimited entry: %s", m_unlimitedEntryName.c_str());
+		if (ImGui::Button("Back to CF Slot Editor")) {
+			m_dataSourceMode = DataSource_CfSlots;
+		}
+	} else {
+		selected_slot_buffer = &playback_slot_buffers[selected_slot];
+		selected_facing_direction = &facing_direction_slot_buffers[selected_slot];
+		ImGui::Combo("Slot##playback_editor_window", &selected_slot, slots, IM_ARRAYSIZE(slots));
+		std::string labelRefresh = std::string(Messages.Refresh()) + "##playback_editor_window";
+
+		if (ImGui::Button(labelRefresh.c_str())) {
+			playback_slot_buffers[selected_slot] = PlaybackSlot(selected_slot + 1).get_slot_buffer();
+			facing_direction_slot_buffers[selected_slot] = PlaybackSlot(selected_slot + 1).get_facing_direction();
+		}
 	}
-	ImGui::Text(Messages.Recording_side_c(), facing_direction_slot_buffers[selected_slot] ? 'R' : 'L');
+
+	ImGui::Text(Messages.Recording_side_c(), (*selected_facing_direction) ? 'R' : 'L');
 	if (ImGui::Button(Messages.Switch_recording_side())) {
-		facing_direction_slot_buffers[selected_slot] = !facing_direction_slot_buffers[selected_slot];
+		*selected_facing_direction = !(*selected_facing_direction);
 	}
 	ImGui::BeginChild("asdfasdfasdf", ImVec2(-1, ImGui::GetContentRegionAvail().y * 0.95f), true);
 	ImGui::Columns(1);
@@ -108,12 +147,32 @@ void PlaybackEditorWindow::Draw() {
 	ImGui::Separator();
 
 	ImGui::EndChild();
-	ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - 60);
-
 	std::string labelSave = std::string(Messages.Save()) + "##playback_editor";
 
+	if (ImGui::Button("Trim##playback_editor", ImVec2(60, 29))) {
+		*selected_slot_buffer = PlaybackEditorWindow::playback_manager.trim_playback(*selected_slot_buffer);
+		if (m_dataSourceMode == DataSource_UnlimitedEntry) {
+			UnlimitedPlaybackManager::Instance().PushToast("Trimmed unlimited entry buffer.");
+		}
+	}
+	ImGui::SameLine();
 	if (ImGui::Button(labelSave.c_str(), ImVec2(60, 29))) {
-		PlaybackEditorWindow::playback_manager.load_into_slot(*selected_slot_buffer, facing_direction_slot_buffers[selected_slot], selected_slot + 1);
+		if (m_dataSourceMode == DataSource_UnlimitedEntry) {
+			if (UnlimitedPlaybackManager::Instance().WriteEntryPlayback(m_unlimitedEntryIndex, (*selected_facing_direction) != 0, *selected_slot_buffer)) {
+				m_unlimitedEntryOriginalBuffer = *selected_slot_buffer;
+				m_unlimitedEntryOriginalFacingDirection = *selected_facing_direction;
+			}
+		} else {
+			PlaybackEditorWindow::playback_manager.load_into_slot(*selected_slot_buffer, *selected_facing_direction, selected_slot + 1);
+		}
+	}
+	if (m_dataSourceMode == DataSource_UnlimitedEntry) {
+		ImGui::SameLine();
+		if (ImGui::Button("Cancel##playback_editor", ImVec2(70, 29))) {
+			m_unlimitedEntryBuffer = m_unlimitedEntryOriginalBuffer;
+			m_unlimitedEntryFacingDirection = m_unlimitedEntryOriginalFacingDirection;
+			Close();
+		}
 	}
 	return;
 }

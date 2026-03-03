@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Game/Playbacks/PlaybackManager.h"
+#include "Game/Playbacks/CompatibilityManager.h"
 
 #include <array>
 #include <deque>
@@ -78,18 +79,23 @@ public:
     TriggerConfig& GetTrigger(TriggerType type);
     const TriggerConfig& GetTrigger(TriggerType type) const;
 
-    bool AddPlaybackFile(const std::string& sourcePath, const std::string& displayName);
+    bool AddPlaybackFile(const std::string& sourcePath, const std::string& displayName, bool forceLoadIncompatible = false);
+    CompatibilityManager::Result ProbePlaybackCompatibility(const std::string& playbackPath) const;
     bool CaptureSlotToLibrary(int slot, const std::string& displayName);
     bool RemoveEntryByIndex(size_t idx);
     bool RenameEntry(size_t idx, const std::string& newName);
 
     bool LoadEntryIntoSlot(size_t idx, int slot);
     bool SaveEntryFromSlot(size_t idx, int slot);
+    bool ReadEntryPlayback(size_t idx, bool* outFacingLeft, std::vector<char>* outFrames);
+    bool WriteEntryPlayback(size_t idx, bool facingLeft, const std::vector<char>& frames);
+    bool PlayEntryNow(size_t idx);
 
     void ClearAll();
 
     bool SaveProfile(const std::string& profilePath);
-    bool LoadProfile(const std::string& profilePath);
+    bool LoadProfile(const std::string& profilePath, bool forceLoadIncompatible = false);
+    CompatibilityManager::Result ProbeProfileCompatibility(const std::string& profilePath) const;
 
     std::string GetActiveProfilePath() const;
     void SetActiveProfilePath(const std::string& path);
@@ -113,7 +119,7 @@ private:
     std::string SanitizeFileName(const std::string& input) const;
     std::string BuildUniqueRelativePath(const std::string& preferredName) const;
 
-    bool ReadPlaybackFile(const std::string& fullPath, CachedPlayback* out);
+    bool ReadPlaybackFile(const std::string& fullPath, CachedPlayback* out, bool forceLoadIncompatible = false);
     bool WritePlaybackFile(const std::string& fullPath, bool facingLeft, const std::vector<char>& frames);
 
     void RefreshCacheForEntry(const PlaybackEntry& entry);
@@ -131,6 +137,8 @@ private:
     bool TryGetCurrentFacingLeft(bool* outFacingLeft) const;
     unsigned char MirrorDirectionalNibble(unsigned char dir) const;
     void MirrorPlaybackInputsInPlace(std::vector<char>& frames) const;
+    void BackupRuntimeSlotIfNeeded();
+    void TryRestoreRuntimeSlotAfterPlayback();
 
     int m_mode = Mode_Default;
     bool m_initialized = false;
@@ -154,6 +162,10 @@ private:
     bool m_prevOnHitCondition = false;
     bool m_prevThrowTechCondition = false;
     int m_lastObservedFrame = -1;
+    bool m_runtimeSlotBackupValid = false;
+    bool m_runtimeSlotRestorePending = false;
+    bool m_runtimeSlotBackupFacingLeft = false;
+    std::vector<char> m_runtimeSlotBackupFrames;
 
     PlaybackManager m_runtimePlaybackManager;
 };

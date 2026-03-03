@@ -1,6 +1,9 @@
 #include "UnlimitedPlaybackWindow.h"
 
 #include "Game/Playbacks/UnlimitedPlaybackManager.h"
+#include "Overlay/Window/PlaybackEditorWindow.h"
+#include "Overlay/WindowContainer/WindowContainer.h"
+#include "Overlay/WindowContainer/WindowType.h"
 
 #include <Windows.h>
 #include <commdlg.h>
@@ -105,6 +108,14 @@ void UnlimitedPlaybackWindow::Draw() {
     static int captureSlot = 1;
     static bool keyCaptureMode = false;
     static bool keyCaptureWaitingRelease = false;
+    static bool showProfileCompatibilityPopup = false;
+    static bool profileCompatibilityCanForce = false;
+    static char pendingProfilePath[MAX_PATH] = {};
+    static CompatibilityManager::Result pendingProfileCompatibility = {};
+    static bool showPlaybackCompatibilityPopup = false;
+    static bool playbackCompatibilityCanForce = false;
+    static char pendingPlaybackPath[MAX_PATH] = {};
+    static CompatibilityManager::Result pendingPlaybackCompatibility = {};
 
     ImGui::Text("Unlimited Playback (BETA)");
     ImGui::SameLine();
@@ -131,7 +142,18 @@ void UnlimitedPlaybackWindow::Draw() {
     if (ImGui::Button("Load Profile")) {
         char selectedPath[MAX_PATH] = {};
         if (OpenFileDialogForFilter("Load unlimited playback profile", "Unlimited Profile (*.upl)\0*.upl\0All Files\0*.*\0", selectedPath, MAX_PATH)) {
-            mgr.LoadProfile(selectedPath);
+            auto compatibility = mgr.ProbeProfileCompatibility(selectedPath);
+            if (compatibility.action == CompatibilityManager::Action_Load ||
+                compatibility.action == CompatibilityManager::Action_Migrate) {
+                mgr.LoadProfile(selectedPath);
+            } else {
+                std::strncpy(pendingProfilePath, selectedPath, MAX_PATH - 1);
+                pendingProfilePath[MAX_PATH - 1] = '\0';
+                pendingProfileCompatibility = compatibility;
+                profileCompatibilityCanForce = compatibility.canForce;
+                showProfileCompatibilityPopup = true;
+                ImGui::OpenPopup("Profile Compatibility");
+            }
         }
     }
     ImGui::SameLine();
@@ -151,7 +173,18 @@ void UnlimitedPlaybackWindow::Draw() {
     if (ImGui::Button("Import Playback File")) {
         char selectedPath[MAX_PATH] = {};
         if (OpenFileDialogForFilter("Import .playback file", "Playback File (*.playback)\0*.playback\0All Files\0*.*\0", selectedPath, MAX_PATH)) {
-            mgr.AddPlaybackFile(selectedPath, "");
+            auto compatibility = mgr.ProbePlaybackCompatibility(selectedPath);
+            if (compatibility.action == CompatibilityManager::Action_Load ||
+                compatibility.action == CompatibilityManager::Action_Migrate) {
+                mgr.AddPlaybackFile(selectedPath, "");
+            } else {
+                std::strncpy(pendingPlaybackPath, selectedPath, MAX_PATH - 1);
+                pendingPlaybackPath[MAX_PATH - 1] = '\0';
+                pendingPlaybackCompatibility = compatibility;
+                playbackCompatibilityCanForce = compatibility.canForce;
+                showPlaybackCompatibilityPopup = true;
+                ImGui::OpenPopup("Playback Compatibility");
+            }
         }
     }
     ImGui::SameLine();
@@ -166,6 +199,68 @@ void UnlimitedPlaybackWindow::Draw() {
 
     ImGui::TextDisabled("Profile: %s", mgr.GetActiveProfilePath().c_str());
     ImGui::EndChild();
+
+    if (showProfileCompatibilityPopup) {
+        ImGui::OpenPopup("Profile Compatibility");
+        showProfileCompatibilityPopup = false;
+    }
+    if (ImGui::BeginPopupModal("Profile Compatibility", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextWrapped(
+            "Profile version mismatch.\n\nFile version: %s\nCode version: %s\n\n%s",
+            CompatibilityManager::ToString(pendingProfileCompatibility.detected).c_str(),
+            CompatibilityManager::ToString(pendingProfileCompatibility.current).c_str(),
+            pendingProfileCompatibility.reason.c_str());
+
+        if (profileCompatibilityCanForce) {
+            if (ImGui::Button("Load Anyway")) {
+                mgr.LoadProfile(pendingProfilePath, true);
+                pendingProfilePath[0] = '\0';
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel")) {
+                pendingProfilePath[0] = '\0';
+                ImGui::CloseCurrentPopup();
+            }
+        } else {
+            if (ImGui::Button("OK")) {
+                pendingProfilePath[0] = '\0';
+                ImGui::CloseCurrentPopup();
+            }
+        }
+        ImGui::EndPopup();
+    }
+
+    if (showPlaybackCompatibilityPopup) {
+        ImGui::OpenPopup("Playback Compatibility");
+        showPlaybackCompatibilityPopup = false;
+    }
+    if (ImGui::BeginPopupModal("Playback Compatibility", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextWrapped(
+            "Playback version mismatch.\n\nFile version: %s\nCode version: %s\n\n%s",
+            CompatibilityManager::ToString(pendingPlaybackCompatibility.detected).c_str(),
+            CompatibilityManager::ToString(pendingPlaybackCompatibility.current).c_str(),
+            pendingPlaybackCompatibility.reason.c_str());
+
+        if (playbackCompatibilityCanForce) {
+            if (ImGui::Button("Import Anyway")) {
+                mgr.AddPlaybackFile(pendingPlaybackPath, "", true);
+                pendingPlaybackPath[0] = '\0';
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel##playback_compat")) {
+                pendingPlaybackPath[0] = '\0';
+                ImGui::CloseCurrentPopup();
+            }
+        } else {
+            if (ImGui::Button("OK##playback_compat")) {
+                pendingPlaybackPath[0] = '\0';
+                ImGui::CloseCurrentPopup();
+            }
+        }
+        ImGui::EndPopup();
+    }
 
     ImGui::BeginChild("up_main", ImVec2(0, 0), false);
     ImGui::Columns(2);
@@ -216,6 +311,12 @@ void UnlimitedPlaybackWindow::Draw() {
     if (ImGui::Button("Capture Slot -> Library")) {
         mgr.CaptureSlotToLibrary(captureSlot, captureName);
     }
+    if (selectedEntry >= 0 && selectedEntry < static_cast<int>(entries.size())) {
+        ImGui::SameLine();
+        if (ImGui::Button("Load Selected -> Slot")) {
+            mgr.LoadEntryIntoSlot(static_cast<size_t>(selectedEntry), captureSlot);
+        }
+    }
 
     ImGui::EndChild();
 
@@ -239,12 +340,17 @@ void UnlimitedPlaybackWindow::Draw() {
 
         ImGui::TextDisabled("File: %s", entry.relativePath.c_str());
 
-        if (ImGui::Button("Load to Slot 1")) {
-            mgr.LoadEntryIntoSlot(selectedEntry, 1);
+        if (ImGui::Button("Play")) {
+            mgr.PlayEntryNow(static_cast<size_t>(selectedEntry));
         }
         ImGui::SameLine();
-        if (ImGui::Button("Save from Slot 1")) {
-            mgr.SaveEntryFromSlot(selectedEntry, 1);
+        if (ImGui::Button("Edit")) {
+            if (m_pWindowContainer) {
+                auto* editorWindow = m_pWindowContainer->GetWindow<PlaybackEditorWindow>(WindowType_PlaybackEditor);
+                if (editorWindow) {
+                    editorWindow->OpenUnlimitedEntry(static_cast<size_t>(selectedEntry));
+                }
+            }
         }
         ImGui::SameLine();
         if (ImGui::Button("Delete")) {
