@@ -15,6 +15,7 @@
 #include <string>
 #include "Web/update_check.h"
 #include "Game/ReplayFiles/ReplayFileManager.h"
+#include "Game/Playbacks/UnlimitedPlaybackManager.h"
 
 extern "C" void HandleControllerWndProcMessage(UINT msg, WPARAM wParam, LPARAM lParam);
 
@@ -570,7 +571,14 @@ void __declspec(naked)GetFrameCounter()
 		add eax, 0Ch
 		mov g_gameVals.pFrameCount, eax
 		pop eax
+	}
 
+	__asm pushad
+	UnlimitedPlaybackManager::Instance().Tick();
+	__asm popad
+
+	_asm
+	{
 		// original code
 		mov eax, [esi]
 		inc dword ptr[esi + 0Ch]

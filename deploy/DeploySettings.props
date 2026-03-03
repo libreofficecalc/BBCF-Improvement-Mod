@@ -1,0 +1,14 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <BbcfDeployEnabled>true</BbcfDeployEnabled>
+    <BbcfInstallDir>D:\SteamLibrary\steamapps\common\BlazBlue Centralfiction</BbcfInstallDir>
+    <BbcfCopyDll>true</BbcfCopyDll>
+    <BbcfCopyPalettes>false</BbcfCopyPalettes>
+    <BbcfCopySettings>false</BbcfCopySettings>
+    <BbcfLaunchAfterDeploy>true</BbcfLaunchAfterDeploy>
+    <BbcfLaunchCommand>powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process 'C:\Program Files (x86)\Steam\steam.exe' -ArgumentList '-applaunch 586140'; $sw=[Diagnostics.Stopwatch]::StartNew(); while($sw.Elapsed.TotalSeconds -lt 45){ if(Get-Process -Name 'BBCF' -ErrorAction SilentlyContinue){ break }; Start-Sleep -Milliseconds 250 }"</BbcfLaunchCommand>
+    <BbcfDebuggerCommand>D:\SteamLibrary\steamapps\common\BlazBlue Centralfiction\BBCF.exe</BbcfDebuggerCommand>
+    <BbcfDebuggerArguments></BbcfDebuggerArguments>
+    <BbcfDebuggerWorkingDirectory>D:\SteamLibrary\steamapps\common\BlazBlue Centralfiction</BbcfDebuggerWorkingDirectory>
+  </PropertyGroup>
+</Project>

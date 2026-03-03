@@ -16,6 +16,7 @@
 #include "Overlay/Window/FrameAdvantage/FrameAdvantageWindow.h"
 #include "Overlay/Window/ReplayRewindWindow.h"
 #include "Overlay/Window/WinePopupWindow.h"
+#include "Overlay/Window/UnlimitedPlaybackWindow.h"
 
 #include "Core/info.h"
 #include "Core/logger.h"
@@ -76,6 +77,9 @@ WindowContainer::WindowContainer()
 
         AddWindow(WindowType_WinePopup,
                 new WinePopupWindow("Wine Popup", true, *this, ImGuiWindowFlags_NoTitleBar));
+
+        AddWindow(WindowType_UnlimitedPlayback,
+                new UnlimitedPlaybackWindow("Configure Unlimited Playback (BETA)", true));
 }
 
 

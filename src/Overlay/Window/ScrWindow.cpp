@@ -23,6 +23,7 @@
 #include "Core/info.h"
 #include <windows.h>
 #include "Game/Playbacks/PlaybackManager.h"
+#include "Game/Playbacks/UnlimitedPlaybackManager.h"
 #include "Overlay/imgui_utils.h"
 #include <cstdlib>
 #include <ctime>
@@ -1055,9 +1056,28 @@ void ScrWindow::DrawPlaybackSection() {
     char* bbcf_base_adress = GetBbcfBaseAdress();
     char* active_slot = bbcf_base_adress + 0x902C3C;
     static bool loop_playback = false;
+    auto& unlimitedPlayback = UnlimitedPlaybackManager::Instance();
+    unlimitedPlayback.InitializeIfNeeded();
+    static int playbackMode = unlimitedPlayback.GetMode();
+    playbackMode = unlimitedPlayback.GetMode();
    
     //ScrWindow::DrawPlaybackEditor();
     if (ImGui::CollapsingHeader("Playback")) {
+        const char* modes[] = { "Default / BBCF Based", "Unlimited Playback (BETA)" };
+        if (ImGui::Combo("Playback Mode", &playbackMode, modes, IM_ARRAYSIZE(modes))) {
+            unlimitedPlayback.SetMode(playbackMode);
+        }
+
+        if (playbackMode == UnlimitedPlaybackManager::Mode_Unlimited) {
+            if (ImGui::Button("Configure Unlimited Playback (BETA)")) {
+                ScrWindow::m_pWindowContainer->GetWindow(WindowType_UnlimitedPlayback)->ToggleOpen();
+            }
+            ImGui::SameLine();
+            ImGui::TextDisabled("Runtime active while in training mode.");
+            ImGui::TextWrapped("%s", unlimitedPlayback.GetStatusText().c_str());
+            return;
+        }
+
         ImGui::Checkbox("Loop current playback", &loop_playback);
         ImGui::SameLine();
         ImGui::ShowHelpMarker("This will continuously loop the current recording slot, subject to absolute positioning.");

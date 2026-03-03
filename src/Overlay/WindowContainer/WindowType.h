@@ -19,4 +19,5 @@ enum WindowType_
         WindowType_FrameAdvantage,
         WindowType_ReplayRewind,
         WindowType_WinePopup,
+        WindowType_UnlimitedPlayback,
 };
