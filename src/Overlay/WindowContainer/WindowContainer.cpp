@@ -17,6 +17,7 @@
 #include "Overlay/Window/ReplayRewindWindow.h"
 #include "Overlay/Window/WinePopupWindow.h"
 #include "Overlay/Window/UnlimitedPlaybackWindow.h"
+#include "Overlay/Window/UnlimitedReplayTakeoverWindow.h"
 
 #include "Core/info.h"
 #include "Core/logger.h"
@@ -80,6 +81,9 @@ WindowContainer::WindowContainer()
 
         AddWindow(WindowType_UnlimitedPlayback,
                 new UnlimitedPlaybackWindow("Configure Unlimited Playback (BETA)", true, *this));
+
+        AddWindow(WindowType_UnlimitedReplayTakeover,
+                new UnlimitedReplayTakeoverWindow("Unlimited Replay Takeover (BETA)", true, *this));
 }
 
 

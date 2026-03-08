@@ -8,11 +8,12 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseDeploy|Win32'">
     <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
-    <Attach>true</Attach>
-    <LocalDebuggerAttach>true</LocalDebuggerAttach>
+    <Attach>false</Attach>
+    <LocalDebuggerAttach>false</LocalDebuggerAttach>
     <LocalDebuggerDebuggerType>NativeOnly</LocalDebuggerDebuggerType>
-    <LocalDebuggerCommand>$(BbcfDebuggerCommand)</LocalDebuggerCommand>
-    <LocalDebuggerCommandArguments>$(BbcfDebuggerArguments)</LocalDebuggerCommandArguments>
-    <LocalDebuggerWorkingDirectory>$(BbcfDebuggerWorkingDirectory)</LocalDebuggerWorkingDirectory>
+    <LocalDebuggerCommand>$(ComSpec)</LocalDebuggerCommand>
+    <LocalDebuggerCommandArguments>/c exit 0</LocalDebuggerCommandArguments>
+    <LocalDebuggerWorkingDirectory>$(ProjectDir)</LocalDebuggerWorkingDirectory>
+    <LocalDebuggerCommandArgumentsHistory>/c exit 0|</LocalDebuggerCommandArgumentsHistory>
   </PropertyGroup>
 </Project>

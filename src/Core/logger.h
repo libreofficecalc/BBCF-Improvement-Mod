@@ -26,12 +26,24 @@
                 __asm { popad }                                                                                           \
         }
 
+#define RELOG(_level, ...)                                                                                                 \
+        {                                                                                                                  \
+                if (IsReTraceLoggingEnabled() && GetReTraceLogLevel() >= _level)                                          \
+                {                                                                                                          \
+                        relog_with_level(_level, __VA_ARGS__);                                                            \
+                }                                                                                                          \
+        }
+
 void logger_with_level(int level, const char* message, ...);
 void ForceLog(const char* message, ...);
 void openLogger();
 void closeLogger();
 void SetLoggingEnabled(bool enabled);
 bool IsLoggingEnabled();
+void relog_with_level(int level, const char* message, ...);
+void ConfigureReTraceLogging(bool enabled, int level, int maxFileMb, int maxBackups);
+bool IsReTraceLoggingEnabled();
+int GetReTraceLogLevel();
 //free it after usage!!
 char* getFullDate();
 void logSettingsIni();

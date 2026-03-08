@@ -142,8 +142,18 @@ DWORD WINAPI BBCF_IM_Start(HMODULE hModule)
 
 	ForceLog("[Init] Configuring logging");
 	SetLoggingEnabled(Settings::settingsIni.generateDebugLogs);
+	ConfigureReTraceLogging(
+		Settings::settingsIni.urtReTraceEnabled,
+		Settings::settingsIni.urtReTraceLevel,
+		Settings::settingsIni.urtReTraceMaxFileMB,
+		Settings::settingsIni.urtReTraceMaxBackups);
 	ForceLog("[Init] Set logging OK");
-	ForceLog("[Init] Logging configured (generateDebugLogs=%d).\n", Settings::settingsIni.generateDebugLogs);
+	ForceLog("[Init] Logging configured (generateDebugLogs=%d, urtReTrace=%d level=%d maxMB=%d backups=%d).\n",
+		Settings::settingsIni.generateDebugLogs,
+		Settings::settingsIni.urtReTraceEnabled,
+		Settings::settingsIni.urtReTraceLevel,
+		Settings::settingsIni.urtReTraceMaxFileMB,
+		Settings::settingsIni.urtReTraceMaxBackups);
 
 	if (Settings::WasDebugLoggingSettingMissing())
 	{

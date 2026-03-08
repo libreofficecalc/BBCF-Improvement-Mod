@@ -1,6 +1,7 @@
 #include "logger.h"
 
 #include <array>
+#include <algorithm>
 #include <chrono>
 #include <cstdarg>
 #include <cstdio>
@@ -18,6 +19,11 @@ namespace
 {
         FILE* g_oFile = nullptr;
         bool g_isLoggingEnabled = false;
+        FILE* g_reFile = nullptr;
+        bool g_isReTraceEnabled = false;
+        int g_reTraceLevel = 2;
+        int g_reTraceMaxFileMb = 16;
+        int g_reTraceMaxBackups = 3;
 
         struct CrashLogEntry
         {
@@ -128,11 +134,96 @@ namespace
         {
                 SHCreateDirectoryExW(nullptr, L"BBCF_IM", nullptr);
         }
+
+        std::wstring GetReTraceBasePath()
+        {
+                return L"BBCF_IM\\URT_RE_TRACE.log";
+        }
+
+        std::wstring GetReTraceBackupPath(int index)
+        {
+                if (index <= 0)
+                {
+                        return GetReTraceBasePath();
+                }
+
+                std::wstring path = GetReTraceBasePath();
+                path.append(L".");
+                path.append(std::to_wstring(index));
+                return path;
+        }
+
+        uint64_t GetFileSizeBytes(const std::wstring& path)
+        {
+                WIN32_FILE_ATTRIBUTE_DATA data{};
+                if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &data))
+                {
+                        return 0;
+                }
+
+                ULARGE_INTEGER size{};
+                size.HighPart = data.nFileSizeHigh;
+                size.LowPart = data.nFileSizeLow;
+                return size.QuadPart;
+        }
+
+        void RotateReTraceFilesIfNeeded()
+        {
+                const int maxBackups = (std::max)(1, g_reTraceMaxBackups);
+                const int maxMb = (std::max)(1, g_reTraceMaxFileMb);
+                const uint64_t maxBytes = static_cast<uint64_t>(maxMb) * 1024ull * 1024ull;
+                const std::wstring basePath = GetReTraceBasePath();
+                const uint64_t currentSize = GetFileSizeBytes(basePath);
+                if (currentSize < maxBytes)
+                {
+                        return;
+                }
+
+                for (int i = maxBackups; i >= 1; --i)
+                {
+                        const std::wstring srcPath = GetReTraceBackupPath(i - 1);
+                        const std::wstring dstPath = GetReTraceBackupPath(i);
+                        DeleteFileW(dstPath.c_str());
+                        MoveFileExW(srcPath.c_str(), dstPath.c_str(), MOVEFILE_REPLACE_EXISTING);
+                }
+        }
+
+        bool IsReTraceCandidate(const std::string& line)
+        {
+                return line.find("[URT") != std::string::npos ||
+                       line.find("[Snapshot]") != std::string::npos ||
+                       line.find("[Crash]") != std::string::npos ||
+                       line.find("SetDumpfileCommentString") != std::string::npos ||
+                       line.find("[URT-RE]") != std::string::npos;
+        }
+
+        void WriteToReTraceIfEligible(int level, const std::string& line)
+        {
+                if (!g_isReTraceEnabled || !g_reFile || level > g_reTraceLevel || !IsReTraceCandidate(line))
+                {
+                        return;
+                }
+
+                std::string outLine = "[URT-RE] ";
+                outLine += line;
+                fputs(outLine.c_str(), g_reFile);
+                fflush(g_reFile);
+        }
 }
 
 bool IsLoggingEnabled()
 {
         return g_isLoggingEnabled && g_oFile;
+}
+
+bool IsReTraceLoggingEnabled()
+{
+        return g_isReTraceEnabled && g_reFile;
+}
+
+int GetReTraceLogLevel()
+{
+        return g_reTraceLevel;
 }
 
 bool hookSucceeded(PBYTE addr, const char* funcName)
@@ -186,9 +277,37 @@ void logger_with_level(int level, const char* message, ...)
                 const std::lock_guard<std::mutex> lock(g_logMutex);
                 fputs(line.c_str(), g_oFile);
                 fflush(g_oFile);
+                WriteToReTraceIfEligible(level, line);
         }
 
         AppendCrashLogEntry(level, line, timestamp, threadId);
+}
+
+void relog_with_level(int level, const char* message, ...)
+{
+        if (!message || !g_reFile || !g_isReTraceEnabled || level > g_reTraceLevel)
+        {
+                return;
+        }
+
+        va_list args;
+        va_start(args, message);
+
+        const uint64_t timestamp = GetTimestampMs();
+        const DWORD threadId = GetCurrentThreadId();
+        const std::string line = BuildLogLine(level, message, args, timestamp, threadId);
+        va_end(args);
+
+        if (line.empty())
+        {
+                return;
+        }
+
+        const std::lock_guard<std::mutex> lock(g_logMutex);
+        std::string outLine = "[URT-RE] ";
+        outLine += line;
+        fputs(outLine.c_str(), g_reFile);
+        fflush(g_reFile);
 }
 
 void ForceLog(const char* message, ...)
@@ -217,6 +336,7 @@ void ForceLog(const char* message, ...)
 	const std::lock_guard<std::mutex> lock(g_logMutex);
 	fputs(line.c_str(), g_oFile);
 	fflush(g_oFile);
+        WriteToReTraceIfEligible(0, line);
 }
 	else
 	{
@@ -291,29 +411,109 @@ void openLogger()
     fflush(g_oFile);
 }
 
-
-void closeLogger()
+void ConfigureReTraceLogging(bool enabled, int level, int maxFileMb, int maxBackups)
 {
-        if (!g_oFile)
+        if (g_reFile)
         {
-                g_isLoggingEnabled = false;
+                fclose(g_reFile);
+                g_reFile = nullptr;
+        }
+
+        g_reTraceLevel = (std::max)(0, (std::min)(level, DEBUG_LOG_LEVEL));
+        g_reTraceMaxFileMb = (std::max)(1, maxFileMb);
+        g_reTraceMaxBackups = (std::max)(1, maxBackups);
+        g_isReTraceEnabled = enabled;
+
+        if (!enabled)
+        {
                 return;
         }
 
-        char* time = getFullDate();
-        if (time)
+        EnsureLogDirectory();
+        RotateReTraceFilesIfNeeded();
+
+        HANDLE hFile = CreateFileW(
+                GetReTraceBasePath().c_str(),
+                GENERIC_WRITE,
+                FILE_SHARE_READ,
+                nullptr,
+                OPEN_ALWAYS,
+                FILE_ATTRIBUTE_NORMAL,
+                nullptr);
+
+        if (hFile == INVALID_HANDLE_VALUE)
         {
-                fprintf(g_oFile, "BBCF_FIX STOP - %s\n", time);
-                free(time);
-        }
-        else
-        {
-                fprintf(g_oFile, "BBCF_FIX STOP - {Couldn't get the current time}\n");
+                g_isReTraceEnabled = false;
+                return;
         }
 
-        fclose(g_oFile);
-        g_oFile = nullptr;
-        g_isLoggingEnabled = false;
+        int fd = _open_osfhandle(reinterpret_cast<intptr_t>(hFile), _O_WRONLY | _O_TEXT);
+        if (fd == -1)
+        {
+                CloseHandle(hFile);
+                g_isReTraceEnabled = false;
+                return;
+        }
+
+        FILE* f = _fdopen(fd, "a");
+        if (!f)
+        {
+                _close(fd);
+                g_isReTraceEnabled = false;
+                return;
+        }
+
+        g_reFile = f;
+        g_isReTraceEnabled = true;
+
+        const uint64_t timestamp = GetTimestampMs();
+        const DWORD threadId = GetCurrentThreadId();
+        const std::string prefix = FormatLogPrefix(0, timestamp, threadId);
+        std::ostringstream sessionHeader;
+        sessionHeader << "[URT-RE][RE0001] Trace session start level=" << g_reTraceLevel
+                << " maxFileMb=" << g_reTraceMaxFileMb
+                << " maxBackups=" << g_reTraceMaxBackups
+                << " debugLogs=" << (g_isLoggingEnabled ? 1 : 0)
+                << "\n";
+        std::string line = "[URT-RE] " + prefix + sessionHeader.str();
+        fputs(line.c_str(), g_reFile);
+        fflush(g_reFile);
+}
+
+
+void closeLogger()
+{
+        if (g_oFile)
+        {
+                char* time = getFullDate();
+                if (time)
+                {
+                        fprintf(g_oFile, "BBCF_FIX STOP - %s\n", time);
+                        free(time);
+                }
+                else
+                {
+                        fprintf(g_oFile, "BBCF_FIX STOP - {Couldn't get the current time}\n");
+                }
+
+                fclose(g_oFile);
+                g_oFile = nullptr;
+                g_isLoggingEnabled = false;
+        }
+
+        if (g_reFile)
+        {
+                const uint64_t timestamp = GetTimestampMs();
+                const DWORD threadId = GetCurrentThreadId();
+                const std::string prefix = FormatLogPrefix(0, timestamp, threadId);
+                std::string stopLine = "[URT-RE] " + prefix + "[URT-RE][RE0002] Trace session stop\n";
+                fputs(stopLine.c_str(), g_reFile);
+                fflush(g_reFile);
+                fclose(g_reFile);
+                g_reFile = nullptr;
+        }
+
+        g_isReTraceEnabled = false;
 }
 
 void SetLoggingEnabled(bool enabled)

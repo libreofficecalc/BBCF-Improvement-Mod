@@ -81,6 +81,23 @@ This handbook is a one-stop map for agents modifying the BBCF Improvement Mod. T
 - Keep logs verbose while iterating (`logger.h` levels) and update templates in `resource/` when introducing new user-facing config knobs.
 - Localization strings live in `resource/localization/Localization.csv`, which stores every language side by side. Add new UI copy by creating a new row, add languages by introducing new columns with `_DisplayName`/`_LanguageCode` filled in, and keep using the `L()` helper around ImGui labels. Languages missing any fallback keys are automatically disabled in the dropdown.
 
+## Active incident notes
+- Unlimited Replay Takeover snapshot-train crash tracking is documented in `URT_SNAPSHOT_DEBUG_STATUS.md` (next to this file). Read it before modifying URT snapshot/playback behavior so all agents stay aligned on current hypotheses, blockers, and required log checkpoints.
+
+## Operator deploy workflow
+- For RE/testing turns, agents should handle build+deploy prep end-to-end (except launching `BBCF.exe`): build `DebugDeploy`, install `dinput8.dll`, refresh `settings.ini`, preserve user non-default settings by backing up and merging, then apply required test toggles (e.g., debug/retrace logging). The operator should only need to launch the game and run requested in-game steps.
+- For repetitive URT repro loops, agents can run one automated cycle via `./tools/urt_automation/run_bbcf_debug_cycle.sh` (repo root). This launches `BBCF-Automatic-Debugger.ahk`, waits for AHK completion, and then closes `BBCF.exe` if still running.
+- Automation caveat: AHK may temporarily take full keyboard/mouse control while the macro runs.
+- Exact current definition of "one cycle" (toast-by-toast behavior) is documented in `URT_RE_EXECUTION_PLAN.md` under `Automation mode (single debug cycle)`.
+- Read-only escalated command policy:
+  - Use `tools/safe_readonly_exec.ps1` when a command is read-only but would otherwise trigger repeated approval prompts due to slight argument changes (typical case: `cdb.exe` dump analysis).
+  - Prefer request-file mode for a stable invocation:
+    - write payload to `tools/safe_readonly_request.json`,
+    - run helper with fixed `-RequestFile` command line.
+  - Full usage and schema: `tools/SAFE_READONLY_EXECUTOR.md`.
+  - This helper is allowlisted and includes a destructive-token guard plus cdb write-command guard.
+  - Hard rule: do not route delete/destructive operations through this helper (`rm`, `del`, `Remove-Item`, renames/moves/copies, registry edits, etc.). Those must remain explicit and approval-gated.
+
 ## Release checklist
 1. Build `Release|Win32` to generate `bin/Release/dinput8.dll`.
 2. Copy `dinput8.dll`, `settings.ini`, and `palettes.ini` into the BBCF install directory next to `BBCF.exe`. The mod will create `BBCF_IM/` on first run.

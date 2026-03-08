@@ -1864,6 +1864,13 @@ void ScrWindow::DrawReplayTakeover() {
 
     if (!ImGui::CollapsingHeader("Replay Takeover"))
         return;
+
+    if (ImGui::Button("Unlimited Replay Takeover (BETA)")) {
+        ScrWindow::m_pWindowContainer->GetWindow(WindowType_UnlimitedReplayTakeover)->ToggleOpen();
+    }
+    ImGui::SameLine();
+    ImGui::TextDisabled("Capture replay situations into a training library.");
+
     if (*(bbcf_base_adress + 0x8F7758) == 0) { //checks if it is searching for a ranked match
         if (!g_interfaces.player1.IsCharDataNullPtr() && !g_interfaces.player2.IsCharDataNullPtr()) {
             if (snap_apparatus_takeover == nullptr) {

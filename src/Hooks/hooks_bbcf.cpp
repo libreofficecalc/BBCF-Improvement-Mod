@@ -16,6 +16,7 @@
 #include "Web/update_check.h"
 #include "Game/ReplayFiles/ReplayFileManager.h"
 #include "Game/Playbacks/UnlimitedPlaybackManager.h"
+#include "Game/ReplayTakeover/UnlimitedReplayTakeoverManager.h"
 
 extern "C" void HandleControllerWndProcMessage(UINT msg, WPARAM wParam, LPARAM lParam);
 
@@ -575,6 +576,7 @@ void __declspec(naked)GetFrameCounter()
 
 	__asm pushad
 	UnlimitedPlaybackManager::Instance().Tick();
+	UnlimitedReplayTakeoverManager::Instance().Tick();
 	__asm popad
 
 	_asm

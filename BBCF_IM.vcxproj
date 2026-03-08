@@ -38,6 +38,7 @@
     <ClCompile Include="src\Game\Playbacks\PlaybackSlot.cpp" />
     <ClCompile Include="src\Game\Playbacks\CompatibilityManager.cpp" />
     <ClCompile Include="src\Game\Playbacks\UnlimitedPlaybackManager.cpp" />
+    <ClCompile Include="src\Game\ReplayTakeover\UnlimitedReplayTakeoverManager.cpp" />
     <ClCompile Include="src\Game\Playbacks\PlaybackManager.cpp" />
     <ClCompile Include="src\CustomGameMode\customGameMode.cpp" />
     <ClCompile Include="src\CustomGameMode\GameModeManager.cpp" />
@@ -54,6 +55,7 @@
     <ClCompile Include="src\Overlay\Widget\StageSelectWidget.cpp" />
     <ClCompile Include="src\Overlay\Window\InputBufferWindow.cpp" />
     <ClCompile Include="src\Overlay\Window\PlaybackEditorWindow.cpp" />
+    <ClCompile Include="src\Overlay\Window\UnlimitedReplayTakeoverWindow.cpp" />
     <ClCompile Include="src\Overlay\Window\UnlimitedPlaybackWindow.cpp" />
     <ClCompile Include="src\Overlay\Window\ReplayRewindWindow.cpp" />
     <ClCompile Include="src\Overlay\Window\RoomWindow.cpp" />
@@ -152,6 +154,7 @@
     <ClInclude Include="src\Game\Playbacks\CompatibilityManager.h" />
     <ClInclude Include="src\Game\Playbacks\PlaybackManager.h" />
     <ClInclude Include="src\Game\Playbacks\UnlimitedPlaybackManager.h" />
+    <ClInclude Include="src\Game\ReplayTakeover\UnlimitedReplayTakeoverManager.h" />
     <ClInclude Include="src\Core\info.h" />
     <ClInclude Include="src\CustomGameMode\customGameMode.h" />
     <ClInclude Include="src\CustomGameMode\GameModeManager.h" />
@@ -173,6 +176,7 @@
     <ClInclude Include="src\Overlay\Window\FrameAdvantage\FrameAdvantage.h" />
     <ClInclude Include="src\Overlay\Window\InputBufferWindow.h" />
     <ClInclude Include="src\Overlay\Window\PlaybackEditorWindow.h" />
+    <ClInclude Include="src\Overlay\Window\UnlimitedReplayTakeoverWindow.h" />
     <ClInclude Include="src\Overlay\Window\UnlimitedPlaybackWindow.h" />
     <ClInclude Include="src\Overlay\Window\ReplayRewindWindow.h" />
     <ClInclude Include="src\Overlay\Window\RoomWindow.h" />
@@ -360,6 +364,13 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseDeploy|Win32'">
     <LinkIncremental>false</LinkIncremental>
     <TargetName>dinput8</TargetName>
+    <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
+    <Attach>false</Attach>
+    <LocalDebuggerAttach>false</LocalDebuggerAttach>
+    <LocalDebuggerDebuggerType>NativeOnly</LocalDebuggerDebuggerType>
+    <LocalDebuggerCommand>$(ComSpec)</LocalDebuggerCommand>
+    <LocalDebuggerCommandArguments>/c exit 0</LocalDebuggerCommandArguments>
+    <LocalDebuggerWorkingDirectory>$(ProjectDir)</LocalDebuggerWorkingDirectory>
     <IncludePath>$(SolutionDir)\src;$(SolutionDir)\depends\imgui;$(SolutionDir)\depends\detour;$(SolutionDir)\depends\directx_sdk\Include;$(SolutionDir)\depends\steam_api\public\steam;$(SolutionDir)\depends\winhttpclient\Include;$(IncludePath)</IncludePath>
     <LibraryPath>$(SolutionDir)\depends\detour;$(SolutionDir)\depends\directx_sdk\Lib\x86;$(SolutionDir)\depends\steam_api\redistributable_bin;$(LibraryPath)</LibraryPath>
     <OutDir>bin\Release\</OutDir>
