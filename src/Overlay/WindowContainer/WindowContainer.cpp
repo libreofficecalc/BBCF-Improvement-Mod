@@ -17,7 +17,10 @@
 #include "Overlay/Window/ReplayRewindWindow.h"
 #include "Overlay/Window/WinePopupWindow.h"
 #include "Overlay/Window/UnlimitedPlaybackWindow.h"
+#include "Game/ReplayTakeover/ReplayTakeoverFeatureFlags.h"
+#if BBCF_ENABLE_UNLIMITED_REPLAY_TAKEOVER
 #include "Overlay/Window/UnlimitedReplayTakeoverWindow.h"
+#endif
 
 #include "Core/info.h"
 #include "Core/logger.h"
@@ -82,8 +85,12 @@ WindowContainer::WindowContainer()
         AddWindow(WindowType_UnlimitedPlayback,
                 new UnlimitedPlaybackWindow("Configure Unlimited Playback (BETA)", true, *this));
 
-        AddWindow(WindowType_UnlimitedReplayTakeover,
-                new UnlimitedReplayTakeoverWindow("Unlimited Replay Takeover (BETA)", true, *this));
+#if BBCF_ENABLE_UNLIMITED_REPLAY_TAKEOVER
+        {
+                AddWindow(WindowType_UnlimitedReplayTakeover,
+                        new UnlimitedReplayTakeoverWindow("Unlimited Replay Takeover (BETA)", true, *this));
+        }
+#endif
 }
 
 

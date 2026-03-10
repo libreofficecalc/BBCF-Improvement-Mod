@@ -16,7 +16,10 @@
 #include "Web/update_check.h"
 #include "Game/ReplayFiles/ReplayFileManager.h"
 #include "Game/Playbacks/UnlimitedPlaybackManager.h"
+#include "Game/ReplayTakeover/ReplayTakeoverFeatureFlags.h"
+#if BBCF_ENABLE_UNLIMITED_REPLAY_TAKEOVER
 #include "Game/ReplayTakeover/UnlimitedReplayTakeoverManager.h"
+#endif
 
 extern "C" void HandleControllerWndProcMessage(UINT msg, WPARAM wParam, LPARAM lParam);
 
@@ -576,7 +579,11 @@ void __declspec(naked)GetFrameCounter()
 
 	__asm pushad
 	UnlimitedPlaybackManager::Instance().Tick();
-	UnlimitedReplayTakeoverManager::Instance().Tick();
+#if BBCF_ENABLE_UNLIMITED_REPLAY_TAKEOVER
+	{
+		UnlimitedReplayTakeoverManager::Instance().Tick();
+	}
+#endif
 	__asm popad
 
 	_asm

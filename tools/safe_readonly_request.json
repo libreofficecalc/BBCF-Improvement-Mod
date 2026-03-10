@@ -2,8 +2,8 @@
   "exe": "C:\\Program Files (x86)\\Windows Kits\\10\\Debuggers\\x86\\cdb.exe",
   "args": [
     "-z",
-    "C:\\Users\\Usuario\\AppData\\Local\\CrashDumps\\BBCF.exe.37568.dmp",
+    "C:\\Users\\Usuario\\AppData\\Local\\CrashDumps\\BBCF.exe.29980.dmp",
     "-c",
-    ".ecxr; !analyze -v; kb 40; q"
+    ".ecxr; !analyze -v; kb 80; r; q"
   ]
 }

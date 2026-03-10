@@ -60,7 +60,7 @@ If you want runner to close BBCF only on success:
 .\Run-UrtAutomation.ps1 -LaunchGame -CloseGameOnDone
 ```
 
-For the single-cycle runner using your root `BBCF-Automatic-Debugger.ahk`, from this repo terminal (bash):
+For the single-cycle runner using `tools/urt_automation/BBCF-Automatic-Debugger.ahk`, from this repo terminal (bash):
 
 ```bash
 ./tools/urt_automation/run_bbcf_debug_cycle.sh
@@ -110,7 +110,7 @@ Important:
 - If invoking PowerShell directly, use a Windows `C:\...` path for `-File` (not `/mnt/...`).
 
 ## What "one cycle" means right now
-For `BBCF-Automatic-Debugger.ahk`, one cycle is the full toast-labeled flow:
+For `tools/urt_automation/BBCF-Automatic-Debugger.ahk`, one cycle is the full toast-labeled flow:
 1. Focus Visual Studio and wait for build/game launch.
 2. Skip BBCF intro and navigate to replay theater.
 3. Play replay, skip replay intro, pause.

@@ -145,7 +145,6 @@
     <ClCompile Include="src\Overlay\Window\RoomWindow.cpp" />
     <ClCompile Include="src\Overlay\NotificationBar\NotificationBar.cpp" />
     <ClCompile Include="src\Web\url_downloader.cpp" />
-    <ClCompile Include="src\Palette\impl_templates.h" />
     <ClCompile Include="src\Palette\impl_templates.cpp" />
     <ClCompile Include="src\SteamApiWrapper\steamApiWrappers.cpp" />
     <ClCompile Include="src\Overlay\Widget\StageSelectWidget.cpp" />
@@ -330,12 +329,12 @@
     <ClInclude Include="src\Overlay\Window\UnlimitedPlaybackWindow.h" />
     <ClInclude Include="src\Game\Jonb\JonbDBReader.h" />
     <ClInclude Include="src\Game\Jonb\JonbDBEntry.h" />
-    <ClInclude Include="..\..\..\..\Downloads\stb_image.h" />
     <ClInclude Include="depends\imgui\stb_image.h" />
     <ClInclude Include="src\Overlay\Window\FrameAdvantage\PlayerExtendedData.h" />
     <ClInclude Include="src\Overlay\Window\ComboDataWindow.h" />
     <ClInclude Include="src\Game\GhidraDefs.h" />
     <ClInclude Include="src\Game\SnapshotApparatus\SnapshotApparatus.h" />
+    <ClInclude Include="src\Game\ReplayTakeover\ReplayTakeoverFeatureFlags.h" />
     <ClInclude Include="src\Network\ReplayUploadManager.h" />
     <ClInclude Include="src\Overlay\Window\ReplayDBPopupWindow.h" />
     <ClInclude Include="src\Core\keycodes.h" />
@@ -348,6 +347,7 @@
     <ClInclude Include="src\Game\ReplayRewind\ReplayRewind.h" />
     <ClInclude Include="src\Hooks\hooks_battle_input.h" />
     <ClInclude Include="src\Core\Localization.h" />
+    <ClInclude Include="src\Palette\impl_templates.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="export\dinput8.def">

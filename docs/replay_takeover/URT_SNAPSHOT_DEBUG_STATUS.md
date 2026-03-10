@@ -931,4 +931,53 @@ Interpretation:
 - Interpretation:
   - Loader entry path is not single deterministic; there are multiple failing branches.
   - Our targeted recoveries advance one failure branch, but do not eliminate other early-fail branches.
-  - This strengthens the conclusion that ad-hoc exception-site patching alone is insufficient for a robust feature.
+- This strengthens the conclusion that ad-hoc exception-site patching alone is insufficient for a robust feature.
+
+## 62) 2026-03-10 - `0x785430` detour is RE-only; removed from runtime path after immediate-instability regression
+
+- I re-enabled the queue-consumer detour at `0x785430` during `load_snapshot_index` to try to sanitize bad queue-head records before the `0x7854FF` callback dispatch.
+- Immediate result on live repro:
+  - log reached `load_snapshot_index begin`,
+  - then `HOOK785430 ... installed`,
+  - then process crashed immediately with no `QHEAD` or per-call hook telemetry.
+- I reduced the hook body to a minimal pass-through trampoline with only first-call logging.
+- Follow-up autonomous cycles no longer produced useful playback-path evidence; instead they repeatedly desynced before the play step.
+
+Interpretation:
+- The `0x785430` detour path is currently not trustworthy as part of the production playback pipeline.
+- Even if the detour can be made safe later, it should stay RE-only until it proves stable under repeated playback entry.
+
+Decision:
+- Runtime path was moved back to the safer branch:
+  - keep direct exception recoveries and post-load sanitizers,
+  - disable `InstallQueueConsumeHook785430(...)` during normal snapshot loads.
+- This keeps the project on the previously validated branch where snapshot load had already reached `snapshot_loaded=1` / `delay_armed=1` in at least one cycle.
+
+## 63) 2026-03-10 - manual repro on safer branch confirmed incomplete queue abort cleanup; abort now flushes active ring window
+
+- Fresh manual repro on the safer branch reached:
+  - `SITE_78635D` recovery,
+  - `SITE_786362` recovery,
+  - repeated `SITE_7854FF RECOVERY generic-skip`,
+  - repeated `SITE_7854FF NULLTARGET recover`,
+  - `SITE_7854FF ABORT_QUEUE reason=nulltarget-threshold`.
+- Log terminated immediately after `ABORT_QUEUE`, with no subsequent `post_call summary`, `snapshot load failed`, or success logs.
+
+Key comparison against older success run:
+- Older successful seeded/load-accepted run had queue-head cleanup before leaving the callback path:
+  - queue records were scrubbed,
+  - queue state after load showed the poisoned callback window cleared,
+  - loader returned `success=1`.
+- Current safer branch abort helper was only zeroing `q14`, leaving the active ring contents/head progression insufficiently sanitized.
+
+Change applied:
+- `AbortQueueConsume785430(...)` now calls `FlushQueueConsumeWindow(...)`, which:
+  - reads `q14/q18/q20`,
+  - zeroes each active ring record in the current queue window,
+  - advances `q18` past the drained entries,
+  - sets `q14 = 0`,
+  - logs `[Snapshot][QFLUSH] ...`.
+
+Interpretation:
+- This is the correct next attempt to make the queue-abort path behave like a real drain instead of a partial stop.
+- Current deployment contains this change, but autonomous AHK cycles are still desyncing before the playback click, so the new queue-flush behavior still requires a real playback repro to validate.

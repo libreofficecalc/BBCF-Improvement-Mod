@@ -38,7 +38,6 @@
     <ClCompile Include="src\Game\Playbacks\PlaybackSlot.cpp" />
     <ClCompile Include="src\Game\Playbacks\CompatibilityManager.cpp" />
     <ClCompile Include="src\Game\Playbacks\UnlimitedPlaybackManager.cpp" />
-    <ClCompile Include="src\Game\ReplayTakeover\UnlimitedReplayTakeoverManager.cpp" />
     <ClCompile Include="src\Game\Playbacks\PlaybackManager.cpp" />
     <ClCompile Include="src\CustomGameMode\customGameMode.cpp" />
     <ClCompile Include="src\CustomGameMode\GameModeManager.cpp" />
@@ -55,7 +54,6 @@
     <ClCompile Include="src\Overlay\Widget\StageSelectWidget.cpp" />
     <ClCompile Include="src\Overlay\Window\InputBufferWindow.cpp" />
     <ClCompile Include="src\Overlay\Window\PlaybackEditorWindow.cpp" />
-    <ClCompile Include="src\Overlay\Window\UnlimitedReplayTakeoverWindow.cpp" />
     <ClCompile Include="src\Overlay\Window\UnlimitedPlaybackWindow.cpp" />
     <ClCompile Include="src\Overlay\Window\ReplayRewindWindow.cpp" />
     <ClCompile Include="src\Overlay\Window\RoomWindow.cpp" />
@@ -110,7 +108,6 @@
     <ClCompile Include="src\Core\Settings.cpp" />
     <ClCompile Include="src\Palette\impl_templates.cpp" />
     <ClCompile Include="src\Palette\PaletteManager.cpp" />
-    <ClCompile Include="src\Palette\impl_templates.h" />
     <ClCompile Include="src\SteamApiWrapper\SteamApiHelper.cpp" />
     <ClCompile Include="src\SteamApiWrapper\SteamFriendsWrapper.cpp" />
     <ClCompile Include="src\SteamApiWrapper\SteamMatchmakingWrapper.cpp" />
@@ -124,7 +121,6 @@
     <ClCompile Include="src\Game\Menus\TrainingSetupMenu.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\..\..\..\Downloads\stb_image.h" />
     <ClInclude Include="depends\imgui\imconfig.h" />
     <ClInclude Include="depends\imgui\imgui.h" />
     <ClInclude Include="depends\imgui\imgui_impl_dx9.h" />
@@ -146,6 +142,7 @@
     <ClInclude Include="src\Network\ReplayUploadManager.h" />
     <ClInclude Include="src\Game\GhidraDefs.h" />
     <ClInclude Include="src\Game\SnapshotApparatus\SnapshotApparatus.h" />
+    <ClInclude Include="src\Game\ReplayTakeover\ReplayTakeoverFeatureFlags.h" />
     <ClInclude Include="src\Overlay\Window\ComboDataWindow.h" />
     <ClInclude Include="src\Overlay\Window\FrameAdvantage\PlayerExtendedData.h" />
     <ClInclude Include="src\Game\Jonb\JonbDBEntry.h" />
@@ -154,7 +151,6 @@
     <ClInclude Include="src\Game\Playbacks\CompatibilityManager.h" />
     <ClInclude Include="src\Game\Playbacks\PlaybackManager.h" />
     <ClInclude Include="src\Game\Playbacks\UnlimitedPlaybackManager.h" />
-    <ClInclude Include="src\Game\ReplayTakeover\UnlimitedReplayTakeoverManager.h" />
     <ClInclude Include="src\Core\info.h" />
     <ClInclude Include="src\CustomGameMode\customGameMode.h" />
     <ClInclude Include="src\CustomGameMode\GameModeManager.h" />
@@ -176,7 +172,6 @@
     <ClInclude Include="src\Overlay\Window\FrameAdvantage\FrameAdvantage.h" />
     <ClInclude Include="src\Overlay\Window\InputBufferWindow.h" />
     <ClInclude Include="src\Overlay\Window\PlaybackEditorWindow.h" />
-    <ClInclude Include="src\Overlay\Window\UnlimitedReplayTakeoverWindow.h" />
     <ClInclude Include="src\Overlay\Window\UnlimitedPlaybackWindow.h" />
     <ClInclude Include="src\Overlay\Window\ReplayRewindWindow.h" />
     <ClInclude Include="src\Overlay\Window\RoomWindow.h" />
@@ -233,6 +228,7 @@
     <ClInclude Include="src\D3D9EXWrapper\ID3DXWrapper_Effect.h" />
     <ClInclude Include="src\Hooks\HookManager.h" />
     <ClInclude Include="src\Palette\impl_format.h" />
+    <ClInclude Include="src\Palette\impl_templates.h" />
     <ClInclude Include="src\Core\logger.h" />
     <ClInclude Include="src\Core\Settings.h" />
     <ClInclude Include="src\Game\gamestates.h" />

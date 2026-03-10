@@ -27,8 +27,8 @@ References:
 
 ## 2) Research prerequisites already defined
 This execution plan depends on:
-- `URT_MEMORY_RESEARCH_REQUIREMENTS.md`
-- `URT_SNAPSHOT_DEBUG_STATUS.md`
+- `docs/replay_takeover/URT_MEMORY_RESEARCH_REQUIREMENTS.md`
+- `docs/replay_takeover/URT_SNAPSHOT_DEBUG_STATUS.md`
 
 These remain the source of truth for feasibility gates.
 
@@ -126,7 +126,7 @@ If using WinDbg dump triage, run and share:
 ### Automation mode (single debug cycle)
 Use the temporary cycle runner when experiments require the same long menu/input path:
 1. From repo root, run `./tools/urt_automation/run_bbcf_debug_cycle.sh`.
-2. The script launches `BBCF-Automatic-Debugger.ahk`, waits for AHK process exit (real completion signal), then closes `BBCF.exe` if still running.
+2. The script launches `tools/urt_automation/BBCF-Automatic-Debugger.ahk`, waits for AHK process exit (real completion signal), then closes `BBCF.exe` if still running.
 3. Read result from stdout:
    - `DEBUG_CYCLE_STATUS: DONE` => cycle completed.
    - `DEBUG_CYCLE_STATUS: AHK_FAILED` or `TIMEOUT` => cycle failed.
@@ -135,8 +135,8 @@ Operational notes:
 - While AHK is active, machine input is effectively controlled by the macro.
 - Do not call Windows PowerShell with `-File /mnt/...`; use the bash wrapper above (or a Windows `C:\...` path).
 
-#### Current `BBCF-Automatic-Debugger.ahk` cycle definition (toast-driven)
-The current "one cycle" is exactly the toast sequence in `BBCF-Automatic-Debugger.ahk`:
+#### Current `tools/urt_automation/BBCF-Automatic-Debugger.ahk` cycle definition (toast-driven)
+The current "one cycle" is exactly the toast sequence in `tools/urt_automation/BBCF-Automatic-Debugger.ahk`:
 1. Focus/build-launch prep in Visual Studio (`Clicking Visual Studio`, then `Wait for release build + BBCF open`).
 2. Enter replay flow:
    - skip intro cutscene,
@@ -698,3 +698,35 @@ Decision:
 - Decision:
   - Continue mapping branch-specific gate sets, but treat this as accumulating evidence for required pointer-domain translation rather than a finite patch list.
   - Maintain current objective: identify where translated pointer fix-up must occur to prevent both known and alternate early-fail branches.
+
+## 56) 2026-03-10 automation checkpoint: PS1 now aborts cleanly when BBCF exits before AHK returns
+
+- Problem observed:
+  - `run_bbcf_debug_cycle.sh` would appear to hang for a long time even when `BBCF.exe` had already exited.
+  - Root cause was the PowerShell wrapper waiting only on AHK exit, while AHK could remain alive after the game process was already gone.
+- Change:
+  - `Run-BbcfDebugCycle.ps1` now watches `BBCF.exe` and `DEBUG.txt` during the AHK wait phase.
+  - If BBCF has already exited and the log proves we reached meaningful repro milestones (`StopRecordingAndSave`, `PlayEntryByIndex`, or crash logging), the wrapper kills AHK and advances immediately to classification.
+- Result:
+  - autonomous cycles now return promptly with a concrete result such as:
+    - `automation_desync_no_play_attempt`
+    - instead of looking like a hung cycle.
+
+Operational impact:
+- This does not fix URT playback itself.
+- It does restore autonomous debugging utility by making failed cycles self-classifying again.
+
+## 57) 2026-03-10 runtime-path decision: keep `0x785430` detour disabled outside RE experiments
+
+- Re-enabling the `0x785430` queue-consumer detour during `load_snapshot_index` caused an immediate-instability regression:
+  - install log emitted,
+  - then process crashed before any per-call hook telemetry.
+- Even a reduced pass-through hook was not producing trustworthy production-path evidence.
+
+Decision:
+- Leave `InstallQueueConsumeHook785430(...)` disabled in normal snapshot-load paths.
+- Keep:
+  - direct exception recoveries,
+  - post-load sanitizers,
+  - automation improvements.
+- Treat the `0x785430` detour as RE-only until it can be proven stable in isolation.

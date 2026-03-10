@@ -24,6 +24,7 @@
 #include <windows.h>
 #include "Game/Playbacks/PlaybackManager.h"
 #include "Game/Playbacks/UnlimitedPlaybackManager.h"
+#include "Game/ReplayTakeover/ReplayTakeoverFeatureFlags.h"
 #include "Overlay/imgui_utils.h"
 #include <cstdlib>
 #include <ctime>
@@ -1865,11 +1866,15 @@ void ScrWindow::DrawReplayTakeover() {
     if (!ImGui::CollapsingHeader("Replay Takeover"))
         return;
 
-    if (ImGui::Button("Unlimited Replay Takeover (BETA)")) {
-        ScrWindow::m_pWindowContainer->GetWindow(WindowType_UnlimitedReplayTakeover)->ToggleOpen();
+#if BBCF_ENABLE_UNLIMITED_REPLAY_TAKEOVER
+    {
+        if (ImGui::Button("Unlimited Replay Takeover (BETA)")) {
+            ScrWindow::m_pWindowContainer->GetWindow(WindowType_UnlimitedReplayTakeover)->ToggleOpen();
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("Capture replay situations into a training library.");
     }
-    ImGui::SameLine();
-    ImGui::TextDisabled("Capture replay situations into a training library.");
+#endif
 
     if (*(bbcf_base_adress + 0x8F7758) == 0) { //checks if it is searching for a ranked match
         if (!g_interfaces.player1.IsCharDataNullPtr() && !g_interfaces.player2.IsCharDataNullPtr()) {

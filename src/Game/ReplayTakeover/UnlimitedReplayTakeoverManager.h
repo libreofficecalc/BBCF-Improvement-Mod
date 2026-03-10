@@ -155,6 +155,8 @@ private:
     bool m_runtimeSlotBackupValid = false;
     bool m_runtimeSlotRestorePending = false;
     bool m_runtimeSlotBackupFacingLeft = false;
+    bool m_pendingPlayRequest = false;
+    size_t m_pendingPlayIndex = 0;
     std::vector<char> m_runtimeSlotBackupFrames;
     unsigned long long m_runtimePlaybackStartedAtMs = 0;
     unsigned long long m_runtimePlaybackNextWatchdogLogAtMs = 0;

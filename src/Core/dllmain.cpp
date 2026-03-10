@@ -7,6 +7,7 @@
 #include "DirectInputWrapper.h"
 #include "Localization.h"
 #include "WineCheck.h"
+#include "Game/ReplayTakeover/ReplayTakeoverFeatureFlags.h"
 
 #include "Hooks/hooks_detours.h"
 #include "Hooks/hooks_battle_input.h"
@@ -142,15 +143,17 @@ DWORD WINAPI BBCF_IM_Start(HMODULE hModule)
 
 	ForceLog("[Init] Configuring logging");
 	SetLoggingEnabled(Settings::settingsIni.generateDebugLogs);
+	const bool urtReTraceEnabled = BBCF_ENABLE_UNLIMITED_REPLAY_TAKEOVER &&
+		Settings::settingsIni.urtReTraceEnabled;
 	ConfigureReTraceLogging(
-		Settings::settingsIni.urtReTraceEnabled,
+		urtReTraceEnabled,
 		Settings::settingsIni.urtReTraceLevel,
 		Settings::settingsIni.urtReTraceMaxFileMB,
 		Settings::settingsIni.urtReTraceMaxBackups);
 	ForceLog("[Init] Set logging OK");
 	ForceLog("[Init] Logging configured (generateDebugLogs=%d, urtReTrace=%d level=%d maxMB=%d backups=%d).\n",
 		Settings::settingsIni.generateDebugLogs,
-		Settings::settingsIni.urtReTraceEnabled,
+		urtReTraceEnabled ? 1 : 0,
 		Settings::settingsIni.urtReTraceLevel,
 		Settings::settingsIni.urtReTraceMaxFileMB,
 		Settings::settingsIni.urtReTraceMaxBackups);

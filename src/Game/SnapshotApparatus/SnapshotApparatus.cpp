@@ -5,6 +5,7 @@
 #include "Core/utils.h"
 #include "Game/gamestates.h"
 #include "Game/EntityData.h"
+#include "Game/ReplayTakeover/ReplayTakeoverFeatureFlags.h"
 #include <ctime>
 #include <cstdlib>
 #include <array>
@@ -28,6 +29,8 @@ thread_local int g_site79eceaLinearStepHitsThisLoad = 0;
 thread_local int g_site784710RecoveriesThisLoad = 0;
 thread_local int g_site7862e0RecoveriesThisLoad = 0;
 thread_local int g_site78631cRecoveriesThisLoad = 0;
+thread_local int g_site78635dRecoveriesThisLoad = 0;
+thread_local int g_site786362RecoveriesThisLoad = 0;
 thread_local int g_site786a1bRecoveriesThisLoad = 0;
 thread_local int g_site787086RecoveriesThisLoad = 0;
 thread_local bool g_hotObjGuardActive = false;
@@ -47,8 +50,32 @@ thread_local DWORD g_qidxGuardAddr = 0;
 thread_local int g_queueRepairEventsThisLoad = 0;
 thread_local int g_queueRepairPatchesThisLoad = 0;
 thread_local bool g_queueRepairEnabledForLoad = false;
+__declspec(naked) void QueueConsumeNoopCallback7854FF() {
+	__asm {
+		ret 8
+	}
+}
+uintptr_t g_queueConsumeNoopVtable[2] = {
+	0,
+	reinterpret_cast<uintptr_t>(&QueueConsumeNoopCallback7854FF)
+};
+bool IsExecutableAddress(uint32_t addr);
+
+bool IsBadQueueVcallDispatch(uint32_t ecx, uint32_t eax) {
+	if (ecx == 0 || eax == 0 || eax < 0x10000u) {
+		return true;
+	}
+	if (IsBadReadPtr(reinterpret_cast<const void*>(eax), 0x8) ||
+		IsBadReadPtr(reinterpret_cast<const void*>(eax + 0x4), 4)) {
+		return true;
+	}
+	const uint32_t callTarget = *reinterpret_cast<const uint32_t*>(eax + 0x4);
+	return !IsExecutableAddress(callTarget);
+}
 PVOID g_hotObjVehHandle = nullptr;
 volatile DWORD g_postLoadCrashRecoverUntil = 0;
+volatile DWORD g_postAbortQueueObserveUntil = 0;
+volatile LONG g_postAbortQueueObserveLogs = 0;
 bool g_site7854PatchInstalled = false;
 unsigned char g_site7854Orig[9] = {};
 void* g_site7854Cave = nullptr;
@@ -86,6 +113,17 @@ void ArmPostLoadCrashRecoveryWindow(const char* tag, DWORD durationMs) {
 		g_hotObjVehHandle);
 }
 
+void ArmPostAbortQueueObserveWindow(const char* tag, DWORD durationMs) {
+	const DWORD until = GetTickCount() + durationMs;
+	InterlockedExchange(reinterpret_cast<volatile LONG*>(&g_postAbortQueueObserveUntil), static_cast<LONG>(until));
+	InterlockedExchange(&g_postAbortQueueObserveLogs, 0);
+	LOG(1,
+		"[Snapshot][ABORTOBS] armed tag=%s durationMs=%u until=%u\n",
+		tag ? tag : "(null)",
+		static_cast<unsigned int>(durationMs),
+		static_cast<unsigned int>(until));
+}
+
 bool IsExecutableAddress(uint32_t addr) {
 	if (addr == 0) {
 		return false;
@@ -120,6 +158,11 @@ bool IsWritableAddress(uint32_t addr) {
 		prot == PAGE_WRITECOPY ||
 		prot == PAGE_EXECUTE_READWRITE ||
 		prot == PAGE_EXECUTE_WRITECOPY);
+}
+
+uintptr_t BbcfAbsFromRva(uint32_t rva) {
+	char* base = GetBbcfBaseAdress();
+	return base ? (reinterpret_cast<uintptr_t>(base) + static_cast<uintptr_t>(rva)) : 0;
 }
 
 void SanitizeGlobalCleanupArrayPostLoad(const char* tag) {
@@ -168,6 +211,95 @@ void SanitizeGlobalCleanupArrayPostLoad(const char* tag) {
 	}
 }
 
+void SanitizeHotObjRecursionGraphPostLoad(const char* tag) {
+	// Post-load stack overflows are occurring in BBCF+0x645730, which recursively walks
+	// two linked lists rooted at hotObjBase+0x714 and +0x720. Break obvious self-recursive
+	// edges and next-pointer cycles before control returns to gameplay.
+	const uint32_t hotObjBase = 0x012F1ED0u;
+	if (IsBadReadPtr(reinterpret_cast<const void*>(hotObjBase), 0x724)) {
+		return;
+	}
+
+	auto sanitizeList = [&](uint32_t rootOff, const char* listTag) {
+		uint32_t* rootPtr = reinterpret_cast<uint32_t*>(hotObjBase + rootOff);
+		if (IsBadReadPtr(rootPtr, 4)) {
+			return;
+		}
+		uint32_t node = *rootPtr;
+		uint32_t prev = 0;
+		int steps = 0;
+		int selfEdgesCleared = 0;
+		int cyclesBroken = 0;
+		std::vector<uint32_t> seen;
+		seen.reserve(64);
+
+		while (node != 0 && steps < 256) {
+			if (IsBadReadPtr(reinterpret_cast<const void*>(node), 0x18)) {
+				LOG(1,
+					"[Snapshot][POST] %s %s stopping at unreadable node=%08X prev=%08X\n",
+					tag ? tag : "(null)",
+					listTag,
+					node,
+					prev);
+				break;
+			}
+			if (std::find(seen.begin(), seen.end(), node) != seen.end()) {
+				if (prev != 0 && !IsBadWritePtr(reinterpret_cast<void*>(prev + 0x4), 4)) {
+					*reinterpret_cast<uint32_t*>(prev + 0x4) = 0;
+					++cyclesBroken;
+					LOG(1,
+						"[Snapshot][POST] %s %s broke next-cycle prev=%08X repeated=%08X\n",
+						tag ? tag : "(null)",
+						listTag,
+						prev,
+						node);
+				}
+				break;
+			}
+			seen.push_back(node);
+
+			const uint32_t childArg = *reinterpret_cast<const uint32_t*>(node + 0x0C);
+			const uint32_t matchArg = *reinterpret_cast<const uint32_t*>(node + 0x14);
+			const uint32_t next = *reinterpret_cast<const uint32_t*>(node + 0x04);
+			if (steps < 12) {
+				LOG(1,
+					"[Snapshot][POST] %s %s node=%08X next=%08X child=%08X match=%08X\n",
+					tag ? tag : "(null)",
+					listTag,
+					node,
+					next,
+					childArg,
+					matchArg);
+			}
+			if (childArg != 0 && childArg == matchArg && !IsBadWritePtr(reinterpret_cast<void*>(node + 0x0C), 4)) {
+				*reinterpret_cast<uint32_t*>(node + 0x0C) = 0;
+				++selfEdgesCleared;
+				LOG(1,
+					"[Snapshot][POST] %s %s cleared self-recursive child node=%08X arg=%08X\n",
+					tag ? tag : "(null)",
+					listTag,
+					node,
+					childArg);
+			}
+			prev = node;
+			node = next;
+			++steps;
+		}
+		if (selfEdgesCleared > 0 || cyclesBroken > 0) {
+			LOG(1,
+				"[Snapshot][POST] %s %s sanitize summary selfEdges=%d cycles=%d steps=%d\n",
+				tag ? tag : "(null)",
+				listTag,
+				selfEdgesCleared,
+				cyclesBroken,
+				steps);
+		}
+	};
+
+	sanitizeList(0x714, "hot714");
+	sanitizeList(0x720, "hot720");
+}
+
 void TryRepairQueueDispatchRows(const char* tag, void* self, int arg0, uintptr_t retAddr, LONG callNo) {
 	if ((!Settings::settingsIni.urtReAllowUnsafeProbeLoad && !g_queueRepairEnabledForLoad) || arg0 != 0 || self == nullptr) {
 		return;
@@ -211,6 +343,17 @@ void TryRepairQueueDispatchRows(const char* tag, void* self, int arg0, uintptr_t
 		}
 		const uint32_t v0 = *reinterpret_cast<const uint32_t*>(obj + 0x0);
 		const uint32_t v8 = *reinterpret_cast<const uint32_t*>(obj + 0x8);
+		if (!IsExecutableAddress(v0) && !IsExecutableAddress(v8)) {
+			*reinterpret_cast<uint32_t*>(obj + 0x0) = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(&g_queueConsumeNoopVtable[0]));
+			++patched;
+			if (firstIdx < 0) {
+				firstIdx = i;
+				firstObj = obj;
+				firstV8 = v8;
+				firstVf4 = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(&QueueConsumeNoopCallback7854FF));
+			}
+			continue;
+		}
 		if (v0 != 0 || v8 == 0 || IsBadReadPtr(reinterpret_cast<const void*>(v8 + 0x4), 4)) {
 			continue;
 		}
@@ -248,6 +391,100 @@ void TryRepairQueueDispatchRows(const char* tag, void* self, int arg0, uintptr_t
 	}
 }
 
+void SanitizeQueueConsumeHeadRecords(const char* tag, void* self, int arg0, LONG callNo) {
+	if (self == nullptr || arg0 != 0 || IsBadReadPtr(self, 0x24)) {
+		return;
+	}
+	uint32_t* q14Ptr = reinterpret_cast<uint32_t*>(reinterpret_cast<uintptr_t>(self) + 0x14);
+	uint32_t* q18Ptr = reinterpret_cast<uint32_t*>(reinterpret_cast<uintptr_t>(self) + 0x18);
+	uint32_t* q20Ptr = reinterpret_cast<uint32_t*>(reinterpret_cast<uintptr_t>(self) + 0x20);
+	if (IsBadReadPtr(q14Ptr, 4) || IsBadReadPtr(q18Ptr, 4) || IsBadReadPtr(q20Ptr, 4) ||
+		IsBadWritePtr(q14Ptr, 4) || IsBadWritePtr(q18Ptr, 4)) {
+		return;
+	}
+	uint32_t q14 = *q14Ptr;
+	uint32_t q18 = *q18Ptr;
+	const uint32_t q20 = *q20Ptr;
+	if (q14 == 0 || q20 == 0 || IsBadReadPtr(reinterpret_cast<const void*>(q20), 64 * 12)) {
+		return;
+	}
+
+	int dropped = 0;
+	int patchedNoop = 0;
+	uint32_t firstBadRec = 0;
+	uint32_t firstBadA = 0;
+	uint32_t firstBadV0 = 0;
+	uint32_t firstBadV8 = 0;
+	uint32_t firstBadC = 0;
+
+	while (q14 > 0) {
+		const uint32_t idx = q18 & 0x3F;
+		const uint32_t rec = q20 + (idx * 12u);
+		if (IsBadReadPtr(reinterpret_cast<const void*>(rec), 12)) {
+			break;
+		}
+		const uint32_t recA = *reinterpret_cast<const uint32_t*>(rec + 0x0);
+		const uint32_t recC = *reinterpret_cast<const uint32_t*>(rec + 0x8);
+		bool bad = false;
+		uint32_t v0 = 0;
+		uint32_t v8 = 0;
+
+		if (recA == 0 || recA < 0x10000u || IsBadReadPtr(reinterpret_cast<const void*>(recA), 12)) {
+			bad = true;
+		} else {
+			v0 = *reinterpret_cast<const uint32_t*>(recA + 0x0);
+			v8 = *reinterpret_cast<const uint32_t*>(recA + 0x8);
+			const bool badV0 = !IsExecutableAddress(v0);
+			const bool fallbackV8 = IsExecutableAddress(v8);
+			bad = badV0 && !fallbackV8;
+		}
+
+		if (!bad) {
+			break;
+		}
+
+		if (dropped == 0) {
+			firstBadRec = rec;
+			firstBadA = recA;
+			firstBadV0 = v0;
+			firstBadV8 = v8;
+			firstBadC = recC;
+		}
+		if (recA >= 0x10000u &&
+			!IsBadReadPtr(reinterpret_cast<const void*>(recA), 12) &&
+			!IsBadWritePtr(reinterpret_cast<void*>(recA), 4)) {
+			*reinterpret_cast<uint32_t*>(recA + 0x0) = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(&g_queueConsumeNoopVtable[0]));
+			++patchedNoop;
+		}
+		if (!IsBadWritePtr(reinterpret_cast<void*>(rec), 12)) {
+			*reinterpret_cast<uint32_t*>(rec + 0x0) = 0;
+			*reinterpret_cast<uint32_t*>(rec + 0x4) = 0;
+			*reinterpret_cast<uint32_t*>(rec + 0x8) = 0;
+		}
+		q18 = (q18 + 1) & 0x3F;
+		--q14;
+		++dropped;
+	}
+
+	if (dropped > 0) {
+		*q14Ptr = q14;
+		*q18Ptr = q18;
+		LOG(1,
+			"[Snapshot][QHEAD] %s call=%ld dropped=%d patchedNoop=%d newQ14=%08X newQ18=%08X firstRec=%08X firstA=%08X firstV0=%08X firstV8=%08X firstC=%08X\n",
+			tag ? tag : "(null)",
+			callNo,
+			dropped,
+			patchedNoop,
+			q14,
+			q18,
+			firstBadRec,
+			firstBadA,
+			firstBadV0,
+			firstBadV8,
+			firstBadC);
+	}
+}
+
 uint32_t FastDigest32Local(const void* data, size_t size) {
 	if (!data || size == 0) {
 		return 0;
@@ -266,8 +503,39 @@ LONG CALLBACK HotObjGuardVeh(EXCEPTION_POINTERS* ep) {
 		return EXCEPTION_CONTINUE_SEARCH;
 	}
 	const DWORD code = ep->ExceptionRecord->ExceptionCode;
+	const DWORD abortUntil = static_cast<DWORD>(InterlockedExchangeAdd(reinterpret_cast<volatile LONG*>(&g_postAbortQueueObserveUntil), 0));
+	if (abortUntil != 0) {
+		const DWORD now = GetTickCount();
+		if (static_cast<LONG>(abortUntil - now) >= 0 && InterlockedIncrement(&g_postAbortQueueObserveLogs) <= 8) {
+			LOG(1,
+				"[Snapshot][ABORTOBS] code=0x%08X eip=%08X esp=%08X ebp=%08X eax=%08X ebx=%08X ecx=%08X edx=%08X esi=%08X edi=%08X\n",
+				static_cast<unsigned int>(code),
+				static_cast<unsigned int>(ep->ContextRecord->Eip),
+				static_cast<unsigned int>(ep->ContextRecord->Esp),
+				static_cast<unsigned int>(ep->ContextRecord->Ebp),
+				static_cast<unsigned int>(ep->ContextRecord->Eax),
+				static_cast<unsigned int>(ep->ContextRecord->Ebx),
+				static_cast<unsigned int>(ep->ContextRecord->Ecx),
+				static_cast<unsigned int>(ep->ContextRecord->Edx),
+				static_cast<unsigned int>(ep->ContextRecord->Esi),
+				static_cast<unsigned int>(ep->ContextRecord->Edi));
+			if (!IsBadReadPtr(reinterpret_cast<const void*>(ep->ContextRecord->Esp), 32)) {
+				const uint32_t* stk = reinterpret_cast<const uint32_t*>(ep->ContextRecord->Esp);
+				LOG(1,
+					"[Snapshot][ABORTOBS] stack [0]=%08X [1]=%08X [2]=%08X [3]=%08X [4]=%08X [5]=%08X [6]=%08X [7]=%08X\n",
+					static_cast<unsigned int>(stk[0]),
+					static_cast<unsigned int>(stk[1]),
+					static_cast<unsigned int>(stk[2]),
+					static_cast<unsigned int>(stk[3]),
+					static_cast<unsigned int>(stk[4]),
+					static_cast<unsigned int>(stk[5]),
+					static_cast<unsigned int>(stk[6]),
+					static_cast<unsigned int>(stk[7]));
+			}
+		}
+	}
 #if defined(_M_IX86)
-	if (code == EXCEPTION_ACCESS_VIOLATION && ep->ContextRecord->Eip == 0x0074CE33u) {
+	if (code == EXCEPTION_ACCESS_VIOLATION && ep->ContextRecord->Eip == BbcfAbsFromRva(0x34CE33u)) {
 		const DWORD until = static_cast<DWORD>(InterlockedExchangeAdd(reinterpret_cast<volatile LONG*>(&g_postLoadCrashRecoverUntil), 0));
 		const DWORD now = GetTickCount();
 		if (until != 0 && static_cast<LONG>(until - now) >= 0) {
@@ -280,7 +548,7 @@ LONG CALLBACK HotObjGuardVeh(EXCEPTION_POINTERS* ep) {
 					(field4 < 0x10000u || IsBadReadPtr(reinterpret_cast<const void*>(field4), 0x10));
 				if (field4Invalid && !IsBadWritePtr(pField4, 4)) {
 					*pField4 = 0;
-					ep->ContextRecord->Eip = 0x0074CE78u;
+					ep->ContextRecord->Eip = static_cast<DWORD>(BbcfAbsFromRva(0x34CE78u));
 					LOG(1,
 						"[Snapshot][RECOVER] SITE_74CE33 recovered edi=%08X vtbl=%08X oldField4=%08X branch=74CE78 now=%u until=%u\n",
 						edi,
@@ -293,13 +561,13 @@ LONG CALLBACK HotObjGuardVeh(EXCEPTION_POINTERS* ep) {
 			}
 		}
 	}
-	if (code == EXCEPTION_ACCESS_VIOLATION && ep->ContextRecord->Eip == 0x004050E6u) {
+	if (code == EXCEPTION_ACCESS_VIOLATION && ep->ContextRecord->Eip == BbcfAbsFromRva(0x0050E6u)) {
 		const DWORD until = static_cast<DWORD>(InterlockedExchangeAdd(reinterpret_cast<volatile LONG*>(&g_postLoadCrashRecoverUntil), 0));
 		const DWORD now = GetTickCount();
 		if (until != 0 && static_cast<LONG>(until - now) >= 0) {
 			const uint32_t esi = ep->ContextRecord->Esi;
 			if (esi == 0) {
-				ep->ContextRecord->Eip = 0x0040513Cu;
+				ep->ContextRecord->Eip = static_cast<DWORD>(BbcfAbsFromRva(0x00513Cu));
 				LOG(1,
 					"[Snapshot][RECOVER] SITE_4050E6 recovered null-esi branch=40513C now=%u until=%u\n",
 					static_cast<unsigned int>(now),
@@ -308,7 +576,7 @@ LONG CALLBACK HotObjGuardVeh(EXCEPTION_POINTERS* ep) {
 			}
 		}
 	}
-	if (code == EXCEPTION_ACCESS_VIOLATION && ep->ContextRecord->Eip == 0x00405DC3u) {
+	if (code == EXCEPTION_ACCESS_VIOLATION && ep->ContextRecord->Eip == BbcfAbsFromRva(0x005DC3u)) {
 		const DWORD until = static_cast<DWORD>(InterlockedExchangeAdd(reinterpret_cast<volatile LONG*>(&g_postLoadCrashRecoverUntil), 0));
 		const DWORD now = GetTickCount();
 		if (until != 0 && static_cast<LONG>(until - now) >= 0) {
@@ -319,7 +587,7 @@ LONG CALLBACK HotObjGuardVeh(EXCEPTION_POINTERS* ep) {
 				// 0x405DC3 is "mov [eax+4],0" inside a doubly-linked-list unlink path.
 				// If next-node pointer is invalid/non-writable, branch to the null-next path
 				// that clears list head/tail safely instead of touching [eax+4].
-				ep->ContextRecord->Eip = 0x00405DD2u;
+				ep->ContextRecord->Eip = static_cast<DWORD>(BbcfAbsFromRva(0x005DD2u));
 				LOG(1,
 					"[Snapshot][RECOVER] SITE_405DC3 recovered bad-next eax=%08X edx=%08X branch=405DD2 now=%u until=%u\n",
 					eax,
@@ -330,7 +598,47 @@ LONG CALLBACK HotObjGuardVeh(EXCEPTION_POINTERS* ep) {
 			}
 		}
 	}
-	if (code == EXCEPTION_ACCESS_VIOLATION && ep->ContextRecord->Eip == 0x0041397Cu) {
+	if (code == EXCEPTION_ACCESS_VIOLATION && ep->ContextRecord->Eip == BbcfAbsFromRva(0x3854FFu)) {
+		const DWORD now = GetTickCount();
+		const uint32_t ecx = ep->ContextRecord->Ecx;
+		const uint32_t eax = ep->ContextRecord->Eax;
+		const bool badVcall = IsBadQueueVcallDispatch(ecx, eax);
+		if (badVcall && g_site7854ffRecoveriesThisLoad < 64) {
+			ep->ContextRecord->Esp += 8;
+			ep->ContextRecord->Eip = static_cast<DWORD>(BbcfAbsFromRva(0x385460u));
+			++g_site7854ffRecoveriesThisLoad;
+			LOG(1,
+				"[Snapshot][RECOVER] SITE_7854FF veh-skip ecx=%08X eax=%08X newEsp=%08X newEip=%08X recoveries=%d now=%u\n",
+				ecx,
+				eax,
+				static_cast<unsigned int>(ep->ContextRecord->Esp),
+				static_cast<unsigned int>(ep->ContextRecord->Eip),
+				g_site7854ffRecoveriesThisLoad,
+				static_cast<unsigned int>(now));
+			return EXCEPTION_CONTINUE_EXECUTION;
+		}
+	}
+	if (code == EXCEPTION_ACCESS_VIOLATION && ep->ContextRecord->Eip == BbcfAbsFromRva(0x385566u)) {
+		const DWORD now = GetTickCount();
+		const uint32_t ecx = ep->ContextRecord->Ecx;
+		const uint32_t eax = ep->ContextRecord->Eax;
+		const bool badVcall = IsBadQueueVcallDispatch(ecx, eax);
+		if (badVcall && g_site785566RecoveriesThisLoad < 64) {
+			ep->ContextRecord->Esp += 4;
+			ep->ContextRecord->Eip = static_cast<DWORD>(BbcfAbsFromRva(0x385569u));
+			++g_site785566RecoveriesThisLoad;
+			LOG(1,
+				"[Snapshot][RECOVER] SITE_785566 veh-skip ecx=%08X eax=%08X newEsp=%08X newEip=%08X recoveries=%d now=%u\n",
+				ecx,
+				eax,
+				static_cast<unsigned int>(ep->ContextRecord->Esp),
+				static_cast<unsigned int>(ep->ContextRecord->Eip),
+				g_site785566RecoveriesThisLoad,
+				static_cast<unsigned int>(now));
+			return EXCEPTION_CONTINUE_EXECUTION;
+		}
+	}
+	if (code == EXCEPTION_ACCESS_VIOLATION && ep->ContextRecord->Eip == BbcfAbsFromRva(0x01397Cu)) {
 		const DWORD until = static_cast<DWORD>(InterlockedExchangeAdd(reinterpret_cast<volatile LONG*>(&g_postLoadCrashRecoverUntil), 0));
 		const DWORD now = GetTickCount();
 		if (until != 0 && static_cast<LONG>(until - now) >= 0) {
@@ -339,7 +647,7 @@ LONG CALLBACK HotObjGuardVeh(EXCEPTION_POINTERS* ep) {
 			if (eax == 0) {
 				// 0x413970 path already verifies object ptr (ECX) but may still have null vtable.
 				// Skip the virtual call and continue with cleanup.
-				ep->ContextRecord->Eip = 0x0041397Fu;
+				ep->ContextRecord->Eip = static_cast<DWORD>(BbcfAbsFromRva(0x01397Fu));
 				LOG(1,
 					"[Snapshot][RECOVER] SITE_41397C recovered null-vtbl eax=%08X ecx=%08X branch=41397F now=%u until=%u\n",
 					eax,
@@ -350,7 +658,7 @@ LONG CALLBACK HotObjGuardVeh(EXCEPTION_POINTERS* ep) {
 			}
 		}
 	}
-	if (code == EXCEPTION_ACCESS_VIOLATION && ep->ContextRecord->Eip == 0x00405E98u) {
+	if (code == EXCEPTION_ACCESS_VIOLATION && ep->ContextRecord->Eip == BbcfAbsFromRva(0x005E98u)) {
 		const DWORD until = static_cast<DWORD>(InterlockedExchangeAdd(reinterpret_cast<volatile LONG*>(&g_postLoadCrashRecoverUntil), 0));
 		const DWORD now = GetTickCount();
 		if (until != 0 && static_cast<LONG>(until - now) >= 0) {
@@ -361,7 +669,7 @@ LONG CALLBACK HotObjGuardVeh(EXCEPTION_POINTERS* ep) {
 			if (badWriteTarget) {
 				// 0x405E98 attempts to clear prev-link of an incoming node.
 				// If that node pointer is invalid/non-writable, fall back to null-node path.
-				ep->ContextRecord->Eip = 0x00405EA7u;
+				ep->ContextRecord->Eip = static_cast<DWORD>(BbcfAbsFromRva(0x005EA7u));
 				LOG(1,
 					"[Snapshot][RECOVER] SITE_405E98 recovered bad-node eax=%08X ecx=%08X esi=%08X branch=405EA7 now=%u until=%u\n",
 					eax,
@@ -373,7 +681,7 @@ LONG CALLBACK HotObjGuardVeh(EXCEPTION_POINTERS* ep) {
 			}
 		}
 	}
-	if (code == EXCEPTION_ACCESS_VIOLATION && ep->ContextRecord->Eip == 0x00405EBDu) {
+	if (code == EXCEPTION_ACCESS_VIOLATION && ep->ContextRecord->Eip == BbcfAbsFromRva(0x005EBDu)) {
 		const DWORD until = static_cast<DWORD>(InterlockedExchangeAdd(reinterpret_cast<volatile LONG*>(&g_postLoadCrashRecoverUntil), 0));
 		const DWORD now = GetTickCount();
 		if (until != 0 && static_cast<LONG>(until - now) >= 0) {
@@ -383,7 +691,7 @@ LONG CALLBACK HotObjGuardVeh(EXCEPTION_POINTERS* ep) {
 			const bool badWriteTarget = (edx == 0) || !IsWritableAddress(edx + 0x4);
 			if (badWriteTarget) {
 				// 0x405EBD clears [edx+4] in tail cleanup; skip write if node is invalid.
-				ep->ContextRecord->Eip = 0x00405EC4u;
+				ep->ContextRecord->Eip = static_cast<DWORD>(BbcfAbsFromRva(0x005EC4u));
 				LOG(1,
 					"[Snapshot][RECOVER] SITE_405EBD recovered bad-tail edx=%08X ecx=%08X esi=%08X branch=405EC4 now=%u until=%u\n",
 					edx,
@@ -844,64 +1152,18 @@ void StopHotObjTrace(const char* tag) {
 uintptr_t __fastcall HookQueueConsume785430(void* self, void*, int arg0) {
 	const LONG n = InterlockedIncrement(&g_queueConsumeHookCalls);
 	const uintptr_t retAddr = reinterpret_cast<uintptr_t>(_ReturnAddress());
-	TryRepairQueueDispatchRows("Hook785430/pre_orig", self, arg0, retAddr, n);
-	if ((arg0 == 0 && n <= 48) || (n % 128) == 0) {
-		uint32_t q14 = 0;
-		uint32_t q18 = 0;
-		uint32_t q20 = 0;
-		uint32_t recA = 0;
-		uint32_t recC = 0;
-		uint32_t recA0 = 0;
-		uint32_t recA8 = 0;
-		int dQ14 = 0;
-		int dQ18 = 0;
-		const DWORD tid = GetCurrentThreadId();
-		if (self != nullptr && !IsBadReadPtr(self, 0x24)) {
-			q14 = *reinterpret_cast<uint32_t*>(reinterpret_cast<uintptr_t>(self) + 0x14);
-			q18 = *reinterpret_cast<uint32_t*>(reinterpret_cast<uintptr_t>(self) + 0x18);
-			q20 = *reinterpret_cast<uint32_t*>(reinterpret_cast<uintptr_t>(self) + 0x20);
-			if (arg0 == 0) {
-				const LONG prevInit = InterlockedCompareExchange(&g_mainLanePrevInit, 0, 0);
-				if (prevInit != 0) {
-					const LONG prevQ14 = InterlockedCompareExchange(&g_mainLanePrevQ14, 0, 0);
-					const LONG prevQ18 = InterlockedCompareExchange(&g_mainLanePrevQ18, 0, 0);
-					dQ14 = static_cast<int>(q14) - static_cast<int>(prevQ14);
-					dQ18 = static_cast<int>(q18) - static_cast<int>(prevQ18);
-				}
-				InterlockedExchange(&g_mainLanePrevQ14, static_cast<LONG>(q14));
-				InterlockedExchange(&g_mainLanePrevQ18, static_cast<LONG>(q18));
-				InterlockedExchange(&g_mainLanePrevInit, 1);
-			}
-			if (q20 != 0) {
-				const uint32_t idx = q18 & 0x3F;
-				const uint32_t rec = q20 + (idx * 12);
-				if (!IsBadReadPtr(reinterpret_cast<const void*>(rec), 12)) {
-					recA = *reinterpret_cast<const uint32_t*>(rec + 0x0);
-					recC = *reinterpret_cast<const uint32_t*>(rec + 0x8);
-					if (recA != 0 && !IsBadReadPtr(reinterpret_cast<const void*>(recA), 12)) {
-						recA0 = *reinterpret_cast<const uint32_t*>(recA + 0x0);
-						recA8 = *reinterpret_cast<const uint32_t*>(recA + 0x8);
-					}
-				}
-			}
-		}
+	if (n <= 16 || (n % 128) == 0) {
 		LOG(1,
-			"[Snapshot][HOOK785430] call=%ld tid=%u self=%p arg0=%d ret=%08X q14=%08X q18=%08X dQ14=%d dQ18=%d idx=%u q20=%08X recA=%08X recC=%08X recA0=%08X recA8=%08X\n",
+			"[Snapshot][HOOK785430] pass-through call=%ld tid=%u self=%p arg0=%d ret=%08X\n",
 			n,
-			static_cast<unsigned int>(tid),
+			static_cast<unsigned int>(GetCurrentThreadId()),
 			self,
 			arg0,
-			static_cast<unsigned int>(retAddr),
-			q14,
-			q18,
-			dQ14,
-			dQ18,
-			static_cast<unsigned int>(q18 & 0x3F),
-			q20,
-			recA,
-			recC,
-			recA0,
-			recA8);
+			static_cast<unsigned int>(retAddr));
+	}
+	if (g_queueRepairEnabledForLoad && arg0 == 0 && self != nullptr) {
+		SanitizeQueueConsumeHeadRecords("load_snapshot_index/load_game_state", self, arg0, n);
+		TryRepairQueueDispatchRows("load_snapshot_index/load_game_state", self, arg0, retAddr, n);
 	}
 	return g_origQueueConsume785430 ? g_origQueueConsume785430(self, arg0) : 0;
 }
@@ -910,7 +1172,7 @@ bool InstallQueueConsumeHook785430(const char* tag) {
 	if (g_queueConsumeHookInstalled) {
 		return true;
 	}
-	PBYTE target = reinterpret_cast<PBYTE>(0x00785430u);
+	PBYTE target = reinterpret_cast<PBYTE>(BbcfAbsFromRva(0x385430u));
 	PBYTE detour = reinterpret_cast<PBYTE>(HookQueueConsume785430);
 	g_origQueueConsume785430 = reinterpret_cast<BbcfQueueConsumeFn>(DetourFunction(target, detour));
 	if (!g_origQueueConsume785430) {
@@ -948,8 +1210,8 @@ bool InstallSite7854FallbackPatch(const char* tag) {
 	if (g_site7854PatchInstalled) {
 		return true;
 	}
-	const uintptr_t site = 0x007854F9u;
-	const uintptr_t retAddr = 0x00785502u;
+	const uintptr_t site = BbcfAbsFromRva(0x3854F9u);
+	const uintptr_t retAddr = BbcfAbsFromRva(0x385502u);
 	if (!g_site7854Cave) {
 		g_site7854Cave = VirtualAlloc(nullptr, 0x1000, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
 		if (!g_site7854Cave) {
@@ -1007,12 +1269,85 @@ void RemoveSite7854FallbackPatch(const char* tag) {
 	if (!g_site7854PatchInstalled) {
 		return;
 	}
-	const uintptr_t site = 0x007854F9u;
+	const uintptr_t site = BbcfAbsFromRva(0x3854F9u);
 	WriteToProtectedMemory(site, reinterpret_cast<char*>(g_site7854Orig), sizeof(g_site7854Orig));
 	g_site7854PatchInstalled = false;
 	LOG(1, "[Snapshot][PATCH7854] %s removed site=%08X\n",
 		tag ? tag : "(null)",
 		static_cast<unsigned int>(site));
+}
+
+void FlushQueueConsumeWindow(const char* tag, uint32_t queueObj, const char* reason) {
+	if (queueObj == 0 || IsBadReadPtr(reinterpret_cast<const void*>(queueObj), 0x24)) {
+		return;
+	}
+	uint32_t* q14Ptr = reinterpret_cast<uint32_t*>(queueObj + 0x14);
+	uint32_t* q18Ptr = reinterpret_cast<uint32_t*>(queueObj + 0x18);
+	uint32_t* q20Ptr = reinterpret_cast<uint32_t*>(queueObj + 0x20);
+	if (IsBadReadPtr(q14Ptr, 4) || IsBadReadPtr(q18Ptr, 4) || IsBadReadPtr(q20Ptr, 4) ||
+		IsBadWritePtr(q14Ptr, 4) || IsBadWritePtr(q18Ptr, 4)) {
+		return;
+	}
+	const uint32_t oldQ14 = *q14Ptr;
+	const uint32_t oldQ18 = *q18Ptr;
+	const uint32_t q20 = *q20Ptr;
+	uint32_t cleared = 0;
+	if (q20 != 0 && !IsBadReadPtr(reinterpret_cast<const void*>(q20), 64 * 12) &&
+		!IsBadWritePtr(reinterpret_cast<void*>(q20), 64 * 12)) {
+		const uint32_t limit = (oldQ14 > 64u) ? 64u : oldQ14;
+		for (uint32_t n = 0; n < limit; ++n) {
+			const uint32_t idx = (oldQ18 + n) & 0x3Fu;
+			const uint32_t rec = q20 + (idx * 12u);
+			*reinterpret_cast<uint32_t*>(rec + 0x0) = 0;
+			*reinterpret_cast<uint32_t*>(rec + 0x4) = 0;
+			*reinterpret_cast<uint32_t*>(rec + 0x8) = 0;
+			++cleared;
+		}
+	}
+	*q14Ptr = 0;
+	*q18Ptr = (oldQ18 + ((oldQ14 > 64u) ? 64u : oldQ14)) & 0x3Fu;
+	LOG(1,
+		"[Snapshot][QFLUSH] %s reason=%s queue=%08X oldQ14=%08X oldQ18=%08X newQ14=%08X newQ18=%08X q20=%08X cleared=%u\n",
+		tag ? tag : "(null)",
+		reason ? reason : "(null)",
+		queueObj,
+		oldQ14,
+		oldQ18,
+		*q14Ptr,
+		*q18Ptr,
+		q20,
+		static_cast<unsigned int>(cleared));
+}
+
+bool AbortQueueConsume785430(const char* tag, CONTEXT* c, uint32_t queueObj, const char* reason, uint32_t stackBytesToDrop, uint32_t continueRva) {
+	if (c == nullptr) {
+		return false;
+	}
+	const uintptr_t exitEip = BbcfAbsFromRva(continueRva);
+	if (exitEip == 0) {
+		return false;
+	}
+	FlushQueueConsumeWindow(tag, queueObj, reason);
+	// In the null-target path, EBX tracks "remaining callbacks + 1" at the point where
+	// control returns to 0x785502. After fully draining q14, rejoin with EBX=1 so the
+	// loop can perform one final decrement/test and exit cleanly instead of observing an
+	// impossible zero-predecrement state.
+	c->Ebx = (continueRva == 0x385502u) ? 1u : 0u;
+	ArmPostAbortQueueObserveWindow(tag, 4000);
+	c->Esp += stackBytesToDrop;
+	c->Eip = static_cast<DWORD>(exitEip);
+	LOG(1,
+		"[Snapshot][EXC] %s SITE_7854FF ABORT_QUEUE reason=%s queue=%08X drop=%u newEsp=%08X newEip=%08X newEbx=%08X recoveries=%d nullRecoveries=%d\n",
+		tag ? tag : "(null)",
+		reason ? reason : "(null)",
+		queueObj,
+		static_cast<unsigned int>(stackBytesToDrop),
+		static_cast<unsigned int>(c->Esp),
+		static_cast<unsigned int>(c->Eip),
+		static_cast<unsigned int>(c->Ebx),
+		g_site7854ffRecoveriesThisLoad,
+		g_site785566RecoveriesThisLoad);
+	return true;
 }
 
 void LogMemRegionInfo(const char* tag, const void* ptr) {
@@ -1157,7 +1492,53 @@ int SnapshotExceptionFilter(const char* tag, EXCEPTION_POINTERS* ep) {
 				}
 			}
 		}
-		if (c->Eip == 0x007854FFu) {
+		if (c->Eip == 0 && !IsBadReadPtr(reinterpret_cast<const void*>(c->Esp), 12)) {
+			const uint32_t* stk = reinterpret_cast<const uint32_t*>(c->Esp);
+			const uint32_t ret = stk[0];
+			uint32_t queueObj = c->Edi;
+			if ((queueObj == 0 || IsBadReadPtr(reinterpret_cast<const void*>(queueObj), 0x24)) &&
+				!IsBadReadPtr(reinterpret_cast<const void*>(c->Esp), 24)) {
+				const uint32_t candidate = stk[4];
+				if (candidate != 0 && !IsBadReadPtr(reinterpret_cast<const void*>(candidate), 0x24)) {
+					queueObj = candidate;
+				}
+			}
+			if (ret == static_cast<uint32_t>(BbcfAbsFromRva(0x385502u)) &&
+				g_site7854ffRecoveriesThisLoad < 32) {
+				if (g_site7854ffRecoveriesThisLoad >= 8 &&
+					AbortQueueConsume785430(tag, ep->ContextRecord, queueObj, "nulltarget-threshold", 12, 0x385502u)) {
+					return EXCEPTION_CONTINUE_EXECUTION;
+				}
+				// A corrupted queue callback reached the call target stage and resolved to null.
+				// Emulate a stdcall-style completion of the 0x7854FF vcall:
+				// return to 0x785502 and discard return address + 2 stack args.
+				ep->ContextRecord->Esp += 12;
+				ep->ContextRecord->Eip = ret;
+				++g_site7854ffRecoveriesThisLoad;
+				LOG(1,
+					"[Snapshot][EXC] %s SITE_7854FF NULLTARGET recover ret=%08X newEsp=%08X recoveries=%d\n",
+					tag ? tag : "(null)",
+					ret,
+					static_cast<unsigned int>(ep->ContextRecord->Esp),
+					g_site7854ffRecoveriesThisLoad);
+				return EXCEPTION_CONTINUE_EXECUTION;
+			}
+			if (ret == static_cast<uint32_t>(BbcfAbsFromRva(0x385569u)) &&
+				g_site785566RecoveriesThisLoad < 32) {
+				// Same pattern for the one-arg callback loop at 0x785566.
+				ep->ContextRecord->Esp += 8;
+				ep->ContextRecord->Eip = ret;
+				++g_site785566RecoveriesThisLoad;
+				LOG(1,
+					"[Snapshot][EXC] %s SITE_785566 NULLTARGET recover ret=%08X newEsp=%08X recoveries=%d\n",
+					tag ? tag : "(null)",
+					ret,
+					static_cast<unsigned int>(ep->ContextRecord->Esp),
+					g_site785566RecoveriesThisLoad);
+				return EXCEPTION_CONTINUE_EXECUTION;
+			}
+		}
+		if (c->Eip == BbcfAbsFromRva(0x3854FFu)) {
 			const uint32_t edi = c->Edi;
 			const uint32_t ecx = c->Ecx;
 			const uint32_t ebp = c->Ebp;
@@ -1243,6 +1624,27 @@ int SnapshotExceptionFilter(const char* tag, EXCEPTION_POINTERS* ep) {
 			}
 			LOG(1, "[Snapshot][EXC] %s SITE_7854FF eax_obj=%08X\n", tag, eax);
 			LogObjectProbe("SITE_7854FF/eax", eax);
+			if (g_site7854ffRecoveriesThisLoad >= 6 &&
+				AbortQueueConsume785430(tag, ep->ContextRecord, edi, "generic-threshold", 8, 0x385460u)) {
+				return EXCEPTION_CONTINUE_EXECUTION;
+			}
+			if (g_site7854ffRecoveriesThisLoad < 16 &&
+				IsBadQueueVcallDispatch(ecx, eax)) {
+				// 0x7854F9 loads record->vtbl into EAX, then pushes two args before the vcall at 0x7854FF.
+				// If the record/vtable is corrupted, drop both pending args and resume the queue loop.
+				ep->ContextRecord->Esp += 8;
+				ep->ContextRecord->Eip = static_cast<DWORD>(BbcfAbsFromRva(0x385460u));
+				++g_site7854ffRecoveriesThisLoad;
+				LOG(1,
+					"[Snapshot][EXC] %s SITE_7854FF RECOVERY generic-skip ecx=%08X eax=%08X newEsp=%08X newEip=%08X recoveries=%d\n",
+					tag,
+					ecx,
+					eax,
+					static_cast<unsigned int>(ep->ContextRecord->Esp),
+					static_cast<unsigned int>(ep->ContextRecord->Eip),
+					g_site7854ffRecoveriesThisLoad);
+				return EXCEPTION_CONTINUE_EXECUTION;
+			}
 				if (Settings::settingsIni.urtReAllowUnsafeProbeLoad &&
 					eax == 0 &&
 					recR0 == 0 &&
@@ -1265,7 +1667,7 @@ int SnapshotExceptionFilter(const char* tag, EXCEPTION_POINTERS* ep) {
 					}
 				}
 			}
-			if (c->Eip == 0x00785566u) {
+			if (c->Eip == BbcfAbsFromRva(0x385566u)) {
 				const uint32_t ecx = c->Ecx;
 				const uint32_t esi = c->Esi;
 				const uint32_t eax = c->Eax;
@@ -1294,11 +1696,11 @@ int SnapshotExceptionFilter(const char* tag, EXCEPTION_POINTERS* ep) {
 			}
 			if ((Settings::settingsIni.urtReAllowUnsafeProbeLoad || g_queueRepairEnabledForLoad) &&
 				g_site785566RecoveriesThisLoad < 16 &&
-				(ecx == 0 || eax == 0 || IsBadReadPtr(reinterpret_cast<const void*>(eax + 0x4), 4))) {
+				IsBadQueueVcallDispatch(ecx, eax)) {
 				// 0x785562 pushes one stack arg (0) before virtual dispatch at 0x785566.
 				// If record/vtable is null, skip this callback entry and drop that pending arg.
 				ep->ContextRecord->Esp += 4;
-				ep->ContextRecord->Eip = 0x00785569u;
+				ep->ContextRecord->Eip = static_cast<DWORD>(BbcfAbsFromRva(0x385569u));
 				++g_site785566RecoveriesThisLoad;
 				LOG(1,
 					"[Snapshot][EXC] %s SITE_785566 RECOVERY null-vcall skip ecx=%08X eax=%08X newEsp=%08X recoveries=%d\n",
@@ -1332,7 +1734,7 @@ int SnapshotExceptionFilter(const char* tag, EXCEPTION_POINTERS* ep) {
 					}
 				}
 			}
-			if (c->Eip == 0x00784710u) {
+			if (c->Eip == BbcfAbsFromRva(0x384710u)) {
 				const uint32_t ecx = c->Ecx;
 				const uint32_t eax = c->Eax;
 				const uint32_t edi = c->Edi;
@@ -1362,7 +1764,7 @@ int SnapshotExceptionFilter(const char* tag, EXCEPTION_POINTERS* ep) {
 					return EXCEPTION_CONTINUE_EXECUTION;
 				}
 			}
-			if (c->Eip == 0x007862E0u) {
+			if (c->Eip == BbcfAbsFromRva(0x3862E0u)) {
 				const uint32_t eax = c->Eax;
 				const uint32_t ebx = c->Ebx;
 				const uint32_t ecx = c->Ecx;
@@ -1379,7 +1781,7 @@ int SnapshotExceptionFilter(const char* tag, EXCEPTION_POINTERS* ep) {
 					g_site7862e0RecoveriesThisLoad < 8) {
 					// 0x7862E0 is in a copy helper loop. If pointer math wraps into invalid memory,
 					// bail to function epilogue and let caller continue instead of hard-faulting.
-					ep->ContextRecord->Eip = 0x0078639Cu;
+					ep->ContextRecord->Eip = static_cast<DWORD>(BbcfAbsFromRva(0x38639Cu));
 					++g_site7862e0RecoveriesThisLoad;
 					LOG(1,
 						"[Snapshot][EXC] %s SITE_7862E0 RECOVERY bail-copy newEip=%08X recoveries=%d\n",
@@ -1389,7 +1791,7 @@ int SnapshotExceptionFilter(const char* tag, EXCEPTION_POINTERS* ep) {
 					return EXCEPTION_CONTINUE_EXECUTION;
 				}
 			}
-			if (c->Eip == 0x0078631Cu) {
+			if (c->Eip == BbcfAbsFromRva(0x38631Cu)) {
 				const uint32_t esi = c->Esi;
 				const uint32_t edi = c->Edi;
 				const uint32_t ecx = c->Ecx;
@@ -1403,7 +1805,7 @@ int SnapshotExceptionFilter(const char* tag, EXCEPTION_POINTERS* ep) {
 				if ((Settings::settingsIni.urtReAllowUnsafeProbeLoad || g_queueRepairEnabledForLoad) &&
 					g_site78631cRecoveriesThisLoad < 32) {
 					// 0x78631C is the aligned SSE copy loop. If source is invalid, skip to tail-copy decision.
-					ep->ContextRecord->Eip = 0x0078639Cu;
+					ep->ContextRecord->Eip = static_cast<DWORD>(BbcfAbsFromRva(0x38639Cu));
 					++g_site78631cRecoveriesThisLoad;
 					LOG(1,
 						"[Snapshot][EXC] %s SITE_78631C RECOVERY bail-sse-copy newEip=%08X recoveries=%d\n",
@@ -1413,7 +1815,59 @@ int SnapshotExceptionFilter(const char* tag, EXCEPTION_POINTERS* ep) {
 					return EXCEPTION_CONTINUE_EXECUTION;
 				}
 			}
-			if (c->Eip == 0x00786A1Bu) {
+			if (c->Eip == BbcfAbsFromRva(0x38635Du)) {
+				const uint32_t esi = c->Esi;
+				const uint32_t edi = c->Edi;
+				const uint32_t ecx = c->Ecx;
+				LOG(1,
+					"[Snapshot][EXC] %s SITE_78635D esi=%08X edi=%08X ecx=%08X recoveries=%d\n",
+					tag,
+					esi,
+					edi,
+					ecx,
+					g_site78635dRecoveriesThisLoad);
+				if ((Settings::settingsIni.urtReAllowUnsafeProbeLoad || g_queueRepairEnabledForLoad) &&
+					g_site78635dRecoveriesThisLoad < 32) {
+					// 0x78635D is in the aligned SSE store loop. If destination page is invalid,
+					// bail to function epilogue instead of faulting mid-copy.
+					ep->ContextRecord->Eip = static_cast<DWORD>(BbcfAbsFromRva(0x38639Cu));
+					++g_site78635dRecoveriesThisLoad;
+					LOG(1,
+						"[Snapshot][EXC] %s SITE_78635D RECOVERY bail-sse-store newEip=%08X recoveries=%d\n",
+						tag,
+						static_cast<unsigned int>(ep->ContextRecord->Eip),
+						g_site78635dRecoveriesThisLoad);
+					return EXCEPTION_CONTINUE_EXECUTION;
+				}
+			}
+			if (c->Eip == BbcfAbsFromRva(0x386362u)) {
+				const uint32_t esi = c->Esi;
+				const uint32_t edi = c->Edi;
+				const uint32_t eax = c->Eax;
+				const uint32_t ecx = c->Ecx;
+				LOG(1,
+					"[Snapshot][EXC] %s SITE_786362 esi=%08X edi=%08X eax=%08X ecx=%08X recoveries=%d\n",
+					tag,
+					esi,
+					edi,
+					eax,
+					ecx,
+					g_site786362RecoveriesThisLoad);
+				if ((Settings::settingsIni.urtReAllowUnsafeProbeLoad || g_queueRepairEnabledForLoad) &&
+					g_site786362RecoveriesThisLoad < 32) {
+					// Adjacent store in the same aligned-copy family as 0x78635D.
+					// If the loop advances into an invalid destination row, bail to the helper epilogue.
+					ep->ContextRecord->Eip = static_cast<DWORD>(BbcfAbsFromRva(0x38639Cu));
+					++g_site786362RecoveriesThisLoad;
+					LOG(1,
+						"[Snapshot][EXC] %s SITE_786362 RECOVERY bail-sse-store-tail newEip=%08X recoveries=%d\n",
+						tag,
+						static_cast<unsigned int>(ep->ContextRecord->Eip),
+						g_site786362RecoveriesThisLoad);
+					return EXCEPTION_CONTINUE_EXECUTION;
+				}
+			}
+			if (c->Eip == BbcfAbsFromRva(0x386A1Bu)) {
 				const uint32_t esi = c->Esi;
 				const uint32_t edi = c->Edi;
 				LOG(1,
@@ -1426,7 +1880,7 @@ int SnapshotExceptionFilter(const char* tag, EXCEPTION_POINTERS* ep) {
 					g_site786a1bRecoveriesThisLoad < 32) {
 					// 0x786A1B updates queue cursor metadata using ESI-derived row; if row pointer is invalid,
 					// skip cursor update and continue function epilogue.
-					ep->ContextRecord->Eip = 0x00786A21u;
+					ep->ContextRecord->Eip = static_cast<DWORD>(BbcfAbsFromRva(0x386A21u));
 					++g_site786a1bRecoveriesThisLoad;
 					LOG(1,
 						"[Snapshot][EXC] %s SITE_786A1B RECOVERY skip-row-update newEip=%08X recoveries=%d\n",
@@ -1436,7 +1890,7 @@ int SnapshotExceptionFilter(const char* tag, EXCEPTION_POINTERS* ep) {
 					return EXCEPTION_CONTINUE_EXECUTION;
 				}
 			}
-			if (c->Eip == 0x00787086u) {
+			if (c->Eip == BbcfAbsFromRva(0x387086u)) {
 				const uint32_t eax = c->Eax;
 				const uint32_t ebx = c->Ebx;
 				const uint32_t ecx = c->Ecx;
@@ -1455,7 +1909,7 @@ int SnapshotExceptionFilter(const char* tag, EXCEPTION_POINTERS* ep) {
 					g_site787086RecoveriesThisLoad < 32) {
 					// 0x787086 clears per-row flags in a ring block. If row base is invalid, skip this clear loop
 					// iteration and continue from row-advance path.
-					ep->ContextRecord->Eip = 0x00787093u;
+					ep->ContextRecord->Eip = static_cast<DWORD>(BbcfAbsFromRva(0x387093u));
 					++g_site787086RecoveriesThisLoad;
 					LOG(1,
 						"[Snapshot][EXC] %s SITE_787086 RECOVERY skip-row-clear newEip=%08X recoveries=%d\n",
@@ -1465,7 +1919,7 @@ int SnapshotExceptionFilter(const char* tag, EXCEPTION_POINTERS* ep) {
 					return EXCEPTION_CONTINUE_EXECUTION;
 				}
 			}
-			if (c->Eip == 0x0079ECEAu) {
+			if (c->Eip == BbcfAbsFromRva(0x39ECEAu)) {
 				const uint32_t esi = c->Esi;
 				const uint32_t edi = c->Edi;
 				const uint32_t ecx = c->Ecx;
@@ -1498,7 +1952,7 @@ int SnapshotExceptionFilter(const char* tag, EXCEPTION_POINTERS* ep) {
 					g_site79eceaRecoveriesThisLoad < 512 &&
 					(badSrc || badDst || ecx == 0)) {
 					// 0x79ECEA is rep movs. If source/dest is null, skip this memcpy block.
-					ep->ContextRecord->Eip = 0x0079ECECu;
+					ep->ContextRecord->Eip = static_cast<DWORD>(BbcfAbsFromRva(0x39ECECu));
 					++g_site79eceaRecoveriesThisLoad;
 					if (g_site79eceaRecoveriesThisLoad < 16 || (g_site79eceaRecoveriesThisLoad % 64) == 0) {
 						LOG(1,
@@ -2006,50 +2460,69 @@ bool SnapshotApparatus::load_snapshot_sized(const void* buf, size_t buf_size)
 
 	//unsigned char* buf = (unsigned char*)snap_manager->_saved_states_related_struct[(savegame_count % 10) - 1]._ptr_buf_saved_frame;
 	bool load_ok = false;
-	g_site7854ffRecoveriesThisLoad = 0;
-	g_site785566RecoveriesThisLoad = 0;
-	g_site79eceaRecoveriesThisLoad = 0;
-	g_site79eceaFirstEsiThisLoad = 0;
-	g_site79eceaLastEsiThisLoad = 0;
-	g_site79eceaLastEcxThisLoad = 0;
-	g_site79eceaLinearStepHitsThisLoad = 0;
-	g_site784710RecoveriesThisLoad = 0;
-	g_site7862e0RecoveriesThisLoad = 0;
-	g_site78631cRecoveriesThisLoad = 0;
-	g_site786a1bRecoveriesThisLoad = 0;
-	g_site787086RecoveriesThisLoad = 0;
-	g_queueRepairEventsThisLoad = 0;
-	g_queueRepairPatchesThisLoad = 0;
-	const bool prevQueueRepairEnabled = g_queueRepairEnabledForLoad;
-	g_queueRepairEnabledForLoad = true;
-	const bool queueHookInstalledForCall = InstallQueueConsumeHook785430("load_snapshot_sized/load_game_state");
-	__try {
-		this->callbacks_ptr->load_game_state(load_buf);
-		load_ok = true;
+	if (BBCF_ENABLE_UNLIMITED_REPLAY_TAKEOVER) {
+		g_site7854ffRecoveriesThisLoad = 0;
+		g_site785566RecoveriesThisLoad = 0;
+		g_site79eceaRecoveriesThisLoad = 0;
+		g_site79eceaFirstEsiThisLoad = 0;
+		g_site79eceaLastEsiThisLoad = 0;
+		g_site79eceaLastEcxThisLoad = 0;
+		g_site79eceaLinearStepHitsThisLoad = 0;
+		g_site784710RecoveriesThisLoad = 0;
+		g_site7862e0RecoveriesThisLoad = 0;
+		g_site78631cRecoveriesThisLoad = 0;
+		g_site78635dRecoveriesThisLoad = 0;
+		g_site786362RecoveriesThisLoad = 0;
+		g_site786a1bRecoveriesThisLoad = 0;
+		g_site787086RecoveriesThisLoad = 0;
+		g_queueRepairEventsThisLoad = 0;
+		g_queueRepairPatchesThisLoad = 0;
+		const bool prevQueueRepairEnabled = g_queueRepairEnabledForLoad;
+		g_queueRepairEnabledForLoad = true;
+		const bool queueHookInstalledForCall = false;
+		__try {
+			this->callbacks_ptr->load_game_state(load_buf);
+			load_ok = true;
+		}
+		__except (SnapshotExceptionFilter("load_snapshot_sized/load_game_state", GetExceptionInformation())) {
+			load_ok = false;
+		}
+		if (queueHookInstalledForCall) {
+			RemoveQueueConsumeHook785430("load_snapshot_sized/load_game_state");
+		}
+		g_queueRepairEnabledForLoad = prevQueueRepairEnabled;
+		LOG(1,
+			"[Snapshot][QREPAIR] load_snapshot_sized/post_call summary events=%d patched=%d recoveries7854=%d recoveries785566=%d recoveries79ecea=%d recoveries784710=%d recoveries7862e0=%d recoveries78631c=%d recoveries78635d=%d recoveries786362=%d recoveries786a1b=%d recoveries787086=%d success=%d\n",
+			g_queueRepairEventsThisLoad,
+			g_queueRepairPatchesThisLoad,
+			g_site7854ffRecoveriesThisLoad,
+			g_site785566RecoveriesThisLoad,
+			g_site79eceaRecoveriesThisLoad,
+			g_site784710RecoveriesThisLoad,
+			g_site7862e0RecoveriesThisLoad,
+			g_site78631cRecoveriesThisLoad,
+			g_site78635dRecoveriesThisLoad,
+			g_site786362RecoveriesThisLoad,
+			g_site786a1bRecoveriesThisLoad,
+			g_site787086RecoveriesThisLoad,
+			load_ok ? 1 : 0);
+		if (load_ok) {
+			SanitizeGlobalCleanupArrayPostLoad("load_snapshot_sized");
+			SanitizeHotObjRecursionGraphPostLoad("load_snapshot_sized");
+			ArmPostLoadCrashRecoveryWindow("load_snapshot_sized", 12000);
+		}
+		else {
+			ArmPostLoadCrashRecoveryWindow("load_snapshot_sized/fail", 4000);
+		}
 	}
-	__except (SnapshotExceptionFilter("load_snapshot_sized/load_game_state", GetExceptionInformation())) {
-		load_ok = false;
-	}
-	if (queueHookInstalledForCall) {
-		RemoveQueueConsumeHook785430("load_snapshot_sized/load_game_state");
-	}
-	g_queueRepairEnabledForLoad = prevQueueRepairEnabled;
-	LOG(1,
-		"[Snapshot][QREPAIR] load_snapshot_sized/post_call summary events=%d patched=%d recoveries7854=%d recoveries785566=%d recoveries79ecea=%d recoveries784710=%d recoveries7862e0=%d recoveries78631c=%d recoveries786a1b=%d recoveries787086=%d success=%d\n",
-		g_queueRepairEventsThisLoad,
-		g_queueRepairPatchesThisLoad,
-		g_site7854ffRecoveriesThisLoad,
-		g_site785566RecoveriesThisLoad,
-		g_site79eceaRecoveriesThisLoad,
-		g_site784710RecoveriesThisLoad,
-		g_site7862e0RecoveriesThisLoad,
-		g_site78631cRecoveriesThisLoad,
-		g_site786a1bRecoveriesThisLoad,
-		g_site787086RecoveriesThisLoad,
-		load_ok ? 1 : 0);
-	if (load_ok) {
-		SanitizeGlobalCleanupArrayPostLoad("load_snapshot_sized");
-		ArmPostLoadCrashRecoveryWindow("load_snapshot_sized", 12000);
+	else {
+		__try {
+			this->callbacks_ptr->load_game_state(load_buf);
+			load_ok = true;
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER) {
+			load_ok = false;
+		}
 	}
 
 	///CLEANUP
@@ -2179,84 +2652,112 @@ bool SnapshotApparatus::load_snapshot_index(int index) {
 
 	//unsigned char* buf = (unsigned char*)snap_manager->_saved_states_related_struct[(savegame_count % 10) - 1]._ptr_buf_saved_frame;
 	bool load_ok = false;
-	LogRuntimeQueueProbe("load_snapshot_index/pre_call");
-	TryBootstrapQueueDispatchRecords("load_snapshot_index/pre_call");
-	DWORD runtimeQ20 = 0;
-	const uintptr_t queueBase = 0x00A12718u;
-	if (!IsBadReadPtr(reinterpret_cast<const void*>(queueBase), 0x24)) {
-		runtimeQ20 = *reinterpret_cast<const DWORD*>(queueBase + 0x20);
+	if (BBCF_ENABLE_UNLIMITED_REPLAY_TAKEOVER) {
+		LogRuntimeQueueProbe("load_snapshot_index/pre_call");
+		TryBootstrapQueueDispatchRecords("load_snapshot_index/pre_call");
+		DWORD runtimeQ20 = 0;
+		const uintptr_t queueBase = 0x00A12718u;
+		if (!IsBadReadPtr(reinterpret_cast<const void*>(queueBase), 0x24)) {
+			runtimeQ20 = *reinterpret_cast<const DWORD*>(queueBase + 0x20);
+		}
+		const bool queueRuntimeReady = (runtimeQ20 != 0);
+		if (!queueRuntimeReady) {
+			LOG(1,
+				"[Snapshot][QPROBE] load_snapshot_index/pre_call queue runtime unavailable; skipping queue hook/guards q20=%08X\n",
+				runtimeQ20);
+		}
+		bool queueHookInstalledForCall = false;
+		if (queueRuntimeReady) {
+			StartHotObjTrace("load_snapshot_index/pre_call");
+			BeginHotObjGuard("load_snapshot_index/pre_call", 0x012F1ED4u);
+			BeginQueueGuard("load_snapshot_index/pre_call", runtimeQ20);
+		}
+		g_lastLoadIndexDestBuf = reinterpret_cast<const unsigned char*>(dest_buf);
+		g_lastLoadIndexDestSize = slot_size;
+		g_site7854ffRecoveriesThisLoad = 0;
+		g_site785566RecoveriesThisLoad = 0;
+		g_site79eceaRecoveriesThisLoad = 0;
+		g_site79eceaFirstEsiThisLoad = 0;
+		g_site79eceaLastEsiThisLoad = 0;
+		g_site79eceaLastEcxThisLoad = 0;
+		g_site79eceaLinearStepHitsThisLoad = 0;
+		g_site784710RecoveriesThisLoad = 0;
+		g_site7862e0RecoveriesThisLoad = 0;
+		g_site78631cRecoveriesThisLoad = 0;
+		g_site78635dRecoveriesThisLoad = 0;
+		g_site786362RecoveriesThisLoad = 0;
+		g_site786a1bRecoveriesThisLoad = 0;
+		g_site787086RecoveriesThisLoad = 0;
+		g_queueRepairEventsThisLoad = 0;
+		g_queueRepairPatchesThisLoad = 0;
+		g_queueRepairEnabledForLoad = true;
+		queueHookInstalledForCall = InstallQueueConsumeHook785430("load_snapshot_index/load_game_state");
+		__try {
+			this->callbacks_ptr->load_game_state(dest_buf);
+			load_ok = true;
+		}
+		__except (SnapshotExceptionFilter("load_snapshot_index/load_game_state", GetExceptionInformation())) {
+			load_ok = false;
+		}
+		if (queueRuntimeReady) {
+			LogRuntimeQueueProbe("load_snapshot_index/post_call");
+			EndQueueGuard("load_snapshot_index/post_call");
+			EndHotObjGuard("load_snapshot_index/post_call");
+			StopHotObjTrace("load_snapshot_index/post_call");
+		}
+		if (queueHookInstalledForCall) {
+			RemoveQueueConsumeHook785430("load_snapshot_index/load_game_state");
+		}
+		g_lastLoadIndexDestBuf = nullptr;
+		g_lastLoadIndexDestSize = 0;
+		g_queueRepairEnabledForLoad = false;
+		LOG(1,
+			"[Snapshot][QREPAIR] load_snapshot_index/post_call summary events=%d patched=%d recoveries7854=%d recoveries785566=%d recoveries79ecea=%d recoveries784710=%d recoveries7862e0=%d recoveries78631c=%d recoveries78635d=%d recoveries786362=%d recoveries786a1b=%d recoveries787086=%d success=%d\n",
+			g_queueRepairEventsThisLoad,
+			g_queueRepairPatchesThisLoad,
+			g_site7854ffRecoveriesThisLoad,
+			g_site785566RecoveriesThisLoad,
+			g_site79eceaRecoveriesThisLoad,
+			g_site784710RecoveriesThisLoad,
+			g_site7862e0RecoveriesThisLoad,
+			g_site78631cRecoveriesThisLoad,
+			g_site78635dRecoveriesThisLoad,
+			g_site786362RecoveriesThisLoad,
+			g_site786a1bRecoveriesThisLoad,
+			g_site787086RecoveriesThisLoad,
+			load_ok ? 1 : 0);
+		if (load_ok) {
+			SanitizeGlobalCleanupArrayPostLoad("load_snapshot_index");
+			SanitizeHotObjRecursionGraphPostLoad("load_snapshot_index");
+			ArmPostLoadCrashRecoveryWindow("load_snapshot_index", 12000);
+		}
+		else {
+			ArmPostLoadCrashRecoveryWindow("load_snapshot_index/fail", 4000);
+		}
+		g_queueRepairEventsThisLoad = 0;
+		g_queueRepairPatchesThisLoad = 0;
+		g_site7854ffRecoveriesThisLoad = 0;
+		g_site785566RecoveriesThisLoad = 0;
+		g_site79eceaRecoveriesThisLoad = 0;
+		g_site79eceaFirstEsiThisLoad = 0;
+		g_site79eceaLastEsiThisLoad = 0;
+		g_site79eceaLastEcxThisLoad = 0;
 	}
-	bool queueHookInstalledForCall = InstallQueueConsumeHook785430("load_snapshot_index/load_game_state");
-	// Disabled: first cave/trampoline attempt destabilized execution (NX fault).
-	// Keep path off while we gather more call-chain evidence.
-	// Disabled: assist-thread mutation during loader call is unstable in current form.
-	StartHotObjTrace("load_snapshot_index/pre_call");
-	BeginHotObjGuard("load_snapshot_index/pre_call", 0x012F1ED4u);
-	BeginQueueGuard("load_snapshot_index/pre_call", runtimeQ20);
-	// Keep q18-page guard disabled in this branch; it guards a broad global page and adds instability/noise.
-	g_lastLoadIndexDestBuf = reinterpret_cast<const unsigned char*>(dest_buf);
-	g_lastLoadIndexDestSize = slot_size;
-	g_site7854ffRecoveriesThisLoad = 0;
-	g_site785566RecoveriesThisLoad = 0;
-	g_site79eceaRecoveriesThisLoad = 0;
-	g_site79eceaFirstEsiThisLoad = 0;
-	g_site79eceaLastEsiThisLoad = 0;
-	g_site79eceaLastEcxThisLoad = 0;
+	else {
+		__try {
+			this->callbacks_ptr->load_game_state(dest_buf);
+			load_ok = true;
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER) {
+			load_ok = false;
+		}
+	}
 	g_site79eceaLinearStepHitsThisLoad = 0;
 	g_site784710RecoveriesThisLoad = 0;
 	g_site7862e0RecoveriesThisLoad = 0;
 	g_site78631cRecoveriesThisLoad = 0;
-	g_site786a1bRecoveriesThisLoad = 0;
-	g_site787086RecoveriesThisLoad = 0;
-	g_queueRepairEventsThisLoad = 0;
-	g_queueRepairPatchesThisLoad = 0;
-	g_queueRepairEnabledForLoad = true;
-	__try {
-		this->callbacks_ptr->load_game_state(dest_buf);
-		load_ok = true;
-	}
-	__except (SnapshotExceptionFilter("load_snapshot_index/load_game_state", GetExceptionInformation())) {
-		load_ok = false;
-	}
-	LogRuntimeQueueProbe("load_snapshot_index/post_call");
-	EndQueueGuard("load_snapshot_index/post_call");
-	EndHotObjGuard("load_snapshot_index/post_call");
-	StopHotObjTrace("load_snapshot_index/post_call");
-	if (queueHookInstalledForCall) {
-		RemoveQueueConsumeHook785430("load_snapshot_index/load_game_state");
-	}
-	g_lastLoadIndexDestBuf = nullptr;
-	g_lastLoadIndexDestSize = 0;
-	g_queueRepairEnabledForLoad = false;
-	LOG(1,
-		"[Snapshot][QREPAIR] load_snapshot_index/post_call summary events=%d patched=%d recoveries7854=%d recoveries785566=%d recoveries79ecea=%d recoveries784710=%d recoveries7862e0=%d recoveries78631c=%d recoveries786a1b=%d recoveries787086=%d success=%d\n",
-		g_queueRepairEventsThisLoad,
-		g_queueRepairPatchesThisLoad,
-		g_site7854ffRecoveriesThisLoad,
-		g_site785566RecoveriesThisLoad,
-		g_site79eceaRecoveriesThisLoad,
-		g_site784710RecoveriesThisLoad,
-		g_site7862e0RecoveriesThisLoad,
-		g_site78631cRecoveriesThisLoad,
-		g_site786a1bRecoveriesThisLoad,
-		g_site787086RecoveriesThisLoad,
-		load_ok ? 1 : 0);
-	if (load_ok) {
-		SanitizeGlobalCleanupArrayPostLoad("load_snapshot_index");
-		ArmPostLoadCrashRecoveryWindow("load_snapshot_index", 12000);
-	}
-	g_queueRepairEventsThisLoad = 0;
-	g_queueRepairPatchesThisLoad = 0;
-	g_site7854ffRecoveriesThisLoad = 0;
-	g_site785566RecoveriesThisLoad = 0;
-	g_site79eceaRecoveriesThisLoad = 0;
-	g_site79eceaFirstEsiThisLoad = 0;
-	g_site79eceaLastEsiThisLoad = 0;
-	g_site79eceaLastEcxThisLoad = 0;
-	g_site79eceaLinearStepHitsThisLoad = 0;
-	g_site784710RecoveriesThisLoad = 0;
-	g_site7862e0RecoveriesThisLoad = 0;
-	g_site78631cRecoveriesThisLoad = 0;
+	g_site78635dRecoveriesThisLoad = 0;
+	g_site786362RecoveriesThisLoad = 0;
 	g_site786a1bRecoveriesThisLoad = 0;
 	g_site787086RecoveriesThisLoad = 0;
 

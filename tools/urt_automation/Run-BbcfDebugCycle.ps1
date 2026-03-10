@@ -3,7 +3,8 @@ param(
     [string]$AhkScript = "",
     [string]$AhkExe = "",
     [int]$TimeoutSec = 900,
-    [int]$PostAhkMonitorSec = 45,
+    [int]$PostAhkMonitorSec = 120,
+    [int]$PostExitGraceSec = 12,
     [int]$UnresponsiveKillSec = 12,
     [int]$LogStallKillSec = 25
 )
@@ -13,7 +14,7 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 if ([string]::IsNullOrWhiteSpace($AhkScript)) {
-    $AhkScript = Join-Path $repoRoot "BBCF-Automatic-Debugger.ahk"
+    $AhkScript = Join-Path $repoRoot "tools\urt_automation\BBCF-Automatic-Debugger.ahk"
 }
 
 if (-not (Test-Path -LiteralPath $AhkScript)) {
@@ -144,28 +145,6 @@ if ($launchViaAssociation) {
     $ahkProc = Start-Process -FilePath $resolvedAhkExe -ArgumentList @($AhkScript) -PassThru
 }
 
-$completed = $ahkProc.WaitForExit($TimeoutSec * 1000)
-if (-not $completed) {
-    Write-Host "DEBUG_CYCLE_STATUS: TIMEOUT"
-    Write-Host "DEBUG_CYCLE_DETAIL: AHK did not exit within $TimeoutSec seconds"
-    try {
-        Stop-Process -Id $ahkProc.Id -Force -ErrorAction SilentlyContinue
-    } catch {
-    }
-    exit 10
-}
-
-$ahkExit = $ahkProc.ExitCode
-Write-Host "DEBUG_CYCLE: ahk_exit_code=$ahkExit"
-
-if ($ahkExit -eq 0) {
-    Write-Host "DEBUG_CYCLE: entering_post_ahk_monitor=true"
-} else {
-    Write-Host "DEBUG_CYCLE_STATUS: AHK_FAILED"
-    Write-Host "DEBUG_CYCLE_DETAIL: AHK exit code was $ahkExit"
-    exit 11
-}
-
 function Resolve-DebugPaths {
     $candidates = @(
         "D:\SteamLibrary\steamapps\common\BlazBlue Centralfiction\BBCF_IM",
@@ -185,6 +164,61 @@ function Resolve-DebugPaths {
         Debug = ""
         CrashRoot = ""
     }
+}
+
+$paths = Resolve-DebugPaths
+$debugPath = $paths.Debug
+$cycleDeadline = (Get-Date).AddSeconds([Math]::Max(30, $TimeoutSec))
+$ahkExit = $null
+$sawBbcfSpawnedDuringAhk = $false
+while ((Get-Date) -lt $cycleDeadline) {
+    if ($ahkProc.HasExited) {
+        $ahkExit = $ahkProc.ExitCode
+        break
+    }
+
+    $bbcfAlive = Get-Process -Name "BBCF" -ErrorAction SilentlyContinue
+    if ($bbcfAlive) {
+        $sawBbcfSpawnedDuringAhk = $true
+    }
+    if (-not $bbcfAlive -and $sawBbcfSpawnedDuringAhk -and $debugPath -and (Test-Path -LiteralPath $debugPath)) {
+        $tail = Get-Content -LiteralPath $debugPath -Tail 4000 -ErrorAction SilentlyContinue
+        $tailText = ($tail -join "`n")
+        $sawRecordingSavedEarly = $tailText -match "\[URT\] StopRecordingAndSave success"
+        $sawPlayAttemptEarly = $tailText -match "\[URT\] PlayEntryByIndex idx="
+        $sawCrashEarly = ($tailText -match "\[Crash\] UnhandledExFilter invoked\." -or $tailText -match "\[Crash\] WriteCrashBundle invoked")
+        Write-Host ("DEBUG_CYCLE: ahk_force_stop_on_bbcf_exit recording_saved={0} play_attempt={1} crash_log={2}" -f `
+            ([int]$sawRecordingSavedEarly), ([int]$sawPlayAttemptEarly), ([int]$sawCrashEarly))
+        try {
+            Stop-Process -Id $ahkProc.Id -Force -ErrorAction SilentlyContinue
+        } catch {
+        }
+        Start-Sleep -Milliseconds 200
+        $ahkExit = 0
+        break
+    }
+
+    Start-Sleep -Milliseconds 500
+}
+
+if ($null -eq $ahkExit) {
+    Write-Host "DEBUG_CYCLE_STATUS: TIMEOUT"
+    Write-Host "DEBUG_CYCLE_DETAIL: AHK did not exit within $TimeoutSec seconds"
+    try {
+        Stop-Process -Id $ahkProc.Id -Force -ErrorAction SilentlyContinue
+    } catch {
+    }
+    exit 10
+}
+
+Write-Host "DEBUG_CYCLE: ahk_exit_code=$ahkExit"
+
+if ($ahkExit -eq 0) {
+    Write-Host "DEBUG_CYCLE: entering_post_ahk_monitor=true"
+} else {
+    Write-Host "DEBUG_CYCLE_STATUS: AHK_FAILED"
+    Write-Host "DEBUG_CYCLE_DETAIL: AHK exit code was $ahkExit"
+    exit 11
 }
 
 function Capture-BbcfHangSnapshot {
@@ -270,8 +304,6 @@ function Close-BbcfProcess {
     }
 }
 
-$paths = Resolve-DebugPaths
-$debugPath = $paths.Debug
 $crashRoot = $paths.CrashRoot
 $monitorStartUtc = $cycleStartUtc
 $monitorDeadline = (Get-Date).AddSeconds([Math]::Max(5, $PostAhkMonitorSec))
@@ -292,9 +324,10 @@ $sawEntryStart = $false
 $detectedCrashFolder = $null
 $monitorResult = "timeout"
 $unresponsiveStreakSec = 0
+$bbcfExitObservedUtc = $null
 
 while ((Get-Date) -lt $monitorDeadline) {
-    $tail = Get-DebugTail -Path $debugPath -Lines 220
+    $tail = Get-DebugTail -Path $debugPath -Lines 4000
     $tailText = ($tail -join "`n")
     if ($tailText -match "\[URT\] Snapshot load succeeded") { $sawSnapshotLoaded = $true }
     if ($tailText -match "\[URT\] Playback started on runtime slot") { $sawPlaybackStarted = $true }
@@ -330,8 +363,20 @@ while ((Get-Date) -lt $monitorDeadline) {
 
     $bbcfAlive = Get-Process -Name "BBCF" -ErrorAction SilentlyContinue
     if (-not $bbcfAlive) {
-        $monitorResult = "bbcf_exited"
-        break
+        if (-not $bbcfExitObservedUtc) {
+            $bbcfExitObservedUtc = [datetime]::UtcNow
+            Write-Host ("DEBUG_CYCLE: bbcf_exit_observed play_attempt={0} entry_start={1} snapshot_loaded={2}" -f `
+                ([int]$sawPlayAttempt), ([int]$sawEntryStart), ([int]$sawSnapshotLoaded))
+        }
+        $exitAgeSec = [int]([datetime]::UtcNow - $bbcfExitObservedUtc).TotalSeconds
+        if ($exitAgeSec -ge [Math]::Max(3, $PostExitGraceSec)) {
+            $monitorResult = "bbcf_exited"
+            break
+        }
+        Start-Sleep -Seconds 1
+        continue
+    } else {
+        $bbcfExitObservedUtc = $null
     }
 
     $bbcfPrimary = $bbcfAlive | Select-Object -First 1
@@ -368,8 +413,22 @@ if ($lastDebugWriteUtc) {
 if ($monitorResult -eq "bbcf_exited" -and $sawSnapshotLoaded -and $sawPlaybackStarted -and -not $sawSanityCancel -and -not $sawCrashLog) {
     $monitorResult = "probable_crash_after_playback_start"
 }
+if ($monitorResult -eq "bbcf_exited" -and ($sawPlayAttempt -or $sawEntryStart) -and -not $sawSnapshotLoaded -and -not $sawCrashLog) {
+    $monitorResult = "probable_crash_after_play_attempt"
+}
 if ($monitorResult -eq "bbcf_exited" -and $sawRecordingSaved -and -not $sawPlayAttempt -and -not $sawEntryStart) {
     $monitorResult = "automation_desync_no_play_attempt"
+}
+if ($monitorResult -eq "bbcf_exited" -and -not $sawRecordingSaved -and -not $sawPlayAttempt -and -not $sawEntryStart) {
+    $monitorResult = "automation_desync_no_urt_flow"
+}
+if (($monitorResult -eq "timeout" -or $monitorResult -eq "bbcf_not_responding" -or $monitorResult -eq "bbcf_log_stall_timeout") -and
+    ($sawPlayAttempt -or $sawEntryStart) -and -not $sawSnapshotLoaded) {
+    $monitorResult = "hang_after_play_attempt"
+}
+if (($monitorResult -eq "timeout" -or $monitorResult -eq "bbcf_not_responding" -or $monitorResult -eq "bbcf_log_stall_timeout") -and
+    $sawSnapshotLoaded -and $sawSetupDelayArmed -and -not $sawPlaybackStarted) {
+    $monitorResult = "hang_after_snapshot_load"
 }
 if ($sawSnapshotLoaded -and $sawSetupDelayArmed -and $sawSetupDelayExpired -and $sawPlaybackStarted -and -not $sawCrashLog -and -not $sawSanityCancel) {
     $monitorResult = "full_chain_success"
@@ -396,5 +455,13 @@ if ($monitorResult -eq "timeout" -or $monitorResult -eq "bbcf_not_responding" -o
 }
 
 Close-BbcfProcess
+if ($monitorResult -eq "full_chain_success") {
+    Write-Host "DEBUG_CYCLE_STATUS: DONE"
+    exit 0
+}
+if ($monitorResult -eq "automation_desync_no_play_attempt" -or $monitorResult -eq "automation_desync_no_urt_flow") {
+    Write-Host "DEBUG_CYCLE_STATUS: AUTOMATION_DESYNC"
+    exit 15
+}
 Write-Host "DEBUG_CYCLE_STATUS: DONE"
 exit 0

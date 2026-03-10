@@ -904,6 +904,17 @@ void UnlimitedReplayTakeoverManager::Tick() {
         return;
     }
 
+    if (m_pendingPlayRequest) {
+        const size_t pendingIndex = m_pendingPlayIndex;
+        LOG(1, "[URT] Tick consuming pending play request idx=%u\n", static_cast<unsigned int>(pendingIndex));
+        m_pendingPlayRequest = false;
+        if (!StartEntryByIndex(pendingIndex)) {
+            LOG(1, "[URT] Tick pending play request failed idx=%u\n", static_cast<unsigned int>(pendingIndex));
+            PushToast("Queued replay takeover failed to start.");
+        }
+        return;
+    }
+
     if (IsKeyPressedEdge(m_cancelKeyCode)) {
         CancelActiveTakeover();
     }
@@ -1135,10 +1146,16 @@ bool UnlimitedReplayTakeoverManager::TriggerNow() {
 bool UnlimitedReplayTakeoverManager::PlayEntryByIndex(size_t idx) {
     LOG(1, "[URT] PlayEntryByIndex idx=%u\n", static_cast<unsigned int>(idx));
     LogUrtContext("PlayEntryByIndex");
-    if (!IsTrainingMatchActive()) {
-        LOG(1, "[URT] PlayEntryByIndex aborted: training not active\n");
-        PushToast("Replay takeover library only runs in training mode.");
+    if (idx >= m_entries.size()) {
+        LOG(1, "[URT] PlayEntryByIndex aborted: invalid index\n");
         return false;
+    }
+    if (!IsTrainingMatchActive()) {
+        m_pendingPlayRequest = true;
+        m_pendingPlayIndex = idx;
+        LOG(1, "[URT] PlayEntryByIndex queued until training becomes active idx=%u\n", static_cast<unsigned int>(idx));
+        PushToast("Replay takeover queued; waiting for training runtime.");
+        return true;
     }
     m_continuousSessionActive = false;
     return StartEntryByIndex(idx);
@@ -1785,6 +1802,28 @@ bool UnlimitedReplayTakeoverManager::StartEntryByIndex(size_t idx) {
         "[URT] Snapshot manager compare: recorded=0x%08X current=0x%08X\n",
         static_cast<unsigned int>(it->second.snapshotManagerAddress),
         static_cast<unsigned int>(currentSnapshotManagerAddr));
+    auto abortSnapshotStart = [&](const char* reason) {
+        LOG(1,
+            "[URT] Snapshot start cleanup reason='%s' setupPending=%d runtimePending=%d lastStarted=%d backupValid=%d\n",
+            reason ? reason : "(null)",
+            m_setupPending ? 1 : 0,
+            m_runtimeSlotRestorePending ? 1 : 0,
+            m_lastPlaybackStartedByManager ? 1 : 0,
+            m_runtimeSlotBackupValid ? 1 : 0);
+        m_continuousSessionActive = false;
+        m_setupPending = false;
+        if (m_playbackManager.playback_control_p) {
+            m_playbackManager.set_playback_control(0);
+        }
+        if (m_runtimeSlotRestorePending && m_runtimeSlotBackupValid) {
+            RestoreRuntimeSlotNow();
+        }
+        m_runtimeSlotRestorePending = false;
+        m_lastPlaybackStartedByManager = false;
+        m_runtimePlaybackStartedAtMs = 0;
+        m_runtimePlaybackNextWatchdogLogAtMs = 0;
+        std::memset(&m_runtimeLoadSnapshot, 0, sizeof(m_runtimeLoadSnapshot));
+    };
 
     bool snapshotLoaded = false;
     if (it->second.hasLiveSnapshotIndex && it->second.liveSnapshotIndex >= 0) {
@@ -1822,6 +1861,7 @@ bool UnlimitedReplayTakeoverManager::StartEntryByIndex(size_t idx) {
             LOG(1, "[URT] Seeded-slot load used mismatch probe; accepting and continuing with post-load sanity validation\n");
         }
         if (!snapshotLoaded && hardIncompatible) {
+            abortSnapshotStart("hard incompatible snapshot sizes");
             PushToast("Snapshot incompatible with current training context (size mismatch).");
             LOG(1, "[URT] Aborting snapshot restore due to hard incompatibility\n");
             return false;
@@ -1843,6 +1883,7 @@ bool UnlimitedReplayTakeoverManager::StartEntryByIndex(size_t idx) {
     }
 
     if (!snapshotLoaded) {
+        abortSnapshotStart("snapshot load failed");
         PushToast("Snapshot load failed; playback cancelled.");
         LOG(1, "[URT] Snapshot load failed; playback cancelled (live+serialized paths)\n");
         return false;
@@ -1862,6 +1903,7 @@ bool UnlimitedReplayTakeoverManager::StartEntryByIndex(size_t idx) {
             if (ValidatePostSnapshotStateForPlayback(&postLoadSanityFailure)) {
                 LOG(1, "[URT] Snapshot post-load repair succeeded; proceeding\n");
             } else {
+                abortSnapshotStart("post-load repair failed");
                 LOG(1,
                     "[URT] Snapshot post-load repair failed; playback cancelled. reason='%s'\n",
                     postLoadSanityFailure.c_str());
@@ -1869,6 +1911,7 @@ bool UnlimitedReplayTakeoverManager::StartEntryByIndex(size_t idx) {
                 return false;
             }
         } else {
+            abortSnapshotStart("post-load invalid and not repaired");
             LOG(1, "[URT] Snapshot post-load state not repaired; playback cancelled.\n");
             PushToast("Snapshot loaded but state was invalid; playback cancelled.");
             return false;

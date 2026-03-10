@@ -1,0 +1,3 @@
+#pragma once
+
+#define BBCF_ENABLE_UNLIMITED_REPLAY_TAKEOVER 0

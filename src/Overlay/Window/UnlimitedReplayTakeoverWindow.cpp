@@ -1,16 +1,47 @@
 #include "UnlimitedReplayTakeoverWindow.h"
 
 #include "Game/ReplayTakeover/UnlimitedReplayTakeoverManager.h"
+#include "Core/logger.h"
 #include "Core/interfaces.h"
 #include "Game/gamestates.h"
 
 #include <Windows.h>
 #include <commdlg.h>
+#include <cfloat>
 #include <cstdio>
 #include <cstring>
 #include <string>
 
 namespace {
+void LogUrtWindowContext(const char* tag, int selectedEntry, size_t entryCount, bool inTrainingMatch, bool inReplayMatch) {
+    const int gameMode = (g_gameVals.pGameMode != nullptr) ? *g_gameVals.pGameMode : -1;
+    const int gameState = (g_gameVals.pGameState != nullptr) ? *g_gameVals.pGameState : -1;
+    const int matchState = (g_gameVals.pMatchState != nullptr) ? *g_gameVals.pMatchState : -1;
+    const int frameCount = (g_gameVals.pFrameCount != nullptr) ? *g_gameVals.pFrameCount : -1;
+    const int matchTimer = (g_gameVals.pMatchTimer != nullptr) ? *g_gameVals.pMatchTimer : -1;
+    const int round = static_cast<int>(*(GetBbcfBaseAdress() + 0x11C034C));
+    const ImGuiIO& io = ImGui::GetIO();
+    LOG(1,
+        "[URT][UICTX] %s selected=%d entries=%u gm=%d gs=%d ms=%d frame=%d timer=%d round=%d inTraining=%d inReplay=%d p1=%p p2=%p wantMouse=%d mouseValid=%d mouse=(%.1f,%.1f)\n",
+        tag ? tag : "(null)",
+        selectedEntry,
+        static_cast<unsigned int>(entryCount),
+        gameMode,
+        gameState,
+        matchState,
+        frameCount,
+        matchTimer,
+        round,
+        inTrainingMatch ? 1 : 0,
+        inReplayMatch ? 1 : 0,
+        g_interfaces.player1.GetData(),
+        g_interfaces.player2.GetData(),
+        io.WantCaptureMouse ? 1 : 0,
+        io.MousePos.x > -FLT_MAX ? 1 : 0,
+        io.MousePos.x,
+        io.MousePos.y);
+}
+
 bool OpenFileDialogForFilter(const char* title, const char* filter, char* outPath, int outPathSize) {
     OPENFILENAMEA ofn;
     std::memset(&ofn, 0, sizeof(ofn));
@@ -102,6 +133,7 @@ void UnlimitedReplayTakeoverWindow::Draw() {
     mgr.PruneExpiredToasts();
 
     static int selectedEntry = -1;
+    static int drawCounter = 0;
     static int renameEntryIdx = -1;
     static char renameBuf[128] = "";
     static char recordName[128] = "";
@@ -109,6 +141,8 @@ void UnlimitedReplayTakeoverWindow::Draw() {
     static bool mapTriggerWaitingRelease = false;
     static bool mapCancelMode = false;
     static bool mapCancelWaitingRelease = false;
+    static size_t lastEntryCount = 0;
+    static bool debugAutoPlayArmed = false;
 
     ImGui::Text("Unlimited Replay Takeover (BETA)");
     ImGui::SameLine();
@@ -124,6 +158,7 @@ void UnlimitedReplayTakeoverWindow::Draw() {
         (*g_gameVals.pGameState == GameState_InMatch) &&
         !g_interfaces.player1.IsCharDataNullPtr() &&
         !g_interfaces.player2.IsCharDataNullPtr();
+    ++drawCounter;
 
     if (inReplayMatch) {
         ImGui::TextDisabled("Mode: Replay capture available.");
@@ -199,6 +234,63 @@ void UnlimitedReplayTakeoverWindow::Draw() {
 
     ImGui::BeginChild("urt_library", ImVec2(0, 0), true);
     const auto& entries = mgr.GetEntries();
+    if (entries.empty()) {
+        selectedEntry = -1;
+        debugAutoPlayArmed = false;
+    } else if (selectedEntry < 0 || selectedEntry >= static_cast<int>(entries.size())) {
+        selectedEntry = static_cast<int>(entries.size()) - 1;
+        debugAutoPlayArmed = Settings::settingsIni.urtReTraceEnabled;
+        LOG(1,
+            "[URT][UI] Auto-selected entry idx=%d total=%u previousCount=%u debugAutoPlay=%d\n",
+            selectedEntry,
+            static_cast<unsigned int>(entries.size()),
+            static_cast<unsigned int>(lastEntryCount),
+            debugAutoPlayArmed ? 1 : 0);
+    } else if (entries.size() != lastEntryCount) {
+        if (Settings::settingsIni.urtReTraceEnabled && selectedEntry >= 0) {
+            debugAutoPlayArmed = true;
+        }
+        LOG(1,
+            "[URT][UI] Entry count changed selected=%d total=%u previousCount=%u debugAutoPlay=%d\n",
+            selectedEntry,
+            static_cast<unsigned int>(entries.size()),
+            static_cast<unsigned int>(lastEntryCount),
+            debugAutoPlayArmed ? 1 : 0);
+    }
+    lastEntryCount = entries.size();
+    if ((drawCounter % 60) == 0) {
+        LOG(1,
+            "[URT][UI] Draw state selected=%d entries=%u inTraining=%d inReplay=%d mouse=(%.1f,%.1f) mouseDown=%d mouseClicked=%d\n",
+            selectedEntry,
+            static_cast<unsigned int>(entries.size()),
+            inTrainingMatch ? 1 : 0,
+            inReplayMatch ? 1 : 0,
+            ImGui::GetMousePos().x,
+            ImGui::GetMousePos().y,
+            ImGui::IsMouseDown(0) ? 1 : 0,
+            ImGui::IsMouseClicked(0) ? 1 : 0);
+        LogUrtWindowContext("periodic-draw", selectedEntry, entries.size(), inTrainingMatch, inReplayMatch);
+    }
+    if (ImGui::IsMouseClicked(0)) {
+        LOG(1,
+            "[URT][UI] MouseClicked selected=%d entries=%u inTraining=%d inReplay=%d mouse=(%.1f,%.1f)\n",
+            selectedEntry,
+            static_cast<unsigned int>(entries.size()),
+            inTrainingMatch ? 1 : 0,
+            inReplayMatch ? 1 : 0,
+            ImGui::GetMousePos().x,
+            ImGui::GetMousePos().y);
+        LogUrtWindowContext("mouse-clicked", selectedEntry, entries.size(), inTrainingMatch, inReplayMatch);
+    }
+    if (debugAutoPlayArmed && inTrainingMatch && selectedEntry >= 0 && selectedEntry < static_cast<int>(entries.size())) {
+        LOG(1,
+            "[URT][UI] Debug auto-play firing selected=%d total=%u\n",
+            selectedEntry,
+            static_cast<unsigned int>(entries.size()));
+        LogUrtWindowContext("debug-auto-play", selectedEntry, entries.size(), inTrainingMatch, inReplayMatch);
+        debugAutoPlayArmed = false;
+        mgr.PlayEntryByIndex(static_cast<size_t>(selectedEntry));
+    }
     ImGui::Text("Library (%d)", static_cast<int>(entries.size()));
 
     ImGui::Separator();
@@ -234,6 +326,14 @@ void UnlimitedReplayTakeoverWindow::Draw() {
         ImGui::SameLine();
         if (ImGui::Selectable(entries[i].name.c_str(), selectedEntry == i)) {
             selectedEntry = i;
+            LOG(1,
+                "[URT][UI] Select entry idx=%d name='%s' enabled=%d total=%u inTraining=%d inReplay=%d\n",
+                selectedEntry,
+                entries[i].name.c_str(),
+                entries[i].enabled ? 1 : 0,
+                static_cast<unsigned int>(entries.size()),
+                inTrainingMatch ? 1 : 0,
+                inReplayMatch ? 1 : 0);
         }
         ImGui::PopID();
     }
@@ -260,7 +360,37 @@ void UnlimitedReplayTakeoverWindow::Draw() {
         if (entry.weight < 0.01f) entry.weight = 0.01f;
         ImGui::TextDisabled("File: %s", entry.relativePath.c_str());
 
-        if (DrawContextButton("Play", inTrainingMatch)) {
+        const bool playPressed = DrawContextButton("Play", inTrainingMatch);
+        const ImVec2 playMin = ImGui::GetItemRectMin();
+        const ImVec2 playMax = ImGui::GetItemRectMax();
+        const bool playHovered = ImGui::IsItemHovered();
+        const bool playActive = ImGui::IsItemActive();
+        if ((drawCounter % 60) == 0 || playHovered || playActive) {
+            LOG(1,
+                "[URT][UI] Play widget selected=%d rect=(%.1f,%.1f)-(%.1f,%.1f) hovered=%d active=%d inTraining=%d\n",
+                selectedEntry,
+                playMin.x,
+                playMin.y,
+                playMax.x,
+                playMax.y,
+                playHovered ? 1 : 0,
+                playActive ? 1 : 0,
+                inTrainingMatch ? 1 : 0);
+            LogUrtWindowContext(playHovered ? "play-hover" : "play-periodic", selectedEntry, entries.size(), inTrainingMatch, inReplayMatch);
+        }
+        if (playPressed || (playHovered && ImGui::IsMouseReleased(0))) {
+            LOG(1,
+                "[URT][UI] Play interaction selected=%d hovered=%d active=%d pressed=%d inTraining=%d entryEnabled=%d totalEntries=%u\n",
+                selectedEntry,
+                playHovered ? 1 : 0,
+                playActive ? 1 : 0,
+                playPressed ? 1 : 0,
+                inTrainingMatch ? 1 : 0,
+                entry.enabled ? 1 : 0,
+                static_cast<unsigned int>(entries.size()));
+            LogUrtWindowContext("play-interaction", selectedEntry, entries.size(), inTrainingMatch, inReplayMatch);
+        }
+        if (playPressed) {
             mgr.PlayEntryByIndex(static_cast<size_t>(selectedEntry));
         }
         ImGui::SameLine();
