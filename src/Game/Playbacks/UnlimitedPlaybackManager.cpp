@@ -433,6 +433,105 @@ bool UnlimitedPlaybackManager::CaptureSlotToLibrary(int slot, const std::string&
     return true;
 }
 
+bool UnlimitedPlaybackManager::StartReplayRecording(bool recordP1) {
+    InitializeIfNeeded();
+
+    if (!IsReplayMatchActive()) {
+        PushToast("Start replay recording only while a replay match is active.");
+        return false;
+    }
+
+    m_replayRecordingActive = true;
+    m_replayRecordingAsP1 = recordP1;
+    m_replayRecordingStartFrame = g_gameVals.pFrameCount ? *g_gameVals.pFrameCount : 0;
+    m_replayRecordingRound = static_cast<int>(*(GetBbcfBaseAdress() + 0x11C034C));
+    PushToast(std::string("Replay recording started: ") + (recordP1 ? "P1" : "P2") + ".");
+    return true;
+}
+
+bool UnlimitedPlaybackManager::StopReplayRecordingAndSave(const std::string& displayName) {
+    InitializeIfNeeded();
+
+    if (!m_replayRecordingActive) {
+        PushToast("No replay recording in progress.");
+        return false;
+    }
+
+    if (!IsReplayMatchActive()) {
+        CancelReplayRecording("Replay recording cancelled (left replay match).");
+        return false;
+    }
+
+    const int endFrame = g_gameVals.pFrameCount ? *g_gameVals.pFrameCount : 0;
+    if (endFrame <= m_replayRecordingStartFrame) {
+        CancelReplayRecording("Replay recording cancelled (too short).");
+        return false;
+    }
+
+    const int recordedPlayer = m_replayRecordingAsP1 ? 0 : 1;
+    std::vector<char> frames;
+    if (!BuildPlaybackFramesFromReplayRange(m_replayRecordingRound, m_replayRecordingStartFrame, endFrame, recordedPlayer, &frames)) {
+        CancelReplayRecording("Replay recording cancelled (failed reading replay frames).");
+        return false;
+    }
+
+    bool facingLeft = false;
+    if (m_replayRecordingAsP1) {
+        facingLeft = g_interfaces.player1.GetData() && g_interfaces.player1.GetData()->facingLeft2 != 0;
+    } else {
+        facingLeft = g_interfaces.player2.GetData() && g_interfaces.player2.GetData()->facingLeft2 != 0;
+    }
+
+    const std::string baseName = displayName.empty()
+        ? std::string("replay_") + (m_replayRecordingAsP1 ? "p1" : "p2")
+        : displayName;
+    const std::string relPath = BuildUniqueRelativePath(baseName);
+    const std::string dst = JoinPath(GetLibraryFolder(), relPath);
+    if (!WritePlaybackFile(dst, facingLeft, frames)) {
+        PushToast("Failed writing replay capture.");
+        return false;
+    }
+
+    PlaybackEntry entry;
+    entry.id = MakeEntryId();
+    entry.name = baseName;
+    entry.relativePath = relPath;
+    entry.enabled = true;
+    entry.weight = 1.0f;
+    m_entries.push_back(entry);
+    RefreshCacheForEntry(m_entries.back());
+
+    m_replayRecordingActive = false;
+    m_replayRecordingAsP1 = true;
+    m_replayRecordingRound = 0;
+    m_replayRecordingStartFrame = 0;
+
+    PushToast("Replay recording saved to library.");
+    return true;
+}
+
+void UnlimitedPlaybackManager::CancelReplayRecording(const char* reason) {
+    m_replayRecordingActive = false;
+    m_replayRecordingAsP1 = true;
+    m_replayRecordingRound = 0;
+    m_replayRecordingStartFrame = 0;
+    if (reason && reason[0] != '\0') {
+        PushToast(reason);
+    }
+}
+
+bool UnlimitedPlaybackManager::IsReplayRecording() const {
+    return m_replayRecordingActive;
+}
+
+bool UnlimitedPlaybackManager::IsReplayRecordingAsP1() const {
+    return m_replayRecordingAsP1;
+}
+
+int UnlimitedPlaybackManager::GetReplayRecordingStartFrame() const {
+    return m_replayRecordingStartFrame;
+}
+
 bool UnlimitedPlaybackManager::RemoveEntryByIndex(size_t idx) {
     InitializeIfNeeded();
 
@@ -558,6 +657,48 @@ bool UnlimitedPlaybackManager::WriteEntryPlayback(size_t idx, bool facingLeft, c
     return true;
 }
 
+bool UnlimitedPlaybackManager::IsReplayMatchActive() const {
+    return g_gameVals.pGameMode && g_gameVals.pGameState &&
+        (*g_gameVals.pGameMode == GameMode_ReplayTheater) &&
+        (*g_gameVals.pGameState == GameState_InMatch) &&
+        !g_interfaces.player1.IsCharDataNullPtr() &&
+        !g_interfaces.player2.IsCharDataNullPtr();
+}
+
+bool UnlimitedPlaybackManager::BuildPlaybackFramesFromReplayRange(
+    int round,
+    int startFrame,
+    int endFrameExclusive,
+    int recordedPlayer,
+    std::vector<char>* outFrames) const {
+    if (!outFrames || endFrameExclusive <= startFrame) {
+        return false;
+    }
+    if (recordedPlayer < 0 || recordedPlayer > 1) {
+        return false;
+    }
+    if (round < 0 || round > 2) {
+        return false;
+    }
+
+    const int frameCount = (std::min)(endFrameExclusive - startFrame, kMaxFramesPerPlayback);
+    if (frameCount <= 0) {
+        return false;
+    }
+
+    char* base = GetBbcfBaseAdress();
+    char* replayBase = base + 0x115B470 + 0x8d4;
+    char* playerBase = replayBase + (0x7080 * recordedPlayer) + (0xE100 * round);
+    outFrames->clear();
+    outFrames->reserve(static_cast<size_t>(frameCount));
+    for (int i = 0; i < frameCount; ++i) {
+        const int frame = startFrame + i;
+        char* recordedInput = playerBase + frame * 2;
+        outFrames->push_back(*recordedInput);
+    }
+    return true;
+}
+
 bool UnlimitedPlaybackManager::PlayEntryNow(size_t idx) {
     InitializeIfNeeded();
 
@@ -597,6 +738,7 @@ bool UnlimitedPlaybackManager::PlayEntryNow(size_t idx) {
 }
 
 void UnlimitedPlaybackManager::ClearAll() {
+    CancelReplayRecording(nullptr);
     m_entries.clear();
     m_cache.clear();
     for (int i = 0; i < Trigger_Count; ++i) {

@@ -1,6 +1,8 @@
 #include "UnlimitedPlaybackWindow.h"
 
+#include "Core/interfaces.h"
 #include "Game/Playbacks/UnlimitedPlaybackManager.h"
+#include "Game/gamestates.h"
 #include "Overlay/Window/PlaybackEditorWindow.h"
 #include "Overlay/WindowContainer/WindowContainer.h"
 #include "Overlay/WindowContainer/WindowType.h"
@@ -92,6 +94,18 @@ bool AnyBindableKeyCurrentlyDown() {
     }
     return false;
 }
+
+bool DrawContextButton(const char* label, bool enabled) {
+    if (!enabled) {
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.20f, 0.20f, 0.60f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.20f, 0.20f, 0.20f, 0.60f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.20f, 0.20f, 0.20f, 0.60f));
+        ImGui::Button(label);
+        ImGui::PopStyleColor(3);
+        return false;
+    }
+    return ImGui::Button(label);
+}
 }
 
 void UnlimitedPlaybackWindow::BeforeDraw() {
@@ -105,6 +119,7 @@ void UnlimitedPlaybackWindow::Draw() {
 
     static int selectedEntry = -1;
     static char captureName[128] = "";
+    static char replayCaptureName[128] = "";
     static int captureSlot = 1;
     static bool keyCaptureMode = false;
     static bool keyCaptureWaitingRelease = false;
@@ -116,6 +131,12 @@ void UnlimitedPlaybackWindow::Draw() {
     static bool playbackCompatibilityCanForce = false;
     static char pendingPlaybackPath[MAX_PATH] = {};
     static CompatibilityManager::Result pendingPlaybackCompatibility = {};
+    const bool inReplayMatch =
+        g_gameVals.pGameMode && g_gameVals.pGameState &&
+        (*g_gameVals.pGameMode == GameMode_ReplayTheater) &&
+        (*g_gameVals.pGameState == GameState_InMatch) &&
+        !g_interfaces.player1.IsCharDataNullPtr() &&
+        !g_interfaces.player2.IsCharDataNullPtr();
 
     ImGui::Text("Unlimited Playback (BETA)");
     ImGui::SameLine();
@@ -316,6 +337,32 @@ void UnlimitedPlaybackWindow::Draw() {
         if (ImGui::Button("Load Selected -> Slot")) {
             mgr.LoadEntryIntoSlot(static_cast<size_t>(selectedEntry), captureSlot);
         }
+    }
+
+    ImGui::Separator();
+    ImGui::Text("Capture from replay");
+    if (mgr.IsReplayRecording()) {
+        ImGui::TextDisabled("Recording %s inputs (start frame %d)",
+            mgr.IsReplayRecordingAsP1() ? "P1" : "P2",
+            mgr.GetReplayRecordingStartFrame());
+        ImGui::InputText("Name##replay_capture_name", replayCaptureName, IM_ARRAYSIZE(replayCaptureName));
+        if (ImGui::Button("Stop and Save##replay_capture")) {
+            mgr.StopReplayRecordingAndSave(replayCaptureName);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel##replay_capture")) {
+            mgr.CancelReplayRecording();
+        }
+    } else {
+        ImGui::InputText("Name##replay_capture_name", replayCaptureName, IM_ARRAYSIZE(replayCaptureName));
+        if (DrawContextButton("Record P1 Inputs", inReplayMatch)) {
+            mgr.StartReplayRecording(true);
+        }
+        ImGui::SameLine();
+        if (DrawContextButton("Record P2 Inputs", inReplayMatch)) {
+            mgr.StartReplayRecording(false);
+        }
+        ImGui::TextDisabled("Start capture while a replay match is active, then stop on the frame you want to end.");
     }
 
     ImGui::EndChild();

@@ -1059,25 +1059,16 @@ void ScrWindow::DrawPlaybackSection() {
     static bool loop_playback = false;
     auto& unlimitedPlayback = UnlimitedPlaybackManager::Instance();
     unlimitedPlayback.InitializeIfNeeded();
-    static int playbackMode = unlimitedPlayback.GetMode();
-    playbackMode = unlimitedPlayback.GetMode();
+    unlimitedPlayback.SetMode(UnlimitedPlaybackManager::Mode_Unlimited);
    
     //ScrWindow::DrawPlaybackEditor();
     if (ImGui::CollapsingHeader("Playback")) {
-        const char* modes[] = { "Default / BBCF Based", "Unlimited Playback (BETA)" };
-        if (ImGui::Combo("Playback Mode", &playbackMode, modes, IM_ARRAYSIZE(modes))) {
-            unlimitedPlayback.SetMode(playbackMode);
+        if (ImGui::Button("Configure Unlimited Playback (BETA)")) {
+            ScrWindow::m_pWindowContainer->GetWindow(WindowType_UnlimitedPlayback)->ToggleOpen();
         }
-
-        if (playbackMode == UnlimitedPlaybackManager::Mode_Unlimited) {
-            if (ImGui::Button("Configure Unlimited Playback (BETA)")) {
-                ScrWindow::m_pWindowContainer->GetWindow(WindowType_UnlimitedPlayback)->ToggleOpen();
-            }
-            ImGui::SameLine();
-            ImGui::TextDisabled("Runtime active while in training mode.");
-            ImGui::TextWrapped("%s", unlimitedPlayback.GetStatusText().c_str());
-            return;
-        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("Runtime active while in training mode.");
+        ImGui::TextWrapped("%s", unlimitedPlayback.GetStatusText().c_str());
 
         ImGui::Checkbox("Loop current playback", &loop_playback);
         ImGui::SameLine();

@@ -82,6 +82,12 @@ public:
     bool AddPlaybackFile(const std::string& sourcePath, const std::string& displayName, bool forceLoadIncompatible = false);
     CompatibilityManager::Result ProbePlaybackCompatibility(const std::string& playbackPath) const;
     bool CaptureSlotToLibrary(int slot, const std::string& displayName);
+    bool StartReplayRecording(bool recordP1);
+    bool StopReplayRecordingAndSave(const std::string& displayName);
+    void CancelReplayRecording(const char* reason = "Replay recording cancelled.");
+    bool IsReplayRecording() const;
+    bool IsReplayRecordingAsP1() const;
+    int GetReplayRecordingStartFrame() const;
     bool RemoveEntryByIndex(size_t idx);
     bool RenameEntry(size_t idx, const std::string& newName);
 
@@ -121,6 +127,8 @@ private:
 
     bool ReadPlaybackFile(const std::string& fullPath, CachedPlayback* out, bool forceLoadIncompatible = false);
     bool WritePlaybackFile(const std::string& fullPath, bool facingLeft, const std::vector<char>& frames);
+    bool IsReplayMatchActive() const;
+    bool BuildPlaybackFramesFromReplayRange(int round, int startFrame, int endFrameExclusive, int recordedPlayer, std::vector<char>* outFrames) const;
 
     void RefreshCacheForEntry(const PlaybackEntry& entry);
     std::string ResolveEntryPath(const PlaybackEntry& entry) const;
@@ -166,6 +174,10 @@ private:
     bool m_runtimeSlotRestorePending = false;
     bool m_runtimeSlotBackupFacingLeft = false;
     std::vector<char> m_runtimeSlotBackupFrames;
+    bool m_replayRecordingActive = false;
+    bool m_replayRecordingAsP1 = true;
+    int m_replayRecordingRound = 0;
+    int m_replayRecordingStartFrame = 0;
 
     PlaybackManager m_runtimePlaybackManager;
 };

@@ -3,7 +3,7 @@
 This handbook is a one-stop map for agents modifying the BBCF Improvement Mod. The project builds a proxy `dinput8.dll` that loads alongside BlazBlue Centralfiction, forwards DirectInput to the original DLL, installs runtime hooks, and exposes overlay, networking, and palette systems. Use this file to locate every component, understand how modules interact, and ship new features without guesswork.
 
 ## Build requirements and outputs
-- **Toolchain**: Visual Studio 2019, v142 toolset, Windows 10 SDK. Open `BBCF_IM.sln` and build `Release|Win32` (primary ship) or `Debug|Win32`.
+- **Toolchain**: Visual Studio plus Windows SDK for Win32 DLL builds. In this workspace, the verified command-line build uses MSBuild with an explicit `v143` override even if the project file requests a newer/missing toolset: `"/mnt/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe" BBCF_IM.sln /m /p:Configuration=Debug /p:Platform=Win32 /p:PlatformToolset=v143`. Open `BBCF_IM.sln` and build `Release|Win32` (primary ship) or `Debug|Win32`.
 - **Third-party bundles (vendored in `depends/`)**: Detours for function patching; DirectX 9 SDK headers/libs; Steamworks SDK headers/redistributable; ImGui source; a WinHTTP client helper. Include/lib paths are pre-wired in `BBCF_IM.vcxproj`.
 - **Primary output**: `bin/<Config>/dinput8.dll` plus symbol-less exports defined in `export/dinput8.def`. Ship `settings.ini` and `palettes.ini` (templates in `resource/`) beside `BBCF.exe`.
 - **Runtime folder**: The mod auto-creates `BBCF_IM/` in the game directory for user palettes, saves, crash dumps, and logs.
