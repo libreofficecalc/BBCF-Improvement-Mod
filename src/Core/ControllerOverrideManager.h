@@ -76,6 +76,9 @@ struct KeyboardDeviceInfo
         std::string baseName;
         std::string displayName;
         std::string deviceId;
+        std::string instanceId;
+        std::string containerId;
+        std::string serialNumber;
         std::string canonicalId;
         bool ignored = false;
         bool connected = true;
@@ -200,8 +203,9 @@ private:
         void PersistKeyboardRenames();
         void PersistKeyboardMappingsLocked();
         void LoadKeyboardPreferences();
-        KeyboardMapping GetKeyboardMappingLocked(const std::string& mappingKey);
-        void SetKeyboardMappingLocked(const std::string& mappingKey, const KeyboardMapping& mapping);
+        void NormalizeKeyboardPreferenceKeysLocked(const std::vector<KeyboardDeviceInfo>& devices);
+        KeyboardMapping GetKeyboardMappingLocked(const KeyboardDeviceInfo& info);
+        void SetKeyboardMappingLocked(const KeyboardDeviceInfo& info, const KeyboardMapping& mapping);
         bool TryEnumerateDevicesA(std::vector<ControllerDeviceInfo>& outDevices);
         bool TryEnumerateDevicesW(std::vector<ControllerDeviceInfo>& outDevices);
         void TryEnumerateWinmmDevices(std::vector<ControllerDeviceInfo>& outDevices) const;
