@@ -6,6 +6,7 @@
 #include "Core/utils.h"
 #include "Core/interfaces.h"
 #include "Hooks/hooks_battle_input.h"
+#include "Game/gamestates.h"
 
 #include <Shellapi.h>
 #include <dinput.h>
@@ -2672,12 +2673,24 @@ void ControllerOverrideManager::RefreshDevicesAndReinitializeGame()
 
 void ControllerOverrideManager::TickAutoRefresh()
 {
-        if (!m_deviceChangeQueued.load())
+        if (!m_deviceChangeQueued.load(std::memory_order_relaxed))
         {
                 return;
         }
 
-        m_deviceChangeQueued = false;
+        if (!ControllerHooksEnabled())
+        {
+                LOG(1, "ControllerOverrideManager::TickAutoRefresh - clearing queued refresh because controller hooks are disabled\n");
+                m_deviceChangeQueued.store(false, std::memory_order_relaxed);
+                return;
+        }
+
+        if (!IsSafeToRefreshGameInputsNow())
+        {
+                return;
+        }
+
+        m_deviceChangeQueued.store(false, std::memory_order_relaxed);
         ProcessPendingDeviceChange();
 }
 
@@ -2793,7 +2806,21 @@ void ControllerOverrideManager::ProcessPendingDeviceChange()
 {
         LOG(1, "ControllerOverrideManager::ProcessPendingDeviceChange - begin (autoRefresh=%d)\n", m_autoRefreshEnabled ? 1 : 0);
 
-        m_deviceChangeQueued = false;
+        if (!ControllerHooksEnabled())
+        {
+                LOG(1, "ControllerOverrideManager::ProcessPendingDeviceChange - controller hooks disabled, skipping\n");
+                m_deviceChangeQueued.store(false, std::memory_order_relaxed);
+                return;
+        }
+
+        if (!IsSafeToRefreshGameInputsNow())
+        {
+                LOG(1, "ControllerOverrideManager::ProcessPendingDeviceChange - scene not safe yet, deferring\n");
+                m_deviceChangeQueued.store(true, std::memory_order_relaxed);
+                return;
+        }
+
+        m_deviceChangeQueued.store(false, std::memory_order_relaxed);
 
         const bool devicesChanged = RefreshDevices();
         if (!devicesChanged)
@@ -2811,6 +2838,25 @@ void ControllerOverrideManager::ProcessPendingDeviceChange()
         {
                 LOG(1, "ControllerOverrideManager::ProcessPendingDeviceChange - devices updated, auto refresh disabled\n");
         }
+}
+
+bool ControllerOverrideManager::IsSafeToRefreshGameInputsNow() const
+{
+        if (!g_gameProc.hWndGameWindow)
+        {
+                LOG(1, "ControllerOverrideManager::IsSafeToRefreshGameInputsNow - game window missing\n");
+                return false;
+        }
+
+        const int sceneStatus = GetGameSceneStatus();
+        const bool safeScene = sceneStatus >= GameSceneStatus_Running;
+        if (!safeScene)
+        {
+                LOG(1, "ControllerOverrideManager::IsSafeToRefreshGameInputsNow - deferring refresh for scene status %d\n", sceneStatus);
+                return false;
+        }
+
+        return true;
 }
 
 void ControllerOverrideManager::ProcessRawInput(HRAWINPUT rawInput)
@@ -2972,6 +3018,15 @@ bool ControllerOverrideManager::GetKeyboardStateSnapshot(HANDLE deviceHandle, st
 
 void ControllerOverrideManager::HandleWindowMessage(UINT msg, WPARAM wParam, LPARAM lParam)
 {
+        if (!ControllerHooksEnabled())
+        {
+                if (msg == WM_DEVICECHANGE || msg == WM_INPUT_DEVICE_CHANGE)
+                {
+                        m_deviceChangeQueued.store(false, std::memory_order_relaxed);
+                }
+                return;
+        }
+
         if (m_multipleKeyboardOverrideEnabled && !m_rawKeyboardRegistered)
         {
                 EnsureRawKeyboardRegistration();
@@ -3005,8 +3060,7 @@ void ControllerOverrideManager::HandleWindowMessage(UINT msg, WPARAM wParam, LPA
         case DBT_DEVICEREMOVECOMPLETE:
         case DBT_DEVNODES_CHANGED:
                 LOG(1, "ControllerOverrideManager::HandleWindowMessage - WM_DEVICECHANGE wParam=0x%08lX lParam=0x%08lX\n", wParam, lParam);
-                m_deviceChangeQueued = true;
-                ProcessPendingDeviceChange();
+                m_deviceChangeQueued.store(true, std::memory_order_relaxed);
                 RefreshKeyboardDevices();
                 break;
         default:

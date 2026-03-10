@@ -217,6 +217,7 @@ private:
         void SendDeviceChangeBroadcast() const;
         void ReinitializeGameInputs();
         void ProcessPendingDeviceChange();
+        bool IsSafeToRefreshGameInputsNow() const;
 
         void ProcessRawInput(HRAWINPUT rawInput);
         void HandleRawInputDeviceChange(HANDLE deviceHandle, bool arrived);

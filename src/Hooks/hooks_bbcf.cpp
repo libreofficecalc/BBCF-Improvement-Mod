@@ -578,6 +578,7 @@ void __declspec(naked)GetFrameCounter()
 	}
 
 	__asm pushad
+	ControllerOverrideManager::GetInstance().TickAutoRefresh();
 	UnlimitedPlaybackManager::Instance().Tick();
 #if BBCF_ENABLE_UNLIMITED_REPLAY_TAKEOVER
 	{
