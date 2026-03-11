@@ -1,11 +1,11 @@
 #include "CompatibilityManager.h"
 
 CompatibilityManager::FileVersion CompatibilityManager::CurrentProfileVersion() {
-    return { 2, 0 };
+    return { 1, 0 };
 }
 
 CompatibilityManager::FileVersion CompatibilityManager::CurrentPlaybackVersion() {
-    return { 2, 0 };
+    return { 1, 0 };
 }
 
 std::string CompatibilityManager::ToString(const FileVersion& v) {
@@ -35,22 +35,6 @@ CompatibilityManager::Result CompatibilityManager::EvaluateProfile(const FileVer
     r.detected = detected;
     r.current = CurrentProfileVersion();
 
-    // Explicitly unsupported old profile generation.
-    if (detected.major == 1 && detected.minor == 0) {
-        r.action = Action_Reject;
-        r.reason = "Profile format v1.0 is not supported.";
-        r.canForce = false;
-        return r;
-    }
-
-    // Known migration path from 1.1 -> 2.0 (parser-compatible, rewritten on save).
-    if (detected.major == 1 && detected.minor == 1) {
-        r.action = Action_Migrate;
-        r.reason = "Profile will be loaded with migration compatibility.";
-        r.canForce = false;
-        return r;
-    }
-
     const int cmp = Compare(detected, r.current);
     if (cmp == 0) {
         r.action = Action_Load;
@@ -79,10 +63,8 @@ CompatibilityManager::Result CompatibilityManager::EvaluatePlayback(const FileVe
     r.current = CurrentPlaybackVersion();
 
     if (!hasHeader) {
-        // Legacy raw .playback format (byte0=facing + frames) treated as v1.1.
-        r.detected = { 1, 1 };
-        r.action = Action_Migrate;
-        r.reason = "Legacy playback format loaded with migration compatibility.";
+        r.action = Action_Reject;
+        r.reason = "Playback file header is missing.";
         r.canForce = false;
         return r;
     }

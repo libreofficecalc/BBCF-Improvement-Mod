@@ -98,6 +98,7 @@ private:
     std::string MakeEntryId();
     std::string SanitizeFileName(const std::string& input) const;
     std::string BuildUniqueRelativePath(const std::string& preferredName) const;
+    std::string EnsureEntryLibraryRelativePath(size_t idx);
     std::string ResolveEntryPath(const ReplayTakeoverEntry& entry) const;
 
     bool IsReplayMatchActive() const;

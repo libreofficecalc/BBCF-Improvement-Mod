@@ -21,6 +21,7 @@ const char* kDefaultProfileName = "default.upl";
 const char* kProfileFormatVersionKey = "format_version";
 const char* kProfileFormatKindKey = "format_kind";
 const char* kProfileFormatKindValue = "unlimited_profile";
+const char* kEmbeddedEntryDataKey = "entry_data";
 const char kPlaybackHeaderMagic[4] = { 'U', 'P', 'B', '2' };
 
 bool PathExists(const std::string& path) {
@@ -90,6 +91,143 @@ std::vector<std::string> Split(const std::string& s, char delim) {
     return out;
 }
 
+char HexDigit(unsigned char value) {
+    return value < 10 ? static_cast<char>('0' + value) : static_cast<char>('A' + (value - 10));
+}
+
+bool TryParseHexNibble(char c, unsigned char* outValue) {
+    if (!outValue) {
+        return false;
+    }
+    if (c >= '0' && c <= '9') {
+        *outValue = static_cast<unsigned char>(c - '0');
+        return true;
+    }
+    if (c >= 'a' && c <= 'f') {
+        *outValue = static_cast<unsigned char>(10 + (c - 'a'));
+        return true;
+    }
+    if (c >= 'A' && c <= 'F') {
+        *outValue = static_cast<unsigned char>(10 + (c - 'A'));
+        return true;
+    }
+    return false;
+}
+
+std::string EncodeHex(const std::vector<char>& data) {
+    std::string out;
+    out.resize(data.size() * 2);
+    for (size_t i = 0; i < data.size(); ++i) {
+        const unsigned char value = static_cast<unsigned char>(data[i]);
+        out[(i * 2) + 0] = HexDigit(static_cast<unsigned char>((value >> 4) & 0xF));
+        out[(i * 2) + 1] = HexDigit(static_cast<unsigned char>(value & 0xF));
+    }
+    return out;
+}
+
+bool DecodeHex(const std::string& text, std::vector<char>* outData) {
+    if (!outData || (text.size() % 2) != 0) {
+        return false;
+    }
+    outData->clear();
+    outData->reserve(text.size() / 2);
+    for (size_t i = 0; i < text.size(); i += 2) {
+        unsigned char hi = 0;
+        unsigned char lo = 0;
+        if (!TryParseHexNibble(text[i], &hi) || !TryParseHexNibble(text[i + 1], &lo)) {
+            outData->clear();
+            return false;
+        }
+        outData->push_back(static_cast<char>((hi << 4) | lo));
+    }
+    return true;
+}
+
+bool ParsePlaybackBytes(
+    const std::vector<char>& data,
+    UnlimitedPlaybackManager::CachedPlayback* out,
+    bool forceLoadIncompatible,
+    std::string* outFailureReason) {
+    if (!out) {
+        if (outFailureReason) {
+            *outFailureReason = "Invalid playback destination.";
+        }
+        return false;
+    }
+    if (data.size() <= 1) {
+        if (outFailureReason) {
+            *outFailureReason = "Playback payload was too small.";
+        }
+        return false;
+    }
+
+    const bool hasHeader =
+        data.size() >= 8 &&
+        data[0] == kPlaybackHeaderMagic[0] &&
+        data[1] == kPlaybackHeaderMagic[1] &&
+        data[2] == kPlaybackHeaderMagic[2] &&
+        data[3] == kPlaybackHeaderMagic[3];
+
+    if (hasHeader) {
+        CompatibilityManager::FileVersion detected = {
+            static_cast<unsigned char>(data[4]),
+            static_cast<unsigned char>(data[5]),
+        };
+        const auto compatibility = CompatibilityManager::EvaluatePlayback(detected, true);
+        if (compatibility.action == CompatibilityManager::Action_Reject) {
+            if (outFailureReason) {
+                *outFailureReason =
+                    std::string("Playback rejected: file v") +
+                    CompatibilityManager::ToString(compatibility.detected) +
+                    ", code v" +
+                    CompatibilityManager::ToString(compatibility.current) + ".";
+            }
+            return false;
+        }
+        if (compatibility.action == CompatibilityManager::Action_Confirm && !forceLoadIncompatible) {
+            if (outFailureReason) {
+                *outFailureReason =
+                    std::string("Playback rejected (newer format): file v") +
+                    CompatibilityManager::ToString(compatibility.detected) +
+                    ", code v" +
+                    CompatibilityManager::ToString(compatibility.current) + ".";
+            }
+            return false;
+        }
+        const unsigned char flags = static_cast<unsigned char>(data[6]);
+        out->facingLeft = (flags & 0x1) != 0;
+        out->frames.assign(data.begin() + 8, data.end());
+    } else {
+        if (outFailureReason) {
+            *outFailureReason = "Playback file header is missing.";
+        }
+        return false;
+    }
+
+    if (out->frames.size() > static_cast<size_t>(UnlimitedPlaybackManager::kMaxFramesPerPlayback)) {
+        out->frames.resize(UnlimitedPlaybackManager::kMaxFramesPerPlayback);
+    }
+    out->loaded = true;
+    return true;
+}
+
+std::vector<char> SerializePlaybackBytes(bool facingLeft, const std::vector<char>& frames) {
+    std::vector<char> data;
+    const size_t maxWrite = (std::min)(frames.size(), static_cast<size_t>(UnlimitedPlaybackManager::kMaxFramesPerPlayback));
+    data.reserve(8 + maxWrite);
+    data.push_back(kPlaybackHeaderMagic[0]);
+    data.push_back(kPlaybackHeaderMagic[1]);
+    data.push_back(kPlaybackHeaderMagic[2]);
+    data.push_back(kPlaybackHeaderMagic[3]);
+    const CompatibilityManager::FileVersion version = CompatibilityManager::CurrentPlaybackVersion();
+    data.push_back(static_cast<char>(version.major));
+    data.push_back(static_cast<char>(version.minor));
+    data.push_back(static_cast<char>(facingLeft ? 0x1 : 0x0));
+    data.push_back(static_cast<char>(0));
+    data.insert(data.end(), frames.begin(), frames.begin() + static_cast<std::ptrdiff_t>(maxWrite));
+    return data;
+}
+
 bool ReadProfileFormatVersion(
     const std::string& path,
     CompatibilityManager::FileVersion* outVersion,
@@ -105,8 +243,6 @@ bool ReadProfileFormatVersion(
         return false;
     }
 
-    bool hasSelectionMode = false;
-    bool hasAutoMirror = false;
     std::string line;
     while (std::getline(in, line)) {
         line = Trim(line);
@@ -126,19 +262,9 @@ bool ReadProfileFormatVersion(
                 *outHasExplicitVersion = true;
                 return true;
             }
-        } else if (key == "selection_mode") {
-            hasSelectionMode = true;
-        } else if (key == "auto_mirror_side_swap") {
-            hasAutoMirror = true;
         }
     }
-
-    if (hasSelectionMode || hasAutoMirror) {
-        *outVersion = { 1, 1 };
-    } else {
-        *outVersion = { 1, 0 };
-    }
-    return true;
+    return false;
 }
 
 bool ReadPlaybackFormatVersion(
@@ -148,7 +274,7 @@ bool ReadPlaybackFormatVersion(
     if (!outVersion || !outHasHeader) {
         return false;
     }
-    *outVersion = { 1, 1 };
+    *outVersion = { 1, 0 };
     *outHasHeader = false;
 
     std::ifstream file(path, std::ios::binary);
@@ -231,13 +357,9 @@ void UnlimitedPlaybackManager::InitializeIfNeeded() {
         return;
     }
 
-    EnsureFolders();
-    m_activeProfilePath = JoinPath(GetProfileFolder(), kDefaultProfileName);
-    m_lastLoadedProfileFolder = GetProfileFolder();
+    m_activeProfilePath.clear();
+    m_lastLoadedProfileFolder.clear();
     m_initialized = true;
-    if (!LoadProfile(m_activeProfilePath)) {
-        SaveProfile(m_activeProfilePath);
-    }
 }
 
 void UnlimitedPlaybackManager::Tick() {
@@ -338,7 +460,7 @@ const UnlimitedPlaybackManager::TriggerConfig& UnlimitedPlaybackManager::GetTrig
 }
 
 CompatibilityManager::Result UnlimitedPlaybackManager::ProbePlaybackCompatibility(const std::string& playbackPath) const {
-    CompatibilityManager::FileVersion detected = { 1, 1 };
+    CompatibilityManager::FileVersion detected = { 1, 0 };
     bool hasHeader = false;
     if (!ReadPlaybackFormatVersion(playbackPath, &detected, &hasHeader)) {
         CompatibilityManager::Result r;
@@ -377,21 +499,14 @@ bool UnlimitedPlaybackManager::AddPlaybackFile(const std::string& sourcePath, co
         fallbackName = fallbackName.substr(0, dot);
     }
 
-    const std::string relPath = BuildUniqueRelativePath(displayName.empty() ? fallbackName : displayName);
-    const std::string dst = JoinPath(GetLibraryFolder(), relPath);
-    if (!WritePlaybackFile(dst, playback.facingLeft, playback.frames)) {
-        PushToast("Failed writing playback file.");
-        return false;
-    }
-
     PlaybackEntry entry;
     entry.id = MakeEntryId();
     entry.name = displayName.empty() ? fallbackName : displayName;
-    entry.relativePath = relPath;
+    entry.relativePath = BuildUniqueRelativePath(entry.name);
     entry.enabled = true;
     entry.weight = 1.0f;
     m_entries.push_back(entry);
-    RefreshCacheForEntry(m_entries.back());
+    m_cache[entry.id] = playback;
 
     PushToast("Playback imported.");
     return true;
@@ -413,21 +528,19 @@ bool UnlimitedPlaybackManager::CaptureSlotToLibrary(int slot, const std::string&
     const bool facingLeft = pslot.get_facing_direction() != 0;
 
     const std::string baseName = displayName.empty() ? ("slot_" + std::to_string(slot)) : displayName;
-    const std::string relPath = BuildUniqueRelativePath(baseName);
-    const std::string dst = JoinPath(GetLibraryFolder(), relPath);
-    if (!WritePlaybackFile(dst, facingLeft, frames)) {
-        PushToast("Failed writing captured playback.");
-        return false;
-    }
 
     PlaybackEntry entry;
     entry.id = MakeEntryId();
     entry.name = baseName;
-    entry.relativePath = relPath;
+    entry.relativePath = BuildUniqueRelativePath(baseName);
     entry.enabled = true;
     entry.weight = 1.0f;
     m_entries.push_back(entry);
-    RefreshCacheForEntry(m_entries.back());
+    CachedPlayback playback;
+    playback.loaded = true;
+    playback.facingLeft = facingLeft;
+    playback.frames = frames;
+    m_cache[entry.id] = playback;
 
     PushToast("Captured slot to library.");
     return true;
@@ -485,21 +598,19 @@ bool UnlimitedPlaybackManager::StopReplayRecordingAndSave(const std::string& dis
     const std::string baseName = displayName.empty()
         ? std::string("replay_") + (m_replayRecordingAsP1 ? "p1" : "p2")
         : displayName;
-    const std::string relPath = BuildUniqueRelativePath(baseName);
-    const std::string dst = JoinPath(GetLibraryFolder(), relPath);
-    if (!WritePlaybackFile(dst, facingLeft, frames)) {
-        PushToast("Failed writing replay capture.");
-        return false;
-    }
 
     PlaybackEntry entry;
     entry.id = MakeEntryId();
     entry.name = baseName;
-    entry.relativePath = relPath;
+    entry.relativePath = BuildUniqueRelativePath(baseName);
     entry.enabled = true;
     entry.weight = 1.0f;
     m_entries.push_back(entry);
-    RefreshCacheForEntry(m_entries.back());
+    CachedPlayback playback;
+    playback.loaded = true;
+    playback.facingLeft = facingLeft;
+    playback.frames = frames;
+    m_cache[entry.id] = playback;
 
     m_replayRecordingActive = false;
     m_replayRecordingAsP1 = true;
@@ -565,10 +676,6 @@ bool UnlimitedPlaybackManager::LoadEntryIntoSlot(size_t idx, int slot) {
     const auto& entry = m_entries[idx];
     auto it = m_cache.find(entry.id);
     if (it == m_cache.end() || !it->second.loaded) {
-        RefreshCacheForEntry(entry);
-        it = m_cache.find(entry.id);
-    }
-    if (it == m_cache.end() || !it->second.loaded) {
         PushToast("Failed loading entry.");
         return false;
     }
@@ -601,13 +708,13 @@ bool UnlimitedPlaybackManager::SaveEntryFromSlot(size_t idx, int slot) {
     }
     const bool facingLeft = pslot.get_facing_direction() != 0;
 
-    const std::string path = JoinPath(GetLibraryFolder(), m_entries[idx].relativePath);
-    if (!WritePlaybackFile(path, facingLeft, frames)) {
-        PushToast("Failed writing entry.");
-        return false;
-    }
-
-    RefreshCacheForEntry(m_entries[idx]);
+    const std::string relPath = EnsureEntryLibraryRelativePath(idx);
+    (void)relPath;
+    CachedPlayback playback;
+    playback.loaded = true;
+    playback.facingLeft = facingLeft;
+    playback.frames = frames;
+    m_cache[m_entries[idx].id] = playback;
     PushToast("Entry overwritten from slot.");
     return true;
 }
@@ -621,10 +728,6 @@ bool UnlimitedPlaybackManager::ReadEntryPlayback(size_t idx, bool* outFacingLeft
 
     const auto& entry = m_entries[idx];
     auto it = m_cache.find(entry.id);
-    if (it == m_cache.end() || !it->second.loaded) {
-        RefreshCacheForEntry(entry);
-        it = m_cache.find(entry.id);
-    }
     if (it == m_cache.end() || !it->second.loaded) {
         return false;
     }
@@ -646,13 +749,13 @@ bool UnlimitedPlaybackManager::WriteEntryPlayback(size_t idx, bool facingLeft, c
         clampedFrames.resize(kMaxFramesPerPlayback);
     }
 
-    const std::string path = JoinPath(GetLibraryFolder(), m_entries[idx].relativePath);
-    if (!WritePlaybackFile(path, facingLeft, clampedFrames)) {
-        PushToast("Failed writing entry.");
-        return false;
-    }
-
-    RefreshCacheForEntry(m_entries[idx]);
+    const std::string relPath = EnsureEntryLibraryRelativePath(idx);
+    (void)relPath;
+    CachedPlayback playback;
+    playback.loaded = true;
+    playback.facingLeft = facingLeft;
+    playback.frames = clampedFrames;
+    m_cache[m_entries[idx].id] = playback;
     PushToast("Entry saved.");
     return true;
 }
@@ -709,10 +812,6 @@ bool UnlimitedPlaybackManager::PlayEntryNow(size_t idx) {
     const auto& entry = m_entries[idx];
     auto it = m_cache.find(entry.id);
     if (it == m_cache.end() || !it->second.loaded) {
-        RefreshCacheForEntry(entry);
-        it = m_cache.find(entry.id);
-    }
-    if (it == m_cache.end() || !it->second.loaded) {
         PushToast("Failed loading entry.");
         return false;
     }
@@ -755,6 +854,10 @@ bool UnlimitedPlaybackManager::SaveProfile(const std::string& profilePath) {
     if (!IsAbsolutePath(p)) {
         p = JoinPath(GetProfileFolder(), profilePath);
     }
+    const size_t slash = p.find_last_of("/\\");
+    if (slash != std::string::npos) {
+        EnsureDirectoryRecursive(p.substr(0, slash));
+    }
 
     std::ofstream out(p, std::ios::binary | std::ios::trunc);
     if (!out.good()) {
@@ -785,6 +888,24 @@ bool UnlimitedPlaybackManager::SaveProfile(const std::string& profilePath) {
             out << "|" << (e.triggerEnabled[i] ? 1 : 0);
         }
         out << "\n";
+
+        CachedPlayback playback;
+        bool havePlayback = false;
+        const auto cacheIt = m_cache.find(e.id);
+        if (cacheIt != m_cache.end() && cacheIt->second.loaded) {
+            playback = cacheIt->second;
+            havePlayback = true;
+        }
+
+        if (!havePlayback || !playback.loaded) {
+            PushToast(std::string("Profile save failed: entry data missing for '") + e.name + "'.");
+            return false;
+        }
+
+        const std::vector<char> serialized = SerializePlaybackBytes(playback.facingLeft, playback.frames);
+        out << kEmbeddedEntryDataKey << "="
+            << e.id << "|"
+            << EncodeHex(serialized) << "\n";
     }
 
     out.close();
@@ -799,7 +920,7 @@ CompatibilityManager::Result UnlimitedPlaybackManager::ProbeProfileCompatibility
         p = JoinPath(GetProfileFolder(), profilePath);
     }
 
-    CompatibilityManager::FileVersion detected = { 1, 0 };
+    CompatibilityManager::FileVersion detected = { 0, 0 };
     bool hasExplicitVersion = false;
     if (!ReadProfileFormatVersion(p, &detected, &hasExplicitVersion)) {
         CompatibilityManager::Result r;
@@ -847,15 +968,8 @@ bool UnlimitedPlaybackManager::LoadProfile(const std::string& profilePath, bool 
             CompatibilityManager::ToString(compatibility.current) + ").");
         return false;
     }
-    if (compatibility.action == CompatibilityManager::Action_Migrate) {
-        PushToast(
-            std::string("Applying compatibility path (file v") +
-            CompatibilityManager::ToString(compatibility.detected) +
-            " -> code v" +
-            CompatibilityManager::ToString(compatibility.current) + ").");
-    }
-
     std::vector<PlaybackEntry> parsedEntries;
+    std::unordered_map<std::string, std::string> embeddedEntryDataHex;
     std::array<TriggerConfig, Trigger_Count> parsedTriggers = m_triggers;
     int parsedMode = m_mode;
     int parsedSelectionMode = m_selectionMode;
@@ -913,34 +1027,17 @@ bool UnlimitedPlaybackManager::LoadProfile(const std::string& profilePath, bool 
 
         if (key == "entry") {
             auto parts = Split(value, '|');
-            if (parts.size() < 4) {
+            if (parts.size() < 5) {
                 continue;
             }
 
             PlaybackEntry e;
-            size_t triggerStartIndex = 0;
-            auto isBoolToken = [](const std::string& token) -> bool {
-                return token == "0" || token == "1";
-            };
-
-            // v1 format: id|name|relativePath|enabled|weight|trigger...
-            // legacy format: name|relativePath|enabled|weight|trigger...
-            const bool looksLikeV1 = parts.size() >= 5 && !isBoolToken(parts[2]);
-            if (looksLikeV1) {
-                e.id = parts[0];
-                e.name = parts[1];
-                e.relativePath = parts[2];
-                e.enabled = std::atoi(parts[3].c_str()) != 0;
-                e.weight = static_cast<float>(std::atof(parts[4].c_str()));
-                triggerStartIndex = 5;
-            } else {
-                e.id = MakeEntryId();
-                e.name = parts[0];
-                e.relativePath = parts[1];
-                e.enabled = std::atoi(parts[2].c_str()) != 0;
-                e.weight = static_cast<float>(std::atof(parts[3].c_str()));
-                triggerStartIndex = 4;
-            }
+            e.id = parts[0];
+            e.name = parts[1];
+            e.relativePath = parts[2];
+            e.enabled = std::atoi(parts[3].c_str()) != 0;
+            e.weight = static_cast<float>(std::atof(parts[4].c_str()));
+            const size_t triggerStartIndex = 5;
 
             if (e.id.empty()) {
                 e.id = MakeEntryId();
@@ -956,6 +1053,19 @@ bool UnlimitedPlaybackManager::LoadProfile(const std::string& profilePath, bool 
                 e.weight = 0.01f;
             }
             parsedEntries.push_back(e);
+            continue;
+        }
+
+        if (key == kEmbeddedEntryDataKey) {
+            const size_t split = value.find('|');
+            if (split == std::string::npos) {
+                continue;
+            }
+            const std::string entryId = value.substr(0, split);
+            const std::string encodedData = value.substr(split + 1);
+            if (!entryId.empty() && !encodedData.empty()) {
+                embeddedEntryDataHex[entryId] = encodedData;
+            }
         }
     }
 
@@ -973,7 +1083,25 @@ bool UnlimitedPlaybackManager::LoadProfile(const std::string& profilePath, bool 
 
     m_cache.clear();
     for (const auto& e : m_entries) {
-        RefreshCacheForEntry(e);
+        const auto embeddedIt = embeddedEntryDataHex.find(e.id);
+        if (embeddedIt == embeddedEntryDataHex.end()) {
+            PushToast(std::string("Profile load failed: embedded playback missing for '") + e.name + "'.");
+            return false;
+        }
+
+        std::vector<char> embeddedBytes;
+        CachedPlayback playback;
+        std::string failureReason;
+        if (DecodeHex(embeddedIt->second, &embeddedBytes) &&
+            ParsePlaybackBytes(embeddedBytes, &playback, forceLoadIncompatible, &failureReason)) {
+            m_cache[e.id] = playback;
+        } else if (!failureReason.empty()) {
+            PushToast(std::string("Profile load failed for '") + e.name + "': " + failureReason);
+            return false;
+        } else {
+            PushToast(std::string("Profile load failed for '") + e.name + "'.");
+            return false;
+        }
     }
 
     m_activeProfilePath = p;
@@ -1021,7 +1149,6 @@ void UnlimitedPlaybackManager::PushToast(const std::string& text, unsigned long 
 }
 
 void UnlimitedPlaybackManager::EnsureFolders() {
-    EnsureDirectoryRecursive(GetLibraryFolder());
     EnsureDirectoryRecursive(GetProfileFolder());
 }
 
@@ -1070,13 +1197,28 @@ std::string UnlimitedPlaybackManager::BuildUniqueRelativePath(const std::string&
             candidate += "_" + std::to_string(suffix);
         }
         candidate += ".playback";
-
-        const std::string full = JoinPath(GetLibraryFolder(), candidate);
-        if (!PathExists(full)) {
+        bool exists = false;
+        for (size_t i = 0; i < m_entries.size(); ++i) {
+            if (m_entries[i].relativePath == candidate) {
+                exists = true;
+                break;
+            }
+        }
+        if (!exists) {
             return candidate;
         }
         ++suffix;
     }
+}
+
+std::string UnlimitedPlaybackManager::EnsureEntryLibraryRelativePath(size_t idx) {
+    if (idx >= m_entries.size()) {
+        return "";
+    }
+    if (m_entries[idx].relativePath.empty() || IsAbsolutePath(m_entries[idx].relativePath)) {
+        m_entries[idx].relativePath = BuildUniqueRelativePath(m_entries[idx].name.empty() ? "playback" : m_entries[idx].name);
+    }
+    return m_entries[idx].relativePath;
 }
 
 bool UnlimitedPlaybackManager::ReadPlaybackFile(const std::string& fullPath, CachedPlayback* out, bool forceLoadIncompatible) {
@@ -1099,53 +1241,12 @@ bool UnlimitedPlaybackManager::ReadPlaybackFile(const std::string& fullPath, Cac
         return false;
     }
 
-    const bool hasHeader =
-        data.size() >= 8 &&
-        data[0] == kPlaybackHeaderMagic[0] &&
-        data[1] == kPlaybackHeaderMagic[1] &&
-        data[2] == kPlaybackHeaderMagic[2] &&
-        data[3] == kPlaybackHeaderMagic[3];
-
-    if (hasHeader) {
-        CompatibilityManager::FileVersion detected = {
-            static_cast<unsigned char>(data[4]),
-            static_cast<unsigned char>(data[5]),
-        };
-        const auto compatibility = CompatibilityManager::EvaluatePlayback(detected, true);
-        if (compatibility.action == CompatibilityManager::Action_Reject) {
-            PushToast(
-                std::string("Playback rejected: file v") +
-                CompatibilityManager::ToString(compatibility.detected) +
-                ", code v" +
-                CompatibilityManager::ToString(compatibility.current) + ".");
-            return false;
-        }
-        if (compatibility.action == CompatibilityManager::Action_Confirm && !forceLoadIncompatible) {
-            PushToast(
-                std::string("Playback rejected (newer format): file v") +
-                CompatibilityManager::ToString(compatibility.detected) +
-                ", code v" +
-                CompatibilityManager::ToString(compatibility.current) + ".");
-            return false;
-        }
-        const unsigned char flags = static_cast<unsigned char>(data[6]);
-        out->facingLeft = (flags & 0x1) != 0;
-        out->frames.assign(data.begin() + 8, data.end());
-    } else {
-        const auto compatibility = CompatibilityManager::EvaluatePlayback({ 1, 1 }, false);
-        if (compatibility.action == CompatibilityManager::Action_Reject) {
-            PushToast("Legacy playback format rejected by compatibility policy.");
-            return false;
-        }
-        out->facingLeft = data[0] != 0;
-        out->frames.assign(data.begin() + 1, data.end());
+    std::string failureReason;
+    const bool ok = ParsePlaybackBytes(data, out, forceLoadIncompatible, &failureReason);
+    if (!ok && !failureReason.empty()) {
+        PushToast(failureReason);
     }
-
-    if (out->frames.size() > static_cast<size_t>(kMaxFramesPerPlayback)) {
-        out->frames.resize(kMaxFramesPerPlayback);
-    }
-    out->loaded = true;
-    return true;
+    return ok;
 }
 
 bool UnlimitedPlaybackManager::WritePlaybackFile(const std::string& fullPath, bool facingLeft, const std::vector<char>& frames) {
@@ -1159,76 +1260,12 @@ bool UnlimitedPlaybackManager::WritePlaybackFile(const std::string& fullPath, bo
         return false;
     }
 
-    const CompatibilityManager::FileVersion version = CompatibilityManager::CurrentPlaybackVersion();
-    out.write(kPlaybackHeaderMagic, 4);
-    const unsigned char major = static_cast<unsigned char>(version.major);
-    const unsigned char minor = static_cast<unsigned char>(version.minor);
-    const unsigned char flags = facingLeft ? 0x1 : 0x0;
-    const unsigned char reserved = 0;
-    out.write(reinterpret_cast<const char*>(&major), 1);
-    out.write(reinterpret_cast<const char*>(&minor), 1);
-    out.write(reinterpret_cast<const char*>(&flags), 1);
-    out.write(reinterpret_cast<const char*>(&reserved), 1);
-
-    const size_t maxWrite = (std::min)(frames.size(), static_cast<size_t>(kMaxFramesPerPlayback));
-    if (maxWrite > 0) {
-        out.write(frames.data(), static_cast<std::streamsize>(maxWrite));
+    const std::vector<char> serialized = SerializePlaybackBytes(facingLeft, frames);
+    if (!serialized.empty()) {
+        out.write(serialized.data(), static_cast<std::streamsize>(serialized.size()));
     }
 
     return out.good();
-}
-
-void UnlimitedPlaybackManager::RefreshCacheForEntry(const PlaybackEntry& entry) {
-    CachedPlayback cp;
-    const std::string fullPath = ResolveEntryPath(entry);
-    if (ReadPlaybackFile(fullPath, &cp)) {
-        m_cache[entry.id] = cp;
-    } else {
-        m_cache.erase(entry.id);
-    }
-}
-
-std::string UnlimitedPlaybackManager::ResolveEntryPath(const PlaybackEntry& entry) const {
-    if (IsAbsolutePath(entry.relativePath)) {
-        return entry.relativePath;
-    }
-
-    if (PathExists(entry.relativePath)) {
-        return entry.relativePath;
-    }
-
-    const std::string libraryPath = JoinPath(GetLibraryFolder(), entry.relativePath);
-    if (PathExists(libraryPath)) {
-        return libraryPath;
-    }
-
-    const size_t slash = entry.relativePath.find_last_of("/\\");
-    if (slash != std::string::npos) {
-        const std::string fileNameOnly = entry.relativePath.substr(slash + 1);
-        const std::string libraryFileOnlyPath = JoinPath(GetLibraryFolder(), fileNameOnly);
-        if (PathExists(libraryFileOnlyPath)) {
-            return libraryFileOnlyPath;
-        }
-    }
-
-    if (!m_lastLoadedProfileFolder.empty()) {
-        const std::string profileRelativePath = JoinPath(m_lastLoadedProfileFolder, entry.relativePath);
-        if (PathExists(profileRelativePath)) {
-            return profileRelativePath;
-        }
-
-        const std::string profileLibraryPath = JoinPath(JoinPath(m_lastLoadedProfileFolder, "library"), entry.relativePath);
-        if (PathExists(profileLibraryPath)) {
-            return profileLibraryPath;
-        }
-
-        const std::string profilePlaybacksPath = JoinPath(JoinPath(m_lastLoadedProfileFolder, "playbacks"), entry.relativePath);
-        if (PathExists(profilePlaybacksPath)) {
-            return profilePlaybacksPath;
-        }
-    }
-
-    return libraryPath;
 }
 
 bool UnlimitedPlaybackManager::PickEntryIndexForTrigger(TriggerType trigger, size_t* outIndex) {
@@ -1442,10 +1479,6 @@ std::vector<size_t> UnlimitedPlaybackManager::BuildCandidatesForTrigger(TriggerT
         }
 
         auto cacheIt = m_cache.find(e.id);
-        if (cacheIt == m_cache.end() || !cacheIt->second.loaded) {
-            RefreshCacheForEntry(e);
-            cacheIt = m_cache.find(e.id);
-        }
         if (cacheIt == m_cache.end() || !cacheIt->second.loaded) {
             continue;
         }

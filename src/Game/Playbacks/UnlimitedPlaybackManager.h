@@ -124,14 +124,13 @@ private:
     std::string MakeEntryId();
     std::string SanitizeFileName(const std::string& input) const;
     std::string BuildUniqueRelativePath(const std::string& preferredName) const;
+    std::string EnsureEntryLibraryRelativePath(size_t idx);
 
     bool ReadPlaybackFile(const std::string& fullPath, CachedPlayback* out, bool forceLoadIncompatible = false);
     bool WritePlaybackFile(const std::string& fullPath, bool facingLeft, const std::vector<char>& frames);
     bool IsReplayMatchActive() const;
     bool BuildPlaybackFramesFromReplayRange(int round, int startFrame, int endFrameExclusive, int recordedPlayer, std::vector<char>* outFrames) const;
 
-    void RefreshCacheForEntry(const PlaybackEntry& entry);
-    std::string ResolveEntryPath(const PlaybackEntry& entry) const;
     bool PickEntryIndexForTrigger(TriggerType trigger, size_t* outIndex);
     bool TryFireTrigger(TriggerType trigger, int currentFrame);
     bool IsKeyPressedEdge(int virtualKey) const;

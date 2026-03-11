@@ -23,9 +23,11 @@
 namespace {
 const char* kDefaultProfileName = "default.urt";
 const char* kProfileKind = "unlimited_replay_takeover_profile";
+const char* kEmbeddedEntryDataKey = "entry_data";
 const char* kEntryMagic = "URTE";
 const unsigned char kEntryVersionMajor = 1;
 const unsigned char kEntryVersionMinor = 1;
+const int kMaxReplayTakeoverFramesPerEntry = 1200;
 const size_t kSnapshotBytesSize = sizeof(Snapshot);
 const int kUrtDedicatedLiveSnapshotSlot = 9;
 const int kPreviewFrameByteCount = 24;
@@ -95,6 +97,225 @@ std::vector<std::string> Split(const std::string& s, char delim) {
         out.push_back(item);
     }
     return out;
+}
+
+bool ParseFormatVersion(const std::string& text, unsigned int* outMajor, unsigned int* outMinor) {
+    if (!outMajor || !outMinor) {
+        return false;
+    }
+    const size_t dot = text.find('.');
+    if (dot == std::string::npos) {
+        return false;
+    }
+    const std::string majorText = Trim(text.substr(0, dot));
+    const std::string minorText = Trim(text.substr(dot + 1));
+    if (majorText.empty() || minorText.empty()) {
+        return false;
+    }
+    *outMajor = static_cast<unsigned int>(std::strtoul(majorText.c_str(), nullptr, 10));
+    *outMinor = static_cast<unsigned int>(std::strtoul(minorText.c_str(), nullptr, 10));
+    return true;
+}
+
+char HexDigit(unsigned char value) {
+    return value < 10 ? static_cast<char>('0' + value) : static_cast<char>('A' + (value - 10));
+}
+
+bool TryParseHexNibble(char c, unsigned char* outValue) {
+    if (!outValue) {
+        return false;
+    }
+    if (c >= '0' && c <= '9') {
+        *outValue = static_cast<unsigned char>(c - '0');
+        return true;
+    }
+    if (c >= 'a' && c <= 'f') {
+        *outValue = static_cast<unsigned char>(10 + (c - 'a'));
+        return true;
+    }
+    if (c >= 'A' && c <= 'F') {
+        *outValue = static_cast<unsigned char>(10 + (c - 'A'));
+        return true;
+    }
+    return false;
+}
+
+std::string EncodeHex(const std::vector<char>& data) {
+    std::string out;
+    out.resize(data.size() * 2);
+    for (size_t i = 0; i < data.size(); ++i) {
+        const unsigned char value = static_cast<unsigned char>(data[i]);
+        out[(i * 2) + 0] = HexDigit(static_cast<unsigned char>((value >> 4) & 0xF));
+        out[(i * 2) + 1] = HexDigit(static_cast<unsigned char>(value & 0xF));
+    }
+    return out;
+}
+
+bool DecodeHex(const std::string& text, std::vector<char>* outData) {
+    if (!outData || (text.size() % 2) != 0) {
+        return false;
+    }
+    outData->clear();
+    outData->reserve(text.size() / 2);
+    for (size_t i = 0; i < text.size(); i += 2) {
+        unsigned char hi = 0;
+        unsigned char lo = 0;
+        if (!TryParseHexNibble(text[i], &hi) || !TryParseHexNibble(text[i + 1], &lo)) {
+            outData->clear();
+            return false;
+        }
+        outData->push_back(static_cast<char>((hi << 4) | lo));
+    }
+    return true;
+}
+
+bool ParseEntryDataBytes(
+    const std::vector<char>& data,
+    UnlimitedReplayTakeoverManager::LoadedEntryData* outData,
+    std::string* outFailureReason) {
+    if (!outData) {
+        if (outFailureReason) {
+            *outFailureReason = "Invalid replay takeover destination.";
+        }
+        return false;
+    }
+    if (data.size() < 16) {
+        if (outFailureReason) {
+            *outFailureReason = "Replay takeover payload was too small.";
+        }
+        return false;
+    }
+    if (std::strncmp(data.data(), kEntryMagic, 4) != 0) {
+        if (outFailureReason) {
+            *outFailureReason = "Replay takeover payload had invalid magic.";
+        }
+        return false;
+    }
+
+    size_t offset = 4;
+    const unsigned char versionMajor = static_cast<unsigned char>(data[offset++]);
+    const unsigned char versionMinor = static_cast<unsigned char>(data[offset++]);
+    const unsigned char flags = static_cast<unsigned char>(data[offset++]);
+    offset += 1; // reserved
+
+    auto readU32 = [&](uint32_t* outValue) -> bool {
+        if (!outValue || (offset + sizeof(uint32_t)) > data.size()) {
+            return false;
+        }
+        std::memcpy(outValue, data.data() + offset, sizeof(uint32_t));
+        offset += sizeof(uint32_t);
+        return true;
+    };
+    auto readI32 = [&](int32_t* outValue) -> bool {
+        if (!outValue || (offset + sizeof(int32_t)) > data.size()) {
+            return false;
+        }
+        std::memcpy(outValue, data.data() + offset, sizeof(int32_t));
+        offset += sizeof(int32_t);
+        return true;
+    };
+
+    uint32_t snapshotSize = 0;
+    uint32_t frameCount = 0;
+    int32_t recordedP1CharIndex = -1;
+    int32_t recordedP2CharIndex = -1;
+    if (!readU32(&snapshotSize) || !readU32(&frameCount)) {
+        if (outFailureReason) {
+            *outFailureReason = "Replay takeover payload header was truncated.";
+        }
+        return false;
+    }
+    if (versionMinor >= 1) {
+        if (!readI32(&recordedP1CharIndex) || !readI32(&recordedP2CharIndex)) {
+            if (outFailureReason) {
+                *outFailureReason = "Replay takeover metadata was truncated.";
+            }
+            return false;
+        }
+    }
+
+    if (versionMajor != kEntryVersionMajor) {
+        if (outFailureReason) {
+            *outFailureReason =
+                std::string("Replay takeover rejected: file v") +
+                std::to_string(static_cast<unsigned int>(versionMajor)) +
+                "." +
+                std::to_string(static_cast<unsigned int>(versionMinor)) +
+                ", code v" +
+                std::to_string(static_cast<unsigned int>(kEntryVersionMajor)) +
+                "." +
+                std::to_string(static_cast<unsigned int>(kEntryVersionMinor)) + ".";
+        }
+        return false;
+    }
+    if (snapshotSize == 0 || snapshotSize > static_cast<uint32_t>(kSnapshotBytesSize)) {
+        if (outFailureReason) {
+            *outFailureReason = "Replay takeover payload had invalid snapshot size.";
+        }
+        return false;
+    }
+    if (frameCount == 0 || frameCount > static_cast<uint32_t>(kMaxReplayTakeoverFramesPerEntry)) {
+        if (outFailureReason) {
+            *outFailureReason = "Replay takeover payload had invalid frame count.";
+        }
+        return false;
+    }
+    if ((offset + snapshotSize + frameCount) > data.size()) {
+        if (outFailureReason) {
+            *outFailureReason = "Replay takeover payload was truncated.";
+        }
+        return false;
+    }
+
+    outData->snapshotBytes.assign(data.begin() + static_cast<std::ptrdiff_t>(offset),
+                                  data.begin() + static_cast<std::ptrdiff_t>(offset + snapshotSize));
+    offset += snapshotSize;
+    outData->playbackFrames.assign(data.begin() + static_cast<std::ptrdiff_t>(offset),
+                                   data.begin() + static_cast<std::ptrdiff_t>(offset + frameCount));
+    outData->facingLeft = (flags & 0x1) != 0;
+    outData->loaded = true;
+    outData->recordedP1CharIndex = recordedP1CharIndex;
+    outData->recordedP2CharIndex = recordedP2CharIndex;
+    return true;
+}
+
+std::vector<char> SerializeEntryDataBytes(const UnlimitedReplayTakeoverManager::LoadedEntryData& data) {
+    const uint32_t snapshotSize = static_cast<uint32_t>(data.snapshotBytes.size());
+    const uint32_t frameCount = static_cast<uint32_t>(data.playbackFrames.size());
+    const int32_t recordedP1CharIndex = data.recordedP1CharIndex;
+    const int32_t recordedP2CharIndex = data.recordedP2CharIndex;
+    const unsigned char flags = data.facingLeft ? 0x1 : 0x0;
+    const unsigned char reserved = 0;
+
+    std::vector<char> serialized;
+    serialized.reserve(
+        4 + 1 + 1 + 1 + 1 +
+        sizeof(snapshotSize) +
+        sizeof(frameCount) +
+        sizeof(recordedP1CharIndex) +
+        sizeof(recordedP2CharIndex) +
+        data.snapshotBytes.size() +
+        data.playbackFrames.size());
+    serialized.insert(serialized.end(), kEntryMagic, kEntryMagic + 4);
+    serialized.push_back(static_cast<char>(kEntryVersionMajor));
+    serialized.push_back(static_cast<char>(kEntryVersionMinor));
+    serialized.push_back(static_cast<char>(flags));
+    serialized.push_back(static_cast<char>(reserved));
+    serialized.insert(serialized.end(),
+        reinterpret_cast<const char*>(&snapshotSize),
+        reinterpret_cast<const char*>(&snapshotSize) + sizeof(snapshotSize));
+    serialized.insert(serialized.end(),
+        reinterpret_cast<const char*>(&frameCount),
+        reinterpret_cast<const char*>(&frameCount) + sizeof(frameCount));
+    serialized.insert(serialized.end(),
+        reinterpret_cast<const char*>(&recordedP1CharIndex),
+        reinterpret_cast<const char*>(&recordedP1CharIndex) + sizeof(recordedP1CharIndex));
+    serialized.insert(serialized.end(),
+        reinterpret_cast<const char*>(&recordedP2CharIndex),
+        reinterpret_cast<const char*>(&recordedP2CharIndex) + sizeof(recordedP2CharIndex));
+    serialized.insert(serialized.end(), data.snapshotBytes.begin(), data.snapshotBytes.end());
+    serialized.insert(serialized.end(), data.playbackFrames.begin(), data.playbackFrames.end());
+    return serialized;
 }
 
 bool SafeSaveSnapshotNoBuffer(SnapshotApparatus* apparatus) {
@@ -791,13 +1012,9 @@ void UnlimitedReplayTakeoverManager::InitializeIfNeeded() {
         return;
     }
 
-    EnsureFolders();
-    m_activeProfilePath = JoinPath(GetProfileFolder(), kDefaultProfileName);
-    m_lastLoadedProfileFolder = GetProfileFolder();
+    m_activeProfilePath.clear();
+    m_lastLoadedProfileFolder.clear();
     m_initialized = true;
-    if (!LoadProfile(m_activeProfilePath)) {
-        SaveProfile(m_activeProfilePath);
-    }
 }
 
 void UnlimitedReplayTakeoverManager::Tick() {
@@ -1067,16 +1284,9 @@ bool UnlimitedReplayTakeoverManager::StopRecordingAndSave(const std::string& dis
 
     std::string entryName = displayName.empty() ? ("Replay " + std::to_string(static_cast<unsigned long long>(GetTickCount64()))) : displayName;
     const std::string relPath = BuildUniqueRelativePath(entryName);
-    const std::string fullPath = JoinPath(GetLibraryFolder(), relPath);
-    LOG(1, "[URT] StopRecordingAndSave writing entry name='%s' rel='%s' full='%s'\n",
+    LOG(1, "[URT] StopRecordingAndSave storing entry in memory name='%s' rel='%s'\n",
         entryName.c_str(),
-        relPath.c_str(),
-        fullPath.c_str());
-    if (!SaveEntryData(fullPath, data)) {
-        LOG(1, "[URT] StopRecordingAndSave failed: SaveEntryData failed\n");
-        CancelRecording("Replay recording cancelled (failed writing entry).");
-        return false;
-    }
+        relPath.c_str());
 
     ReplayTakeoverEntry entry;
     entry.id = MakeEntryId();
@@ -1198,10 +1408,6 @@ bool UnlimitedReplayTakeoverManager::RemoveEntryByIndex(size_t idx) {
     const ReplayTakeoverEntry removed = m_entries[idx];
     m_cache.erase(removed.id);
     m_runtimeLiveSnapshotSlots.erase(removed.id);
-    const std::string entryPath = ResolveEntryPath(removed);
-    if (!entryPath.empty()) {
-        DeleteFileA(entryPath.c_str());
-    }
     m_entries.erase(m_entries.begin() + idx);
     PushToast("Replay takeover entry removed.");
     return true;
@@ -1246,6 +1452,24 @@ bool UnlimitedReplayTakeoverManager::SaveProfile(const std::string& profilePath)
             << e.relativePath << "|"
             << (e.enabled ? 1 : 0) << "|"
             << e.weight << "\n";
+
+        LoadedEntryData data;
+        bool haveEntryData = false;
+        const auto cacheIt = m_cache.find(e.id);
+        if (cacheIt != m_cache.end() && cacheIt->second.loaded) {
+            data = cacheIt->second;
+            haveEntryData = true;
+        }
+
+        if (!haveEntryData || !data.loaded) {
+            PushToast(std::string("Replay takeover profile save failed: entry data missing for '") + e.name + "'.");
+            return false;
+        }
+
+        const std::vector<char> serialized = SerializeEntryDataBytes(data);
+        out << kEmbeddedEntryDataKey << "="
+            << e.id << "|"
+            << EncodeHex(serialized) << "\n";
     }
     out.close();
     m_activeProfilePath = p;
@@ -1265,6 +1489,11 @@ bool UnlimitedReplayTakeoverManager::LoadProfile(const std::string& profilePath)
     }
 
     std::vector<ReplayTakeoverEntry> parsedEntries;
+    std::unordered_map<std::string, std::string> embeddedEntryDataHex;
+    bool sawFormatKind = false;
+    bool sawFormatVersion = false;
+    unsigned int parsedFormatMajor = 0;
+    unsigned int parsedFormatMinor = 0;
     int parsedSelectionMode = m_selectionMode;
     int parsedTriggerKey = m_triggerKeyCode;
     int parsedCancelKey = m_cancelKeyCode;
@@ -1284,7 +1513,20 @@ bool UnlimitedReplayTakeoverManager::LoadProfile(const std::string& profilePath)
 
         const std::string key = Trim(line.substr(0, pos));
         const std::string value = Trim(line.substr(pos + 1));
-        if (key == "format_kind" || key == "format_version") {
+        if (key == "format_kind") {
+            sawFormatKind = true;
+            if (value != kProfileKind) {
+                PushToast("Replay takeover profile load failed: invalid profile kind.");
+                return false;
+            }
+            continue;
+        }
+        if (key == "format_version") {
+            if (!ParseFormatVersion(value, &parsedFormatMajor, &parsedFormatMinor)) {
+                PushToast("Replay takeover profile load failed: invalid format version.");
+                return false;
+            }
+            sawFormatVersion = true;
             continue;
         }
         if (key == "selection_mode") {
@@ -1326,7 +1568,32 @@ bool UnlimitedReplayTakeoverManager::LoadProfile(const std::string& profilePath)
                 e.weight = 0.01f;
             }
             parsedEntries.push_back(e);
+            continue;
         }
+        if (key == kEmbeddedEntryDataKey) {
+            const size_t split = value.find('|');
+            if (split == std::string::npos) {
+                continue;
+            }
+            const std::string entryId = value.substr(0, split);
+            const std::string encodedData = value.substr(split + 1);
+            if (!entryId.empty() && !encodedData.empty()) {
+                embeddedEntryDataHex[entryId] = encodedData;
+            }
+        }
+    }
+
+    if (!sawFormatKind) {
+        PushToast("Replay takeover profile load failed: missing format kind.");
+        return false;
+    }
+    if (!sawFormatVersion) {
+        PushToast("Replay takeover profile load failed: missing format version.");
+        return false;
+    }
+    if (parsedFormatMajor != 1 || parsedFormatMinor != 0) {
+        PushToast("Replay takeover profile load failed: unsupported format version.");
+        return false;
     }
 
     m_entries = parsedEntries;
@@ -1346,8 +1613,29 @@ bool UnlimitedReplayTakeoverManager::LoadProfile(const std::string& profilePath)
         m_lastLoadedProfileFolder.clear();
     }
 
-    // Keep profile load lightweight; entry payloads are lazily loaded on demand.
     m_cache.clear();
+    for (const auto& e : m_entries) {
+        const auto embeddedIt = embeddedEntryDataHex.find(e.id);
+        if (embeddedIt == embeddedEntryDataHex.end()) {
+            PushToast(std::string("Replay takeover profile load failed: embedded entry missing for '") + e.name + "'.");
+            return false;
+        }
+
+        std::vector<char> embeddedBytes;
+        LoadedEntryData data;
+        std::string failureReason;
+        if (DecodeHex(embeddedIt->second, &embeddedBytes) &&
+            ParseEntryDataBytes(embeddedBytes, &data, &failureReason)) {
+            m_cache[e.id] = data;
+        } else if (!failureReason.empty()) {
+            PushToast(std::string("Replay takeover profile load failed for '") + e.name + "': " + failureReason);
+            return false;
+        } else {
+            PushToast(std::string("Replay takeover profile load failed for '") + e.name + "'.");
+            return false;
+        }
+    }
+
     m_runtimeLiveSnapshotSlots.clear();
 
     m_activeProfilePath = p;
@@ -1425,7 +1713,6 @@ void UnlimitedReplayTakeoverManager::PushToast(const std::string& text, unsigned
 }
 
 void UnlimitedReplayTakeoverManager::EnsureFolders() {
-    EnsureDirectoryRecursive(GetLibraryFolder());
     EnsureDirectoryRecursive(GetProfileFolder());
 }
 
@@ -1471,12 +1758,28 @@ std::string UnlimitedReplayTakeoverManager::BuildUniqueRelativePath(const std::s
             candidate += "_" + std::to_string(suffix);
         }
         candidate += ".urte";
-        const std::string full = JoinPath(GetLibraryFolder(), candidate);
-        if (!PathExists(full)) {
+        bool exists = false;
+        for (size_t i = 0; i < m_entries.size(); ++i) {
+            if (m_entries[i].relativePath == candidate) {
+                exists = true;
+                break;
+            }
+        }
+        if (!exists) {
             return candidate;
         }
         ++suffix;
     }
+}
+
+std::string UnlimitedReplayTakeoverManager::EnsureEntryLibraryRelativePath(size_t idx) {
+    if (idx >= m_entries.size()) {
+        return "";
+    }
+    if (m_entries[idx].relativePath.empty() || IsAbsolutePath(m_entries[idx].relativePath)) {
+        m_entries[idx].relativePath = BuildUniqueRelativePath(m_entries[idx].name.empty() ? "entry" : m_entries[idx].name);
+    }
+    return m_entries[idx].relativePath;
 }
 
 std::string UnlimitedReplayTakeoverManager::ResolveEntryPath(const ReplayTakeoverEntry& entry) const {
@@ -1601,77 +1904,32 @@ bool UnlimitedReplayTakeoverManager::LoadEntryData(const ReplayTakeoverEntry& en
         return false;
     }
 
-    char magic[4] = {};
-    in.read(magic, 4);
-    if (!in.good() || std::strncmp(magic, kEntryMagic, 4) != 0) {
-        LOG(1, "[URT] LoadEntryData failed: bad magic\n");
+    in.seekg(0, std::ios::end);
+    const std::streamoff size = in.tellg();
+    in.seekg(0, std::ios::beg);
+    if (size <= 0) {
+        LOG(1, "[URT] LoadEntryData failed: empty file\n");
         return false;
     }
 
-    unsigned char versionMajor = 0;
-    unsigned char versionMinor = 0;
-    unsigned char flags = 0;
-    unsigned char reserved = 0;
-    uint32_t snapshotSize = 0;
-    uint32_t frameCount = 0;
-    int32_t recordedP1CharIndex = -1;
-    int32_t recordedP2CharIndex = -1;
-    in.read(reinterpret_cast<char*>(&versionMajor), 1);
-    in.read(reinterpret_cast<char*>(&versionMinor), 1);
-    in.read(reinterpret_cast<char*>(&flags), 1);
-    in.read(reinterpret_cast<char*>(&reserved), 1);
-    in.read(reinterpret_cast<char*>(&snapshotSize), sizeof(snapshotSize));
-    in.read(reinterpret_cast<char*>(&frameCount), sizeof(frameCount));
-    if (versionMinor >= 1) {
-        in.read(reinterpret_cast<char*>(&recordedP1CharIndex), sizeof(recordedP1CharIndex));
-        in.read(reinterpret_cast<char*>(&recordedP2CharIndex), sizeof(recordedP2CharIndex));
-    }
-    if (!in.good()) {
-        LOG(1, "[URT] LoadEntryData failed: header read failed\n");
-        return false;
-    }
-    if (versionMajor != kEntryVersionMajor) {
-        LOG(1, "[URT] LoadEntryData failed: version mismatch major=%u expected=%u\n",
-            static_cast<unsigned int>(versionMajor),
-            static_cast<unsigned int>(kEntryVersionMajor));
+    std::vector<char> data(static_cast<size_t>(size));
+    in.read(data.data(), size);
+    if (!in.good() && !in.eof()) {
+        LOG(1, "[URT] LoadEntryData failed: data read failed\n");
         return false;
     }
 
-    if (snapshotSize == 0 || snapshotSize > static_cast<uint32_t>(kSnapshotBytesSize)) {
-        LOG(1, "[URT] LoadEntryData failed: invalid snapshotSize=%u\n", snapshotSize);
+    std::string failureReason;
+    if (!ParseEntryDataBytes(data, outData, &failureReason)) {
+        LOG(1, "[URT] LoadEntryData failed: %s\n", failureReason.c_str());
         return false;
     }
-    if (frameCount == 0 || frameCount > static_cast<uint32_t>(kMaxFramesPerEntry)) {
-        LOG(1, "[URT] LoadEntryData failed: invalid frameCount=%u\n", frameCount);
-        return false;
-    }
-
-    outData->snapshotBytes.resize(snapshotSize);
-    outData->playbackFrames.resize(frameCount);
-    in.read(outData->snapshotBytes.data(), static_cast<std::streamsize>(snapshotSize));
-    if (in.gcount() != static_cast<std::streamsize>(snapshotSize)) {
-        LOG(1, "[URT] LoadEntryData failed: snapshot payload truncated expected=%u got=%d\n",
-            snapshotSize,
-            static_cast<int>(in.gcount()));
-        return false;
-    }
-    in.read(outData->playbackFrames.data(), static_cast<std::streamsize>(frameCount));
-    if (in.gcount() != static_cast<std::streamsize>(frameCount)) {
-        LOG(1, "[URT] LoadEntryData failed: playback payload truncated expected=%u got=%d\n",
-            frameCount,
-            static_cast<int>(in.gcount()));
-        return false;
-    }
-    outData->facingLeft = (flags & 0x1) != 0;
-    outData->loaded = true;
-    outData->recordedP1CharIndex = recordedP1CharIndex;
-    outData->recordedP2CharIndex = recordedP2CharIndex;
     LOG(1, "[URT] LoadEntryData success: snapshotSize=%u frameCount=%u facingLeft=%d\n",
-        snapshotSize,
-        frameCount,
+        static_cast<unsigned int>(outData->snapshotBytes.size()),
+        static_cast<unsigned int>(outData->playbackFrames.size()),
         outData->facingLeft ? 1 : 0);
     LOG(1, "[URT] LoadEntryData metadata: version=1.%u p1Char=%d p2Char=%d\n",
-        static_cast<unsigned int>(versionMinor),
+        static_cast<unsigned int>(kEntryVersionMinor),
         outData->recordedP1CharIndex,
         outData->recordedP2CharIndex);
     LogFramePreview("LoadEntryData", outData->playbackFrames);
@@ -1690,31 +1948,18 @@ bool UnlimitedReplayTakeoverManager::SaveEntryData(const std::string& fullPath, 
         return false;
     }
 
-    const unsigned char flags = data.facingLeft ? 0x1 : 0x0;
-    const unsigned char reserved = 0;
     const uint32_t snapshotSize = static_cast<uint32_t>(data.snapshotBytes.size());
     const uint32_t frameCount = static_cast<uint32_t>(data.playbackFrames.size());
-    const int32_t recordedP1CharIndex = data.recordedP1CharIndex;
-    const int32_t recordedP2CharIndex = data.recordedP2CharIndex;
     LOG(1, "[URT] SaveEntryData path='%s' snapshotSize=%u frameCount=%u facingLeft=%d\n",
         fullPath.c_str(),
         snapshotSize,
         frameCount,
         data.facingLeft ? 1 : 0);
     LOG(1, "[URT] SaveEntryData metadata p1Char=%d p2Char=%d\n",
-        recordedP1CharIndex,
-        recordedP2CharIndex);
-    out.write(kEntryMagic, 4);
-    out.write(reinterpret_cast<const char*>(&kEntryVersionMajor), 1);
-    out.write(reinterpret_cast<const char*>(&kEntryVersionMinor), 1);
-    out.write(reinterpret_cast<const char*>(&flags), 1);
-    out.write(reinterpret_cast<const char*>(&reserved), 1);
-    out.write(reinterpret_cast<const char*>(&snapshotSize), sizeof(snapshotSize));
-    out.write(reinterpret_cast<const char*>(&frameCount), sizeof(frameCount));
-    out.write(reinterpret_cast<const char*>(&recordedP1CharIndex), sizeof(recordedP1CharIndex));
-    out.write(reinterpret_cast<const char*>(&recordedP2CharIndex), sizeof(recordedP2CharIndex));
-    out.write(data.snapshotBytes.data(), static_cast<std::streamsize>(snapshotSize));
-    out.write(data.playbackFrames.data(), static_cast<std::streamsize>(frameCount));
+        data.recordedP1CharIndex,
+        data.recordedP2CharIndex);
+    const std::vector<char> serialized = SerializeEntryDataBytes(data);
+    out.write(serialized.data(), static_cast<std::streamsize>(serialized.size()));
     const bool ok = out.good();
     LOG(1, "[URT] SaveEntryData result=%d\n", ok ? 1 : 0);
     return ok;
@@ -1735,17 +1980,7 @@ bool UnlimitedReplayTakeoverManager::StartEntryByIndex(size_t idx) {
     const auto& entry = m_entries[idx];
     auto it = m_cache.find(entry.id);
     if (it == m_cache.end() || !it->second.loaded) {
-        LoadedEntryData data;
-        LOG(1, "[URT] Loading entry file: %s\n", entry.relativePath.c_str());
-        if (!LoadEntryData(entry, &data)) {
-            PushToast("Failed loading replay takeover entry.");
-            LOG(1, "[URT] Failed loading entry file\n");
-            return false;
-        }
-        m_cache[entry.id] = data;
-        it = m_cache.find(entry.id);
-    }
-    if (it == m_cache.end() || !it->second.loaded) {
+        PushToast("Replay takeover entry data missing.");
         return false;
     }
 

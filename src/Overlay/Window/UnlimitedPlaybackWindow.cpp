@@ -164,8 +164,7 @@ void UnlimitedPlaybackWindow::Draw() {
         char selectedPath[MAX_PATH] = {};
         if (OpenFileDialogForFilter("Load unlimited playback profile", "Unlimited Profile (*.upl)\0*.upl\0All Files\0*.*\0", selectedPath, MAX_PATH)) {
             auto compatibility = mgr.ProbeProfileCompatibility(selectedPath);
-            if (compatibility.action == CompatibilityManager::Action_Load ||
-                compatibility.action == CompatibilityManager::Action_Migrate) {
+            if (compatibility.action == CompatibilityManager::Action_Load) {
                 mgr.LoadProfile(selectedPath);
             } else {
                 std::strncpy(pendingProfilePath, selectedPath, MAX_PATH - 1);
@@ -195,8 +194,7 @@ void UnlimitedPlaybackWindow::Draw() {
         char selectedPath[MAX_PATH] = {};
         if (OpenFileDialogForFilter("Import .playback file", "Playback File (*.playback)\0*.playback\0All Files\0*.*\0", selectedPath, MAX_PATH)) {
             auto compatibility = mgr.ProbePlaybackCompatibility(selectedPath);
-            if (compatibility.action == CompatibilityManager::Action_Load ||
-                compatibility.action == CompatibilityManager::Action_Migrate) {
+            if (compatibility.action == CompatibilityManager::Action_Load) {
                 mgr.AddPlaybackFile(selectedPath, "");
             } else {
                 std::strncpy(pendingPlaybackPath, selectedPath, MAX_PATH - 1);
