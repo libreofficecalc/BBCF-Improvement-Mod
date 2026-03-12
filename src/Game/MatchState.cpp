@@ -3,6 +3,7 @@
 #include "Core/interfaces.h"
 #include "Core/logger.h"
 #include "Game/gamestates.h"
+#include "Game/Playbacks/UnlimitedPlaybackManager.h"
 #include "Game/ReplayFiles/ReplayFileManager.h"
 #include "Overlay/Window/PaletteEditorWindow.h"
 #include "Overlay/Window/ReplayRewindWindow.h"
@@ -57,6 +58,7 @@ void MatchState::OnMatchInit()
 	}
 
 	g_gameVals.isFrameFrozen = false;
+	UnlimitedPlaybackManager::Instance().OnMatchInit();
 
 	WindowManager::GetInstance().GetWindowContainer()->GetWindow<PaletteEditorWindow>(WindowType_PaletteEditor)->OnMatchInit();
 }

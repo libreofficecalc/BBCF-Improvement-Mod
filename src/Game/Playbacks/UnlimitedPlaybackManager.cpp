@@ -23,6 +23,7 @@ const char* kProfileFormatKindKey = "format_kind";
 const char* kProfileFormatKindValue = "unlimited_profile";
 const char* kEmbeddedEntryDataKey = "entry_data";
 const char kPlaybackHeaderMagic[4] = { 'U', 'P', 'B', '2' };
+constexpr int kDedicatedRuntimePlaybackSlot = 4;
 
 bool PathExists(const std::string& path) {
     const DWORD attrs = GetFileAttributesA(path.c_str());
@@ -125,6 +126,40 @@ std::string EncodeHex(const std::vector<char>& data) {
     return out;
 }
 
+uint32_t ComputePlaybackDigest(const std::vector<char>& data) {
+    uint32_t hash = 2166136261u;
+    for (unsigned char byte : data) {
+        hash ^= byte;
+        hash *= 16777619u;
+    }
+    return hash;
+}
+
+std::string PreviewPlaybackBytes(const std::vector<char>& data, size_t maxBytes) {
+    const size_t count = (std::min)(data.size(), maxBytes);
+    std::vector<char> preview(data.begin(), data.begin() + static_cast<std::ptrdiff_t>(count));
+    return EncodeHex(preview);
+}
+
+std::vector<char> CompactPlaybackBytes(const std::vector<char>& rawBytes) {
+    std::vector<char> compact;
+    compact.reserve(rawBytes.size() / 2);
+    for (size_t i = 0; (i + 1) < rawBytes.size(); i += 2) {
+        compact.push_back(rawBytes[i]);
+    }
+    return compact;
+}
+
+std::vector<char> ExpandPlaybackBytes(const std::vector<char>& compactBytes) {
+    std::vector<char> raw;
+    raw.reserve(compactBytes.size() * 2);
+    for (char input : compactBytes) {
+        raw.push_back(input);
+        raw.push_back(0);
+    }
+    return raw;
+}
+
 bool DecodeHex(const std::string& text, std::vector<char>* outData) {
     if (!outData || (text.size() % 2) != 0) {
         return false;
@@ -204,8 +239,8 @@ bool ParsePlaybackBytes(
         return false;
     }
 
-    if (out->frames.size() > static_cast<size_t>(UnlimitedPlaybackManager::kMaxFramesPerPlayback)) {
-        out->frames.resize(UnlimitedPlaybackManager::kMaxFramesPerPlayback);
+    if (out->frames.size() > static_cast<size_t>(UnlimitedPlaybackManager::kMaxFramesPerPlayback) * 2) {
+        out->frames.resize(static_cast<size_t>(UnlimitedPlaybackManager::kMaxFramesPerPlayback) * 2);
     }
     out->loaded = true;
     return true;
@@ -213,7 +248,7 @@ bool ParsePlaybackBytes(
 
 std::vector<char> SerializePlaybackBytes(bool facingLeft, const std::vector<char>& frames) {
     std::vector<char> data;
-    const size_t maxWrite = (std::min)(frames.size(), static_cast<size_t>(UnlimitedPlaybackManager::kMaxFramesPerPlayback));
+    const size_t maxWrite = (std::min)(frames.size(), static_cast<size_t>(UnlimitedPlaybackManager::kMaxFramesPerPlayback) * 2);
     data.reserve(8 + maxWrite);
     data.push_back(kPlaybackHeaderMagic[0]);
     data.push_back(kPlaybackHeaderMagic[1]);
@@ -365,18 +400,45 @@ void UnlimitedPlaybackManager::InitializeIfNeeded() {
 void UnlimitedPlaybackManager::Tick() {
     InitializeIfNeeded();
     PruneExpiredToasts();
-    TryRestoreRuntimeSlotAfterPlayback();
 
-    if (m_mode != Mode_Unlimited) {
+    const bool inTrainingMatch =
+        g_gameVals.pGameMode &&
+        g_gameVals.pGameState &&
+        (*g_gameVals.pGameMode == GameMode_Training) &&
+        (*g_gameVals.pGameState == GameState_InMatch) &&
+        (GetGameSceneStatus() >= GameSceneStatus_Running) &&
+        !g_interfaces.player2.IsCharDataNullPtr();
+
+    if (!inTrainingMatch) {
+        if (m_runtimeSlotRestorePending || m_runtimeSlotBackupValid) {
+            LOG(1, "[UP] Leaving training match; stopping playback and restoring runtime slot.\n");
+        }
+        // Match-end cleanup now runs from MatchState::OnMatchEnd while the training block is still valid.
+        // Once we're out of training, only clear our own bookkeeping and avoid touching native playback state.
+        ResetRuntimePlaybackState(true);
+        m_lastObservedFrame = -1;
+        m_prevWakeupCondition = false;
+        m_prevGapCondition = false;
+        m_prevOnBlockCondition = false;
+        m_prevOnHitCondition = false;
+        m_prevThrowTechCondition = false;
+    } else {
+        TryRestoreRuntimeSlotAfterPlayback();
+    }
+
+    if (m_mode != Mode_Unlimited || !inTrainingMatch || !m_triggerRuntimeEnabled || m_profileRuntimeSuppressedUntilReset) {
         return;
     }
 
-    if (!g_gameVals.pGameMode || !g_gameVals.pFrameCount) {
+    if (!g_gameVals.pFrameCount) {
         return;
     }
 
-    if (*g_gameVals.pGameMode != GameMode_Training || g_interfaces.player2.IsCharDataNullPtr()) {
-        return;
+    if (!m_keyPressTriggerArmed && AreBindableKeysReleased()) {
+        LogRuntimeGateState("Tick arming key-press triggers");
+        SyncKeyEdgeState();
+        m_keyPressTriggerArmed = true;
+        LOG(1, "[UP] Key-press triggers armed.\n");
     }
 
     const int frame = g_gameVals.pFrameCount ? *g_gameVals.pFrameCount : 0;
@@ -393,7 +455,36 @@ void UnlimitedPlaybackManager::Tick() {
     TryFireTrigger(Trigger_ThrowTech, frame);
 }
 
+void UnlimitedPlaybackManager::OnMatchInit() {
+    InitializeIfNeeded();
+    LogRuntimeGateState("OnMatchInit before reset");
+    ResetTriggerRuntimeState(!m_profileRuntimeSuppressedUntilReset);
+    LogRuntimeGateState("OnMatchInit after reset");
+}
+
 void UnlimitedPlaybackManager::ForceResetTriggers(const char* toastText) {
+    LogRuntimeGateState("ForceResetTriggers before clear suppression");
+    m_profileRuntimeSuppressedUntilReset = false;
+    ResetTriggerRuntimeState(true);
+    LogRuntimeGateState("ForceResetTriggers after reset");
+    if (toastText && toastText[0] != '\0') {
+        PushToast(toastText);
+    }
+}
+
+void UnlimitedPlaybackManager::ResetTriggerRuntimeState(bool enableRuntime) {
+    LOG(1,
+        "[UP][STATE] ResetTriggerRuntimeState begin enableRuntime=%d oldEnabled=%d oldSuppressed=%d oldArmed=%d oldLastFrame=%d entries=%u cache=%u mode=%d\n",
+        enableRuntime ? 1 : 0,
+        m_triggerRuntimeEnabled ? 1 : 0,
+        m_profileRuntimeSuppressedUntilReset ? 1 : 0,
+        m_keyPressTriggerArmed ? 1 : 0,
+        m_lastObservedFrame,
+        static_cast<unsigned int>(m_entries.size()),
+        static_cast<unsigned int>(m_cache.size()),
+        m_mode);
+    m_triggerRuntimeEnabled = enableRuntime;
+    m_lastObservedFrame = -1;
     for (int i = 0; i < Trigger_Count; ++i) {
         m_triggers[i].lastTriggeredFrame = -999999;
     }
@@ -403,10 +494,112 @@ void UnlimitedPlaybackManager::ForceResetTriggers(const char* toastText) {
     m_prevOnBlockCondition = false;
     m_prevOnHitCondition = false;
     m_prevThrowTechCondition = false;
+    SyncKeyEdgeState();
+    m_keyPressTriggerArmed = false;
+    LogRuntimeGateState("ResetTriggerRuntimeState end");
+}
 
-    if (toastText && toastText[0] != '\0') {
-        PushToast(toastText);
+void UnlimitedPlaybackManager::LogRuntimeGateState(const char* tag) const {
+    const int frame = g_gameVals.pFrameCount ? *g_gameVals.pFrameCount : -1;
+    const int gameMode = g_gameVals.pGameMode ? *g_gameVals.pGameMode : -1;
+    const int gameState = g_gameVals.pGameState ? *g_gameVals.pGameState : -1;
+    LOG(1,
+        "[UP][STATE] %s mode=%d enabled=%d suppressed=%d armed=%d frame=%d gameMode=%d gameState=%d entries=%u cache=%u activeProfile='%s'\n",
+        tag ? tag : "(null)",
+        m_mode,
+        m_triggerRuntimeEnabled ? 1 : 0,
+        m_profileRuntimeSuppressedUntilReset ? 1 : 0,
+        m_keyPressTriggerArmed ? 1 : 0,
+        frame,
+        gameMode,
+        gameState,
+        static_cast<unsigned int>(m_entries.size()),
+        static_cast<unsigned int>(m_cache.size()),
+        m_activeProfilePath.c_str());
+}
+
+void UnlimitedPlaybackManager::LogEntryCacheSummary(const char* tag) const {
+    LOG(1,
+        "[UP][DATA] %s entries=%u cache=%u activeProfile='%s'\n",
+        tag ? tag : "(null)",
+        static_cast<unsigned int>(m_entries.size()),
+        static_cast<unsigned int>(m_cache.size()),
+        m_activeProfilePath.c_str());
+
+    for (size_t i = 0; i < m_entries.size(); ++i) {
+        const auto& entry = m_entries[i];
+        const auto cacheIt = m_cache.find(entry.id);
+        const bool cacheLoaded = cacheIt != m_cache.end() && cacheIt->second.loaded;
+        const unsigned int frameBytes = cacheLoaded ? static_cast<unsigned int>(cacheIt->second.frames.size()) : 0U;
+        const int facing = cacheLoaded ? (cacheIt->second.facingLeft ? 1 : 0) : -1;
+        LOG(1,
+            "[UP][DATA]   idx=%u id='%s' name='%s' enabled=%d weight=%.3f rel='%s' cacheLoaded=%d frameBytes=%u facing=%d digest=0x%08X preview='%s' trig=[%d,%d,%d,%d,%d,%d]\n",
+            static_cast<unsigned int>(i),
+            entry.id.c_str(),
+            entry.name.c_str(),
+            entry.enabled ? 1 : 0,
+            entry.weight,
+            entry.relativePath.c_str(),
+            cacheLoaded ? 1 : 0,
+            frameBytes,
+            facing,
+            cacheLoaded ? ComputePlaybackDigest(cacheIt->second.frames) : 0U,
+            cacheLoaded ? PreviewPlaybackBytes(cacheIt->second.frames, 16).c_str() : "",
+            entry.triggerEnabled[0] ? 1 : 0,
+            entry.triggerEnabled[1] ? 1 : 0,
+            entry.triggerEnabled[2] ? 1 : 0,
+            entry.triggerEnabled[3] ? 1 : 0,
+            entry.triggerEnabled[4] ? 1 : 0,
+            entry.triggerEnabled[5] ? 1 : 0);
     }
+}
+
+void UnlimitedPlaybackManager::DebugLogState(const char* tag) const {
+    LogRuntimeGateState(tag);
+    LogEntryCacheSummary(tag);
+}
+
+void UnlimitedPlaybackManager::OnMatchEnd() {
+    InitializeIfNeeded();
+    m_triggerRuntimeEnabled = false;
+    const bool hasRuntimeOwnership =
+        m_runtimeSlotRestorePending ||
+        m_runtimeSlotBackupValid ||
+        m_runtimeActiveSlotBackupValid ||
+        m_runtimePlaybackTypeBackupValid;
+
+    if (hasRuntimeOwnership) {
+        LOG(1, "[UP] OnMatchEnd cleanup: stopping playback and discarding runtime slot restore.\n");
+        if (m_runtimePlaybackManager.playback_control_p) {
+            m_runtimePlaybackManager.set_playback_control(0);
+        }
+        m_runtimePlaybackManager.set_playback_position(0);
+        if (m_runtimeActiveSlotBackupValid) {
+            const int restoredSlot = m_runtimeActiveSlotBackup + 1;
+            if (restoredSlot >= 1 && restoredSlot <= 4) {
+                m_runtimePlaybackManager.set_active_slot(restoredSlot);
+            }
+        }
+        if (m_runtimePlaybackTypeBackupValid) {
+            m_runtimePlaybackManager.set_playback_type(m_runtimePlaybackTypeBackup);
+        }
+    }
+    m_runtimeSlotBackupFrames.clear();
+    m_runtimeSlotBackupValid = false;
+    m_runtimeSlotRestorePending = false;
+    m_runtimeSlotNumber = 1;
+    m_runtimeActiveSlotBackupValid = false;
+    m_runtimeActiveSlotBackup = 0;
+    m_runtimePlaybackTypeBackupValid = false;
+    m_runtimePlaybackTypeBackup = 0;
+    m_lastObservedFrame = -1;
+    m_prevWakeupCondition = false;
+    m_prevGapCondition = false;
+    m_prevOnBlockCondition = false;
+    m_prevOnHitCondition = false;
+    m_prevThrowTechCondition = false;
+    SyncKeyEdgeState();
+    m_keyPressTriggerArmed = false;
 }
 
 int UnlimitedPlaybackManager::GetMode() const {
@@ -521,9 +714,9 @@ bool UnlimitedPlaybackManager::CaptureSlotToLibrary(int slot, const std::string&
     }
 
     PlaybackSlot pslot(slot);
-    std::vector<char> frames = pslot.get_slot_buffer();
-    if (frames.size() > static_cast<size_t>(kMaxFramesPerPlayback)) {
-        frames.resize(kMaxFramesPerPlayback);
+    std::vector<char> frames = pslot.get_slot_buffer_raw();
+    if (frames.size() > static_cast<size_t>(kMaxFramesPerPlayback) * 2) {
+        frames.resize(static_cast<size_t>(kMaxFramesPerPlayback) * 2);
     }
     const bool facingLeft = pslot.get_facing_direction() != 0;
 
@@ -689,7 +882,7 @@ bool UnlimitedPlaybackManager::LoadEntryIntoSlot(size_t idx, int slot) {
         }
     }
 
-    m_runtimePlaybackManager.load_into_slot(frames, facingToLoad, slot);
+    m_runtimePlaybackManager.load_raw_into_slot(frames, facingToLoad, slot);
     PushToast("Entry loaded into slot.");
     return true;
 }
@@ -702,9 +895,9 @@ bool UnlimitedPlaybackManager::SaveEntryFromSlot(size_t idx, int slot) {
     }
 
     PlaybackSlot pslot(slot);
-    std::vector<char> frames = pslot.get_slot_buffer();
-    if (frames.size() > static_cast<size_t>(kMaxFramesPerPlayback)) {
-        frames.resize(kMaxFramesPerPlayback);
+    std::vector<char> frames = pslot.get_slot_buffer_raw();
+    if (frames.size() > static_cast<size_t>(kMaxFramesPerPlayback) * 2) {
+        frames.resize(static_cast<size_t>(kMaxFramesPerPlayback) * 2);
     }
     const bool facingLeft = pslot.get_facing_direction() != 0;
 
@@ -733,7 +926,7 @@ bool UnlimitedPlaybackManager::ReadEntryPlayback(size_t idx, bool* outFacingLeft
     }
 
     *outFacingLeft = it->second.facingLeft;
-    *outFrames = it->second.frames;
+    *outFrames = CompactPlaybackBytes(it->second.frames);
     return true;
 }
 
@@ -754,7 +947,7 @@ bool UnlimitedPlaybackManager::WriteEntryPlayback(size_t idx, bool facingLeft, c
     CachedPlayback playback;
     playback.loaded = true;
     playback.facingLeft = facingLeft;
-    playback.frames = clampedFrames;
+    playback.frames = ExpandPlaybackBytes(clampedFrames);
     m_cache[m_entries[idx].id] = playback;
     PushToast("Entry saved.");
     return true;
@@ -793,11 +986,12 @@ bool UnlimitedPlaybackManager::BuildPlaybackFramesFromReplayRange(
     char* replayBase = base + 0x115B470 + 0x8d4;
     char* playerBase = replayBase + (0x7080 * recordedPlayer) + (0xE100 * round);
     outFrames->clear();
-    outFrames->reserve(static_cast<size_t>(frameCount));
+    outFrames->reserve(static_cast<size_t>(frameCount) * 2);
     for (int i = 0; i < frameCount; ++i) {
         const int frame = startFrame + i;
         char* recordedInput = playerBase + frame * 2;
-        outFrames->push_back(*recordedInput);
+        outFrames->push_back(recordedInput[0]);
+        outFrames->push_back(recordedInput[1]);
     }
     return true;
 }
@@ -828,16 +1022,20 @@ bool UnlimitedPlaybackManager::PlayEntryNow(size_t idx) {
     }
 
     BackupRuntimeSlotIfNeeded();
-    m_runtimePlaybackManager.load_into_slot(frames, facingToLoad, kRuntimeSlot);
-    m_runtimePlaybackManager.set_active_slot(kRuntimeSlot);
-    m_runtimePlaybackManager.set_playback_control(3);
+    StartRuntimePlayback(frames, facingToLoad);
     m_runtimeSlotRestorePending = true;
+    LOG(1, "[UP] PlayEntryNow started entry='%s' frames=%u facing=%d mirrored=%d\n",
+        entry.name.c_str(),
+        static_cast<unsigned int>(frames.size()),
+        facingToLoad,
+        mirrored ? 1 : 0);
     PushToast(std::string("Played: ") + entry.name + (mirrored ? " (mirrored)" : ""));
     return true;
 }
 
 void UnlimitedPlaybackManager::ClearAll() {
     CancelReplayRecording(nullptr);
+    m_triggerRuntimeEnabled = false;
     m_entries.clear();
     m_cache.clear();
     for (int i = 0; i < Trigger_Count; ++i) {
@@ -944,6 +1142,9 @@ bool UnlimitedPlaybackManager::LoadProfile(const std::string& profilePath, bool 
     if (!PathExists(p)) {
         return false;
     }
+
+    LOG(1, "[UP][STATE] LoadProfile begin path='%s' force=%d\n", p.c_str(), forceLoadIncompatible ? 1 : 0);
+    DebugLogState("LoadProfile begin");
 
     std::ifstream in(p, std::ios::binary);
     if (!in.good()) {
@@ -1069,6 +1270,37 @@ bool UnlimitedPlaybackManager::LoadProfile(const std::string& profilePath, bool 
         }
     }
 
+    std::unordered_map<std::string, CachedPlayback> parsedCache;
+    for (const auto& e : parsedEntries) {
+        const auto embeddedIt = embeddedEntryDataHex.find(e.id);
+        if (embeddedIt == embeddedEntryDataHex.end()) {
+            PushToast(std::string("Profile load failed: embedded playback missing for '") + e.name + "'.");
+            return false;
+        }
+
+        std::vector<char> embeddedBytes;
+        CachedPlayback playback;
+        std::string failureReason;
+        if (DecodeHex(embeddedIt->second, &embeddedBytes) &&
+            ParsePlaybackBytes(embeddedBytes, &playback, forceLoadIncompatible, &failureReason)) {
+            parsedCache[e.id] = playback;
+            LOG(1,
+                "[UP][DIAG] Parsed profile entry id='%s' name='%s' frameBytes=%u facing=%d digest=0x%08X preview='%s'\n",
+                e.id.c_str(),
+                e.name.c_str(),
+                static_cast<unsigned int>(playback.frames.size()),
+                playback.facingLeft ? 1 : 0,
+                ComputePlaybackDigest(playback.frames),
+                PreviewPlaybackBytes(playback.frames, 16).c_str());
+        } else if (!failureReason.empty()) {
+            PushToast(std::string("Profile load failed for '") + e.name + "': " + failureReason);
+            return false;
+        } else {
+            PushToast(std::string("Profile load failed for '") + e.name + "'.");
+            return false;
+        }
+    }
+
     m_entries = parsedEntries;
     m_triggers = parsedTriggers;
     SetMode(parsedMode);
@@ -1082,30 +1314,14 @@ bool UnlimitedPlaybackManager::LoadProfile(const std::string& profilePath, bool 
     }
 
     m_cache.clear();
-    for (const auto& e : m_entries) {
-        const auto embeddedIt = embeddedEntryDataHex.find(e.id);
-        if (embeddedIt == embeddedEntryDataHex.end()) {
-            PushToast(std::string("Profile load failed: embedded playback missing for '") + e.name + "'.");
-            return false;
-        }
+    m_cache = std::move(parsedCache);
 
-        std::vector<char> embeddedBytes;
-        CachedPlayback playback;
-        std::string failureReason;
-        if (DecodeHex(embeddedIt->second, &embeddedBytes) &&
-            ParsePlaybackBytes(embeddedBytes, &playback, forceLoadIncompatible, &failureReason)) {
-            m_cache[e.id] = playback;
-        } else if (!failureReason.empty()) {
-            PushToast(std::string("Profile load failed for '") + e.name + "': " + failureReason);
-            return false;
-        } else {
-            PushToast(std::string("Profile load failed for '") + e.name + "'.");
-            return false;
-        }
-    }
-
+    ResetRuntimePlaybackState(true);
+    ResetTriggerRuntimeState(false);
+    m_profileRuntimeSuppressedUntilReset = true;
     m_activeProfilePath = p;
-    PushToast("Profile loaded.");
+    DebugLogState("LoadProfile end");
+    PushToast("Profile loaded. Trigger runtime stays idle until training reset or Fix Triggers.");
     return true;
 }
 
@@ -1385,10 +1601,14 @@ bool UnlimitedPlaybackManager::TryFireTrigger(TriggerType trigger, int currentFr
     }
 
     BackupRuntimeSlotIfNeeded();
-    m_runtimePlaybackManager.load_into_slot(frames, facingToLoad, kRuntimeSlot);
-    m_runtimePlaybackManager.set_active_slot(kRuntimeSlot);
-    m_runtimePlaybackManager.set_playback_control(3);
+    StartRuntimePlayback(frames, facingToLoad);
     m_runtimeSlotRestorePending = true;
+    LOG(1, "[UP] Trigger started entry='%s' trigger='%s' frames=%u facing=%d mirrored=%d\n",
+        entry.name.c_str(),
+        TriggerDisplayName(trigger),
+        static_cast<unsigned int>(frames.size()),
+        facingToLoad,
+        mirrored ? 1 : 0);
 
     config.lastTriggeredFrame = currentFrame;
     PushToast(std::string("Triggered [") + TriggerDisplayName(trigger) + "]: " + entry.name + (mirrored ? " (mirrored)" : ""));
@@ -1400,9 +1620,22 @@ void UnlimitedPlaybackManager::BackupRuntimeSlotIfNeeded() {
         return;
     }
 
-    PlaybackSlot runtimeSlot(kRuntimeSlot);
-    m_runtimeSlotBackupFrames = runtimeSlot.get_slot_buffer();
-    m_runtimeSlotBackupFacingLeft = runtimeSlot.get_facing_direction() != 0;
+    m_runtimeActiveSlotBackupValid = false;
+    m_runtimeActiveSlotBackup = 0;
+    if (m_runtimePlaybackManager.active_slot_p) {
+        m_runtimeActiveSlotBackup = *reinterpret_cast<int*>(m_runtimePlaybackManager.active_slot_p);
+        m_runtimeActiveSlotBackupValid = true;
+    }
+    m_runtimePlaybackTypeBackupValid = false;
+    m_runtimePlaybackTypeBackup = 0;
+    if (m_runtimePlaybackManager.bbcf_base_adress) {
+        m_runtimePlaybackTypeBackup =
+            static_cast<int>(*(m_runtimePlaybackManager.bbcf_base_adress + 0x902BDC + 0x54 + 0xc + 0x4));
+        m_runtimePlaybackTypeBackupValid = true;
+    }
+    m_runtimeSlotNumber = kDedicatedRuntimePlaybackSlot;
+    m_runtimeSlotBackupFrames.clear();
+    m_runtimeSlotBackupFacingLeft = false;
     m_runtimeSlotBackupValid = true;
 }
 
@@ -1420,13 +1653,111 @@ void UnlimitedPlaybackManager::TryRestoreRuntimeSlotAfterPlayback() {
         return;
     }
 
-    m_runtimePlaybackManager.load_into_slot(
-        m_runtimeSlotBackupFrames,
-        m_runtimeSlotBackupFacingLeft ? 1 : 0,
-        kRuntimeSlot);
+    LOG(1, "[UP] Cleared runtime playback borrow after playback. backupSlot=%d backupFrames=%u backupFacing=%d\n",
+        m_runtimeActiveSlotBackupValid ? (m_runtimeActiveSlotBackup + 1) : -1,
+        static_cast<unsigned int>(m_runtimeSlotBackupFrames.size()),
+        m_runtimeSlotBackupFacingLeft ? 1 : 0);
+    if (m_runtimePlaybackManager.playback_control_p) {
+        m_runtimePlaybackManager.set_playback_control(0);
+    }
+    m_runtimePlaybackManager.set_playback_position(0);
+    if (m_runtimeActiveSlotBackupValid) {
+        const int restoredSlot = m_runtimeActiveSlotBackup + 1;
+        if (restoredSlot >= 1 && restoredSlot <= 4) {
+            m_runtimePlaybackManager.set_active_slot(restoredSlot);
+        }
+    }
+    if (m_runtimePlaybackTypeBackupValid) {
+        m_runtimePlaybackManager.set_playback_type(m_runtimePlaybackTypeBackup);
+    }
     m_runtimeSlotBackupFrames.clear();
     m_runtimeSlotBackupValid = false;
     m_runtimeSlotRestorePending = false;
+    m_runtimeSlotNumber = 1;
+    m_runtimeActiveSlotBackupValid = false;
+    m_runtimeActiveSlotBackup = 0;
+    m_runtimePlaybackTypeBackupValid = false;
+    m_runtimePlaybackTypeBackup = 0;
+}
+
+void UnlimitedPlaybackManager::ResetRuntimePlaybackState(bool discardBackupOnly) {
+    if (!discardBackupOnly && m_runtimePlaybackManager.playback_control_p) {
+        m_runtimePlaybackManager.set_playback_control(0);
+    }
+    if (!discardBackupOnly) {
+        m_runtimePlaybackManager.set_playback_position(0);
+    }
+    if (!discardBackupOnly && m_runtimeSlotBackupValid) {
+        m_runtimePlaybackManager.load_raw_into_slot(
+            m_runtimeSlotBackupFrames,
+            m_runtimeSlotBackupFacingLeft ? 1 : 0,
+            m_runtimeSlotNumber);
+        if (m_runtimeActiveSlotBackupValid) {
+            const int restoredSlot = m_runtimeActiveSlotBackup + 1;
+            if (restoredSlot >= 1 && restoredSlot <= 4) {
+                m_runtimePlaybackManager.set_active_slot(restoredSlot);
+            }
+        }
+        if (m_runtimePlaybackTypeBackupValid) {
+            m_runtimePlaybackManager.set_playback_type(m_runtimePlaybackTypeBackup);
+        }
+        LOG(1, "[UP] Restored runtime slot during cleanup. frames=%u facing=%d\n",
+            static_cast<unsigned int>(m_runtimeSlotBackupFrames.size()),
+            m_runtimeSlotBackupFacingLeft ? 1 : 0);
+    }
+    m_runtimeSlotBackupFrames.clear();
+    m_runtimeSlotBackupValid = false;
+    m_runtimeSlotRestorePending = false;
+    m_runtimeSlotNumber = 1;
+    m_runtimeActiveSlotBackupValid = false;
+    m_runtimeActiveSlotBackup = 0;
+    m_runtimePlaybackTypeBackupValid = false;
+    m_runtimePlaybackTypeBackup = 0;
+}
+
+void UnlimitedPlaybackManager::StartRuntimePlayback(const std::vector<char>& frames, int facingToLoad) {
+    int beforeControl = -1;
+    int beforeActiveSlot = -1;
+    int beforePosition = -1;
+    if (m_runtimePlaybackManager.playback_control_p) {
+        beforeControl = static_cast<int>(*reinterpret_cast<short*>(m_runtimePlaybackManager.playback_control_p));
+    }
+    if (m_runtimePlaybackManager.active_slot_p) {
+        beforeActiveSlot = *reinterpret_cast<int*>(m_runtimePlaybackManager.active_slot_p);
+    }
+    if (m_runtimePlaybackManager.bbcf_base_adress) {
+        beforePosition = *reinterpret_cast<int*>(m_runtimePlaybackManager.bbcf_base_adress + 0x13AD940);
+    }
+    LOG(1, "[UP] StartRuntimePlayback before: pbCtrl=%d activeSlot=%d pbPos=%d facing=%d frames=%u\n",
+        beforeControl,
+        beforeActiveSlot,
+        beforePosition,
+        facingToLoad,
+        static_cast<unsigned int>(frames.size()));
+
+    m_runtimePlaybackManager.set_playback_control(0);
+    m_runtimePlaybackManager.load_raw_into_slot(frames, facingToLoad, m_runtimeSlotNumber);
+    m_runtimePlaybackManager.set_active_slot(m_runtimeSlotNumber);
+    m_runtimePlaybackManager.set_playback_type(0);
+    m_runtimePlaybackManager.set_playback_position(0);
+    m_runtimePlaybackManager.set_playback_control(3);
+
+    int afterControl = -1;
+    int afterActiveSlot = -1;
+    int afterPosition = -1;
+    if (m_runtimePlaybackManager.playback_control_p) {
+        afterControl = static_cast<int>(*reinterpret_cast<short*>(m_runtimePlaybackManager.playback_control_p));
+    }
+    if (m_runtimePlaybackManager.active_slot_p) {
+        afterActiveSlot = *reinterpret_cast<int*>(m_runtimePlaybackManager.active_slot_p);
+    }
+    if (m_runtimePlaybackManager.bbcf_base_adress) {
+        afterPosition = *reinterpret_cast<int*>(m_runtimePlaybackManager.bbcf_base_adress + 0x13AD940);
+    }
+    LOG(1, "[UP] StartRuntimePlayback after: pbCtrl=%d activeSlot=%d pbPos=%d\n",
+        afterControl,
+        afterActiveSlot,
+        afterPosition);
 }
 
 bool UnlimitedPlaybackManager::TryGetCurrentFacingLeft(bool* outFacingLeft) const {
@@ -1461,12 +1792,12 @@ unsigned char UnlimitedPlaybackManager::MirrorDirectionalNibble(unsigned char di
 }
 
 void UnlimitedPlaybackManager::MirrorPlaybackInputsInPlace(std::vector<char>& frames) const {
-    for (char& frameInput : frames) {
-        unsigned char input = static_cast<unsigned char>(frameInput);
+    for (size_t i = 0; (i + 1) < frames.size(); i += 2) {
+        unsigned char input = static_cast<unsigned char>(frames[i]);
         const unsigned char dir = input & 0x0F;
         const unsigned char mirroredDir = MirrorDirectionalNibble(dir);
         input = static_cast<unsigned char>((input & 0xF0) | mirroredDir);
-        frameInput = static_cast<char>(input);
+        frames[i] = static_cast<char>(input);
     }
 }
 
@@ -1487,12 +1818,35 @@ std::vector<size_t> UnlimitedPlaybackManager::BuildCandidatesForTrigger(TriggerT
     return candidates;
 }
 
-bool UnlimitedPlaybackManager::IsKeyPressedEdge(int virtualKey) const {
+void UnlimitedPlaybackManager::SyncKeyEdgeState() {
+    for (int vk = 0; vk < 256; ++vk) {
+        m_prevKeyDown[vk] = (GetAsyncKeyState(vk) & 0x8000) != 0;
+    }
+}
+
+bool UnlimitedPlaybackManager::AreBindableKeysReleased() const {
+    for (int vk = 1; vk < 256; ++vk) {
+        if (vk == VK_LBUTTON || vk == VK_RBUTTON || vk == VK_MBUTTON || vk == VK_XBUTTON1 || vk == VK_XBUTTON2) {
+            continue;
+        }
+        if (GetAsyncKeyState(vk) & 0x8000) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool UnlimitedPlaybackManager::IsKeyPressedEdge(int virtualKey) {
     if (virtualKey <= 0 || virtualKey >= 256) {
         return false;
     }
-    const short state = GetAsyncKeyState(virtualKey);
-    return (state & 0x1) != 0;
+    if (!m_keyPressTriggerArmed) {
+        return false;
+    }
+    const bool isDown = (GetAsyncKeyState(virtualKey) & 0x8000) != 0;
+    const bool wasDown = m_prevKeyDown[virtualKey];
+    m_prevKeyDown[virtualKey] = isDown;
+    return isDown && !wasDown;
 }
 
 bool UnlimitedPlaybackManager::ShouldTriggerWakeup() {

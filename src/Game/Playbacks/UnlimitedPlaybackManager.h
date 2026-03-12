@@ -64,7 +64,10 @@ public:
 
     void InitializeIfNeeded();
     void Tick();
+    void OnMatchInit();
     void ForceResetTriggers(const char* toastText = "Trigger runtime state reset.");
+    void OnMatchEnd();
+    void DebugLogState(const char* tag) const;
 
     int GetMode() const;
     void SetMode(int mode);
@@ -111,7 +114,6 @@ public:
     void PruneExpiredToasts();
     void PushToast(const std::string& text, unsigned long long durationMs = 5000);
 
-    static const int kRuntimeSlot = 1;
     static const int kMaxFramesPerPlayback = 1200;
 
 private:
@@ -133,7 +135,12 @@ private:
 
     bool PickEntryIndexForTrigger(TriggerType trigger, size_t* outIndex);
     bool TryFireTrigger(TriggerType trigger, int currentFrame);
-    bool IsKeyPressedEdge(int virtualKey) const;
+    bool IsKeyPressedEdge(int virtualKey);
+    void SyncKeyEdgeState();
+    bool AreBindableKeysReleased() const;
+    void ResetTriggerRuntimeState(bool enableRuntime);
+    void LogRuntimeGateState(const char* tag) const;
+    void LogEntryCacheSummary(const char* tag) const;
 
     bool ShouldTriggerWakeup();
     bool ShouldTriggerGap();
@@ -146,6 +153,8 @@ private:
     void MirrorPlaybackInputsInPlace(std::vector<char>& frames) const;
     void BackupRuntimeSlotIfNeeded();
     void TryRestoreRuntimeSlotAfterPlayback();
+    void ResetRuntimePlaybackState(bool discardBackupOnly);
+    void StartRuntimePlayback(const std::vector<char>& frames, int facingToLoad);
 
     int m_mode = Mode_Default;
     bool m_initialized = false;
@@ -168,11 +177,20 @@ private:
     bool m_prevOnBlockCondition = false;
     bool m_prevOnHitCondition = false;
     bool m_prevThrowTechCondition = false;
+    std::array<bool, 256> m_prevKeyDown = {};
+    bool m_keyPressTriggerArmed = false;
+    bool m_triggerRuntimeEnabled = true;
+    bool m_profileRuntimeSuppressedUntilReset = false;
     int m_lastObservedFrame = -1;
     bool m_runtimeSlotBackupValid = false;
     bool m_runtimeSlotRestorePending = false;
     bool m_runtimeSlotBackupFacingLeft = false;
     std::vector<char> m_runtimeSlotBackupFrames;
+    int m_runtimeSlotNumber = 1;
+    bool m_runtimeActiveSlotBackupValid = false;
+    int m_runtimeActiveSlotBackup = 0;
+    bool m_runtimePlaybackTypeBackupValid = false;
+    int m_runtimePlaybackTypeBackup = 0;
     bool m_replayRecordingActive = false;
     bool m_replayRecordingAsP1 = true;
     int m_replayRecordingRound = 0;

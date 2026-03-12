@@ -29,6 +29,62 @@ extern "C" void HandleControllerWndProcMessage(UINT msg, WPARAM wParam, LPARAM l
 
 
 DWORD GetGameStateTitleScreenJmpBackAddr = 0;
+
+namespace {
+void NormalizeMenuExitModeIfNeeded();
+
+void LogMenuExitState(const char* tag)
+{
+	const int gameMode = g_gameVals.pGameMode ? *g_gameVals.pGameMode : -1;
+	const int gameState = g_gameVals.pGameState ? *g_gameVals.pGameState : -1;
+	LOG(1, "[MenuExit] %s: gameMode=%d gameState=%d sceneStatus=%d\n",
+		tag ? tag : "Unknown",
+		gameMode,
+		gameState,
+		GetGameSceneStatus());
+}
+
+bool ShouldSkipMenuScreenMatchEnd()
+{
+	return g_gameVals.pGameMode &&
+		g_gameVals.pGameState &&
+		(*g_gameVals.pGameMode == 0) &&
+		(*g_gameVals.pGameState == GameState_InMatch);
+}
+
+bool ShouldBypassMenuScreenHook()
+{
+	return ShouldSkipMenuScreenMatchEnd();
+}
+
+void HandleMenuScreenMatchEnd()
+{
+	const bool skipMatchEnd = ShouldSkipMenuScreenMatchEnd();
+	NormalizeMenuExitModeIfNeeded();
+	LogMenuExitState("Enter menu screen hook");
+	UnlimitedPlaybackManager::Instance().DebugLogState("MenuExit enter");
+
+	if (skipMatchEnd) {
+		LOG(1, "[MenuExit] Skipping MatchState::OnMatchEnd due to invalid in-match menu transition.\n");
+	}
+	else {
+		MatchState::OnMatchEnd();
+	}
+}
+
+void NormalizeMenuExitModeIfNeeded()
+{
+	if (!g_gameVals.pGameMode || !g_gameVals.pGameState) {
+		return;
+	}
+
+	if (*g_gameVals.pGameMode == 0 && *g_gameVals.pGameState == GameState_InMatch) {
+		LOG(1, "[MenuExit] Normalizing invalid in-match gameMode 0 to GameMode_Training before teardown.\n");
+		*g_gameVals.pGameMode = GameMode_Training;
+	}
+}
+}
+
 void __declspec(naked)GetGameStateTitleScreen()
 {
 	LOG_ASM(2, "GetGameStateTitleScreen\n");
@@ -78,9 +134,22 @@ void __declspec(naked)GetGameStateMenuScreen()
 	InitSteamApiWrappers();
 	InitManagers();
 
-	WindowManager::GetInstance().Initialize(g_gameProc.hWndGameWindow, g_interfaces.pD3D9ExWrapper);
+	if (ShouldBypassMenuScreenHook())
+	{
+		UnlimitedPlaybackManager::Instance().DebugLogState("MenuExit bypass before OnMatchEnd");
+		UnlimitedPlaybackManager::Instance().OnMatchEnd();
+		UnlimitedPlaybackManager::Instance().DebugLogState("MenuExit bypass after OnMatchEnd");
+		LOG(1, "[MenuExit] Bypassing GetGameStateMenuScreen hook body due to invalid in-match menu transition.\n");
+		__asm
+		{
+			popad
+			mov dword ptr[eax + 10Ch], 1Bh
+			jmp[GetGameStateMenuScreenJmpBackAddr]
+		}
+	}
 
-	MatchState::OnMatchEnd();
+	WindowManager::GetInstance().Initialize(g_gameProc.hWndGameWindow, g_interfaces.pD3D9ExWrapper);
+	HandleMenuScreenMatchEnd();
 
 	// shouldn't be needed, but just in case something writes replay_list to file from some odd place, make sure it's kept in the correct state
 	if (g_rep_manager.template_modified)
@@ -688,6 +757,7 @@ void __declspec(naked)SetDumpfileCommentString()
 	static int* addr = nullptr;
 
 	LOG_ASM(2, "SetDumpfileCommentString\n");
+	LogMenuExitState("SetDumpfileCommentString");
 	static char* format_string = "\n GameMode: %d, GameScene: %d, GameSceneStatus: %d \n Improvement Mod loaded \n Version: "  MOD_VERSION_NUM;
 	_asm
 	{

@@ -9,8 +9,10 @@ public:
 	int initialize_facing_direction_slot(int slot); /*initializes the facing_direction for the specified slot*/
 	char* initialize_start_of_slot_inputs_p(int slot); /*initializes the start_of_slot_inputs_p for the specified slot*/
 	void load_into_slot(std::vector<char> trimmed_playback); //this is the "load_trimmed_playback" function back in ScrWindow.cpp
+	void load_raw_into_slot(const std::vector<char>& raw_playback);
 
 	std::vector<char> get_slot_buffer();
+	std::vector<char> get_slot_buffer_raw();
 	char get_facing_direction();
 	
 	
