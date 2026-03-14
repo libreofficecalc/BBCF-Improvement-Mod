@@ -98,6 +98,7 @@ public:
     bool SaveEntryFromSlot(size_t idx, int slot);
     bool ReadEntryPlayback(size_t idx, bool* outFacingLeft, std::vector<char>* outFrames);
     bool WriteEntryPlayback(size_t idx, bool facingLeft, const std::vector<char>& frames);
+    bool SaveEntryToFile(size_t idx, const std::string& outputPath);
     bool PlayEntryNow(size_t idx);
 
     void ClearAll();
@@ -178,6 +179,7 @@ private:
     bool m_prevOnHitCondition = false;
     bool m_prevThrowTechCondition = false;
     std::array<bool, 256> m_prevKeyDown = {};
+    std::array<bool, 14> m_prevControllerBindDown = {};
     bool m_keyPressTriggerArmed = false;
     bool m_triggerRuntimeEnabled = true;
     bool m_profileRuntimeSuppressedUntilReset = false;

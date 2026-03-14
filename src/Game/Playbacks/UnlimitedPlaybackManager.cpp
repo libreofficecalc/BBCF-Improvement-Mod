@@ -6,6 +6,7 @@
 #include "Game/gamestates.h"
 
 #include <Windows.h>
+#include <Xinput.h>
 
 #include <algorithm>
 #include <array>
@@ -16,6 +17,8 @@
 #include <random>
 #include <sstream>
 
+#pragma comment(lib, "Xinput9_1_0.lib")
+
 namespace {
 const char* kDefaultProfileName = "default.upl";
 const char* kProfileFormatVersionKey = "format_version";
@@ -24,6 +27,45 @@ const char* kProfileFormatKindValue = "unlimited_profile";
 const char* kEmbeddedEntryDataKey = "entry_data";
 const char kPlaybackHeaderMagic[4] = { 'U', 'P', 'B', '2' };
 constexpr int kDedicatedRuntimePlaybackSlot = 4;
+constexpr int kControllerBindBase = 0x1000;
+
+struct ControllerBindingDef {
+    int code;
+    WORD mask;
+};
+
+const ControllerBindingDef kControllerBindings[] = {
+    { kControllerBindBase + 0, XINPUT_GAMEPAD_A },
+    { kControllerBindBase + 1, XINPUT_GAMEPAD_B },
+    { kControllerBindBase + 2, XINPUT_GAMEPAD_X },
+    { kControllerBindBase + 3, XINPUT_GAMEPAD_Y },
+    { kControllerBindBase + 4, XINPUT_GAMEPAD_LEFT_SHOULDER },
+    { kControllerBindBase + 5, XINPUT_GAMEPAD_RIGHT_SHOULDER },
+    { kControllerBindBase + 6, XINPUT_GAMEPAD_BACK },
+    { kControllerBindBase + 7, XINPUT_GAMEPAD_START },
+    { kControllerBindBase + 8, XINPUT_GAMEPAD_LEFT_THUMB },
+    { kControllerBindBase + 9, XINPUT_GAMEPAD_RIGHT_THUMB },
+    { kControllerBindBase + 10, XINPUT_GAMEPAD_DPAD_UP },
+    { kControllerBindBase + 11, XINPUT_GAMEPAD_DPAD_DOWN },
+    { kControllerBindBase + 12, XINPUT_GAMEPAD_DPAD_LEFT },
+    { kControllerBindBase + 13, XINPUT_GAMEPAD_DPAD_RIGHT },
+};
+
+bool IsControllerBindCode(int code) {
+    return code >= kControllerBindBase &&
+        code < (kControllerBindBase + static_cast<int>(sizeof(kControllerBindings) / sizeof(kControllerBindings[0])));
+}
+
+bool IsControllerBindingDown(const ControllerBindingDef& binding) {
+    for (DWORD userIndex = 0; userIndex < XUSER_MAX_COUNT; ++userIndex) {
+        XINPUT_STATE state = {};
+        if (XInputGetState(userIndex, &state) == ERROR_SUCCESS &&
+            (state.Gamepad.wButtons & binding.mask) != 0) {
+            return true;
+        }
+    }
+    return false;
+}
 
 bool PathExists(const std::string& path) {
     const DWORD attrs = GetFileAttributesA(path.c_str());
@@ -866,6 +908,18 @@ bool UnlimitedPlaybackManager::LoadEntryIntoSlot(size_t idx, int slot) {
         return false;
     }
 
+    const bool inTrainingMatch =
+        g_gameVals.pGameMode &&
+        g_gameVals.pGameState &&
+        (*g_gameVals.pGameMode == GameMode_Training) &&
+        (*g_gameVals.pGameState == GameState_InMatch) &&
+        (GetGameSceneStatus() >= GameSceneStatus_Running) &&
+        !g_interfaces.player2.IsCharDataNullPtr();
+    if (!inTrainingMatch) {
+        PushToast("Sending to a CF slot works only during a training match.");
+        return false;
+    }
+
     const auto& entry = m_entries[idx];
     auto it = m_cache.find(entry.id);
     if (it == m_cache.end() || !it->second.loaded) {
@@ -953,6 +1007,29 @@ bool UnlimitedPlaybackManager::WriteEntryPlayback(size_t idx, bool facingLeft, c
     return true;
 }
 
+bool UnlimitedPlaybackManager::SaveEntryToFile(size_t idx, const std::string& outputPath) {
+    InitializeIfNeeded();
+
+    if (idx >= m_entries.size() || outputPath.empty()) {
+        return false;
+    }
+
+    const auto& entry = m_entries[idx];
+    const auto it = m_cache.find(entry.id);
+    if (it == m_cache.end() || !it->second.loaded) {
+        PushToast("Failed saving entry to file.");
+        return false;
+    }
+
+    if (!WritePlaybackFile(outputPath, it->second.facingLeft, it->second.frames)) {
+        PushToast("Failed saving entry to file.");
+        return false;
+    }
+
+    PushToast("Entry saved to file.");
+    return true;
+}
+
 bool UnlimitedPlaybackManager::IsReplayMatchActive() const {
     return g_gameVals.pGameMode && g_gameVals.pGameState &&
         (*g_gameVals.pGameMode == GameMode_ReplayTheater) &&
@@ -1000,6 +1077,18 @@ bool UnlimitedPlaybackManager::PlayEntryNow(size_t idx) {
     InitializeIfNeeded();
 
     if (idx >= m_entries.size()) {
+        return false;
+    }
+
+    const bool inTrainingMatch =
+        g_gameVals.pGameMode &&
+        g_gameVals.pGameState &&
+        (*g_gameVals.pGameMode == GameMode_Training) &&
+        (*g_gameVals.pGameState == GameState_InMatch) &&
+        (GetGameSceneStatus() >= GameSceneStatus_Running) &&
+        !g_interfaces.player2.IsCharDataNullPtr();
+    if (!inTrainingMatch) {
+        PushToast("Play now works only during a training match.");
         return false;
     }
 
@@ -1805,7 +1894,7 @@ std::vector<size_t> UnlimitedPlaybackManager::BuildCandidatesForTrigger(TriggerT
     std::vector<size_t> candidates;
     for (size_t i = 0; i < m_entries.size(); ++i) {
         const auto& e = m_entries[i];
-        if (!e.enabled || !e.triggerEnabled[trigger] || e.weight <= 0.0f) {
+        if (!e.enabled || e.weight <= 0.0f) {
             continue;
         }
 
@@ -1822,6 +1911,9 @@ void UnlimitedPlaybackManager::SyncKeyEdgeState() {
     for (int vk = 0; vk < 256; ++vk) {
         m_prevKeyDown[vk] = (GetAsyncKeyState(vk) & 0x8000) != 0;
     }
+    for (int i = 0; i < static_cast<int>(sizeof(kControllerBindings) / sizeof(kControllerBindings[0])); ++i) {
+        m_prevControllerBindDown[static_cast<size_t>(i)] = IsControllerBindingDown(kControllerBindings[i]);
+    }
 }
 
 bool UnlimitedPlaybackManager::AreBindableKeysReleased() const {
@@ -1833,10 +1925,22 @@ bool UnlimitedPlaybackManager::AreBindableKeysReleased() const {
             return false;
         }
     }
+    for (const auto& binding : kControllerBindings) {
+        if (IsControllerBindingDown(binding)) {
+            return false;
+        }
+    }
     return true;
 }
 
 bool UnlimitedPlaybackManager::IsKeyPressedEdge(int virtualKey) {
+    if (IsControllerBindCode(virtualKey)) {
+        const int index = virtualKey - kControllerBindBase;
+        const bool isDown = IsControllerBindingDown(kControllerBindings[index]);
+        const bool wasDown = m_prevControllerBindDown[static_cast<size_t>(index)];
+        m_prevControllerBindDown[static_cast<size_t>(index)] = isDown;
+        return m_keyPressTriggerArmed && isDown && !wasDown;
+    }
     if (virtualKey <= 0 || virtualKey >= 256) {
         return false;
     }

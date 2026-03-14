@@ -1059,32 +1059,13 @@ void ScrWindow::DrawPlaybackSection() {
     static bool loop_playback = false;
     auto& unlimitedPlayback = UnlimitedPlaybackManager::Instance();
     unlimitedPlayback.InitializeIfNeeded();
-    const int gameMode = g_gameVals.pGameMode ? *g_gameVals.pGameMode : -1;
-    const int gameState = g_gameVals.pGameState ? *g_gameVals.pGameState : -1;
-    const bool allowUnlimitedPlaybackUi =
-        gameMode == GameMode_Training ||
-        gameMode == GameMode_ReplayTheater ||
-        gameState == GameState_ReplayMenu;
-   
     //ScrWindow::DrawPlaybackEditor();
     if (ImGui::CollapsingHeader("Playback")) {
-        if (allowUnlimitedPlaybackUi) {
-            if (ImGui::Button("Configure Unlimited Playback (BETA)")) {
-                ScrWindow::m_pWindowContainer->GetWindow(WindowType_UnlimitedPlayback)->ToggleOpen();
-            }
-        } else {
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.20f, 0.20f, 0.60f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.20f, 0.20f, 0.20f, 0.60f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.20f, 0.20f, 0.20f, 0.60f));
-            ImGui::Button("Configure Unlimited Playback (BETA)");
-            ImGui::PopStyleColor(3);
+        if (ImGui::Button("Unlimited Playback (BETA)")) {
+            ScrWindow::m_pWindowContainer->GetWindow(WindowType_UnlimitedPlayback)->ToggleOpen();
         }
         ImGui::SameLine();
-        if (allowUnlimitedPlaybackUi) {
-            ImGui::TextDisabled("Available in Training or Replay contexts.");
-        } else {
-            ImGui::TextDisabled("Only available in Training or Replay contexts.");
-        }
+        ImGui::TextDisabled("Popup is always available. Runtime actions only work in the right context.");
         ImGui::TextWrapped("%s", unlimitedPlayback.GetStatusText().c_str());
 
         ImGui::Checkbox("Loop current playback", &loop_playback);
