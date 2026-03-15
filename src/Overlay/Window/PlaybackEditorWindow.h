@@ -18,6 +18,9 @@ public:
 	std::string interpret_move_absolute(char move);
 	std::string interpret_move_L_R(char move, int side);
 	bool OpenUnlimitedEntry(size_t entryIndex);
+	bool BeginUnlimitedEntryEdit(size_t entryIndex);
+	void DrawEmbeddedEditor();
+	void EndUnlimitedEntryEdit();
 
 	PlaybackManager playback_manager;
 	//std::vector<char>::iterator line_edit_ptr;
@@ -29,6 +32,8 @@ protected:
 	//void DrawEditLinePopup();
 
 private:
+	void DrawEditorContents(bool closeOnUnlimitedEntrySave);
+
 	enum DataSourceMode {
 		DataSource_CfSlots = 0,
 		DataSource_UnlimitedEntry = 1,

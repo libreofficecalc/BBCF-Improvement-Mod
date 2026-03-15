@@ -929,9 +929,9 @@ bool UnlimitedPlaybackManager::LoadEntryIntoSlot(size_t idx, int slot) {
 
     std::vector<char> frames = it->second.frames;
     int facingToLoad = it->second.facingLeft ? 1 : 0;
-    if (m_autoMirrorOnSideSwap) {
-        bool currentFacingLeft = false;
-        if (TryGetCurrentFacingLeft(&currentFacingLeft) && currentFacingLeft != it->second.facingLeft) {
+    bool currentFacingLeft = false;
+    if (TryGetCurrentFacingLeft(&currentFacingLeft) && currentFacingLeft != it->second.facingLeft) {
+        if (!m_autoMirrorOnSideSwap) {
             facingToLoad = currentFacingLeft ? 1 : 0;
         }
     }
@@ -1102,11 +1102,11 @@ bool UnlimitedPlaybackManager::PlayEntryNow(size_t idx) {
     std::vector<char> frames = it->second.frames;
     int facingToLoad = it->second.facingLeft ? 1 : 0;
     bool mirrored = false;
-    if (m_autoMirrorOnSideSwap) {
-        bool currentFacingLeft = false;
-        if (TryGetCurrentFacingLeft(&currentFacingLeft) && currentFacingLeft != it->second.facingLeft) {
+    bool currentFacingLeft = false;
+    if (TryGetCurrentFacingLeft(&currentFacingLeft) && currentFacingLeft != it->second.facingLeft) {
+        mirrored = m_autoMirrorOnSideSwap;
+        if (!m_autoMirrorOnSideSwap) {
             facingToLoad = currentFacingLeft ? 1 : 0;
-            mirrored = true;
         }
     }
 
@@ -1406,11 +1406,9 @@ bool UnlimitedPlaybackManager::LoadProfile(const std::string& profilePath, bool 
     m_cache = std::move(parsedCache);
 
     ResetRuntimePlaybackState(true);
-    ResetTriggerRuntimeState(false);
-    m_profileRuntimeSuppressedUntilReset = true;
+    ForceResetTriggers("Profile loaded. Trigger runtime synced.");
     m_activeProfilePath = p;
     DebugLogState("LoadProfile end");
-    PushToast("Profile loaded. Trigger runtime stays idle until training reset or Fix Triggers.");
     return true;
 }
 
@@ -1681,11 +1679,11 @@ bool UnlimitedPlaybackManager::TryFireTrigger(TriggerType trigger, int currentFr
     std::vector<char> frames = cacheIt->second.frames;
     int facingToLoad = cacheIt->second.facingLeft ? 1 : 0;
     bool mirrored = false;
-    if (m_autoMirrorOnSideSwap) {
-        bool currentFacingLeft = false;
-        if (TryGetCurrentFacingLeft(&currentFacingLeft) && currentFacingLeft != cacheIt->second.facingLeft) {
+    bool currentFacingLeft = false;
+    if (TryGetCurrentFacingLeft(&currentFacingLeft) && currentFacingLeft != cacheIt->second.facingLeft) {
+        mirrored = m_autoMirrorOnSideSwap;
+        if (!m_autoMirrorOnSideSwap) {
             facingToLoad = currentFacingLeft ? 1 : 0;
-            mirrored = true;
         }
     }
 

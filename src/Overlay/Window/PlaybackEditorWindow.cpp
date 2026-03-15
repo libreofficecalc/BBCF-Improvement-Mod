@@ -4,6 +4,14 @@
 #include "Game/Playbacks/UnlimitedPlaybackManager.h"
 
 bool PlaybackEditorWindow::OpenUnlimitedEntry(size_t entryIndex) {
+	if (!BeginUnlimitedEntryEdit(entryIndex)) {
+		return false;
+	}
+	Open();
+	return true;
+}
+
+bool PlaybackEditorWindow::BeginUnlimitedEntryEdit(size_t entryIndex) {
 	auto& manager = UnlimitedPlaybackManager::Instance();
 	bool facingLeft = false;
 	std::vector<char> frames;
@@ -24,11 +32,29 @@ bool PlaybackEditorWindow::OpenUnlimitedEntry(size_t entryIndex) {
 	m_unlimitedEntryOriginalBuffer = frames;
 	m_unlimitedEntryFacingDirection = facingLeft ? 1 : 0;
 	m_unlimitedEntryOriginalFacingDirection = m_unlimitedEntryFacingDirection;
-	Open();
 	return true;
 }
 
+void PlaybackEditorWindow::DrawEmbeddedEditor() {
+	DrawEditorContents(true);
+}
+
+void PlaybackEditorWindow::EndUnlimitedEntryEdit() {
+	m_dataSourceMode = DataSource_CfSlots;
+	m_unlimitedEntryIndex = 0;
+	m_unlimitedEntryBuffer.clear();
+	m_unlimitedEntryOriginalBuffer.clear();
+	m_unlimitedEntryFacingDirection = 0;
+	m_unlimitedEntryOriginalFacingDirection = 0;
+	m_unlimitedEntryName.clear();
+	line_edit_ptr = nullptr;
+}
+
 void PlaybackEditorWindow::Draw() {
+	DrawEditorContents(false);
+}
+
+void PlaybackEditorWindow::DrawEditorContents(bool closeOnUnlimitedEntrySave) {
 	static std::vector<std::vector<char>> playback_slot_buffers = { PlaybackSlot(1).get_slot_buffer(),
 																	PlaybackSlot(2).get_slot_buffer(),
 																	PlaybackSlot(3).get_slot_buffer(),
@@ -161,6 +187,10 @@ void PlaybackEditorWindow::Draw() {
 			if (UnlimitedPlaybackManager::Instance().WriteEntryPlayback(m_unlimitedEntryIndex, (*selected_facing_direction) != 0, *selected_slot_buffer)) {
 				m_unlimitedEntryOriginalBuffer = *selected_slot_buffer;
 				m_unlimitedEntryOriginalFacingDirection = *selected_facing_direction;
+				if (closeOnUnlimitedEntrySave) {
+					EndUnlimitedEntryEdit();
+					ImGui::CloseCurrentPopup();
+				}
 			}
 		} else {
 			PlaybackEditorWindow::playback_manager.load_into_slot(*selected_slot_buffer, *selected_facing_direction, selected_slot + 1);
@@ -171,7 +201,12 @@ void PlaybackEditorWindow::Draw() {
 		if (ImGui::Button("Cancel##playback_editor", ImVec2(70, 29))) {
 			m_unlimitedEntryBuffer = m_unlimitedEntryOriginalBuffer;
 			m_unlimitedEntryFacingDirection = m_unlimitedEntryOriginalFacingDirection;
+			EndUnlimitedEntryEdit();
+			if (closeOnUnlimitedEntrySave) {
+				ImGui::CloseCurrentPopup();
+			} else {
 			Close();
+			}
 		}
 	}
 	return;
