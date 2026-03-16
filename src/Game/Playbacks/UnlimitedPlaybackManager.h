@@ -55,9 +55,11 @@ public:
     };
 
     struct ToastMessage {
+        std::string key;
         std::string text;
         unsigned long long createdAtMs = 0;
         unsigned long long durationMs = 5000;
+        bool sticky = false;
     };
 
     static UnlimitedPlaybackManager& Instance();
@@ -114,6 +116,8 @@ public:
     const std::deque<ToastMessage>& GetToasts() const;
     void PruneExpiredToasts();
     void PushToast(const std::string& text, unsigned long long durationMs = 5000);
+    void PushStickyToast(const std::string& key, const std::string& text);
+    void RemoveStickyToast(const std::string& key);
 
     static const int kMaxFramesPerPlayback = 1200;
 

@@ -1430,12 +1430,12 @@ const std::deque<UnlimitedPlaybackManager::ToastMessage>& UnlimitedPlaybackManag
 
 void UnlimitedPlaybackManager::PruneExpiredToasts() {
     const unsigned long long now = GetTickCount64();
-    while (!m_toasts.empty()) {
-        const auto& t = m_toasts.front();
-        if ((now - t.createdAtMs) <= t.durationMs) {
-            break;
+    for (auto it = m_toasts.begin(); it != m_toasts.end();) {
+        if (!it->sticky && (now - it->createdAtMs) > it->durationMs) {
+            it = m_toasts.erase(it);
+        } else {
+            ++it;
         }
-        m_toasts.pop_front();
     }
 }
 
@@ -1449,6 +1449,47 @@ void UnlimitedPlaybackManager::PushToast(const std::string& text, unsigned long 
         m_toasts.pop_front();
     }
     m_statusText = text;
+}
+
+void UnlimitedPlaybackManager::PushStickyToast(const std::string& key, const std::string& text) {
+    if (key.empty()) {
+        return;
+    }
+
+    for (auto& toast : m_toasts) {
+        if (toast.sticky && toast.key == key) {
+            toast.text = text;
+            toast.createdAtMs = GetTickCount64();
+            toast.durationMs = 0;
+            m_statusText = text;
+            return;
+        }
+    }
+
+    ToastMessage t;
+    t.key = key;
+    t.text = text;
+    t.createdAtMs = GetTickCount64();
+    t.durationMs = 0;
+    t.sticky = true;
+    m_toasts.push_back(t);
+    if (m_toasts.size() > 8) {
+        m_toasts.pop_front();
+    }
+    m_statusText = text;
+}
+
+void UnlimitedPlaybackManager::RemoveStickyToast(const std::string& key) {
+    if (key.empty()) {
+        return;
+    }
+
+    for (auto it = m_toasts.begin(); it != m_toasts.end(); ++it) {
+        if (it->sticky && it->key == key) {
+            m_toasts.erase(it);
+            break;
+        }
+    }
 }
 
 void UnlimitedPlaybackManager::EnsureFolders() {

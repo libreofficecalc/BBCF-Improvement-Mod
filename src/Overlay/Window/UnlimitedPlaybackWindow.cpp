@@ -15,7 +15,9 @@
 
 #include <cstdio>
 #include <cstring>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <algorithm>
 #include <vector>
 
@@ -48,34 +50,6 @@ const ControllerBindingDef kControllerBindings[] = {
     { kControllerBindBase + 13, XINPUT_GAMEPAD_DPAD_RIGHT, "Pad Right" },
 };
 
-struct ProfileListEntry {
-    std::string displayName;
-    std::string fullPath;
-};
-
-std::string NormalizeProfileFileName(const char* input) {
-    std::string out;
-    const char* source = input ? input : "";
-    for (const char* p = source; *p != '\0'; ++p) {
-        const char c = *p;
-        if ((c >= 'a' && c <= 'z') ||
-            (c >= 'A' && c <= 'Z') ||
-            (c >= '0' && c <= '9') ||
-            c == '_' || c == '-' || c == '.') {
-            out.push_back(c);
-        } else if (c == ' ') {
-            out.push_back('_');
-        }
-    }
-    if (out.empty()) {
-        return "";
-    }
-    if (out.size() < 4 || out.substr(out.size() - 4) != ".upl") {
-        out += ".upl";
-    }
-    return out;
-}
-
 std::string NormalizePlaybackFileName(const char* input) {
     std::string out;
     const char* source = input ? input : "";
@@ -97,31 +71,6 @@ std::string NormalizePlaybackFileName(const char* input) {
         out += ".playback";
     }
     return out;
-}
-
-std::string StripExtension(const std::string& fileName) {
-    const size_t dot = fileName.find_last_of('.');
-    if (dot == std::string::npos) {
-        return fileName;
-    }
-    return fileName.substr(0, dot);
-}
-
-std::string BaseNameFromPath(const std::string& path) {
-    const size_t slash = path.find_last_of("/\\");
-    if (slash == std::string::npos) {
-        return path;
-    }
-    return path.substr(slash + 1);
-}
-
-int FindProfileIndexByNormalizedName(const std::vector<ProfileListEntry>& profiles, const std::string& normalizedFileName) {
-    for (int i = 0; i < static_cast<int>(profiles.size()); ++i) {
-        if (_stricmp(profiles[static_cast<size_t>(i)].displayName.c_str(), normalizedFileName.c_str()) == 0) {
-            return i;
-        }
-    }
-    return -1;
 }
 
 const char* TriggerLabel(UnlimitedPlaybackManager::TriggerType t) {
@@ -155,79 +104,159 @@ const char* BindingName(int key) {
     return name;
 }
 
-std::vector<ProfileListEntry> ListUnlimitedPlaybackProfiles() {
-    std::vector<ProfileListEntry> profiles;
-    WIN32_FIND_DATAA findData;
-    std::memset(&findData, 0, sizeof(findData));
-    const std::string pattern = std::string(kUnlimitedPlaybackProfileFolder) + "/*.upl";
-    HANDLE handle = FindFirstFileA(pattern.c_str(), &findData);
-    if (handle == INVALID_HANDLE_VALUE) {
-        return profiles;
+enum class NativeFileDialogAction {
+    None,
+    LoadProfile,
+    SaveProfile,
+    ImportPlayback,
+    ExportEntryPlayback,
+};
+
+struct NativeFileDialogState {
+    std::mutex mutex;
+    bool active = false;
+    bool completed = false;
+    bool canceled = false;
+    NativeFileDialogAction action = NativeFileDialogAction::None;
+    int contextIndex = -1;
+    std::string path;
+};
+
+NativeFileDialogState g_nativeFileDialogState;
+const char* kNativeFileDialogToastKey = "up_native_file_dialog";
+
+void StartNativeFileDialogAsync(NativeFileDialogAction action, const std::string& initialPath, int contextIndex = -1) {
+    {
+        std::lock_guard<std::mutex> lock(g_nativeFileDialogState.mutex);
+        if (g_nativeFileDialogState.active) {
+            return;
+        }
+        g_nativeFileDialogState.active = true;
+        g_nativeFileDialogState.completed = false;
+        g_nativeFileDialogState.canceled = false;
+        g_nativeFileDialogState.action = action;
+        g_nativeFileDialogState.contextIndex = contextIndex;
+        g_nativeFileDialogState.path.clear();
     }
 
-    do {
-        if ((findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0 && findData.cFileName[0] != '\0') {
-            const std::string relativePath = std::string(kUnlimitedPlaybackProfileFolder) + "/" + findData.cFileName;
-            char absolutePath[MAX_PATH] = {};
-            DWORD resolved = GetFullPathNameA(relativePath.c_str(), MAX_PATH, absolutePath, nullptr);
-            ProfileListEntry entry;
-            entry.displayName = findData.cFileName;
-            entry.fullPath = (resolved > 0 && resolved < MAX_PATH) ? absolutePath : relativePath;
-            profiles.push_back(entry);
-        }
-    } while (FindNextFileA(handle, &findData) == TRUE);
+    std::thread([action, initialPath, contextIndex]() {
+        char selectedPath[MAX_PATH] = {};
+        char initialDir[MAX_PATH] = {};
+        char originalWorkingDirectory[MAX_PATH] = {};
+        OPENFILENAMEA ofn;
+        std::memset(&ofn, 0, sizeof(ofn));
+        GetCurrentDirectoryA(MAX_PATH, originalWorkingDirectory);
 
-    FindClose(handle);
-    std::sort(profiles.begin(), profiles.end(), [](const ProfileListEntry& a, const ProfileListEntry& b) {
-        return a.displayName < b.displayName;
-    });
-    return profiles;
+        ofn.lStructSize = sizeof(ofn);
+        ofn.hwndOwner = nullptr;
+        ofn.lpstrFile = selectedPath;
+        ofn.nMaxFile = MAX_PATH;
+
+        bool saveDialog = false;
+        switch (action) {
+        case NativeFileDialogAction::LoadProfile:
+            ofn.lpstrFilter = "Unlimited Playback Profile (*.upl)\0*.upl\0All Files\0*.*\0";
+            ofn.lpstrDefExt = "upl";
+            ofn.lpstrTitle = "Load unlimited playback profile";
+            break;
+        case NativeFileDialogAction::SaveProfile:
+            ofn.lpstrFilter = "Unlimited Playback Profile (*.upl)\0*.upl\0All Files\0*.*\0";
+            ofn.lpstrDefExt = "upl";
+            ofn.lpstrTitle = "Save unlimited playback profile";
+            saveDialog = true;
+            break;
+        case NativeFileDialogAction::ImportPlayback:
+            ofn.lpstrFilter = "Unlimited Playback Entry (*.playback)\0*.playback\0All Files\0*.*\0";
+            ofn.lpstrDefExt = "playback";
+            ofn.lpstrTitle = "Import unlimited playback entry";
+            break;
+        case NativeFileDialogAction::ExportEntryPlayback:
+            ofn.lpstrFilter = "Unlimited Playback Entry (*.playback)\0*.playback\0All Files\0*.*\0";
+            ofn.lpstrDefExt = "playback";
+            ofn.lpstrTitle = "Export unlimited playback entry";
+            saveDialog = true;
+            break;
+        default:
+            break;
+        }
+
+        const std::string pathSeed = initialPath.empty() ? kUnlimitedPlaybackProfileFolder : initialPath;
+        const DWORD pathAttributes = GetFileAttributesA(pathSeed.c_str());
+        if (pathAttributes != INVALID_FILE_ATTRIBUTES && (pathAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0) {
+            std::strncpy(initialDir, pathSeed.c_str(), MAX_PATH - 1);
+            initialDir[MAX_PATH - 1] = '\0';
+            ofn.lpstrInitialDir = initialDir;
+        } else {
+            std::strncpy(selectedPath, pathSeed.c_str(), MAX_PATH - 1);
+            selectedPath[MAX_PATH - 1] = '\0';
+
+            const char* slash = (std::max)(std::strrchr(selectedPath, '\\'), std::strrchr(selectedPath, '/'));
+            if (slash != nullptr) {
+                const size_t dirLen = static_cast<size_t>(slash - selectedPath);
+                if (dirLen < MAX_PATH) {
+                    std::memcpy(initialDir, selectedPath, dirLen);
+                    initialDir[dirLen] = '\0';
+                    ofn.lpstrInitialDir = initialDir;
+                }
+
+                const char* fileName = slash + 1;
+                std::memmove(selectedPath, fileName, std::strlen(fileName) + 1);
+            }
+        }
+
+        bool success = false;
+        if (saveDialog) {
+            ofn.Flags = OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT | OFN_NOCHANGEDIR;
+            success = GetSaveFileNameA(&ofn) == TRUE;
+        } else {
+            ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
+            success = GetOpenFileNameA(&ofn) == TRUE;
+        }
+
+        if (originalWorkingDirectory[0] != '\0') {
+            SetCurrentDirectoryA(originalWorkingDirectory);
+        }
+
+        std::lock_guard<std::mutex> lock(g_nativeFileDialogState.mutex);
+        g_nativeFileDialogState.path = success ? selectedPath : "";
+        g_nativeFileDialogState.canceled = !success;
+        g_nativeFileDialogState.completed = true;
+        g_nativeFileDialogState.active = false;
+        g_nativeFileDialogState.action = action;
+        g_nativeFileDialogState.contextIndex = contextIndex;
+    }).detach();
 }
 
-std::vector<ProfileListEntry> ListUnlimitedPlaybackImports() {
-    std::vector<ProfileListEntry> files;
-    WIN32_FIND_DATAA findData;
-    std::memset(&findData, 0, sizeof(findData));
-    const std::string pattern = std::string(kUnlimitedPlaybackImportFolder) + "/*.playback";
-    HANDLE handle = FindFirstFileA(pattern.c_str(), &findData);
-    if (handle == INVALID_HANDLE_VALUE) {
-        return files;
+bool ConsumeCompletedNativeFileDialog(NativeFileDialogAction* outAction, std::string* outPath, bool* outCanceled, int* outContextIndex) {
+    std::lock_guard<std::mutex> lock(g_nativeFileDialogState.mutex);
+    if (!g_nativeFileDialogState.completed) {
+        return false;
     }
 
-    do {
-        if ((findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0 && findData.cFileName[0] != '\0') {
-            const std::string relativePath = std::string(kUnlimitedPlaybackImportFolder) + "/" + findData.cFileName;
-            char absolutePath[MAX_PATH] = {};
-            DWORD resolved = GetFullPathNameA(relativePath.c_str(), MAX_PATH, absolutePath, nullptr);
-            ProfileListEntry entry;
-            entry.displayName = findData.cFileName;
-            entry.fullPath = (resolved > 0 && resolved < MAX_PATH) ? absolutePath : relativePath;
-            files.push_back(entry);
-        }
-    } while (FindNextFileA(handle, &findData) == TRUE);
+    if (outAction) {
+        *outAction = g_nativeFileDialogState.action;
+    }
+    if (outPath) {
+        *outPath = g_nativeFileDialogState.path;
+    }
+    if (outCanceled) {
+        *outCanceled = g_nativeFileDialogState.canceled;
+    }
+    if (outContextIndex) {
+        *outContextIndex = g_nativeFileDialogState.contextIndex;
+    }
 
-    FindClose(handle);
-    std::sort(files.begin(), files.end(), [](const ProfileListEntry& a, const ProfileListEntry& b) {
-        return a.displayName < b.displayName;
-    });
-    return files;
+    g_nativeFileDialogState.completed = false;
+    g_nativeFileDialogState.canceled = false;
+    g_nativeFileDialogState.action = NativeFileDialogAction::None;
+    g_nativeFileDialogState.contextIndex = -1;
+    g_nativeFileDialogState.path.clear();
+    return true;
 }
 
-bool SaveFileDialogForFilter(const char* title, const char* filter, const char* defaultExt, char* outPath, int outPathSize) {
-    OPENFILENAMEA ofn;
-    std::memset(&ofn, 0, sizeof(ofn));
-    outPath[0] = '\0';
-
-    ofn.lStructSize = sizeof(ofn);
-    ofn.hwndOwner = nullptr;
-    ofn.lpstrFilter = filter;
-    ofn.lpstrDefExt = defaultExt;
-    ofn.lpstrFile = outPath;
-    ofn.nMaxFile = outPathSize;
-    ofn.lpstrTitle = title;
-    ofn.Flags = OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT;
-
-    return GetSaveFileNameA(&ofn) == TRUE;
+bool NativeFileDialogActive() {
+    std::lock_guard<std::mutex> lock(g_nativeFileDialogState.mutex);
+    return g_nativeFileDialogState.active;
 }
 
 int CaptureNextPressedVirtualKey() {
@@ -405,6 +434,16 @@ void UnlimitedPlaybackWindow::Draw() {
     mgr.InitializeIfNeeded();
     mgr.PruneExpiredToasts();
 
+    const auto beginNativeDialog = [&mgr](NativeFileDialogAction action, const std::string& initialPath, const char* activityText, int contextIndex = -1) {
+        if (NativeFileDialogActive()) {
+            mgr.PushToast("A native file dialog is already open.");
+            return false;
+        }
+        StartNativeFileDialogAsync(action, initialPath, contextIndex);
+        mgr.PushStickyToast(kNativeFileDialogToastKey, activityText);
+        return true;
+    };
+
     static int selectedEntry = -1;
     static int entryPendingDelete = -1;
     static int entryPendingEdit = -1;
@@ -426,26 +465,13 @@ void UnlimitedPlaybackWindow::Draw() {
     static bool playbackCompatibilityCanForce = false;
     static char pendingPlaybackPath[MAX_PATH] = {};
     static CompatibilityManager::Result pendingPlaybackCompatibility = {};
-    static std::vector<ProfileListEntry> availableProfiles = ListUnlimitedPlaybackProfiles();
-    static int selectedProfileIndex = -1;
-    static std::vector<ProfileListEntry> availableImports = ListUnlimitedPlaybackImports();
-    static int selectedImportIndex = -1;
-    static char saveProfileName[128] = "";
-    static bool openLoadProfileModal = false;
-    static bool openSaveProfileModal = false;
-    static bool openOverwriteProfileConfirmModal = false;
-    static bool closeSaveProfileModalAfterOverwrite = false;
-    static bool openImportFileModal = false;
     static bool openCaptureSlotModal = false;
     static bool openReplayCaptureModal = false;
     static bool openEntryEditModal = false;
     static bool openEntryPlaybackEditorModal = false;
     static bool openSendToSlotModal = false;
-    static bool openSaveEntryToFileModal = false;
     static bool openDefaultConfirmModal = false;
     static bool openDeleteEntryConfirmModal = false;
-    static int entryPendingSaveToFile = -1;
-    static char saveEntryFileName[128] = "";
     const bool inTrainingMatch = TrainingMatchAvailable();
     const bool inReplayMatch =
         g_gameVals.pGameMode && g_gameVals.pGameState &&
@@ -468,150 +494,43 @@ void UnlimitedPlaybackWindow::Draw() {
             }
         }
     }
-    if (openLoadProfileModal) {
-        const ImVec2 displayCenter = ImVec2(ImGui::GetIO().DisplaySize.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f);
-        ImGui::SetNextWindowPos(displayCenter, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-        ImGui::OpenPopup("Load U.P. Profile");
-        openLoadProfileModal = false;
+    NativeFileDialogAction completedDialogAction = NativeFileDialogAction::None;
+    std::string completedDialogPath;
+    bool completedDialogCanceled = false;
+    int completedDialogContextIndex = -1;
+    if (ConsumeCompletedNativeFileDialog(&completedDialogAction, &completedDialogPath, &completedDialogCanceled, &completedDialogContextIndex)) {
+        mgr.RemoveStickyToast(kNativeFileDialogToastKey);
     }
-    if (ImGui::BeginPopupModal("Load U.P. Profile", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        if (ImGui::Button("Refresh##load_profile")) {
-            availableProfiles = ListUnlimitedPlaybackProfiles();
-            if (availableProfiles.empty()) {
-                selectedProfileIndex = -1;
-                mgr.PushToast("No UP profiles found.");
-            } else if (selectedProfileIndex < 0 || selectedProfileIndex >= static_cast<int>(availableProfiles.size())) {
-                selectedProfileIndex = 0;
-            }
-        }
-        DrawButtonTooltip("Reloads the list of UP profiles from disk.");
-        ImGui::SameLine();
-        ImGui::PushItemWidth(360.0f);
-        if (ImGui::BeginCombo("Profile", selectedProfileIndex >= 0 && selectedProfileIndex < static_cast<int>(availableProfiles.size())
-            ? availableProfiles[static_cast<size_t>(selectedProfileIndex)].displayName.c_str()
-            : "<no profile selected>")) {
-            for (int i = 0; i < static_cast<int>(availableProfiles.size()); ++i) {
-                const bool selected = selectedProfileIndex == i;
-                if (ImGui::Selectable(availableProfiles[static_cast<size_t>(i)].displayName.c_str(), selected)) {
-                    selectedProfileIndex = i;
-                }
-                if (selected) {
-                    ImGui::SetItemDefaultFocus();
-                }
-            }
-            ImGui::EndCombo();
-        }
-        ImGui::PopItemWidth();
-        ImGui::TextDisabled("Folder: %s", kUnlimitedPlaybackProfileFolder);
-        if (ImGui::Button("Load Selected")) {
-            if (selectedProfileIndex >= 0 && selectedProfileIndex < static_cast<int>(availableProfiles.size())) {
-                const ProfileListEntry& selectedProfile = availableProfiles[static_cast<size_t>(selectedProfileIndex)];
-                auto compatibility = mgr.ProbeProfileCompatibility(selectedProfile.fullPath);
-                if (compatibility.action == CompatibilityManager::Action_Load) {
-                    mgr.LoadProfile(selectedProfile.fullPath);
-                    ImGui::CloseCurrentPopup();
-                } else {
-                    std::strncpy(pendingProfilePath, selectedProfile.fullPath.c_str(), MAX_PATH - 1);
-                    pendingProfilePath[MAX_PATH - 1] = '\0';
-                    pendingProfileCompatibility = compatibility;
-                    profileCompatibilityCanForce = compatibility.canForce;
-                    showProfileCompatibilityPopup = true;
-                }
+    if (!completedDialogCanceled && !completedDialogPath.empty()) {
+        if (completedDialogAction == NativeFileDialogAction::LoadProfile) {
+            auto compatibility = mgr.ProbeProfileCompatibility(completedDialogPath);
+            if (compatibility.action == CompatibilityManager::Action_Load) {
+                mgr.LoadProfile(completedDialogPath);
             } else {
-                mgr.PushToast("Select a UP profile first.");
+                std::strncpy(pendingProfilePath, completedDialogPath.c_str(), MAX_PATH - 1);
+                pendingProfilePath[MAX_PATH - 1] = '\0';
+                pendingProfileCompatibility = compatibility;
+                profileCompatibilityCanForce = compatibility.canForce;
+                showProfileCompatibilityPopup = true;
             }
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Cancel##load_profile")) {
-            ImGui::CloseCurrentPopup();
-        }
-        ImGui::EndPopup();
-    }
-
-    if (openSaveProfileModal) {
-        const std::string activeProfileName = StripExtension(BaseNameFromPath(mgr.GetActiveProfilePath()));
-        std::strncpy(saveProfileName, activeProfileName.c_str(), IM_ARRAYSIZE(saveProfileName) - 1);
-        saveProfileName[IM_ARRAYSIZE(saveProfileName) - 1] = '\0';
-        const ImVec2 displayCenter = ImVec2(ImGui::GetIO().DisplaySize.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f);
-        ImGui::SetNextWindowPos(displayCenter, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-        ImGui::OpenPopup("Save U.P. Profile");
-        openSaveProfileModal = false;
-    }
-    if (ImGui::BeginPopupModal("Save U.P. Profile", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        if (closeSaveProfileModalAfterOverwrite) {
-            closeSaveProfileModalAfterOverwrite = false;
-            ImGui::CloseCurrentPopup();
-        }
-        ImGui::PushItemWidth(320.0f);
-        ImGui::InputText("Profile Name", saveProfileName, IM_ARRAYSIZE(saveProfileName));
-        ImGui::PopItemWidth();
-        ImGui::SameLine();
-        if (ImGui::BeginCombo("##save_profile_dropdown", "Select...")) {
-            for (int i = 0; i < static_cast<int>(availableProfiles.size()); ++i) {
-                const bool selected = selectedProfileIndex == i;
-                if (ImGui::Selectable(availableProfiles[static_cast<size_t>(i)].displayName.c_str(), selected)) {
-                    selectedProfileIndex = i;
-                    const std::string selectedName = StripExtension(availableProfiles[static_cast<size_t>(i)].displayName);
-                    std::strncpy(saveProfileName, selectedName.c_str(), IM_ARRAYSIZE(saveProfileName) - 1);
-                    saveProfileName[IM_ARRAYSIZE(saveProfileName) - 1] = '\0';
-                }
-                if (selected) {
-                    ImGui::SetItemDefaultFocus();
-                }
-            }
-            ImGui::EndCombo();
-        }
-        if (ImGui::Button("Save")) {
-            const std::string fileName = NormalizeProfileFileName(saveProfileName);
-            if (fileName.empty()) {
-                mgr.PushToast("Enter a profile name first.");
+        } else if (completedDialogAction == NativeFileDialogAction::SaveProfile) {
+            mgr.SaveProfile(completedDialogPath);
+        } else if (completedDialogAction == NativeFileDialogAction::ImportPlayback) {
+            auto compatibility = mgr.ProbePlaybackCompatibility(completedDialogPath);
+            if (compatibility.action == CompatibilityManager::Action_Load) {
+                mgr.AddPlaybackFile(completedDialogPath, "");
             } else {
-                const int existingProfileIndex = FindProfileIndexByNormalizedName(availableProfiles, fileName);
-                if (existingProfileIndex >= 0) {
-                    selectedProfileIndex = existingProfileIndex;
-                    openOverwriteProfileConfirmModal = true;
-                } else if (mgr.SaveProfile(fileName)) {
-                    availableProfiles = ListUnlimitedPlaybackProfiles();
-                    selectedProfileIndex = FindProfileIndexByNormalizedName(availableProfiles, fileName);
-                    ImGui::CloseCurrentPopup();
-                }
+                std::strncpy(pendingPlaybackPath, completedDialogPath.c_str(), MAX_PATH - 1);
+                pendingPlaybackPath[MAX_PATH - 1] = '\0';
+                pendingPlaybackCompatibility = compatibility;
+                playbackCompatibilityCanForce = compatibility.canForce;
+                showPlaybackCompatibilityPopup = true;
+            }
+        } else if (completedDialogAction == NativeFileDialogAction::ExportEntryPlayback) {
+            if (completedDialogContextIndex >= 0 && completedDialogContextIndex < static_cast<int>(mgr.GetEntries().size())) {
+                mgr.SaveEntryToFile(static_cast<size_t>(completedDialogContextIndex), completedDialogPath);
             }
         }
-        ImGui::SameLine();
-        if (ImGui::Button("Cancel##save_profile")) {
-            ImGui::CloseCurrentPopup();
-        }
-        if (openOverwriteProfileConfirmModal) {
-            const ImVec2 displayCenter = ImVec2(ImGui::GetIO().DisplaySize.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f);
-            ImGui::SetNextWindowPos(displayCenter, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-            ImGui::SetNextWindowSize(ImVec2(560.0f, 0.0f), ImGuiCond_Appearing);
-            ImGui::OpenPopup("Overwrite U.P. Profile?");
-            openOverwriteProfileConfirmModal = false;
-        }
-        if (ImGui::BeginPopupModal("Overwrite U.P. Profile?", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-            const char* overwriteMessage = "A profile with that name already exists. Overwrite it?";
-            const float textWidth = ImGui::CalcTextSize(overwriteMessage).x;
-            const float textX = (std::max)(0.0f, (ImGui::GetContentRegionAvail().x - textWidth) * 0.5f);
-            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + textX);
-            ImGui::TextUnformatted(overwriteMessage);
-            const float buttonsWidth = 220.0f + ImGui::GetStyle().ItemSpacing.x;
-            const float buttonsX = (std::max)(0.0f, (ImGui::GetContentRegionAvail().x - buttonsWidth) * 0.5f);
-            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + buttonsX);
-            if (ImGui::Button("Overwrite##save_profile_confirm", ImVec2(110.0f, 0.0f))) {
-                if (selectedProfileIndex >= 0 && selectedProfileIndex < static_cast<int>(availableProfiles.size()) &&
-                    mgr.SaveProfile(availableProfiles[static_cast<size_t>(selectedProfileIndex)].fullPath)) {
-                    availableProfiles = ListUnlimitedPlaybackProfiles();
-                    closeSaveProfileModalAfterOverwrite = true;
-                    ImGui::CloseCurrentPopup();
-                }
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Cancel##save_profile_confirm", ImVec2(110.0f, 0.0f))) {
-                ImGui::CloseCurrentPopup();
-            }
-            ImGui::EndPopup();
-        }
-        ImGui::EndPopup();
     }
 
     if (showProfileCompatibilityPopup) {
@@ -745,10 +664,13 @@ void UnlimitedPlaybackWindow::Draw() {
                 openSendToSlotModal = true;
             }
             if (ImGui::MenuItem("Save to File")) {
-                entryPendingSaveToFile = i;
-                std::strncpy(saveEntryFileName, e.name.c_str(), IM_ARRAYSIZE(saveEntryFileName) - 1);
-                saveEntryFileName[IM_ARRAYSIZE(saveEntryFileName) - 1] = '\0';
-                openSaveEntryToFileModal = true;
+                const std::string initialExportPath =
+                    std::string(kUnlimitedPlaybackExportFolder) + "/" + NormalizePlaybackFileName(e.name.c_str());
+                beginNativeDialog(
+                    NativeFileDialogAction::ExportEntryPlayback,
+                    initialExportPath,
+                    "Export playback entry file dialog open...",
+                    i);
             }
             ImGui::EndPopup();
         }
@@ -786,15 +708,19 @@ void UnlimitedPlaybackWindow::Draw() {
     bool libraryPressed[3] = {};
     DrawWrappedButtonRow(libraryButtons, libraryButtonTooltips, 3, libraryButtonsWidth, libraryPressed);
     if (libraryPressed[0]) {
-        availableProfiles = ListUnlimitedPlaybackProfiles();
-        if (!availableProfiles.empty() && (selectedProfileIndex < 0 || selectedProfileIndex >= static_cast<int>(availableProfiles.size()))) {
-            selectedProfileIndex = 0;
-        }
-        openLoadProfileModal = true;
+        beginNativeDialog(
+            NativeFileDialogAction::LoadProfile,
+            kUnlimitedPlaybackProfileFolder,
+            "Load profile file dialog open...");
     }
     if (libraryPressed[1]) {
-        availableProfiles = ListUnlimitedPlaybackProfiles();
-        openSaveProfileModal = true;
+        const std::string initialSavePath = mgr.GetActiveProfilePath().empty()
+            ? std::string(kUnlimitedPlaybackProfileFolder) + "/profile.upl"
+            : mgr.GetActiveProfilePath();
+        beginNativeDialog(
+            NativeFileDialogAction::SaveProfile,
+            initialSavePath,
+            "Save profile file dialog open...");
     }
     if (libraryPressed[2]) {
         openDefaultConfirmModal = true;
@@ -828,11 +754,10 @@ void UnlimitedPlaybackWindow::Draw() {
         openCaptureSlotModal = true;
     }
     if (capturePressed[1]) {
-        availableImports = ListUnlimitedPlaybackImports();
-        if (!availableImports.empty() && (selectedImportIndex < 0 || selectedImportIndex >= static_cast<int>(availableImports.size()))) {
-            selectedImportIndex = 0;
-        }
-        openImportFileModal = true;
+        beginNativeDialog(
+            NativeFileDialogAction::ImportPlayback,
+            kUnlimitedPlaybackImportFolder,
+            "Import playback file dialog open...");
     }
     if (capturePressed[2]) {
         openReplayCaptureModal = true;
@@ -1043,60 +968,6 @@ void UnlimitedPlaybackWindow::Draw() {
         }
         ImGui::EndPopup();
     }
-    if (openImportFileModal) {
-        ImGui::OpenPopup("Add from file");
-        openImportFileModal = false;
-    }
-    if (ImGui::BeginPopupModal("Add from file", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::TextDisabled("Import Folder: %s", kUnlimitedPlaybackImportFolder);
-        if (ImGui::Button("Refresh##import_list")) {
-            availableImports = ListUnlimitedPlaybackImports();
-            if (availableImports.empty()) {
-                selectedImportIndex = -1;
-            } else if (selectedImportIndex < 0 || selectedImportIndex >= static_cast<int>(availableImports.size())) {
-                selectedImportIndex = 0;
-            }
-        }
-        ImGui::PushItemWidth(360.0f);
-        if (ImGui::BeginCombo("Playback File", selectedImportIndex >= 0 && selectedImportIndex < static_cast<int>(availableImports.size())
-            ? availableImports[static_cast<size_t>(selectedImportIndex)].displayName.c_str()
-            : "<no playback selected>")) {
-            for (int i = 0; i < static_cast<int>(availableImports.size()); ++i) {
-                const bool selected = selectedImportIndex == i;
-                if (ImGui::Selectable(availableImports[static_cast<size_t>(i)].displayName.c_str(), selected)) {
-                    selectedImportIndex = i;
-                }
-                if (selected) {
-                    ImGui::SetItemDefaultFocus();
-                }
-            }
-            ImGui::EndCombo();
-        }
-        ImGui::PopItemWidth();
-        if (ImGui::Button("Save##import_playback")) {
-            if (selectedImportIndex >= 0 && selectedImportIndex < static_cast<int>(availableImports.size())) {
-                const ProfileListEntry& selectedImport = availableImports[static_cast<size_t>(selectedImportIndex)];
-                auto compatibility = mgr.ProbePlaybackCompatibility(selectedImport.fullPath);
-                if (compatibility.action == CompatibilityManager::Action_Load) {
-                    mgr.AddPlaybackFile(selectedImport.fullPath, "");
-                    ImGui::CloseCurrentPopup();
-                } else {
-                    std::strncpy(pendingPlaybackPath, selectedImport.fullPath.c_str(), MAX_PATH - 1);
-                    pendingPlaybackPath[MAX_PATH - 1] = '\0';
-                    pendingPlaybackCompatibility = compatibility;
-                    playbackCompatibilityCanForce = compatibility.canForce;
-                    showPlaybackCompatibilityPopup = true;
-                }
-            } else {
-                mgr.PushToast("Select a playback import first.");
-            }
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Cancel##import_playback")) {
-            ImGui::CloseCurrentPopup();
-        }
-        ImGui::EndPopup();
-    }
     if (openEntryEditModal && entryPendingEdit >= 0 && entryPendingEdit < static_cast<int>(mgr.GetEntries().size())) {
         const auto& entry = mgr.GetEntries()[entryPendingEdit];
         std::strncpy(editEntryName, entry.name.c_str(), IM_ARRAYSIZE(editEntryName) - 1);
@@ -1182,33 +1053,6 @@ void UnlimitedPlaybackWindow::Draw() {
         }
         ImGui::SameLine();
         if (ImGui::Button("Cancel##send_slot")) {
-            ImGui::CloseCurrentPopup();
-        }
-        ImGui::EndPopup();
-    }
-    if (openSaveEntryToFileModal && entryPendingSaveToFile >= 0 && entryPendingSaveToFile < static_cast<int>(mgr.GetEntries().size())) {
-        ImGui::OpenPopup("Save Entry to File");
-        openSaveEntryToFileModal = false;
-    }
-    if (ImGui::BeginPopupModal("Save Entry to File", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::TextDisabled("Export Folder:");
-        ImGui::PushTextWrapPos(420.0f);
-        ImGui::TextDisabled("%s", kUnlimitedPlaybackExportFolder);
-        ImGui::PopTextWrapPos();
-        ImGui::InputText("Name", saveEntryFileName, IM_ARRAYSIZE(saveEntryFileName));
-        if (ImGui::Button("Save##entry_to_file")) {
-            const std::string fileName = NormalizePlaybackFileName(saveEntryFileName);
-            if (fileName.empty()) {
-                mgr.PushToast("Enter a file name first.");
-            } else if (entryPendingSaveToFile >= 0 && entryPendingSaveToFile < static_cast<int>(mgr.GetEntries().size())) {
-                const std::string outputPath = std::string(kUnlimitedPlaybackExportFolder) + "/" + fileName;
-                if (mgr.SaveEntryToFile(static_cast<size_t>(entryPendingSaveToFile), outputPath)) {
-                    ImGui::CloseCurrentPopup();
-                }
-            }
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Cancel##entry_to_file")) {
             ImGui::CloseCurrentPopup();
         }
         ImGui::EndPopup();
