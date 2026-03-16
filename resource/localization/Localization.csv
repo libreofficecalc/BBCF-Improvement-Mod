@@ -353,3 +353,186 @@ Keep disabled,Keep disabled,Mantener desactivado
 Controller hooks are disabled because EnableControllerHooks is set to 0.,Controller hooks are disabled because EnableControllerHooks is set to 0.,Los ganchos de control están desactivados porque EnableControllerHooks está en 0.
 This might have been set manually or after detecting Wine/Proton.,This might have been set manually or after detecting Wine/Proton.,Esto se estableció manualmente o automáticamente tras detectar Wine/Proton.
 "To force enable these hooks, set ForceEnableControllerSettingHooks to 1 at your own risk.","To force enable these hooks, set ForceEnableControllerSettingHooks to 1 at your own risk.",Pon ForceEnableControllerSettingHooks en 1 para reactivar las funcionalidades bajo tu propio riesgo.
+Unlimited Playback (BETA),Unlimited Playback (BETA),Playback ilimitado (BETA)
+Popup is always available. Runtime actions only work in the right context.,Popup is always available. Runtime actions only work in the right context.,La ventana siempre abre. Las acciones solo funcionan en el contexto correcto.
+Loop current playback,Loop current playback,Repetir playback actual
+This will continuously loop the current recording slot, subject to absolute positioning.,This will continuously loop the current recording slot, subject to absolute positioning.,Repite continuamente la ranura actual, sujeto al posicionamiento absoluto.
+A native file dialog is already open.,A native file dialog is already open.,Ya hay un selector de archivos nativo abierto.
+Mapped playback bind: %s,Mapped playback bind: %s,Asignado el botón de playback: %s
+Profile Compatibility,Profile Compatibility,Compatibilidad de perfil
+"Profile version mismatch.
+
+File version: %s
+Code version: %s
+
+%s","Profile version mismatch.
+
+File version: %s
+Code version: %s
+
+%s","La versión del perfil no coincide.
+
+Versión del archivo: %s
+Versión del código: %s
+
+%s"
+Load Anyway,Load Anyway,Cargar igual
+Playback Compatibility,Playback Compatibility,Compatibilidad de playback
+"Playback version mismatch.
+
+File version: %s
+Code version: %s
+
+%s","Playback version mismatch.
+
+File version: %s
+Code version: %s
+
+%s","La versión del playback no coincide.
+
+Versión del archivo: %s
+Versión del código: %s
+
+%s"
+Import Anyway,Import Anyway,Importar igual
+Add from CF Slot,Add from CF Slot,Añadir desde ranura CF
+Add from file,Add from file,Añadir desde archivo
+Add from replay,Add from replay,Añadir desde replay
+Capture a playback from one of the 4 CF slots,Capture a playback from one of the 4 CF slots,Captura un playback de una de las 4 ranuras CF
+Import a playback file into the library,Import a playback file into the library,Importa un archivo de playback a la biblioteca
+Record a new playback entry from a replay,Record a new playback entry from a replay,Graba una nueva entrada desde un replay
+Library (%d),Library (%d),Biblioteca (%d)
+Send to CF Slot,Send to CF Slot,Enviar a ranura CF
+Save to File,Save to File,Guardar en archivo
+Export playback entry file dialog open...,Export playback entry file dialog open...,Selector para exportar playback abierto...
+Play,Play,Reproducir
+Play (Disabled due to not being in lab),Play (Disabled due to not being in lab),Reproducir (desactivado fuera del lab)
+Edit,Edit,Editar
+Delete,Delete,Eliminar
+Default,Default,Por defecto
+Load a library profile,Load a library profile,Cargar un perfil de biblioteca
+Save the current library as a profile,Save the current library as a profile,Guardar la biblioteca actual como perfil
+Reset the current library,Reset the current library,Restablecer la biblioteca actual
+Load profile file dialog open...,Load profile file dialog open...,Selector para cargar perfil abierto...
+Save profile file dialog open...,Save profile file dialog open...,Selector para guardar perfil abierto...
+Add Playback Entry,Add Playback Entry,Añadir entrada de playback
+Add from replay is only available while a replay match is active in Replay Theater.,Add from replay is only available while a replay match is active in Replay Theater.,Añadir desde replay solo funciona con una repetición activa en Replay Theater.
+Import playback file dialog open...,Import playback file dialog open...,Selector para importar playback abierto...
+Add from Replay,Add from Replay,Añadir desde replay
+Capture from replay,Capture from replay,Capturar desde replay
+Recording %s inputs (start frame %d),Recording %s inputs (start frame %d),Grabando inputs de %s (frame inicial %d)
+Name,Name,Nombre
+Stop and Save,Stop and Save,Detener y guardar
+Record P1 Inputs,Record P1 Inputs,Grabar inputs P1
+Record P2 Inputs,Record P2 Inputs,Grabar inputs P2
+Replay capture only starts while a replay match is active.,Replay capture only starts while a replay match is active.,La captura solo empieza con una repetición activa.
+Library Settings,Library Settings,Ajustes de biblioteca
+Random,Random,Aleatorio
+Sequential,Sequential,Secuencial
+Non-repeating Random,Non-repeating Random,Aleatorio sin repetir
+Playback Mode,Playback Mode,Modo de playback
+How the library chooses the next enabled entry when playback is triggered.,How the library chooses the next enabled entry when playback is triggered.,Cómo la biblioteca elige la siguiente entrada activa al dispararse.
+Playback mode: %s,Playback mode: %s,Modo de playback: %s
+Auto-mirror on side swap,Auto-mirror on side swap,Autoespejo al cambiar lado
+Mirrors directional inputs when the recorded side and current side differ.,Mirrors directional inputs when the recorded side and current side differ.,Espeja las direcciones si el lado grabado y el actual difieren.
+Wakeup,Wakeup,Wakeup
+On Block,On Block,En bloqueo
+On Hit,On Hit,Al golpear
+Throw Tech,Throw Tech,Tech de throw
+Key Press,Key Press,Pulsación de tecla
+Unknown,Unknown,Desconocido
+Playback Trigger Type,Playback Trigger Type,Tipo de disparador
+Selects the single trigger type that can fire library playback.,Selects the single trigger type that can fire library playback.,Selecciona el único disparador que puede activar la biblioteca.
+Playback trigger: %s,Playback trigger: %s,Disparador de playback: %s
+%s Config,%s Config,Config. de %s
+Cooldown Frames,Cooldown Frames,Frames de cooldown
+Blocks the same trigger from firing again for this many frames after it activates.,Blocks the same trigger from firing again for this many frames after it activates.,Impide que el mismo disparador vuelva a activarse durante estos frames.
+Maps the button or key used by the Key Press trigger.,Maps the button or key used by the Key Press trigger.,Asigna el botón o tecla usada por el disparador de tecla.
+Map Playback Bind,Map Playback Bind,Asignar botón playback
+Fix Triggers,Fix Triggers,Arreglar disparadores
+Use this after Training reset if triggers temporarily stop firing. It clears trigger cooldown and edge state.,Use this after Training reset if triggers temporarily stop firing. It clears trigger cooldown and edge state.,Úsalo tras reiniciar Training si los disparadores dejan de activarse. Limpia cooldown y estado de borde.
+Activity,Activity,Actividad
+Reset Library?,Reset Library?,¿Restablecer biblioteca?
+Reset the current library and clear all loaded entries?,Reset the current library and clear all loaded entries?,¿Restablecer la biblioteca actual y borrar todas las entradas cargadas?
+Reset,Reset,Restablecer
+Delete Entry?,Delete Entry?,¿Eliminar entrada?
+Delete this playback entry from the library?,Delete this playback entry from the library?,¿Eliminar esta entrada de playback de la biblioteca?
+Capture Slot,Capture Slot,Ranura de captura
+Edit Library Entry,Edit Library Entry,Editar entrada de biblioteca
+Weight,Weight,Peso
+Edit Playback,Edit Playback,Editar playback
+Entry updated.,Entry updated.,Entrada actualizada.
+Edit Entry Playback,Edit Entry Playback,Editar playback de entrada
+Playback editor is unavailable.,Playback editor is unavailable.,El editor de playback no está disponible.
+Entry no longer exists.,Entry no longer exists.,La entrada ya no existe.
+CF Slot,CF Slot,Ranura CF
+Send,Send,Enviar
+Load unlimited playback profile,Load unlimited playback profile,Cargar perfil de playback ilimitado
+Save unlimited playback profile,Save unlimited playback profile,Guardar perfil de playback ilimitado
+Import unlimited playback entry,Import unlimited playback entry,Importar entrada de playback ilimitado
+Export unlimited playback entry,Export unlimited playback entry,Exportar entrada de playback ilimitado
+Pad A,Pad A,Pad A
+Pad B,Pad B,Pad B
+Pad X,Pad X,Pad X
+Pad Y,Pad Y,Pad Y
+Pad LB,Pad LB,Pad LB
+Pad RB,Pad RB,Pad RB
+Pad Back,Pad Back,Pad Back
+Pad Start,Pad Start,Pad Start
+Pad LS,Pad LS,Pad LS
+Pad RS,Pad RS,Pad RS
+Pad Up,Pad Up,Pad Arriba
+Pad Down,Pad Down,Pad Abajo
+Pad Left,Pad Left,Pad Izquierda
+Pad Right,Pad Right,Pad Derecha
+VK_%d,VK_%d,VK_%d
+Invalid playback destination.,Invalid playback destination.,Destino de playback inválido.
+Playback payload was too small.,Playback payload was too small.,Los datos del playback eran demasiado pequeños.
+"Playback rejected: file v%s, code v%s.","Playback rejected: file v%s, code v%s.","Playback rechazado: archivo v%s, código v%s."
+Playback file header is missing.,Playback file header is missing.,Falta la cabecera del archivo de playback.
+Trigger runtime state reset.,Trigger runtime state reset.,Estado de disparadores restablecido.
+Trigger runtime resynced after training reset.,Trigger runtime resynced after training reset.,Disparadores resincronizados tras el reinicio de Training.
+Could not read playback file.,Could not read playback file.,No se pudo leer el archivo de playback.
+File not found.,File not found.,Archivo no encontrado.
+Invalid playback file.,Invalid playback file.,Archivo de playback inválido.
+Playback imported.,Playback imported.,Playback importado.
+Slot must be between 1 and 4.,Slot must be between 1 and 4.,La ranura debe estar entre 1 y 4.
+Captured slot to library.,Captured slot to library.,Ranura capturada en la biblioteca.
+Start replay recording only while a replay match is active.,Start replay recording only while a replay match is active.,La grabación solo empieza con una repetición activa.
+Replay recording started: %s.,Replay recording started: %s.,Grabación de replay iniciada: %s.
+No replay recording in progress.,No replay recording in progress.,No hay una grabación de replay en curso.
+Replay recording cancelled (left replay match).,Replay recording cancelled (left replay match).,Grabación cancelada (saliste del replay).
+Replay recording cancelled (too short).,Replay recording cancelled (too short).,Grabación cancelada (demasiado corta).
+Replay recording cancelled (failed reading replay frames).,Replay recording cancelled (failed reading replay frames).,Grabación cancelada (falló la lectura de frames).
+Replay recording saved to library.,Replay recording saved to library.,Grabación de replay guardada en la biblioteca.
+Entry removed.,Entry removed.,Entrada eliminada.
+Entry renamed.,Entry renamed.,Entrada renombrada.
+Sending to a CF slot works only during a training match.,Sending to a CF slot works only during a training match.,Enviar a una ranura CF solo funciona en Training.
+Failed loading entry.,Failed loading entry.,Error al cargar la entrada.
+Entry loaded into slot.,Entry loaded into slot.,Entrada cargada en la ranura.
+Entry overwritten from slot.,Entry overwritten from slot.,Entrada sobrescrita desde la ranura.
+Entry saved.,Entry saved.,Entrada guardada.
+Failed saving entry to file.,Failed saving entry to file.,Error al guardar la entrada en archivo.
+Entry saved to file.,Entry saved to file.,Entrada guardada en archivo.
+Play now works only during a training match.,Play now works only during a training match.,Reproducir ahora solo funciona en Training.
+Played: %s%s,Played: %s%s,Reproducido: %s%s
+ (mirrored), (mirrored), (espejado)
+Unlimited playback config cleared.,Unlimited playback config cleared.,Configuración de playback ilimitado borrada.
+Failed to save profile.,Failed to save profile.,Error al guardar el perfil.
+Profile save failed: entry data missing for '%s'.,Profile save failed: entry data missing for '%s'.,Error al guardar el perfil: faltan datos de '%s'.
+Profile saved.,Profile saved.,Perfil guardado.
+Could not read profile file.,Could not read profile file.,No se pudo leer el archivo de perfil.
+Failed to open profile.,Failed to open profile.,Error al abrir el perfil.
+"Playback rejected (newer format): file v%s, code v%s.","Playback rejected (newer format): file v%s, code v%s.","Playback rechazado (formato más nuevo): archivo v%s, código v%s."
+"Profile compatibility rejected (file v%s, code v%s).","Profile compatibility rejected (file v%s, code v%s).","Compatibilidad del perfil rechazada (archivo v%s, código v%s)."
+"Profile version mismatch requires confirmation (file v%s, code v%s).","Profile version mismatch requires confirmation (file v%s, code v%s).","La diferencia de versión del perfil requiere confirmación (archivo v%s, código v%s)."
+Profile load failed: embedded playback missing for '%s'.,Profile load failed: embedded playback missing for '%s'.,Error al cargar el perfil: falta el playback embebido de '%s'.
+Profile load failed for '%s': %s,Profile load failed for '%s': %s,Error al cargar el perfil de '%s': %s
+Profile load failed for '%s'.,Profile load failed for '%s'.,Error al cargar el perfil de '%s'.
+Profile loaded. Trigger runtime synced.,Profile loaded. Trigger runtime synced.,Perfil cargado. Disparadores resincronizados.
+Trigger detected: %s,Trigger detected: %s,Disparador detectado: %s
+No eligible playback in current trigger selection.,No eligible playback in current trigger selection.,No hay playback válido para el disparador actual.
+Selected playback cache missing.,Selected playback cache missing.,Falta la caché del playback seleccionado.
+Triggered [%s]: %s%s,Triggered [%s]: %s%s,Activado [%s]: %s%s
+Slot %d,Slot %d,Ranura %d
+Replay %s,Replay %s,Replay %s

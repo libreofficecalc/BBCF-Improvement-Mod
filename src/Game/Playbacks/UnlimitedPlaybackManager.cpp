@@ -1,5 +1,6 @@
 #include "UnlimitedPlaybackManager.h"
 
+#include "Core/Localization.h"
 #include "Core/interfaces.h"
 #include "Core/logger.h"
 #include "Core/utils.h"
@@ -11,6 +12,8 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cstdarg>
+#include <cstdio>
 #include <cstring>
 #include <cstdlib>
 #include <fstream>
@@ -50,6 +53,26 @@ const ControllerBindingDef kControllerBindings[] = {
     { kControllerBindBase + 12, XINPUT_GAMEPAD_DPAD_LEFT },
     { kControllerBindBase + 13, XINPUT_GAMEPAD_DPAD_RIGHT },
 };
+
+std::string FormatLocalized(const char* key, ...) {
+    const char* format = L(key).c_str();
+    va_list args;
+    va_start(args, key);
+    const int required = std::vsnprintf(nullptr, 0, format, args);
+    va_end(args);
+
+    if (required <= 0) {
+        return std::string(format);
+    }
+
+    std::string out;
+    out.resize(static_cast<size_t>(required) + 1);
+    va_start(args, key);
+    std::vsnprintf(&out[0], out.size(), format, args);
+    va_end(args);
+    out.resize(static_cast<size_t>(required));
+    return out;
+}
 
 bool IsControllerBindCode(int code) {
     return code >= kControllerBindBase &&
@@ -227,13 +250,13 @@ bool ParsePlaybackBytes(
     std::string* outFailureReason) {
     if (!out) {
         if (outFailureReason) {
-            *outFailureReason = "Invalid playback destination.";
+            *outFailureReason = L("Invalid playback destination.");
         }
         return false;
     }
     if (data.size() <= 1) {
         if (outFailureReason) {
-            *outFailureReason = "Playback payload was too small.";
+            *outFailureReason = L("Playback payload was too small.");
         }
         return false;
     }
@@ -253,21 +276,19 @@ bool ParsePlaybackBytes(
         const auto compatibility = CompatibilityManager::EvaluatePlayback(detected, true);
         if (compatibility.action == CompatibilityManager::Action_Reject) {
             if (outFailureReason) {
-                *outFailureReason =
-                    std::string("Playback rejected: file v") +
-                    CompatibilityManager::ToString(compatibility.detected) +
-                    ", code v" +
-                    CompatibilityManager::ToString(compatibility.current) + ".";
+                *outFailureReason = FormatLocalized(
+                    "Playback rejected: file v%s, code v%s.",
+                    CompatibilityManager::ToString(compatibility.detected).c_str(),
+                    CompatibilityManager::ToString(compatibility.current).c_str());
             }
             return false;
         }
         if (compatibility.action == CompatibilityManager::Action_Confirm && !forceLoadIncompatible) {
             if (outFailureReason) {
-                *outFailureReason =
-                    std::string("Playback rejected (newer format): file v") +
-                    CompatibilityManager::ToString(compatibility.detected) +
-                    ", code v" +
-                    CompatibilityManager::ToString(compatibility.current) + ".";
+                *outFailureReason = FormatLocalized(
+                    "Playback rejected (newer format): file v%s, code v%s.",
+                    CompatibilityManager::ToString(compatibility.detected).c_str(),
+                    CompatibilityManager::ToString(compatibility.current).c_str());
             }
             return false;
         }
@@ -276,7 +297,7 @@ bool ParsePlaybackBytes(
         out->frames.assign(data.begin() + 8, data.end());
     } else {
         if (outFailureReason) {
-            *outFailureReason = "Playback file header is missing.";
+            *outFailureReason = L("Playback file header is missing.");
         }
         return false;
     }
@@ -393,13 +414,13 @@ std::string TriggerKeyName(UnlimitedPlaybackManager::TriggerType t) {
 
 const char* TriggerDisplayName(UnlimitedPlaybackManager::TriggerType t) {
     switch (t) {
-    case UnlimitedPlaybackManager::Trigger_Wakeup: return "Wakeup";
-    case UnlimitedPlaybackManager::Trigger_Gap: return "Gap";
-    case UnlimitedPlaybackManager::Trigger_OnBlock: return "On Block";
-    case UnlimitedPlaybackManager::Trigger_OnHit: return "On Hit";
-    case UnlimitedPlaybackManager::Trigger_ThrowTech: return "Throw Tech";
-    case UnlimitedPlaybackManager::Trigger_KeyPress: return "Key Press";
-    default: return "Unknown";
+    case UnlimitedPlaybackManager::Trigger_Wakeup: return L("Wakeup").c_str();
+    case UnlimitedPlaybackManager::Trigger_Gap: return L("Gap").c_str();
+    case UnlimitedPlaybackManager::Trigger_OnBlock: return L("On Block").c_str();
+    case UnlimitedPlaybackManager::Trigger_OnHit: return L("On Hit").c_str();
+    case UnlimitedPlaybackManager::Trigger_ThrowTech: return L("Throw Tech").c_str();
+    case UnlimitedPlaybackManager::Trigger_KeyPress: return L("Key Press").c_str();
+    default: return L("Unknown").c_str();
     }
 }
 
@@ -485,7 +506,7 @@ void UnlimitedPlaybackManager::Tick() {
 
     const int frame = g_gameVals.pFrameCount ? *g_gameVals.pFrameCount : 0;
     if (m_lastObservedFrame >= 0 && frame < m_lastObservedFrame) {
-        ForceResetTriggers("Trigger runtime resynced after training reset.");
+        ForceResetTriggers(L("Trigger runtime resynced after training reset.").c_str());
     }
     m_lastObservedFrame = frame;
 
@@ -509,8 +530,12 @@ void UnlimitedPlaybackManager::ForceResetTriggers(const char* toastText) {
     m_profileRuntimeSuppressedUntilReset = false;
     ResetTriggerRuntimeState(true);
     LogRuntimeGateState("ForceResetTriggers after reset");
-    if (toastText && toastText[0] != '\0') {
-        PushToast(toastText);
+    const char* text = toastText;
+    if (!text) {
+        text = L("Trigger runtime state reset.").c_str();
+    }
+    if (text[0] != '\0') {
+        PushToast(text);
     }
 }
 
@@ -702,7 +727,7 @@ CompatibilityManager::Result UnlimitedPlaybackManager::ProbePlaybackCompatibilit
         r.action = CompatibilityManager::Action_Reject;
         r.detected = detected;
         r.current = CompatibilityManager::CurrentPlaybackVersion();
-        r.reason = "Could not read playback file.";
+        r.reason = L("Could not read playback file.");
         r.canForce = false;
         return r;
     }
@@ -714,13 +739,13 @@ bool UnlimitedPlaybackManager::AddPlaybackFile(const std::string& sourcePath, co
 
     std::string src = sourcePath;
     if (!PathExists(src)) {
-        PushToast("File not found.");
+        PushToast(L("File not found."));
         return false;
     }
 
     CachedPlayback playback;
     if (!ReadPlaybackFile(src, &playback, forceLoadIncompatible)) {
-        PushToast("Invalid playback file.");
+        PushToast(L("Invalid playback file."));
         return false;
     }
 
@@ -743,7 +768,7 @@ bool UnlimitedPlaybackManager::AddPlaybackFile(const std::string& sourcePath, co
     m_entries.push_back(entry);
     m_cache[entry.id] = playback;
 
-    PushToast("Playback imported.");
+    PushToast(L("Playback imported."));
     return true;
 }
 
@@ -751,7 +776,7 @@ bool UnlimitedPlaybackManager::CaptureSlotToLibrary(int slot, const std::string&
     InitializeIfNeeded();
 
     if (slot < 1 || slot > 4) {
-        PushToast("Slot must be between 1 and 4.");
+        PushToast(L("Slot must be between 1 and 4."));
         return false;
     }
 
@@ -762,7 +787,7 @@ bool UnlimitedPlaybackManager::CaptureSlotToLibrary(int slot, const std::string&
     }
     const bool facingLeft = pslot.get_facing_direction() != 0;
 
-    const std::string baseName = displayName.empty() ? ("slot_" + std::to_string(slot)) : displayName;
+    const std::string baseName = displayName.empty() ? FormatLocalized("Slot %d", slot) : displayName;
 
     PlaybackEntry entry;
     entry.id = MakeEntryId();
@@ -777,7 +802,7 @@ bool UnlimitedPlaybackManager::CaptureSlotToLibrary(int slot, const std::string&
     playback.frames = frames;
     m_cache[entry.id] = playback;
 
-    PushToast("Captured slot to library.");
+    PushToast(L("Captured slot to library."));
     return true;
 }
 
@@ -785,7 +810,7 @@ bool UnlimitedPlaybackManager::StartReplayRecording(bool recordP1) {
     InitializeIfNeeded();
 
     if (!IsReplayMatchActive()) {
-        PushToast("Start replay recording only while a replay match is active.");
+        PushToast(L("Start replay recording only while a replay match is active."));
         return false;
     }
 
@@ -793,7 +818,7 @@ bool UnlimitedPlaybackManager::StartReplayRecording(bool recordP1) {
     m_replayRecordingAsP1 = recordP1;
     m_replayRecordingStartFrame = g_gameVals.pFrameCount ? *g_gameVals.pFrameCount : 0;
     m_replayRecordingRound = static_cast<int>(*(GetBbcfBaseAdress() + 0x11C034C));
-    PushToast(std::string("Replay recording started: ") + (recordP1 ? "P1" : "P2") + ".");
+    PushToast(FormatLocalized("Replay recording started: %s.", recordP1 ? "P1" : "P2"));
     return true;
 }
 
@@ -801,25 +826,25 @@ bool UnlimitedPlaybackManager::StopReplayRecordingAndSave(const std::string& dis
     InitializeIfNeeded();
 
     if (!m_replayRecordingActive) {
-        PushToast("No replay recording in progress.");
+        PushToast(L("No replay recording in progress."));
         return false;
     }
 
     if (!IsReplayMatchActive()) {
-        CancelReplayRecording("Replay recording cancelled (left replay match).");
+        CancelReplayRecording(L("Replay recording cancelled (left replay match).").c_str());
         return false;
     }
 
     const int endFrame = g_gameVals.pFrameCount ? *g_gameVals.pFrameCount : 0;
     if (endFrame <= m_replayRecordingStartFrame) {
-        CancelReplayRecording("Replay recording cancelled (too short).");
+        CancelReplayRecording(L("Replay recording cancelled (too short).").c_str());
         return false;
     }
 
     const int recordedPlayer = m_replayRecordingAsP1 ? 0 : 1;
     std::vector<char> frames;
     if (!BuildPlaybackFramesFromReplayRange(m_replayRecordingRound, m_replayRecordingStartFrame, endFrame, recordedPlayer, &frames)) {
-        CancelReplayRecording("Replay recording cancelled (failed reading replay frames).");
+        CancelReplayRecording(L("Replay recording cancelled (failed reading replay frames).").c_str());
         return false;
     }
 
@@ -831,7 +856,7 @@ bool UnlimitedPlaybackManager::StopReplayRecordingAndSave(const std::string& dis
     }
 
     const std::string baseName = displayName.empty()
-        ? std::string("replay_") + (m_replayRecordingAsP1 ? "p1" : "p2")
+        ? FormatLocalized("Replay %s", m_replayRecordingAsP1 ? "P1" : "P2")
         : displayName;
 
     PlaybackEntry entry;
@@ -852,7 +877,7 @@ bool UnlimitedPlaybackManager::StopReplayRecordingAndSave(const std::string& dis
     m_replayRecordingRound = 0;
     m_replayRecordingStartFrame = 0;
 
-    PushToast("Replay recording saved to library.");
+    PushToast(L("Replay recording saved to library."));
     return true;
 }
 
@@ -887,7 +912,7 @@ bool UnlimitedPlaybackManager::RemoveEntryByIndex(size_t idx) {
 
     m_cache.erase(m_entries[idx].id);
     m_entries.erase(m_entries.begin() + idx);
-    PushToast("Entry removed.");
+    PushToast(L("Entry removed."));
     return true;
 }
 
@@ -897,7 +922,7 @@ bool UnlimitedPlaybackManager::RenameEntry(size_t idx, const std::string& newNam
     }
 
     m_entries[idx].name = newName;
-    PushToast("Entry renamed.");
+    PushToast(L("Entry renamed."));
     return true;
 }
 
@@ -916,14 +941,14 @@ bool UnlimitedPlaybackManager::LoadEntryIntoSlot(size_t idx, int slot) {
         (GetGameSceneStatus() >= GameSceneStatus_Running) &&
         !g_interfaces.player2.IsCharDataNullPtr();
     if (!inTrainingMatch) {
-        PushToast("Sending to a CF slot works only during a training match.");
+        PushToast(L("Sending to a CF slot works only during a training match."));
         return false;
     }
 
     const auto& entry = m_entries[idx];
     auto it = m_cache.find(entry.id);
     if (it == m_cache.end() || !it->second.loaded) {
-        PushToast("Failed loading entry.");
+        PushToast(L("Failed loading entry."));
         return false;
     }
 
@@ -937,7 +962,7 @@ bool UnlimitedPlaybackManager::LoadEntryIntoSlot(size_t idx, int slot) {
     }
 
     m_runtimePlaybackManager.load_raw_into_slot(frames, facingToLoad, slot);
-    PushToast("Entry loaded into slot.");
+    PushToast(L("Entry loaded into slot."));
     return true;
 }
 
@@ -962,7 +987,7 @@ bool UnlimitedPlaybackManager::SaveEntryFromSlot(size_t idx, int slot) {
     playback.facingLeft = facingLeft;
     playback.frames = frames;
     m_cache[m_entries[idx].id] = playback;
-    PushToast("Entry overwritten from slot.");
+    PushToast(L("Entry overwritten from slot."));
     return true;
 }
 
@@ -1003,7 +1028,7 @@ bool UnlimitedPlaybackManager::WriteEntryPlayback(size_t idx, bool facingLeft, c
     playback.facingLeft = facingLeft;
     playback.frames = ExpandPlaybackBytes(clampedFrames);
     m_cache[m_entries[idx].id] = playback;
-    PushToast("Entry saved.");
+    PushToast(L("Entry saved."));
     return true;
 }
 
@@ -1017,16 +1042,16 @@ bool UnlimitedPlaybackManager::SaveEntryToFile(size_t idx, const std::string& ou
     const auto& entry = m_entries[idx];
     const auto it = m_cache.find(entry.id);
     if (it == m_cache.end() || !it->second.loaded) {
-        PushToast("Failed saving entry to file.");
+        PushToast(L("Failed saving entry to file."));
         return false;
     }
 
     if (!WritePlaybackFile(outputPath, it->second.facingLeft, it->second.frames)) {
-        PushToast("Failed saving entry to file.");
+        PushToast(L("Failed saving entry to file."));
         return false;
     }
 
-    PushToast("Entry saved to file.");
+    PushToast(L("Entry saved to file."));
     return true;
 }
 
@@ -1088,14 +1113,14 @@ bool UnlimitedPlaybackManager::PlayEntryNow(size_t idx) {
         (GetGameSceneStatus() >= GameSceneStatus_Running) &&
         !g_interfaces.player2.IsCharDataNullPtr();
     if (!inTrainingMatch) {
-        PushToast("Play now works only during a training match.");
+        PushToast(L("Play now works only during a training match."));
         return false;
     }
 
     const auto& entry = m_entries[idx];
     auto it = m_cache.find(entry.id);
     if (it == m_cache.end() || !it->second.loaded) {
-        PushToast("Failed loading entry.");
+        PushToast(L("Failed loading entry."));
         return false;
     }
 
@@ -1118,7 +1143,7 @@ bool UnlimitedPlaybackManager::PlayEntryNow(size_t idx) {
         static_cast<unsigned int>(frames.size()),
         facingToLoad,
         mirrored ? 1 : 0);
-    PushToast(std::string("Played: ") + entry.name + (mirrored ? " (mirrored)" : ""));
+    PushToast(FormatLocalized("Played: %s%s", entry.name.c_str(), mirrored ? L(" (mirrored)").c_str() : ""));
     return true;
 }
 
@@ -1133,7 +1158,7 @@ void UnlimitedPlaybackManager::ClearAll() {
         m_triggers[i].lastTriggeredFrame = -999999;
     }
     m_autoMirrorOnSideSwap = true;
-    PushToast("Unlimited playback config cleared.");
+    PushToast(L("Unlimited playback config cleared."));
 }
 
 bool UnlimitedPlaybackManager::SaveProfile(const std::string& profilePath) {
@@ -1148,7 +1173,7 @@ bool UnlimitedPlaybackManager::SaveProfile(const std::string& profilePath) {
 
     std::ofstream out(p, std::ios::binary | std::ios::trunc);
     if (!out.good()) {
-        PushToast("Failed to save profile.");
+        PushToast(L("Failed to save profile."));
         return false;
     }
 
@@ -1185,7 +1210,7 @@ bool UnlimitedPlaybackManager::SaveProfile(const std::string& profilePath) {
         }
 
         if (!havePlayback || !playback.loaded) {
-            PushToast(std::string("Profile save failed: entry data missing for '") + e.name + "'.");
+            PushToast(FormatLocalized("Profile save failed: entry data missing for '%s'.", e.name.c_str()));
             return false;
         }
 
@@ -1197,7 +1222,7 @@ bool UnlimitedPlaybackManager::SaveProfile(const std::string& profilePath) {
 
     out.close();
     m_activeProfilePath = p;
-    PushToast("Profile saved.");
+    PushToast(L("Profile saved."));
     return true;
 }
 
@@ -1214,7 +1239,7 @@ CompatibilityManager::Result UnlimitedPlaybackManager::ProbeProfileCompatibility
         r.action = CompatibilityManager::Action_Reject;
         r.detected = detected;
         r.current = CompatibilityManager::CurrentProfileVersion();
-        r.reason = "Could not read profile file.";
+        r.reason = L("Could not read profile file.");
         r.canForce = false;
         return r;
     }
@@ -1237,25 +1262,23 @@ bool UnlimitedPlaybackManager::LoadProfile(const std::string& profilePath, bool 
 
     std::ifstream in(p, std::ios::binary);
     if (!in.good()) {
-        PushToast("Failed to open profile.");
+        PushToast(L("Failed to open profile."));
         return false;
     }
 
     const CompatibilityManager::Result compatibility = ProbeProfileCompatibility(p);
     if (compatibility.action == CompatibilityManager::Action_Reject) {
-        PushToast(
-            std::string("Profile compatibility rejected (file v") +
-            CompatibilityManager::ToString(compatibility.detected) +
-            ", code v" +
-            CompatibilityManager::ToString(compatibility.current) + ").");
+        PushToast(FormatLocalized(
+            "Profile compatibility rejected (file v%s, code v%s).",
+            CompatibilityManager::ToString(compatibility.detected).c_str(),
+            CompatibilityManager::ToString(compatibility.current).c_str()));
         return false;
     }
     if (compatibility.action == CompatibilityManager::Action_Confirm && !forceLoadIncompatible) {
-        PushToast(
-            std::string("Profile version mismatch requires confirmation (file v") +
-            CompatibilityManager::ToString(compatibility.detected) +
-            ", code v" +
-            CompatibilityManager::ToString(compatibility.current) + ").");
+        PushToast(FormatLocalized(
+            "Profile version mismatch requires confirmation (file v%s, code v%s).",
+            CompatibilityManager::ToString(compatibility.detected).c_str(),
+            CompatibilityManager::ToString(compatibility.current).c_str()));
         return false;
     }
     std::vector<PlaybackEntry> parsedEntries;
@@ -1363,7 +1386,7 @@ bool UnlimitedPlaybackManager::LoadProfile(const std::string& profilePath, bool 
     for (const auto& e : parsedEntries) {
         const auto embeddedIt = embeddedEntryDataHex.find(e.id);
         if (embeddedIt == embeddedEntryDataHex.end()) {
-            PushToast(std::string("Profile load failed: embedded playback missing for '") + e.name + "'.");
+            PushToast(FormatLocalized("Profile load failed: embedded playback missing for '%s'.", e.name.c_str()));
             return false;
         }
 
@@ -1382,10 +1405,10 @@ bool UnlimitedPlaybackManager::LoadProfile(const std::string& profilePath, bool 
                 ComputePlaybackDigest(playback.frames),
                 PreviewPlaybackBytes(playback.frames, 16).c_str());
         } else if (!failureReason.empty()) {
-            PushToast(std::string("Profile load failed for '") + e.name + "': " + failureReason);
+            PushToast(FormatLocalized("Profile load failed for '%s': %s", e.name.c_str(), failureReason.c_str()));
             return false;
         } else {
-            PushToast(std::string("Profile load failed for '") + e.name + "'.");
+            PushToast(FormatLocalized("Profile load failed for '%s'.", e.name.c_str()));
             return false;
         }
     }
@@ -1406,7 +1429,7 @@ bool UnlimitedPlaybackManager::LoadProfile(const std::string& profilePath, bool 
     m_cache = std::move(parsedCache);
 
     ResetRuntimePlaybackState(true);
-    ForceResetTriggers("Profile loaded. Trigger runtime synced.");
+    ForceResetTriggers(L("Profile loaded. Trigger runtime synced.").c_str());
     m_activeProfilePath = p;
     DebugLogState("LoadProfile end");
     return true;
@@ -1702,18 +1725,18 @@ bool UnlimitedPlaybackManager::TryFireTrigger(TriggerType trigger, int currentFr
         return false;
     }
 
-    PushToast(std::string("Trigger detected: ") + TriggerDisplayName(trigger));
+    PushToast(FormatLocalized("Trigger detected: %s", TriggerDisplayName(trigger)));
 
     size_t chosen = 0;
     if (!PickEntryIndexForTrigger(trigger, &chosen)) {
-        PushToast("No eligible playback in current trigger selection.");
+        PushToast(L("No eligible playback in current trigger selection."));
         return false;
     }
 
     const auto& entry = m_entries[chosen];
     const auto cacheIt = m_cache.find(entry.id);
     if (cacheIt == m_cache.end() || !cacheIt->second.loaded) {
-        PushToast("Selected playback cache missing.");
+        PushToast(L("Selected playback cache missing."));
         return false;
     }
 
@@ -1739,7 +1762,10 @@ bool UnlimitedPlaybackManager::TryFireTrigger(TriggerType trigger, int currentFr
         mirrored ? 1 : 0);
 
     config.lastTriggeredFrame = currentFrame;
-    PushToast(std::string("Triggered [") + TriggerDisplayName(trigger) + "]: " + entry.name + (mirrored ? " (mirrored)" : ""));
+    PushToast(FormatLocalized("Triggered [%s]: %s%s",
+        TriggerDisplayName(trigger),
+        entry.name.c_str(),
+        mirrored ? L(" (mirrored)").c_str() : ""));
     return true;
 }
 

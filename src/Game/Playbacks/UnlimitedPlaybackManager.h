@@ -67,7 +67,7 @@ public:
     void InitializeIfNeeded();
     void Tick();
     void OnMatchInit();
-    void ForceResetTriggers(const char* toastText = "Trigger runtime state reset.");
+    void ForceResetTriggers(const char* toastText = nullptr);
     void OnMatchEnd();
     void DebugLogState(const char* tag) const;
 
@@ -89,7 +89,7 @@ public:
     bool CaptureSlotToLibrary(int slot, const std::string& displayName);
     bool StartReplayRecording(bool recordP1);
     bool StopReplayRecordingAndSave(const std::string& displayName);
-    void CancelReplayRecording(const char* reason = "Replay recording cancelled.");
+    void CancelReplayRecording(const char* reason = nullptr);
     bool IsReplayRecording() const;
     bool IsReplayRecordingAsP1() const;
     int GetReplayRecordingStartFrame() const;

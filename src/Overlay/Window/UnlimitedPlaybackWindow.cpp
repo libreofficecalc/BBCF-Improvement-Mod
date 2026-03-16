@@ -1,7 +1,9 @@
 #include "UnlimitedPlaybackWindow.h"
 
+#include "Core/Localization.h"
 #include "Core/interfaces.h"
 #include "Core/logger.h"
+#include "Core/utils.h"
 #include "Game/Playbacks/UnlimitedPlaybackManager.h"
 #include "Game/gamestates.h"
 #include "Overlay/imgui_utils.h"
@@ -75,31 +77,40 @@ std::string NormalizePlaybackFileName(const char* input) {
 
 const char* TriggerLabel(UnlimitedPlaybackManager::TriggerType t) {
     switch (t) {
-    case UnlimitedPlaybackManager::Trigger_Wakeup: return "Wakeup";
-    case UnlimitedPlaybackManager::Trigger_Gap: return "Gap";
-    case UnlimitedPlaybackManager::Trigger_OnBlock: return "On Block";
-    case UnlimitedPlaybackManager::Trigger_OnHit: return "On Hit";
-    case UnlimitedPlaybackManager::Trigger_ThrowTech: return "Throw Tech";
-    case UnlimitedPlaybackManager::Trigger_KeyPress: return "Key Press";
-    default: return "Unknown";
+    case UnlimitedPlaybackManager::Trigger_Wakeup: return L("Wakeup").c_str();
+    case UnlimitedPlaybackManager::Trigger_Gap: return L("Gap").c_str();
+    case UnlimitedPlaybackManager::Trigger_OnBlock: return L("On Block").c_str();
+    case UnlimitedPlaybackManager::Trigger_OnHit: return L("On Hit").c_str();
+    case UnlimitedPlaybackManager::Trigger_ThrowTech: return L("Throw Tech").c_str();
+    case UnlimitedPlaybackManager::Trigger_KeyPress: return L("Key Press").c_str();
+    default: return L("Unknown").c_str();
+    }
+}
+
+const char* SelectionModeLabel(int mode) {
+    switch (mode) {
+    case UnlimitedPlaybackManager::Selection_Random: return L("Random").c_str();
+    case UnlimitedPlaybackManager::Selection_Sequential: return L("Sequential").c_str();
+    case UnlimitedPlaybackManager::Selection_NonRepeatingRandom: return L("Non-repeating Random").c_str();
+    default: return L("Random").c_str();
     }
 }
 
 const char* BindingName(int key) {
     static char name[64];
     if (key <= 0) {
-        return "Unbound";
+        return L("Unbound").c_str();
     }
     for (const auto& binding : kControllerBindings) {
         if (binding.code == key) {
-            return binding.name;
+            return L(binding.name).c_str();
         }
     }
     const int scanCode = MapVirtualKeyA(static_cast<UINT>(key), MAPVK_VK_TO_VSC);
     const long lParam = (scanCode << 16);
     const int len = GetKeyNameTextA(lParam, name, static_cast<int>(sizeof(name)));
     if (len <= 0) {
-        std::snprintf(name, sizeof(name), "VK_%d", key);
+        std::snprintf(name, sizeof(name), L("VK_%d").c_str(), key);
     }
     return name;
 }
@@ -157,23 +168,23 @@ void StartNativeFileDialogAsync(NativeFileDialogAction action, const std::string
         case NativeFileDialogAction::LoadProfile:
             ofn.lpstrFilter = "Unlimited Playback Profile (*.upl)\0*.upl\0All Files\0*.*\0";
             ofn.lpstrDefExt = "upl";
-            ofn.lpstrTitle = "Load unlimited playback profile";
+            ofn.lpstrTitle = L("Load unlimited playback profile").c_str();
             break;
         case NativeFileDialogAction::SaveProfile:
             ofn.lpstrFilter = "Unlimited Playback Profile (*.upl)\0*.upl\0All Files\0*.*\0";
             ofn.lpstrDefExt = "upl";
-            ofn.lpstrTitle = "Save unlimited playback profile";
+            ofn.lpstrTitle = L("Save unlimited playback profile").c_str();
             saveDialog = true;
             break;
         case NativeFileDialogAction::ImportPlayback:
             ofn.lpstrFilter = "Unlimited Playback Entry (*.playback)\0*.playback\0All Files\0*.*\0";
             ofn.lpstrDefExt = "playback";
-            ofn.lpstrTitle = "Import unlimited playback entry";
+            ofn.lpstrTitle = L("Import unlimited playback entry").c_str();
             break;
         case NativeFileDialogAction::ExportEntryPlayback:
             ofn.lpstrFilter = "Unlimited Playback Entry (*.playback)\0*.playback\0All Files\0*.*\0";
             ofn.lpstrDefExt = "playback";
-            ofn.lpstrTitle = "Export unlimited playback entry";
+            ofn.lpstrTitle = L("Export unlimited playback entry").c_str();
             saveDialog = true;
             break;
         default:
@@ -436,7 +447,7 @@ void UnlimitedPlaybackWindow::Draw() {
 
     const auto beginNativeDialog = [&mgr](NativeFileDialogAction action, const std::string& initialPath, const char* activityText, int contextIndex = -1) {
         if (NativeFileDialogActive()) {
-            mgr.PushToast("A native file dialog is already open.");
+            mgr.PushToast(L("A native file dialog is already open."));
             return false;
         }
         StartNativeFileDialogAsync(action, initialPath, contextIndex);
@@ -490,7 +501,7 @@ void UnlimitedPlaybackWindow::Draw() {
             if (mapped != 0) {
                 mgr.GetTrigger(UnlimitedPlaybackManager::Trigger_KeyPress).keyCode = mapped;
                 keyCaptureMode = false;
-                mgr.PushToast(std::string("Mapped playback bind: ") + BindingName(mapped));
+                mgr.PushToast(FormatText(L("Mapped playback bind: %s").c_str(), BindingName(mapped)));
             }
         }
     }
@@ -537,31 +548,31 @@ void UnlimitedPlaybackWindow::Draw() {
         const ImVec2 displayCenter = ImVec2(ImGui::GetIO().DisplaySize.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f);
         ImGui::SetNextWindowPos(displayCenter, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
         ImGui::SetNextWindowSize(ImVec2(560.0f, 0.0f), ImGuiCond_Appearing);
-        ImGui::OpenPopup("Profile Compatibility");
+        ImGui::OpenPopup(L("Profile Compatibility").c_str());
         showProfileCompatibilityPopup = false;
     }
-    if (ImGui::BeginPopupModal("Profile Compatibility", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+    if (ImGui::BeginPopupModal(L("Profile Compatibility").c_str(), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::TextWrapped(
-            "Profile version mismatch.\n\nFile version: %s\nCode version: %s\n\n%s",
+            L("Profile version mismatch.\n\nFile version: %s\nCode version: %s\n\n%s").c_str(),
             CompatibilityManager::ToString(pendingProfileCompatibility.detected).c_str(),
             CompatibilityManager::ToString(pendingProfileCompatibility.current).c_str(),
             pendingProfileCompatibility.reason.c_str());
 
         if (profileCompatibilityCanForce) {
             CenterNextButtonsRow(220.0f + ImGui::GetStyle().ItemSpacing.x);
-            if (ImGui::Button("Load Anyway")) {
+            if (ImGui::Button(L("Load Anyway").c_str())) {
                 mgr.LoadProfile(pendingProfilePath, true);
                 pendingProfilePath[0] = '\0';
                 ImGui::CloseCurrentPopup();
             }
             ImGui::SameLine();
-            if (ImGui::Button("Cancel")) {
+            if (ImGui::Button(L("Cancel").c_str())) {
                 pendingProfilePath[0] = '\0';
                 ImGui::CloseCurrentPopup();
             }
         } else {
             CenterNextButtonsRow(90.0f);
-            if (ImGui::Button("OK")) {
+            if (ImGui::Button(L("OK").c_str())) {
                 pendingProfilePath[0] = '\0';
                 ImGui::CloseCurrentPopup();
             }
@@ -573,31 +584,31 @@ void UnlimitedPlaybackWindow::Draw() {
         const ImVec2 displayCenter = ImVec2(ImGui::GetIO().DisplaySize.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f);
         ImGui::SetNextWindowPos(displayCenter, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
         ImGui::SetNextWindowSize(ImVec2(560.0f, 0.0f), ImGuiCond_Appearing);
-        ImGui::OpenPopup("Playback Compatibility");
+        ImGui::OpenPopup(L("Playback Compatibility").c_str());
         showPlaybackCompatibilityPopup = false;
     }
-    if (ImGui::BeginPopupModal("Playback Compatibility", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+    if (ImGui::BeginPopupModal(L("Playback Compatibility").c_str(), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::TextWrapped(
-            "Playback version mismatch.\n\nFile version: %s\nCode version: %s\n\n%s",
+            L("Playback version mismatch.\n\nFile version: %s\nCode version: %s\n\n%s").c_str(),
             CompatibilityManager::ToString(pendingPlaybackCompatibility.detected).c_str(),
             CompatibilityManager::ToString(pendingPlaybackCompatibility.current).c_str(),
             pendingPlaybackCompatibility.reason.c_str());
 
         if (playbackCompatibilityCanForce) {
             CenterNextButtonsRow(230.0f + ImGui::GetStyle().ItemSpacing.x);
-            if (ImGui::Button("Import Anyway")) {
+            if (ImGui::Button(L("Import Anyway").c_str())) {
                 mgr.AddPlaybackFile(pendingPlaybackPath, "", true);
                 pendingPlaybackPath[0] = '\0';
                 ImGui::CloseCurrentPopup();
             }
             ImGui::SameLine();
-            if (ImGui::Button("Cancel##playback_compat")) {
+            if (ImGui::Button(FormatText("%s##playback_compat", L("Cancel").c_str()).c_str())) {
                 pendingPlaybackPath[0] = '\0';
                 ImGui::CloseCurrentPopup();
             }
         } else {
             CenterNextButtonsRow(140.0f);
-            if (ImGui::Button("OK##playback_compat")) {
+            if (ImGui::Button(FormatText("%s##playback_compat", L("OK").c_str()).c_str())) {
                 pendingPlaybackPath[0] = '\0';
                 ImGui::CloseCurrentPopup();
             }
@@ -610,11 +621,15 @@ void UnlimitedPlaybackWindow::Draw() {
 
     ImGui::BeginChild("up_left_column", ImVec2(0, 0), false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     const float captureButtonWidth = 128.0f;
-    const char* captureButtons[] = { "Add from CF Slot", "Add from file", "Add from replay" };
+    const char* captureButtons[] = {
+        L("Add from CF Slot").c_str(),
+        L("Add from file").c_str(),
+        L("Add from replay").c_str()
+    };
     const char* captureButtonTooltips[] = {
-        "Capture a playback from one of the 4 CF slots",
-        "Import a playback file into the library",
-        "Record a new playback entry from a replay"
+        L("Capture a playback from one of the 4 CF slots").c_str(),
+        L("Import a playback file into the library").c_str(),
+        L("Record a new playback entry from a replay").c_str()
     };
     bool capturePressed[3] = {};
     const int captureButtonsPerRow = ComputeButtonsPerRow(captureButtonWidth, 3);
@@ -629,7 +644,7 @@ void UnlimitedPlaybackWindow::Draw() {
     const float leftColumnAvailableHeight = ImGui::GetContentRegionAvail().y;
     const float librarySectionHeight = (std::max)(64.0f, leftColumnAvailableHeight - captureSectionHeight - ImGui::GetStyle().ItemSpacing.y);
     ImGui::BeginChild("up_library", ImVec2(0, librarySectionHeight), true);
-    DrawSectionTitle((std::string("Library (") + std::to_string(static_cast<int>(mgr.GetEntries().size())) + ")").c_str());
+    DrawSectionTitle(FormatText(L("Library (%d)").c_str(), static_cast<int>(mgr.GetEntries().size())).c_str());
     if (!mgr.GetActiveProfilePath().empty()) {
         ImGui::PushTextWrapPos(0.0f);
         ImGui::TextColoredAlignedHorizontalCenter(ImVec4(0.55f, 0.55f, 0.55f, 1.0f), mgr.GetActiveProfilePath().c_str());
@@ -659,17 +674,17 @@ void UnlimitedPlaybackWindow::Draw() {
             selectedEntry = i;
         }
         if (ImGui::BeginPopupContextItem("entry_context")) {
-            if (ImGui::MenuItem("Send to CF Slot", nullptr, false, inTrainingMatch)) {
+            if (ImGui::MenuItem(L("Send to CF Slot").c_str(), nullptr, false, inTrainingMatch)) {
                 entryPendingSend = i;
                 openSendToSlotModal = true;
             }
-            if (ImGui::MenuItem("Save to File")) {
+            if (ImGui::MenuItem(L("Save to File").c_str())) {
                 const std::string initialExportPath =
                     std::string(kUnlimitedPlaybackExportFolder) + "/" + NormalizePlaybackFileName(e.name.c_str());
                 beginNativeDialog(
                     NativeFileDialogAction::ExportEntryPlayback,
                     initialExportPath,
-                    "Export playback entry file dialog open...",
+                    L("Export playback entry file dialog open...").c_str(),
                     i);
             }
             ImGui::EndPopup();
@@ -680,30 +695,30 @@ void UnlimitedPlaybackWindow::Draw() {
             mgr.PlayEntryNow(static_cast<size_t>(i));
         }
         if (inTrainingMatch) {
-            DrawButtonTooltip("Play");
+            DrawButtonTooltip(L("Play").c_str());
         } else if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Play (Disabled due to not being in lab)");
+            ImGui::SetTooltip("%s", L("Play (Disabled due to not being in lab)").c_str());
         }
         ImGui::SameLine();
         if (DrawMiniIconButton("/", true)) {
             entryPendingEdit = i;
             openEntryEditModal = true;
         }
-        DrawButtonTooltip("Edit");
+        DrawButtonTooltip(L("Edit").c_str());
         ImGui::SameLine();
         if (DrawMiniIconButton("X", true)) {
             entryPendingDelete = i;
             openDeleteEntryConfirmModal = true;
         }
-        DrawButtonTooltip("Delete");
+        DrawButtonTooltip(L("Delete").c_str());
         ImGui::PopID();
     }
     ImGui::EndChild();
-    const char* libraryButtons[] = { "Load", "Save", "Default" };
+    const char* libraryButtons[] = { L("Load").c_str(), L("Save").c_str(), L("Default").c_str() };
     const char* libraryButtonTooltips[] = {
-        "Load a library profile",
-        "Save the current library as a profile",
-        "Reset the current library"
+        L("Load a library profile").c_str(),
+        L("Save the current library as a profile").c_str(),
+        L("Reset the current library").c_str()
     };
     bool libraryPressed[3] = {};
     DrawWrappedButtonRow(libraryButtons, libraryButtonTooltips, 3, libraryButtonsWidth, libraryPressed);
@@ -711,7 +726,7 @@ void UnlimitedPlaybackWindow::Draw() {
         beginNativeDialog(
             NativeFileDialogAction::LoadProfile,
             kUnlimitedPlaybackProfileFolder,
-            "Load profile file dialog open...");
+            L("Load profile file dialog open...").c_str());
     }
     if (libraryPressed[1]) {
         const std::string initialSavePath = mgr.GetActiveProfilePath().empty()
@@ -720,7 +735,7 @@ void UnlimitedPlaybackWindow::Draw() {
         beginNativeDialog(
             NativeFileDialogAction::SaveProfile,
             initialSavePath,
-            "Save profile file dialog open...");
+            L("Save profile file dialog open...").c_str());
     }
     if (libraryPressed[2]) {
         openDefaultConfirmModal = true;
@@ -728,7 +743,7 @@ void UnlimitedPlaybackWindow::Draw() {
     ImGui::EndChild();
 
     ImGui::BeginChild("up_capture", ImVec2(0, captureSectionHeight), true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-    DrawSectionTitle("Add Playback Entry");
+    DrawSectionTitle(L("Add Playback Entry").c_str());
     const int captureButtonsPerRowDynamic = ComputeButtonsPerRow(captureButtonWidth, 3);
     for (int rowStart = 0; rowStart < 3; rowStart += captureButtonsPerRowDynamic) {
         const int rowCount = (std::min)(captureButtonsPerRowDynamic, 3 - rowStart);
@@ -744,7 +759,7 @@ void UnlimitedPlaybackWindow::Draw() {
             const bool enabled = (buttonIndex != 2) || inReplayMatch;
             capturePressed[buttonIndex] = DrawContextButton(captureButtons[buttonIndex], enabled);
             if (buttonIndex == 2 && !inReplayMatch && ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("Add from replay is only available while a replay match is active in Replay Theater.");
+                ImGui::SetTooltip("%s", L("Add from replay is only available while a replay match is active in Replay Theater.").c_str());
             } else if (captureButtonTooltips[buttonIndex]) {
                 DrawButtonTooltip(captureButtonTooltips[buttonIndex]);
             }
@@ -757,7 +772,7 @@ void UnlimitedPlaybackWindow::Draw() {
         beginNativeDialog(
             NativeFileDialogAction::ImportPlayback,
             kUnlimitedPlaybackImportFolder,
-            "Import playback file dialog open...");
+            L("Import playback file dialog open...").c_str());
     }
     if (capturePressed[2]) {
         openReplayCaptureModal = true;
@@ -766,40 +781,40 @@ void UnlimitedPlaybackWindow::Draw() {
         const ImVec2 displayCenter = ImVec2(ImGui::GetIO().DisplaySize.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f);
         ImGui::SetNextWindowPos(displayCenter, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
         ImGui::SetNextWindowSize(ImVec2(430.0f, 0.0f), ImGuiCond_Appearing);
-        ImGui::OpenPopup("Add from Replay");
+        ImGui::OpenPopup(L("Add from Replay").c_str());
         openReplayCaptureModal = false;
     }
-    if (ImGui::BeginPopupModal("Add from Replay", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::Text("Capture from replay");
+    if (ImGui::BeginPopupModal(L("Add from Replay").c_str(), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::Text("%s", L("Capture from replay").c_str());
         if (mgr.IsReplayRecording()) {
-            ImGui::TextDisabled("Recording %s inputs (start frame %d)",
+            ImGui::TextDisabled(L("Recording %s inputs (start frame %d)").c_str(),
                 mgr.IsReplayRecordingAsP1() ? "P1" : "P2",
                 mgr.GetReplayRecordingStartFrame());
-            ImGui::InputText("Name##replay_capture_name", replayCaptureName, IM_ARRAYSIZE(replayCaptureName));
-            if (ImGui::Button("Stop and Save##replay_capture")) {
+            ImGui::InputText(FormatText("%s##replay_capture_name", L("Name").c_str()).c_str(), replayCaptureName, IM_ARRAYSIZE(replayCaptureName));
+            if (ImGui::Button(FormatText("%s##replay_capture", L("Stop and Save").c_str()).c_str())) {
                 mgr.StopReplayRecordingAndSave(replayCaptureName);
                 ImGui::CloseCurrentPopup();
             }
             ImGui::SameLine();
-            if (ImGui::Button("Cancel##replay_capture")) {
+            if (ImGui::Button(FormatText("%s##replay_capture", L("Cancel").c_str()).c_str())) {
                 mgr.CancelReplayRecording();
                 ImGui::CloseCurrentPopup();
             }
         } else {
-            ImGui::InputText("Name##replay_capture_name", replayCaptureName, IM_ARRAYSIZE(replayCaptureName));
-            if (DrawContextButton("Record P1 Inputs", inReplayMatch)) {
+            ImGui::InputText(FormatText("%s##replay_capture_name", L("Name").c_str()).c_str(), replayCaptureName, IM_ARRAYSIZE(replayCaptureName));
+            if (DrawContextButton(L("Record P1 Inputs").c_str(), inReplayMatch)) {
                 mgr.StartReplayRecording(true);
             }
             ImGui::SameLine();
-            if (DrawContextButton("Record P2 Inputs", inReplayMatch)) {
+            if (DrawContextButton(L("Record P2 Inputs").c_str(), inReplayMatch)) {
                 mgr.StartReplayRecording(false);
             }
             ImGui::SameLine();
-            if (ImGui::Button("Close##replay_capture")) {
+            if (ImGui::Button(FormatText("%s##replay_capture", L("Close").c_str()).c_str())) {
                 ImGui::CloseCurrentPopup();
             }
         }
-        ImGui::TextDisabled("Replay capture only starts while a replay match is active.");
+        ImGui::TextDisabled("%s", L("Replay capture only starts while a replay match is active.").c_str());
         ImGui::EndPopup();
     }
     ImGui::EndChild();
@@ -808,24 +823,28 @@ void UnlimitedPlaybackWindow::Draw() {
     ImGui::NextColumn();
 
     ImGui::BeginChild("up_settings", ImVec2(0, 0), true);
-    DrawSectionTitle("Library Settings");
+    DrawSectionTitle(L("Library Settings").c_str());
     ImGui::Dummy(ImVec2(0, 2));
     int selectionMode = mgr.GetSelectionMode();
-    const char* selectionModes[] = { "Random", "Sequential", "Non-repeating Random" };
-    ImGui::TextUnformatted("Playback Mode");
-    DrawHelpInline("How the library chooses the next enabled entry when playback is triggered.");
+    const char* selectionModes[] = {
+        SelectionModeLabel(UnlimitedPlaybackManager::Selection_Random),
+        SelectionModeLabel(UnlimitedPlaybackManager::Selection_Sequential),
+        SelectionModeLabel(UnlimitedPlaybackManager::Selection_NonRepeatingRandom)
+    };
+    ImGui::TextUnformatted(L("Playback Mode").c_str());
+    DrawHelpInline(L("How the library chooses the next enabled entry when playback is triggered.").c_str());
     ImGui::PushItemWidth(-1.0f);
     if (ImGui::Combo("##up_playback_mode", &selectionMode, selectionModes, IM_ARRAYSIZE(selectionModes))) {
         mgr.SetSelectionMode(selectionMode);
-        mgr.PushToast(std::string("Playback mode: ") + selectionModes[selectionMode]);
+        mgr.PushToast(FormatText(L("Playback mode: %s").c_str(), selectionModes[selectionMode]));
     }
     ImGui::PopItemWidth();
     ImGui::Dummy(ImVec2(0, 4));
     bool autoMirrorOnSideSwap = mgr.GetAutoMirrorOnSideSwap();
-    if (ImGui::Checkbox("Auto-mirror on side swap", &autoMirrorOnSideSwap)) {
+    if (ImGui::Checkbox(L("Auto-mirror on side swap").c_str(), &autoMirrorOnSideSwap)) {
         mgr.SetAutoMirrorOnSideSwap(autoMirrorOnSideSwap);
     }
-    DrawHelpInline("Mirrors directional inputs when the recorded side and current side differ.");
+    DrawHelpInline(L("Mirrors directional inputs when the recorded side and current side differ.").c_str());
 
     for (int i = 0; i < UnlimitedPlaybackManager::Trigger_Count; ++i) {
         if (mgr.GetTrigger(static_cast<UnlimitedPlaybackManager::TriggerType>(i)).enabled) {
@@ -836,27 +855,34 @@ void UnlimitedPlaybackWindow::Draw() {
     ImGui::Dummy(ImVec2(0, 6));
     ImGui::Separator();
     ImGui::Dummy(ImVec2(0, 4));
-    const char* triggerNames[] = { "Wakeup", "Gap", "On Block", "On Hit", "Throw Tech", "Key Press" };
-    ImGui::TextUnformatted("Playback Trigger Type");
-    DrawHelpInline("Selects the single trigger type that can fire library playback.");
+    const char* triggerNames[] = {
+        TriggerLabel(UnlimitedPlaybackManager::Trigger_Wakeup),
+        TriggerLabel(UnlimitedPlaybackManager::Trigger_Gap),
+        TriggerLabel(UnlimitedPlaybackManager::Trigger_OnBlock),
+        TriggerLabel(UnlimitedPlaybackManager::Trigger_OnHit),
+        TriggerLabel(UnlimitedPlaybackManager::Trigger_ThrowTech),
+        TriggerLabel(UnlimitedPlaybackManager::Trigger_KeyPress)
+    };
+    ImGui::TextUnformatted(L("Playback Trigger Type").c_str());
+    DrawHelpInline(L("Selects the single trigger type that can fire library playback.").c_str());
     ImGui::PushItemWidth(-1.0f);
     if (ImGui::Combo("##up_trigger_type", &selectedTriggerType, triggerNames, IM_ARRAYSIZE(triggerNames))) {
         for (int i = 0; i < UnlimitedPlaybackManager::Trigger_Count; ++i) {
             mgr.GetTrigger(static_cast<UnlimitedPlaybackManager::TriggerType>(i)).enabled = (i == selectedTriggerType);
         }
-        mgr.PushToast(std::string("Playback trigger: ") + triggerNames[selectedTriggerType]);
+        mgr.PushToast(FormatText(L("Playback trigger: %s").c_str(), triggerNames[selectedTriggerType]));
     }
     ImGui::PopItemWidth();
 
     ImGui::Dummy(ImVec2(0, 6));
     ImGui::Separator();
     ImGui::Dummy(ImVec2(0, 4));
-    ImGui::Text("%s Config", triggerNames[selectedTriggerType]);
+    ImGui::Text(L("%s Config").c_str(), triggerNames[selectedTriggerType]);
     auto selectedTrigger = static_cast<UnlimitedPlaybackManager::TriggerType>(selectedTriggerType);
     auto& triggerConfig = mgr.GetTrigger(selectedTrigger);
     ImGui::Dummy(ImVec2(0, 2));
-    ImGui::TextUnformatted("Cooldown Frames");
-    DrawHelpInline("Blocks the same trigger from firing again for this many frames after it activates.");
+    ImGui::TextUnformatted(L("Cooldown Frames").c_str());
+    DrawHelpInline(L("Blocks the same trigger from firing again for this many frames after it activates.").c_str());
     ImGui::PushItemWidth(-1.0f);
     ImGui::InputInt("##up_cooldown_frames", &triggerConfig.cooldownFrames);
     ImGui::PopItemWidth();
@@ -867,10 +893,10 @@ void UnlimitedPlaybackWindow::Draw() {
     if (selectedTrigger == UnlimitedPlaybackManager::Trigger_KeyPress) {
         ImGui::TextDisabled("(?)");
         if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Maps the button or key used by the Key Press trigger.");
+            ImGui::SetTooltip("%s", L("Maps the button or key used by the Key Press trigger.").c_str());
         }
         ImGui::SameLine();
-        if (ImGui::Button(keyCaptureMode ? "Press any key..." : "Map Playback Bind", ImVec2(170.0f, 0))) {
+        if (ImGui::Button((keyCaptureMode ? L("Press any key...") : L("Map Playback Bind")).c_str(), ImVec2(170.0f, 0))) {
             keyCaptureMode = true;
             keyCaptureWaitingRelease = true;
         }
@@ -878,15 +904,15 @@ void UnlimitedPlaybackWindow::Draw() {
         ImGui::TextDisabled("%s", BindingName(triggerConfig.keyCode));
     }
     ImGui::Dummy(ImVec2(0, 8));
-    if (ImGui::Button("Fix Triggers")) {
+    if (ImGui::Button(L("Fix Triggers").c_str())) {
         mgr.ForceResetTriggers();
     }
-    DrawHelpInline("Use this after Training reset if triggers temporarily stop firing. It clears trigger cooldown and edge state.");
+    DrawHelpInline(L("Use this after Training reset if triggers temporarily stop firing. It clears trigger cooldown and edge state.").c_str());
 
     const auto& toasts = mgr.GetToasts();
     if (!toasts.empty()) {
         ImGui::Separator();
-        ImGui::Text("Activity");
+        ImGui::Text("%s", L("Activity").c_str());
         ImGui::BeginChild("toast_list", ImVec2(0, 120), true);
         for (const auto& toast : toasts) {
             ImGui::TextWrapped("- %s", toast.text.c_str());
@@ -903,19 +929,19 @@ void UnlimitedPlaybackWindow::Draw() {
         const ImVec2 displayCenter = ImVec2(ImGui::GetIO().DisplaySize.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f);
         ImGui::SetNextWindowPos(displayCenter, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
         ImGui::SetNextWindowSize(ImVec2(520.0f, 0.0f), ImGuiCond_Appearing);
-        ImGui::OpenPopup("Reset Library?");
+        ImGui::OpenPopup(L("Reset Library?").c_str());
         openDefaultConfirmModal = false;
     }
-    if (ImGui::BeginPopupModal("Reset Library?", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        DrawCenteredPopupText("Reset the current library and clear all loaded entries?");
+    if (ImGui::BeginPopupModal(L("Reset Library?").c_str(), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        DrawCenteredPopupText(L("Reset the current library and clear all loaded entries?").c_str());
         CenterNextButtonsRow(170.0f + ImGui::GetStyle().ItemSpacing.x);
-        if (ImGui::Button("Reset")) {
+        if (ImGui::Button(L("Reset").c_str())) {
             mgr.ClearAll();
             selectedEntry = -1;
             ImGui::CloseCurrentPopup();
         }
         ImGui::SameLine();
-        if (ImGui::Button("Cancel##reset_library")) {
+        if (ImGui::Button(FormatText("%s##reset_library", L("Cancel").c_str()).c_str())) {
             ImGui::CloseCurrentPopup();
         }
         ImGui::EndPopup();
@@ -924,13 +950,13 @@ void UnlimitedPlaybackWindow::Draw() {
         const ImVec2 displayCenter = ImVec2(ImGui::GetIO().DisplaySize.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f);
         ImGui::SetNextWindowPos(displayCenter, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
         ImGui::SetNextWindowSize(ImVec2(500.0f, 0.0f), ImGuiCond_Appearing);
-        ImGui::OpenPopup("Delete Entry?");
+        ImGui::OpenPopup(L("Delete Entry?").c_str());
         openDeleteEntryConfirmModal = false;
     }
-    if (ImGui::BeginPopupModal("Delete Entry?", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        DrawCenteredPopupText("Delete this playback entry from the library?");
+    if (ImGui::BeginPopupModal(L("Delete Entry?").c_str(), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        DrawCenteredPopupText(L("Delete this playback entry from the library?").c_str());
         CenterNextButtonsRow(190.0f + ImGui::GetStyle().ItemSpacing.x);
-        if (ImGui::Button("Delete##confirm_entry")) {
+        if (ImGui::Button(FormatText("%s##confirm_entry", L("Delete").c_str()).c_str())) {
             if (entryPendingDelete >= 0 && entryPendingDelete < static_cast<int>(mgr.GetEntries().size())) {
                 mgr.RemoveEntryByIndex(static_cast<size_t>(entryPendingDelete));
                 if (selectedEntry == entryPendingDelete) {
@@ -943,27 +969,27 @@ void UnlimitedPlaybackWindow::Draw() {
             ImGui::CloseCurrentPopup();
         }
         ImGui::SameLine();
-        if (ImGui::Button("Cancel##confirm_entry")) {
+        if (ImGui::Button(FormatText("%s##confirm_entry", L("Cancel").c_str()).c_str())) {
             entryPendingDelete = -1;
             ImGui::CloseCurrentPopup();
         }
         ImGui::EndPopup();
     }
     if (openCaptureSlotModal) {
-        ImGui::OpenPopup("Add from CF Slot");
+        ImGui::OpenPopup(L("Add from CF Slot").c_str());
         openCaptureSlotModal = false;
     }
-    if (ImGui::BeginPopupModal("Add from CF Slot", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::InputInt("Capture Slot", &captureSlot);
+    if (ImGui::BeginPopupModal(L("Add from CF Slot").c_str(), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::InputInt(L("Capture Slot").c_str(), &captureSlot);
         if (captureSlot < 1) captureSlot = 1;
         if (captureSlot > 4) captureSlot = 4;
-        ImGui::InputText("Name", captureName, IM_ARRAYSIZE(captureName));
-        if (ImGui::Button("Save##capture_slot")) {
+        ImGui::InputText(L("Name").c_str(), captureName, IM_ARRAYSIZE(captureName));
+        if (ImGui::Button(FormatText("%s##capture_slot", L("Save").c_str()).c_str())) {
             mgr.CaptureSlotToLibrary(captureSlot, captureName);
             ImGui::CloseCurrentPopup();
         }
         ImGui::SameLine();
-        if (ImGui::Button("Cancel##capture_slot")) {
+        if (ImGui::Button(FormatText("%s##capture_slot", L("Cancel").c_str()).c_str())) {
             ImGui::CloseCurrentPopup();
         }
         ImGui::EndPopup();
@@ -975,17 +1001,17 @@ void UnlimitedPlaybackWindow::Draw() {
         editEntryWeight = entry.weight;
         const ImVec2 displayCenter = ImVec2(ImGui::GetIO().DisplaySize.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f);
         ImGui::SetNextWindowPos(displayCenter, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-        ImGui::OpenPopup("Edit Library Entry");
+        ImGui::OpenPopup(L("Edit Library Entry").c_str());
         openEntryEditModal = false;
     }
-    if (ImGui::BeginPopupModal("Edit Library Entry", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+    if (ImGui::BeginPopupModal(L("Edit Library Entry").c_str(), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         if (entryPendingEdit >= 0 && entryPendingEdit < static_cast<int>(mgr.GetEntries().size())) {
-            ImGui::InputText("Name", editEntryName, IM_ARRAYSIZE(editEntryName));
-            ImGui::InputFloat("Weight", &editEntryWeight, 0.1f, 1.0f);
+            ImGui::InputText(L("Name").c_str(), editEntryName, IM_ARRAYSIZE(editEntryName));
+            ImGui::InputFloat(L("Weight").c_str(), &editEntryWeight, 0.1f, 1.0f);
             if (editEntryWeight < 0.01f) {
                 editEntryWeight = 0.01f;
             }
-            if (ImGui::Button("Edit Playback")) {
+            if (ImGui::Button(L("Edit Playback").c_str())) {
                 auto& entry = mgr.GetEntriesMutable()[entryPendingEdit];
                 entry.name = editEntryName;
                 entry.weight = editEntryWeight;
@@ -999,60 +1025,60 @@ void UnlimitedPlaybackWindow::Draw() {
                 }
             }
             ImGui::SameLine();
-            if (ImGui::Button("Save##edit_entry")) {
+            if (ImGui::Button(FormatText("%s##edit_entry", L("Save").c_str()).c_str())) {
                 auto& entry = mgr.GetEntriesMutable()[entryPendingEdit];
                 entry.name = editEntryName;
                 entry.weight = editEntryWeight;
-                mgr.PushToast("Entry updated.");
+                mgr.PushToast(L("Entry updated."));
                 ImGui::CloseCurrentPopup();
             }
             ImGui::SameLine();
-            if (ImGui::Button("Cancel##edit_entry")) {
+            if (ImGui::Button(FormatText("%s##edit_entry", L("Cancel").c_str()).c_str())) {
                 ImGui::CloseCurrentPopup();
             }
             if (openEntryPlaybackEditorModal) {
                 const ImVec2 displayCenter = ImVec2(ImGui::GetIO().DisplaySize.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f);
                 ImGui::SetNextWindowPos(displayCenter, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
                 ImGui::SetNextWindowSize(ImVec2(900.0f, 620.0f), ImGuiCond_Appearing);
-                ImGui::OpenPopup("Edit Entry Playback");
+                ImGui::OpenPopup(L("Edit Entry Playback").c_str());
                 openEntryPlaybackEditorModal = false;
             }
-            if (ImGui::BeginPopupModal("Edit Entry Playback", nullptr, ImGuiWindowFlags_NoResize)) {
+            if (ImGui::BeginPopupModal(L("Edit Entry Playback").c_str(), nullptr, ImGuiWindowFlags_NoResize)) {
                 auto* editorWindow = m_pWindowContainer ? m_pWindowContainer->GetWindow<PlaybackEditorWindow>(WindowType_PlaybackEditor) : nullptr;
                 if (editorWindow) {
                     editorWindow->DrawEmbeddedEditor();
                 } else {
-                    ImGui::TextDisabled("Playback editor is unavailable.");
-                    if (ImGui::Button("Close##edit_entry_playback_missing")) {
+                    ImGui::TextDisabled("%s", L("Playback editor is unavailable.").c_str());
+                    if (ImGui::Button(FormatText("%s##edit_entry_playback_missing", L("Close").c_str()).c_str())) {
                         ImGui::CloseCurrentPopup();
                     }
                 }
                 ImGui::EndPopup();
             }
         } else {
-            ImGui::TextDisabled("Entry no longer exists.");
-            if (ImGui::Button("Close##edit_entry_missing")) {
+            ImGui::TextDisabled("%s", L("Entry no longer exists.").c_str());
+            if (ImGui::Button(FormatText("%s##edit_entry_missing", L("Close").c_str()).c_str())) {
                 ImGui::CloseCurrentPopup();
             }
         }
         ImGui::EndPopup();
     }
     if (openSendToSlotModal && entryPendingSend >= 0 && entryPendingSend < static_cast<int>(mgr.GetEntries().size())) {
-        ImGui::OpenPopup("Send to CF Slot");
+        ImGui::OpenPopup(L("Send to CF Slot").c_str());
         openSendToSlotModal = false;
     }
-    if (ImGui::BeginPopupModal("Send to CF Slot", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::InputInt("CF Slot", &sendSlot);
+    if (ImGui::BeginPopupModal(L("Send to CF Slot").c_str(), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::InputInt(L("CF Slot").c_str(), &sendSlot);
         if (sendSlot < 1) sendSlot = 1;
         if (sendSlot > 4) sendSlot = 4;
-        if (ImGui::Button("Send")) {
+        if (ImGui::Button(L("Send").c_str())) {
             if (entryPendingSend >= 0 && entryPendingSend < static_cast<int>(mgr.GetEntries().size())) {
                 mgr.LoadEntryIntoSlot(static_cast<size_t>(entryPendingSend), sendSlot);
             }
             ImGui::CloseCurrentPopup();
         }
         ImGui::SameLine();
-        if (ImGui::Button("Cancel##send_slot")) {
+        if (ImGui::Button(FormatText("%s##send_slot", L("Cancel").c_str()).c_str())) {
             ImGui::CloseCurrentPopup();
         }
         ImGui::EndPopup();

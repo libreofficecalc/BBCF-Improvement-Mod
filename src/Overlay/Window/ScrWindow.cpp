@@ -1,6 +1,7 @@
 #include "ScrWindow.h"
 
 #include "Core/interfaces.h"
+#include "Core/Localization.h"
 #include "Core/Settings.h"
 #include "Core/utils.h"
 #include "Game/gamestates.h"
@@ -1061,16 +1062,16 @@ void ScrWindow::DrawPlaybackSection() {
     unlimitedPlayback.InitializeIfNeeded();
     //ScrWindow::DrawPlaybackEditor();
     if (ImGui::CollapsingHeader("Playback")) {
-        if (ImGui::Button("Unlimited Playback (BETA)")) {
+        if (ImGui::Button(L("Unlimited Playback (BETA)").c_str())) {
             ScrWindow::m_pWindowContainer->GetWindow(WindowType_UnlimitedPlayback)->ToggleOpen();
         }
         ImGui::SameLine();
-        ImGui::TextDisabled("Popup is always available. Runtime actions only work in the right context.");
+        ImGui::TextDisabled("%s", L("Popup is always available. Runtime actions only work in the right context.").c_str());
         ImGui::TextWrapped("%s", unlimitedPlayback.GetStatusText().c_str());
 
-        ImGui::Checkbox("Loop current playback", &loop_playback);
+        ImGui::Checkbox(L("Loop current playback").c_str(), &loop_playback);
         ImGui::SameLine();
-        ImGui::ShowHelpMarker("This will continuously loop the current recording slot, subject to absolute positioning.");
+        ImGui::ShowHelpMarker(L("This will continuously loop the current recording slot, subject to absolute positioning.").c_str());
         ScrWindow::DrawPlaybackEditor();
         if (ImGui::CollapsingHeader("SLOT_1")) {
             draw_playback_slot_section(1);

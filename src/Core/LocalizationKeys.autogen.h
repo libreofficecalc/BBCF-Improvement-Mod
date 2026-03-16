@@ -650,6 +650,465 @@ struct LocalizationKeysAccessor
 
         // To force enable these hooks, set ForceEnableControllerSettingHooks to 1 at your own risk.
         inline const char* To_force_enable_these_hooks_set_ForceEnableControllerSettingHooks_to_1_at_your_own_risk() const { return Get("To force enable these hooks, set ForceEnableControllerSettingHooks to 1 at your own risk."); }
+
+        // Unlimited Playback (BETA)
+        inline const char* Unlimited_Playback_BETA() const { return Get("Unlimited Playback (BETA)"); }
+
+        // Popup is always available. Runtime actions only work in the right context.
+        inline const char* Popup_is_always_available_Runtime_actions_only_work_in_the_right_context() const { return Get("Popup is always available. Runtime actions only work in the right context."); }
+
+        // Loop current playback
+        inline const char* Loop_current_playback() const { return Get("Loop current playback"); }
+
+        // This will continuously loop the current recording slot
+        inline const char* This_will_continuously_loop_the_current_recording_slot() const { return Get("This will continuously loop the current recording slot"); }
+
+        // A native file dialog is already open.
+        inline const char* A_native_file_dialog_is_already_open() const { return Get("A native file dialog is already open."); }
+
+        // Mapped playback bind: %s
+        inline const char* Mapped_playback_bind_s() const { return Get("Mapped playback bind: %s"); }
+
+        // Profile Compatibility
+        inline const char* Profile_Compatibility() const { return Get("Profile Compatibility"); }
+
+        // Profile version mismatch.\n\nFile version: %s\nCode version: %s\n\n%s
+        inline const char* Profile_version_mismatch_File_version_s_Code_version_s_s() const { return Get("Profile version mismatch.\n\nFile version: %s\nCode version: %s\n\n%s"); }
+
+        // Load Anyway
+        inline const char* Load_Anyway() const { return Get("Load Anyway"); }
+
+        // Playback Compatibility
+        inline const char* Playback_Compatibility() const { return Get("Playback Compatibility"); }
+
+        // Playback version mismatch.\n\nFile version: %s\nCode version: %s\n\n%s
+        inline const char* Playback_version_mismatch_File_version_s_Code_version_s_s() const { return Get("Playback version mismatch.\n\nFile version: %s\nCode version: %s\n\n%s"); }
+
+        // Import Anyway
+        inline const char* Import_Anyway() const { return Get("Import Anyway"); }
+
+        // Add from CF Slot
+        inline const char* Add_from_CF_Slot() const { return Get("Add from CF Slot"); }
+
+        // Add from file
+        inline const char* Add_from_file() const { return Get("Add from file"); }
+
+        // Add from replay
+        inline const char* Add_from_replay() const { return Get("Add from replay"); }
+
+        // Capture a playback from one of the 4 CF slots
+        inline const char* Capture_a_playback_from_one_of_the_4_CF_slots() const { return Get("Capture a playback from one of the 4 CF slots"); }
+
+        // Import a playback file into the library
+        inline const char* Import_a_playback_file_into_the_library() const { return Get("Import a playback file into the library"); }
+
+        // Record a new playback entry from a replay
+        inline const char* Record_a_new_playback_entry_from_a_replay() const { return Get("Record a new playback entry from a replay"); }
+
+        // Library (%d)
+        inline const char* Library_d() const { return Get("Library (%d)"); }
+
+        // Send to CF Slot
+        inline const char* Send_to_CF_Slot() const { return Get("Send to CF Slot"); }
+
+        // Save to File
+        inline const char* Save_to_File() const { return Get("Save to File"); }
+
+        // Export playback entry file dialog open...
+        inline const char* Export_playback_entry_file_dialog_open() const { return Get("Export playback entry file dialog open..."); }
+
+        // Play
+        inline const char* Play() const { return Get("Play"); }
+
+        // Play (Disabled due to not being in lab)
+        inline const char* Play_Disabled_due_to_not_being_in_lab() const { return Get("Play (Disabled due to not being in lab)"); }
+
+        // Edit
+        inline const char* Edit() const { return Get("Edit"); }
+
+        // Delete
+        inline const char* Delete() const { return Get("Delete"); }
+
+        // Default
+        inline const char* Default() const { return Get("Default"); }
+
+        // Load a library profile
+        inline const char* Load_a_library_profile() const { return Get("Load a library profile"); }
+
+        // Save the current library as a profile
+        inline const char* Save_the_current_library_as_a_profile() const { return Get("Save the current library as a profile"); }
+
+        // Reset the current library
+        inline const char* Reset_the_current_library() const { return Get("Reset the current library"); }
+
+        // Load profile file dialog open...
+        inline const char* Load_profile_file_dialog_open() const { return Get("Load profile file dialog open..."); }
+
+        // Save profile file dialog open...
+        inline const char* Save_profile_file_dialog_open() const { return Get("Save profile file dialog open..."); }
+
+        // Add Playback Entry
+        inline const char* Add_Playback_Entry() const { return Get("Add Playback Entry"); }
+
+        // Add from replay is only available while a replay match is active in Replay Theater.
+        inline const char* Add_from_replay_is_only_available_while_a_replay_match_is_active_in_Replay_Theater() const { return Get("Add from replay is only available while a replay match is active in Replay Theater."); }
+
+        // Import playback file dialog open...
+        inline const char* Import_playback_file_dialog_open() const { return Get("Import playback file dialog open..."); }
+
+        // Add from Replay
+        inline const char* Add_from_Replay_2() const { return Get("Add from Replay"); }
+
+        // Capture from replay
+        inline const char* Capture_from_replay() const { return Get("Capture from replay"); }
+
+        // Recording %s inputs (start frame %d)
+        inline const char* Recording_s_inputs_start_frame_d() const { return Get("Recording %s inputs (start frame %d)"); }
+
+        // Name
+        inline const char* Name() const { return Get("Name"); }
+
+        // Stop and Save
+        inline const char* Stop_and_Save() const { return Get("Stop and Save"); }
+
+        // Record P1 Inputs
+        inline const char* Record_P1_Inputs() const { return Get("Record P1 Inputs"); }
+
+        // Record P2 Inputs
+        inline const char* Record_P2_Inputs() const { return Get("Record P2 Inputs"); }
+
+        // Replay capture only starts while a replay match is active.
+        inline const char* Replay_capture_only_starts_while_a_replay_match_is_active() const { return Get("Replay capture only starts while a replay match is active."); }
+
+        // Library Settings
+        inline const char* Library_Settings() const { return Get("Library Settings"); }
+
+        // Random
+        inline const char* Random() const { return Get("Random"); }
+
+        // Sequential
+        inline const char* Sequential() const { return Get("Sequential"); }
+
+        // Non-repeating Random
+        inline const char* Non_repeating_Random() const { return Get("Non-repeating Random"); }
+
+        // Playback Mode
+        inline const char* Playback_Mode() const { return Get("Playback Mode"); }
+
+        // How the library chooses the next enabled entry when playback is triggered.
+        inline const char* How_the_library_chooses_the_next_enabled_entry_when_playback_is_triggered() const { return Get("How the library chooses the next enabled entry when playback is triggered."); }
+
+        // Playback mode: %s
+        inline const char* Playback_mode_s() const { return Get("Playback mode: %s"); }
+
+        // Auto-mirror on side swap
+        inline const char* Auto_mirror_on_side_swap() const { return Get("Auto-mirror on side swap"); }
+
+        // Mirrors directional inputs when the recorded side and current side differ.
+        inline const char* Mirrors_directional_inputs_when_the_recorded_side_and_current_side_differ() const { return Get("Mirrors directional inputs when the recorded side and current side differ."); }
+
+        // Wakeup
+        inline const char* Wakeup() const { return Get("Wakeup"); }
+
+        // On Block
+        inline const char* On_Block() const { return Get("On Block"); }
+
+        // On Hit
+        inline const char* On_Hit() const { return Get("On Hit"); }
+
+        // Throw Tech
+        inline const char* Throw_Tech() const { return Get("Throw Tech"); }
+
+        // Key Press
+        inline const char* Key_Press() const { return Get("Key Press"); }
+
+        // Unknown
+        inline const char* Unknown() const { return Get("Unknown"); }
+
+        // Playback Trigger Type
+        inline const char* Playback_Trigger_Type() const { return Get("Playback Trigger Type"); }
+
+        // Selects the single trigger type that can fire library playback.
+        inline const char* Selects_the_single_trigger_type_that_can_fire_library_playback() const { return Get("Selects the single trigger type that can fire library playback."); }
+
+        // Playback trigger: %s
+        inline const char* Playback_trigger_s() const { return Get("Playback trigger: %s"); }
+
+        // %s Config
+        inline const char* s_Config() const { return Get("%s Config"); }
+
+        // Cooldown Frames
+        inline const char* Cooldown_Frames() const { return Get("Cooldown Frames"); }
+
+        // Blocks the same trigger from firing again for this many frames after it activates.
+        inline const char* Blocks_the_same_trigger_from_firing_again_for_this_many_frames_after_it_activates() const { return Get("Blocks the same trigger from firing again for this many frames after it activates."); }
+
+        // Maps the button or key used by the Key Press trigger.
+        inline const char* Maps_the_button_or_key_used_by_the_Key_Press_trigger() const { return Get("Maps the button or key used by the Key Press trigger."); }
+
+        // Map Playback Bind
+        inline const char* Map_Playback_Bind() const { return Get("Map Playback Bind"); }
+
+        // Fix Triggers
+        inline const char* Fix_Triggers() const { return Get("Fix Triggers"); }
+
+        // Use this after Training reset if triggers temporarily stop firing. It clears trigger cooldown and edge state.
+        inline const char* Use_this_after_Training_reset_if_triggers_temporarily_stop_firing_It_clears_trigger_cooldown_and_edge_state() const { return Get("Use this after Training reset if triggers temporarily stop firing. It clears trigger cooldown and edge state."); }
+
+        // Activity
+        inline const char* Activity() const { return Get("Activity"); }
+
+        // Reset Library?
+        inline const char* Reset_Library() const { return Get("Reset Library?"); }
+
+        // Reset the current library and clear all loaded entries?
+        inline const char* Reset_the_current_library_and_clear_all_loaded_entries() const { return Get("Reset the current library and clear all loaded entries?"); }
+
+        // Reset
+        inline const char* Reset_2() const { return Get("Reset"); }
+
+        // Delete Entry?
+        inline const char* Delete_Entry() const { return Get("Delete Entry?"); }
+
+        // Delete this playback entry from the library?
+        inline const char* Delete_this_playback_entry_from_the_library() const { return Get("Delete this playback entry from the library?"); }
+
+        // Capture Slot
+        inline const char* Capture_Slot() const { return Get("Capture Slot"); }
+
+        // Edit Library Entry
+        inline const char* Edit_Library_Entry() const { return Get("Edit Library Entry"); }
+
+        // Weight
+        inline const char* Weight() const { return Get("Weight"); }
+
+        // Edit Playback
+        inline const char* Edit_Playback() const { return Get("Edit Playback"); }
+
+        // Entry updated.
+        inline const char* Entry_updated() const { return Get("Entry updated."); }
+
+        // Edit Entry Playback
+        inline const char* Edit_Entry_Playback() const { return Get("Edit Entry Playback"); }
+
+        // Playback editor is unavailable.
+        inline const char* Playback_editor_is_unavailable() const { return Get("Playback editor is unavailable."); }
+
+        // Entry no longer exists.
+        inline const char* Entry_no_longer_exists() const { return Get("Entry no longer exists."); }
+
+        // CF Slot
+        inline const char* CF_Slot() const { return Get("CF Slot"); }
+
+        // Send
+        inline const char* Send() const { return Get("Send"); }
+
+        // Load unlimited playback profile
+        inline const char* Load_unlimited_playback_profile() const { return Get("Load unlimited playback profile"); }
+
+        // Save unlimited playback profile
+        inline const char* Save_unlimited_playback_profile() const { return Get("Save unlimited playback profile"); }
+
+        // Import unlimited playback entry
+        inline const char* Import_unlimited_playback_entry() const { return Get("Import unlimited playback entry"); }
+
+        // Export unlimited playback entry
+        inline const char* Export_unlimited_playback_entry() const { return Get("Export unlimited playback entry"); }
+
+        // Pad A
+        inline const char* Pad_A() const { return Get("Pad A"); }
+
+        // Pad B
+        inline const char* Pad_B() const { return Get("Pad B"); }
+
+        // Pad X
+        inline const char* Pad_X() const { return Get("Pad X"); }
+
+        // Pad Y
+        inline const char* Pad_Y() const { return Get("Pad Y"); }
+
+        // Pad LB
+        inline const char* Pad_LB() const { return Get("Pad LB"); }
+
+        // Pad RB
+        inline const char* Pad_RB() const { return Get("Pad RB"); }
+
+        // Pad Back
+        inline const char* Pad_Back() const { return Get("Pad Back"); }
+
+        // Pad Start
+        inline const char* Pad_Start() const { return Get("Pad Start"); }
+
+        // Pad LS
+        inline const char* Pad_LS() const { return Get("Pad LS"); }
+
+        // Pad RS
+        inline const char* Pad_RS() const { return Get("Pad RS"); }
+
+        // Pad Up
+        inline const char* Pad_Up() const { return Get("Pad Up"); }
+
+        // Pad Down
+        inline const char* Pad_Down() const { return Get("Pad Down"); }
+
+        // Pad Left
+        inline const char* Pad_Left() const { return Get("Pad Left"); }
+
+        // Pad Right
+        inline const char* Pad_Right() const { return Get("Pad Right"); }
+
+        // VK_%d
+        inline const char* VK_d() const { return Get("VK_%d"); }
+
+        // Invalid playback destination.
+        inline const char* Invalid_playback_destination() const { return Get("Invalid playback destination."); }
+
+        // Playback payload was too small.
+        inline const char* Playback_payload_was_too_small() const { return Get("Playback payload was too small."); }
+
+        // Playback rejected: file v%s, code v%s.
+        inline const char* Playback_rejected_file_v_s_code_v_s() const { return Get("Playback rejected: file v%s, code v%s."); }
+
+        // Playback file header is missing.
+        inline const char* Playback_file_header_is_missing() const { return Get("Playback file header is missing."); }
+
+        // Trigger runtime state reset.
+        inline const char* Trigger_runtime_state_reset() const { return Get("Trigger runtime state reset."); }
+
+        // Trigger runtime resynced after training reset.
+        inline const char* Trigger_runtime_resynced_after_training_reset() const { return Get("Trigger runtime resynced after training reset."); }
+
+        // Could not read playback file.
+        inline const char* Could_not_read_playback_file() const { return Get("Could not read playback file."); }
+
+        // File not found.
+        inline const char* File_not_found() const { return Get("File not found."); }
+
+        // Invalid playback file.
+        inline const char* Invalid_playback_file() const { return Get("Invalid playback file."); }
+
+        // Playback imported.
+        inline const char* Playback_imported() const { return Get("Playback imported."); }
+
+        // Slot must be between 1 and 4.
+        inline const char* Slot_must_be_between_1_and_4() const { return Get("Slot must be between 1 and 4."); }
+
+        // Captured slot to library.
+        inline const char* Captured_slot_to_library() const { return Get("Captured slot to library."); }
+
+        // Start replay recording only while a replay match is active.
+        inline const char* Start_replay_recording_only_while_a_replay_match_is_active() const { return Get("Start replay recording only while a replay match is active."); }
+
+        // Replay recording started: %s.
+        inline const char* Replay_recording_started_s() const { return Get("Replay recording started: %s."); }
+
+        // No replay recording in progress.
+        inline const char* No_replay_recording_in_progress() const { return Get("No replay recording in progress."); }
+
+        // Replay recording cancelled (left replay match).
+        inline const char* Replay_recording_cancelled_left_replay_match() const { return Get("Replay recording cancelled (left replay match)."); }
+
+        // Replay recording cancelled (too short).
+        inline const char* Replay_recording_cancelled_too_short() const { return Get("Replay recording cancelled (too short)."); }
+
+        // Replay recording cancelled (failed reading replay frames).
+        inline const char* Replay_recording_cancelled_failed_reading_replay_frames() const { return Get("Replay recording cancelled (failed reading replay frames)."); }
+
+        // Replay recording saved to library.
+        inline const char* Replay_recording_saved_to_library() const { return Get("Replay recording saved to library."); }
+
+        // Entry removed.
+        inline const char* Entry_removed() const { return Get("Entry removed."); }
+
+        // Entry renamed.
+        inline const char* Entry_renamed() const { return Get("Entry renamed."); }
+
+        // Sending to a CF slot works only during a training match.
+        inline const char* Sending_to_a_CF_slot_works_only_during_a_training_match() const { return Get("Sending to a CF slot works only during a training match."); }
+
+        // Failed loading entry.
+        inline const char* Failed_loading_entry() const { return Get("Failed loading entry."); }
+
+        // Entry loaded into slot.
+        inline const char* Entry_loaded_into_slot() const { return Get("Entry loaded into slot."); }
+
+        // Entry overwritten from slot.
+        inline const char* Entry_overwritten_from_slot() const { return Get("Entry overwritten from slot."); }
+
+        // Entry saved.
+        inline const char* Entry_saved() const { return Get("Entry saved."); }
+
+        // Failed saving entry to file.
+        inline const char* Failed_saving_entry_to_file() const { return Get("Failed saving entry to file."); }
+
+        // Entry saved to file.
+        inline const char* Entry_saved_to_file() const { return Get("Entry saved to file."); }
+
+        // Play now works only during a training match.
+        inline const char* Play_now_works_only_during_a_training_match() const { return Get("Play now works only during a training match."); }
+
+        // Played: %s%s
+        inline const char* Played_s_s() const { return Get("Played: %s%s"); }
+
+        // (mirrored)
+        inline const char* mirrored() const { return Get("(mirrored)"); }
+
+        // Unlimited playback config cleared.
+        inline const char* Unlimited_playback_config_cleared() const { return Get("Unlimited playback config cleared."); }
+
+        // Failed to save profile.
+        inline const char* Failed_to_save_profile() const { return Get("Failed to save profile."); }
+
+        // Profile save failed: entry data missing for '%s'.
+        inline const char* Profile_save_failed_entry_data_missing_for_s() const { return Get("Profile save failed: entry data missing for '%s'."); }
+
+        // Profile saved.
+        inline const char* Profile_saved() const { return Get("Profile saved."); }
+
+        // Could not read profile file.
+        inline const char* Could_not_read_profile_file() const { return Get("Could not read profile file."); }
+
+        // Failed to open profile.
+        inline const char* Failed_to_open_profile() const { return Get("Failed to open profile."); }
+
+        // Playback rejected (newer format): file v%s, code v%s.
+        inline const char* Playback_rejected_newer_format_file_v_s_code_v_s() const { return Get("Playback rejected (newer format): file v%s, code v%s."); }
+
+        // Profile compatibility rejected (file v%s, code v%s).
+        inline const char* Profile_compatibility_rejected_file_v_s_code_v_s() const { return Get("Profile compatibility rejected (file v%s, code v%s)."); }
+
+        // Profile version mismatch requires confirmation (file v%s, code v%s).
+        inline const char* Profile_version_mismatch_requires_confirmation_file_v_s_code_v_s() const { return Get("Profile version mismatch requires confirmation (file v%s, code v%s)."); }
+
+        // Profile load failed: embedded playback missing for '%s'.
+        inline const char* Profile_load_failed_embedded_playback_missing_for_s() const { return Get("Profile load failed: embedded playback missing for '%s'."); }
+
+        // Profile load failed for '%s': %s
+        inline const char* Profile_load_failed_for_s_s() const { return Get("Profile load failed for '%s': %s"); }
+
+        // Profile load failed for '%s'.
+        inline const char* Profile_load_failed_for_s() const { return Get("Profile load failed for '%s'."); }
+
+        // Profile loaded. Trigger runtime synced.
+        inline const char* Profile_loaded_Trigger_runtime_synced() const { return Get("Profile loaded. Trigger runtime synced."); }
+
+        // Trigger detected: %s
+        inline const char* Trigger_detected_s() const { return Get("Trigger detected: %s"); }
+
+        // No eligible playback in current trigger selection.
+        inline const char* No_eligible_playback_in_current_trigger_selection() const { return Get("No eligible playback in current trigger selection."); }
+
+        // Selected playback cache missing.
+        inline const char* Selected_playback_cache_missing() const { return Get("Selected playback cache missing."); }
+
+        // Triggered [%s]: %s%s
+        inline const char* Triggered_s_s_s() const { return Get("Triggered [%s]: %s%s"); }
+
+        // Slot %d
+        inline const char* Slot_d() const { return Get("Slot %d"); }
+
+        // Replay %s
+        inline const char* Replay_s() const { return Get("Replay %s"); }
 };
 
 

@@ -83,7 +83,7 @@ WindowContainer::WindowContainer()
                 new WinePopupWindow("Wine Popup", true, *this, ImGuiWindowFlags_NoTitleBar));
 
         AddWindow(WindowType_UnlimitedPlayback,
-                new UnlimitedPlaybackWindow("Unlimited Playback (BETA)", true, *this));
+                new UnlimitedPlaybackWindow(L("Unlimited Playback (BETA)").c_str(), true, *this));
 
 #if BBCF_ENABLE_UNLIMITED_REPLAY_TAKEOVER
         {
