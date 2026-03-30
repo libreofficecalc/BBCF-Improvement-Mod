@@ -105,6 +105,10 @@ void MatchState::OnUpdate()
 		g_interfaces.player1.GetPalHandle(),
 		g_interfaces.player2.GetPalHandle()
 	);
+	if (g_interfaces.pOnlinePaletteManager)
+	{
+		g_interfaces.pOnlinePaletteManager->OnUpdate();
+	}
 	g_interfaces.pReplayRewindManager->OnUpdate();
 	g_rep_manager.check_and_load_replay_steam();
 }

@@ -935,6 +935,11 @@ void PaletteEditorWindow::CopyToEditorArray(const char* pSrc)
 void PaletteEditorWindow::CopyPalFileToEditorArray(PaletteFile palFile, CharPaletteHandle& charPalHandle)
 {
 	const char* fileAddr = g_interfaces.pPaletteManager->GetCurPalFileAddr(palFile, charPalHandle);
+	if (fileAddr == nullptr)
+	{
+		LOG(1, "PaletteEditorWindow::CopyPalFileToEditorArray skipped because palette file %d is not readable\n", (int)palFile);
+		return;
+	}
 	CopyToEditorArray(fileAddr);
 }
 

@@ -21,6 +21,13 @@ void OnlinePaletteManager::SendPalettePackets()
 	uint16_t thisPlayerMatchPlayerIndex = m_pRoomManager->GetThisPlayerMatchPlayerIndex();
 	CharPaletteHandle& charPalHandle = GetPlayerCharPaletteHandle(thisPlayerMatchPlayerIndex);
 
+	if (!IsPaletteHandleReady(charPalHandle))
+	{
+		LOG(1, "[OnlinePalette] Deferring local palette send until handle is ready (matchPlayerIndex=%u)\n",
+			thisPlayerMatchPlayerIndex);
+		return;
+	}
+
 	SendPaletteInfoPacket(charPalHandle, thisPlayerMatchPlayerIndex);
 	SendPaletteDataPackets(charPalHandle, thisPlayerMatchPlayerIndex);
 }
@@ -31,18 +38,19 @@ void OnlinePaletteManager::RecvPaletteDataPacket(Packet* packet)
 
 	uint16_t matchPlayerIndex = m_pRoomManager->GetPlayerMatchPlayerIndexByRoomMemberIndex(packet->roomMemberIndex);
 	CharPaletteHandle& charPalHandle = GetPlayerCharPaletteHandle(matchPlayerIndex);
-    // for next release I should just make it so that ReplacePaletteFiles is not reacheable and leave the enable foreign palettes as a means to actuall stop palettes from loading, instead of a "fix" for ranked crash.
-	//if (g_gameVals.enableForeignPalettes) {
-		if (charPalHandle.IsNullPointerPalBasePtr())
-		{
-			m_unprocessedPaletteFiles.push(UnprocessedPaletteFile(matchPlayerIndex, (PaletteFile)packet->part, (char*)packet->data));
-			return;
-		}
-		if (g_modVals.enableForeignPalettes) {
-			m_pPaletteManager->ReplacePaletteFile((const char*)packet->data, (PaletteFile)packet->part, charPalHandle);
-		}
 
-	//}
+	if (!IsPaletteHandleReady(charPalHandle))
+	{
+		LOG(1, "[OnlinePalette] Queueing palette data until handle is ready (matchPlayerIndex=%u, part=%u)\n",
+			matchPlayerIndex, packet->part);
+		m_unprocessedPaletteFiles.push(UnprocessedPaletteFile(matchPlayerIndex, (PaletteFile)packet->part, (char*)packet->data));
+		return;
+	}
+
+	if (g_modVals.enableForeignPalettes)
+	{
+		m_pPaletteManager->ReplacePaletteFile((const char*)packet->data, (PaletteFile)packet->part, charPalHandle);
+	}
 }
 
 void OnlinePaletteManager::RecvPaletteInfoPacket(Packet* packet)
@@ -51,16 +59,19 @@ void OnlinePaletteManager::RecvPaletteInfoPacket(Packet* packet)
 
 	uint16_t matchPlayerIndex = m_pRoomManager->GetPlayerMatchPlayerIndexByRoomMemberIndex(packet->roomMemberIndex);
 	CharPaletteHandle& charPalHandle = GetPlayerCharPaletteHandle(matchPlayerIndex);
-	//if (g_gameVals.enableForeignPalettes) {
-		if (charPalHandle.IsNullPointerPalBasePtr())
-		{
-			m_unprocessedPaletteInfos.push(UnprocessedPaletteInfo(matchPlayerIndex, (IMPL_info_t*)packet->data));
-			return;
-		}
-		if (g_modVals.enableForeignPalettes) {
-			m_pPaletteManager->SetCurrentPalInfo(charPalHandle, *(IMPL_info_t*)packet->data);
-		}
-	//}
+
+	if (!IsPaletteHandleReady(charPalHandle))
+	{
+		LOG(1, "[OnlinePalette] Queueing palette info until handle is ready (matchPlayerIndex=%u)\n",
+			matchPlayerIndex);
+		m_unprocessedPaletteInfos.push(UnprocessedPaletteInfo(matchPlayerIndex, (IMPL_info_t*)packet->data));
+		return;
+	}
+
+	if (g_modVals.enableForeignPalettes)
+	{
+		m_pPaletteManager->SetCurrentPalInfo(charPalHandle, *(IMPL_info_t*)packet->data);
+	}
 }
 
 void OnlinePaletteManager::ProcessSavedPalettePackets()
@@ -80,13 +91,57 @@ void OnlinePaletteManager::ClearSavedPalettePacketQueues()
 
 	m_unprocessedPaletteInfos = {};
 	m_unprocessedPaletteFiles = {};
+	m_matchInitPending = false;
+	m_loggedMatchInitWait = false;
 }
 
 void OnlinePaletteManager::OnMatchInit()
 {
 	LOG(2, "OnlinePaletteManager::OnMatchInit\n");
 
-	SendPalettePackets();
+	m_matchInitPending = true;
+	m_loggedMatchInitWait = false;
+	OnUpdate();
+}
+
+void OnlinePaletteManager::OnUpdate()
+{
+	if (!m_pRoomManager->IsRoomFunctional())
+		return;
+
+	if (m_pRoomManager->IsThisPlayerSpectator())
+	{
+		m_matchInitPending = false;
+		m_loggedMatchInitWait = false;
+		return;
+	}
+
+	if (!m_matchInitPending &&
+		m_unprocessedPaletteInfos.empty() &&
+		m_unprocessedPaletteFiles.empty())
+	{
+		return;
+	}
+
+	CharPaletteHandle& localHandle = GetPlayerCharPaletteHandle(m_pRoomManager->GetThisPlayerMatchPlayerIndex());
+	if (!IsPaletteHandleReady(localHandle))
+	{
+		if (!m_loggedMatchInitWait)
+		{
+			LOG(1, "[OnlinePalette] Waiting for local palette handle before match-init flush\n");
+			m_loggedMatchInitWait = true;
+		}
+		return;
+	}
+
+	if (m_matchInitPending)
+	{
+		LOG(1, "[OnlinePalette] Local palette handle became ready; sending match-init palette packets\n");
+		SendPalettePackets();
+		m_matchInitPending = false;
+		m_loggedMatchInitWait = false;
+	}
+
 	ProcessSavedPalettePackets();
 }
 
@@ -111,6 +166,11 @@ void OnlinePaletteManager::SendPaletteDataPackets(CharPaletteHandle& charPalHand
 	for (int palFileIndex = 0; palFileIndex < IMPL_PALETTE_FILES_COUNT; palFileIndex++)
 	{
 		const char* palAddr = m_pPaletteManager->GetCurPalFileAddr((PaletteFile)palFileIndex, charPalHandle);
+		if (palAddr == nullptr)
+		{
+			LOG(1, "[OnlinePalette] Aborting palette data send because file %d is no longer readable\n", palFileIndex);
+			return;
+		}
 
 		Packet packet = Packet(
 			(char*)palAddr,
@@ -128,13 +188,24 @@ void OnlinePaletteManager::ProcessSavedPaletteInfoPackets()
 {
 	LOG(2, "OnlinePaletteManager::ProcessSavedPaletteInfoPackets\n");
 
-	for (int i = 0; i < m_unprocessedPaletteInfos.size(); i++)
+	const size_t pendingCount = m_unprocessedPaletteInfos.size();
+	for (size_t i = 0; i < pendingCount; ++i)
 	{
 		UnprocessedPaletteInfo& palInfo = m_unprocessedPaletteInfos.front();
 
 		CharPaletteHandle& charPalHandle = GetPlayerCharPaletteHandle(palInfo.matchPlayerIndex);
 
-		m_pPaletteManager->SetCurrentPalInfo(charPalHandle, palInfo.palInfo);
+		if (IsPaletteHandleReady(charPalHandle))
+		{
+			if (g_modVals.enableForeignPalettes)
+			{
+				m_pPaletteManager->SetCurrentPalInfo(charPalHandle, palInfo.palInfo);
+			}
+		}
+		else
+		{
+			m_unprocessedPaletteInfos.push(palInfo);
+		}
 
 		m_unprocessedPaletteInfos.pop();
 	}
@@ -144,13 +215,24 @@ void OnlinePaletteManager::ProcessSavedPaletteDataPackets()
 {
 	LOG(2, "OnlinePaletteManager::ProcessSavedPaletteDataPackets\n");
 
-	for (int i = 0; i < m_unprocessedPaletteFiles.size(); i++)
+	const size_t pendingCount = m_unprocessedPaletteFiles.size();
+	for (size_t i = 0; i < pendingCount; ++i)
 	{
 		UnprocessedPaletteFile& palfile = m_unprocessedPaletteFiles.front();
 
 		CharPaletteHandle& charPalHandle = GetPlayerCharPaletteHandle(palfile.matchPlayerIndex);
 
-		m_pPaletteManager->ReplacePaletteFile(palfile.palData, palfile.palFile, charPalHandle);
+		if (IsPaletteHandleReady(charPalHandle))
+		{
+			if (g_modVals.enableForeignPalettes)
+			{
+				m_pPaletteManager->ReplacePaletteFile(palfile.palData, palfile.palFile, charPalHandle);
+			}
+		}
+		else
+		{
+			m_unprocessedPaletteFiles.push(palfile);
+		}
 
 		m_unprocessedPaletteFiles.pop();
 	}
@@ -159,4 +241,9 @@ void OnlinePaletteManager::ProcessSavedPaletteDataPackets()
 CharPaletteHandle& OnlinePaletteManager::GetPlayerCharPaletteHandle(uint16_t matchPlayerIndex)
 {
 	return matchPlayerIndex == 0 ? *m_pP1CharPalHandle : *m_pP2CharPalHandle;
+}
+
+bool OnlinePaletteManager::IsPaletteHandleReady(const CharPaletteHandle& charPalHandle) const
+{
+	return charPalHandle.IsPaletteDataReady();
 }
