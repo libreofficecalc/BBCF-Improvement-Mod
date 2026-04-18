@@ -26,6 +26,7 @@
     <ClCompile Include="src\Game\ScenesManager\ScenesManager.cpp" />
     <ClCompile Include="src\Game\ReplayRewind\ReplayRewind.cpp" />
     <ClCompile Include="src\Hooks\hooks_battle_input.cpp" />
+    <ClCompile Include="src\Hooks\RankedAutomationHarness.cpp" />
     <ClCompile Include="src\Overlay\Window\FrameAdvantage\FrameAdvantageWindow.cpp" />
     <ClCompile Include="src\Overlay\Window\FrameHistory\FrameHistory.cpp" />
     <ClCompile Include="src\Overlay\Window\FrameHistory\FrameHistoryWindow.cpp" />
@@ -134,6 +135,7 @@
     <ClInclude Include="src\Game\ScenesManager\ScenesManager.h" />
     <ClInclude Include="src\Game\ReplayRewind\ReplayRewind.h" />
     <ClInclude Include="src\Hooks\hooks_battle_input.h" />
+    <ClInclude Include="src\Hooks\RankedAutomationHarness.h" />
     <ClInclude Include="src\Hooks\hooks_system_input.h" />
     <ClInclude Include="src\Overlay\Window\FrameAdvantage\FrameAdvantageWindow.h" />
     <ClInclude Include="src\Overlay\Window\FrameHistory\FrameHistory.h" />

@@ -1,7 +1,10 @@
 #include "hooks_system_input.h"
 
+#include "RankedAutomationHarness.h"
+
 #include "HookManager.h"
 #include "Core/ControllerOverrideManager.h"
+#include "Core/interfaces.h"
 #include "Core/logger.h"
 #include "Core/utils.h"
 
@@ -9,9 +12,48 @@ namespace
 {
         DWORD systemInputWrite_JmpBack = 0;
 
+        const char* GetSlotLabel(SystemControllerSlot slot)
+        {
+            switch (slot)
+            {
+            case SystemControllerSlot::MenuP1: return "MenuP1";
+            case SystemControllerSlot::MenuP2: return "MenuP2";
+            case SystemControllerSlot::CharP1: return "CharP1";
+            case SystemControllerSlot::CharP2: return "CharP2";
+            case SystemControllerSlot::UnknownP1: return "UnknownP1";
+            case SystemControllerSlot::UnknownP2: return "UnknownP2";
+            case SystemControllerSlot::None:
+            default:
+                return "None";
+            }
+        }
+
         uint32_t __stdcall SystemInputHookInternal(void* controllerPtr, uint32_t currentWord)
         {
             auto& mgr = ControllerOverrideManager::GetInstance();
+            const auto slot = mgr.ResolveSystemSlotFromControllerPtr(controllerPtr);
+            uint32_t automationWord = 0;
+            static int logBudget = 40;
+            static SystemControllerSlot lastLoggedSlot = SystemControllerSlot::None;
+            static int lastLoggedGameState = -999;
+
+            const int gameState = g_gameVals.pGameState ? *g_gameVals.pGameState : -1;
+            if (logBudget > 0 && (slot != lastLoggedSlot || gameState != lastLoggedGameState))
+            {
+                LOG(1, "[RankedAutoProbe] system_input slot=%s state=%d word=0x%08X controller=0x%p\n",
+                    GetSlotLabel(slot),
+                    gameState,
+                    static_cast<unsigned int>(currentWord),
+                    controllerPtr);
+                lastLoggedSlot = slot;
+                lastLoggedGameState = gameState;
+                --logBudget;
+            }
+
+            if (RankedAutomationHarness::TryOverrideSystemInput(slot, currentWord, &automationWord))
+            {
+                return automationWord;
+            }
 
             // If multiple-keyboard override is off, or the mapping popup is open,
             // we leave system input completely untouched.
@@ -20,7 +62,6 @@ namespace
                 return currentWord;
             }
 
-            const auto slot = mgr.ResolveSystemSlotFromControllerPtr(controllerPtr);
             if (!mgr.HasSystemOverride(slot))
             {
                 return currentWord;

@@ -11,6 +11,7 @@
 
 #include "Hooks/hooks_detours.h"
 #include "Hooks/hooks_battle_input.h"
+#include "Hooks/hooks_bbcf.h"
 #include "Hooks/hooks_system_input.h"
 #include "Overlay/WindowManager.h"
 
@@ -80,6 +81,7 @@ void BBCF_IM_Shutdown()
 {
         g_cleanShutdown = true;
         LOG(1, "BBCF_IM_Shutdown\n");
+		RankedProbeDumpSummary("BBCF_IM_Shutdown");
 
         WindowManager::GetInstance().Shutdown();
         CleanupInterfaces();

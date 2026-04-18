@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(\"/mnt/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe\" BBCF_IM.sln /m /p:Configuration=DebugDeploy /p:Platform=Win32 /p:PlatformToolset=v143)",
+      "Read(//mnt/d/SteamLibrary/steamapps/common/BlazBlue Centralfiction/BBCF_IM/**)",
+      "Read(//mnt/c/Users/Usuario/AppData/Roaming/**)",
+      "Read(//mnt/**)"
+    ]
+  }
+}

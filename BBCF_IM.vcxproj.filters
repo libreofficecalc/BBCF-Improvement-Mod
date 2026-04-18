@@ -175,6 +175,7 @@
     <ClCompile Include="src\Overlay\Window\ReplayRewindWindow.cpp" />
     <ClCompile Include="src\Game\ReplayRewind\ReplayRewind.cpp" />
     <ClCompile Include="src\Hooks\hooks_battle_input.cpp" />
+    <ClCompile Include="src\Hooks\RankedAutomationHarness.cpp" />
     <ClCompile Include="src\Core\Localization.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -346,6 +347,7 @@
     <ClInclude Include="src\Overlay\Window\ReplayRewindWindow.h" />
     <ClInclude Include="src\Game\ReplayRewind\ReplayRewind.h" />
     <ClInclude Include="src\Hooks\hooks_battle_input.h" />
+    <ClInclude Include="src\Hooks\RankedAutomationHarness.h" />
     <ClInclude Include="src\Core\Localization.h" />
     <ClInclude Include="src\Palette\impl_templates.h" />
   </ItemGroup>

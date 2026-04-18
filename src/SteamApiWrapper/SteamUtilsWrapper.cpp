@@ -1,7 +1,27 @@
 #include "SteamUtilsWrapper.h"
+#include "steamApiWrappers.h"
 
 #include "Core/logger.h"
 #include "Core/utils.h"
+
+#include <isteamuserstats.h>
+
+namespace
+{
+	const char* GetCallbackName(int callbackId)
+	{
+		switch (callbackId)
+		{
+		case UserStatsReceived_t::k_iCallback: return "UserStatsReceived_t";
+		case LeaderboardFindResult_t::k_iCallback: return "LeaderboardFindResult_t";
+		case LeaderboardScoresDownloaded_t::k_iCallback: return "LeaderboardScoresDownloaded_t";
+		case LeaderboardScoreUploaded_t::k_iCallback: return "LeaderboardScoreUploaded_t";
+		case NumberOfCurrentPlayers_t::k_iCallback: return "NumberOfCurrentPlayers_t";
+		case GlobalStatsReceived_t::k_iCallback: return "GlobalStatsReceived_t";
+		default: return "UnknownCallback";
+		}
+	}
+}
 
 SteamUtilsWrapper::SteamUtilsWrapper(ISteamUtils** pSteamUtils)
 {
@@ -99,8 +119,104 @@ ESteamAPICallFailure SteamUtilsWrapper::GetAPICallFailureReason(SteamAPICall_t h
 
 bool SteamUtilsWrapper::GetAPICallResult(SteamAPICall_t hSteamAPICall, void *pCallback, int cubCallback, int iCallbackExpected, bool *pbFailed)
 {
-	LOG(7, "GetAPICallResult\n");
-	return m_SteamUtils->GetAPICallResult(hSteamAPICall, pCallback, cubCallback, iCallbackExpected, pbFailed);
+	const bool result = m_SteamUtils->GetAPICallResult(hSteamAPICall, pCallback, cubCallback, iCallbackExpected, pbFailed);
+	const std::string origin = GetSteamApiCallLabel(hSteamAPICall);
+	LOG(2, "[STEAM][APICall] GetAPICallResult call=%llu expected=%d type=%s origin='%s' cbSize=%d result=%d failed=%d callback=%p\n",
+		static_cast<unsigned long long>(hSteamAPICall), iCallbackExpected,
+		GetCallbackName(iCallbackExpected), origin.empty() ? "<unknown>" : origin.c_str(),
+		cubCallback,
+		result ? 1 : 0, pbFailed ? (*pbFailed ? 1 : 0) : -1, pCallback);
+
+	if (!result || !pCallback)
+	{
+		return result;
+	}
+
+	if (iCallbackExpected == LeaderboardFindResult_t::k_iCallback && cubCallback >= static_cast<int>(sizeof(LeaderboardFindResult_t)))
+	{
+		const LeaderboardFindResult_t* cb = static_cast<const LeaderboardFindResult_t*>(pCallback);
+		std::string leaderboardName = origin;
+		const std::string prefixFind = "FindLeaderboard:";
+		const std::string prefixCreate = "FindOrCreateLeaderboard:";
+		const std::string prefixRawFind = "RawFindLeaderboard:";
+		const std::string prefixRawCreate = "RawFindOrCreateLeaderboard:";
+		const std::string prefixFlatFind = "FlatFindLeaderboard:";
+		const std::string prefixFlatCreate = "FlatFindOrCreateLeaderboard:";
+		if (leaderboardName.rfind(prefixFind, 0) == 0)
+		{
+			leaderboardName = leaderboardName.substr(prefixFind.size());
+		}
+		else if (leaderboardName.rfind(prefixCreate, 0) == 0)
+		{
+			leaderboardName = leaderboardName.substr(prefixCreate.size());
+		}
+		else if (leaderboardName.rfind(prefixRawFind, 0) == 0)
+		{
+			leaderboardName = leaderboardName.substr(prefixRawFind.size());
+		}
+		else if (leaderboardName.rfind(prefixRawCreate, 0) == 0)
+		{
+			leaderboardName = leaderboardName.substr(prefixRawCreate.size());
+		}
+		else if (leaderboardName.rfind(prefixFlatFind, 0) == 0)
+		{
+			leaderboardName = leaderboardName.substr(prefixFlatFind.size());
+		}
+		else if (leaderboardName.rfind(prefixFlatCreate, 0) == 0)
+		{
+			leaderboardName = leaderboardName.substr(prefixFlatCreate.size());
+		}
+
+		if (cb->m_bLeaderboardFound && !leaderboardName.empty())
+		{
+			RegisterLeaderboardHandleName(cb->m_hSteamLeaderboard, leaderboardName);
+		}
+
+		LOG(2, "[STEAM][APICall] LeaderboardFindResult origin='%s' found=%d handle=%llu resolvedName='%s'\n",
+			origin.empty() ? "<unknown>" : origin.c_str(),
+			cb->m_bLeaderboardFound ? 1 : 0,
+			static_cast<unsigned long long>(cb->m_hSteamLeaderboard),
+			GetLeaderboardHandleName(cb->m_hSteamLeaderboard).c_str());
+	}
+	else if (iCallbackExpected == LeaderboardScoresDownloaded_t::k_iCallback && cubCallback >= static_cast<int>(sizeof(LeaderboardScoresDownloaded_t)))
+	{
+		const LeaderboardScoresDownloaded_t* cb = static_cast<const LeaderboardScoresDownloaded_t*>(pCallback);
+		const std::string leaderboardName = GetLeaderboardHandleName(cb->m_hSteamLeaderboard);
+		if (!leaderboardName.empty())
+		{
+			RegisterLeaderboardEntriesName(cb->m_hSteamLeaderboardEntries, leaderboardName);
+		}
+
+		LOG(2, "[STEAM][APICall] LeaderboardScoresDownloaded origin='%s' handle=%llu name='%s' entries=%llu count=%d\n",
+			origin.empty() ? "<unknown>" : origin.c_str(),
+			static_cast<unsigned long long>(cb->m_hSteamLeaderboard),
+			leaderboardName.c_str(),
+			static_cast<unsigned long long>(cb->m_hSteamLeaderboardEntries),
+			cb->m_cEntryCount);
+	}
+	else if (iCallbackExpected == LeaderboardScoreUploaded_t::k_iCallback && cubCallback >= static_cast<int>(sizeof(LeaderboardScoreUploaded_t)))
+	{
+		const LeaderboardScoreUploaded_t* cb = static_cast<const LeaderboardScoreUploaded_t*>(pCallback);
+		LOG(2, "[STEAM][APICall] LeaderboardScoreUploaded origin='%s' success=%d changed=%d score=%d newRank=%d prevRank=%d\n",
+			origin.empty() ? "<unknown>" : origin.c_str(),
+			cb->m_bSuccess ? 1 : 0,
+			cb->m_bScoreChanged ? 1 : 0,
+			cb->m_nScore,
+			cb->m_nGlobalRankNew,
+			cb->m_nGlobalRankPrevious);
+
+	}
+	else if (iCallbackExpected == UserStatsReceived_t::k_iCallback && cubCallback >= static_cast<int>(sizeof(UserStatsReceived_t)))
+	{
+		const UserStatsReceived_t* cb = static_cast<const UserStatsReceived_t*>(pCallback);
+		LOG(2, "[STEAM][APICall] UserStatsReceived result=%d game=%llu steamID=%llu origin='%s'\n",
+			static_cast<int>(cb->m_eResult),
+			static_cast<unsigned long long>(cb->m_nGameID),
+			cb->m_steamIDUser.ConvertToUint64(),
+			origin.empty() ? "<unknown>" : origin.c_str());
+	}
+
+	return result;
 }
 
 // Deprecated. Applications should use SteamAPI_RunCallbacks() instead. Game servers do not need to call this function.

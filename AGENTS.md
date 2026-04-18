@@ -4,6 +4,7 @@ This handbook is a one-stop map for agents modifying the BBCF Improvement Mod. T
 
 ## Build requirements and outputs
 - **Toolchain**: Visual Studio plus Windows SDK for Win32 DLL builds. In this workspace, the verified command-line build uses MSBuild with an explicit `v143` override even if the project file requests a newer/missing toolset: `"/mnt/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe" BBCF_IM.sln /m /p:Configuration=Debug /p:Platform=Win32 /p:PlatformToolset=v143`. Open `BBCF_IM.sln` and build `Release|Win32` (primary ship) or `Debug|Win32`.
+- **Configuration choice — never use Deploy configurations from agent builds**: `DebugDeploy|Win32` and `ReleaseDeploy|Win32` auto-copy the DLL to the BBCF install directory AND launch BBCF via Steam as a post-build step. Use `Debug|Win32` or `Release|Win32` for all agent-initiated builds; the operator deploys and launches manually.
 - **Third-party bundles (vendored in `depends/`)**: Detours for function patching; DirectX 9 SDK headers/libs; Steamworks SDK headers/redistributable; ImGui source; a WinHTTP client helper. Include/lib paths are pre-wired in `BBCF_IM.vcxproj`.
 - **Primary output**: `bin/<Config>/dinput8.dll` plus symbol-less exports defined in `export/dinput8.def`. Ship `settings.ini` and `palettes.ini` (templates in `resource/`) beside `BBCF.exe`.
 - **Runtime folder**: The mod auto-creates `BBCF_IM/` in the game directory for user palettes, saves, crash dumps, and logs.
@@ -85,7 +86,7 @@ This handbook is a one-stop map for agents modifying the BBCF Improvement Mod. T
 - Unlimited Replay Takeover snapshot-train crash tracking is documented in `docs/replay_takeover/URT_SNAPSHOT_DEBUG_STATUS.md`. Read it before modifying URT snapshot/playback behavior so all agents stay aligned on current hypotheses, blockers, and required log checkpoints.
 
 ## Operator deploy workflow
-- For RE/testing turns, agents should handle build+deploy prep end-to-end (except launching `BBCF.exe`): build `DebugDeploy`, install `dinput8.dll`, refresh `settings.ini`, preserve user non-default settings by backing up and merging, then apply required test toggles (e.g., debug/retrace logging). The operator should only need to launch the game and run requested in-game steps.
+- User has their own easy deploy workflow. Default rule for agents: do **not** build or deploy automatically unless user explicitly asks. For RE/testing turns, agents should normally stop after preparing code/logging/config changes and tell the operator exactly what to run/test in game.
 - For repetitive URT repro loops, agents can run one automated cycle via `./tools/urt_automation/run_bbcf_debug_cycle.sh` (repo root). This launches `tools/urt_automation/BBCF-Automatic-Debugger.ahk`, waits for AHK completion, and then closes `BBCF.exe` if still running.
 - Automation caveat: AHK may temporarily take full keyboard/mouse control while the macro runs.
 - Exact current definition of "one cycle" (toast-by-toast behavior) is documented in `docs/replay_takeover/URT_RE_EXECUTION_PLAN.md` under `Automation mode (single debug cycle)`.

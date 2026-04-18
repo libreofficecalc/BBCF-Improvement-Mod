@@ -7,6 +7,7 @@
 #include "Game/gamestates.h"
 #include "Game/stages.h"
 #include "Hooks/HookManager.h"
+#include "Hooks/RankedAutomationHarness.h"
 #include "Network/RoomManager.h"
 #include "Overlay/WindowManager.h"
 #include "SteamApiWrapper/steamApiWrappers.h"
@@ -17,6 +18,8 @@
 #include "Game/ReplayFiles/ReplayFileManager.h"
 #include "Game/Playbacks/UnlimitedPlaybackManager.h"
 #include "Game/ReplayTakeover/ReplayTakeoverFeatureFlags.h"
+#include <detours.h>
+#include <intrin.h>
 #if BBCF_ENABLE_UNLIMITED_REPLAY_TAKEOVER
 #include "Game/ReplayTakeover/UnlimitedReplayTakeoverManager.h"
 #endif
@@ -29,9 +32,1090 @@ extern "C" void HandleControllerWndProcMessage(UINT msg, WPARAM wParam, LPARAM l
 
 
 DWORD GetGameStateTitleScreenJmpBackAddr = 0;
+DWORD RankUploadCallsiteTraceJmpBackAddr = 0;
+DWORD RankUploadBuilderTraceJmpBackAddr = 0;
+DWORD RankUploadStateMachineTraceJmpBackAddr = 0;
+DWORD RankUploadStateMachineCallTargetAddr = 0;
+DWORD RankUploadComposeTraceJmpBackAddr = 0;
+DWORD RankUploadPackSelectTraceJmpBackAddr = 0;
+DWORD RankUploadPackSelectCallTargetAddr = 0;
+DWORD RankUploadPackedWriteTraceJmpBackAddr = 0;
+DWORD RankUploadSourcePairTraceJmpBackAddr = 0;
+DWORD RankUploadSourcePairCopyCheckAddr = 0;
+DWORD RankUploadSourceTotalTraceJmpBackAddr = 0;
+DWORD RankUploadBit4SkipContinueAddr = 0;
+DWORD RankUploadBit4SkipJmpAddr = 0;
+DWORD RankUploadPhase3PostCallTraceJmpBackAddr = 0;
+DWORD RankUploadPhase3CallTargetAddr = 0;
+
+void RankedProbeTickFrameState();
+void RankedProbeNoteLobbyCaller();
+void RankedProbeNoteBuilder();
+void RankedProbeNoteCompose();
+void RankedProbeNoteState3Enter();
+void RankedProbeNotePackSelect();
+void RankedProbeNotePhase3();
+void RankedProbeNoteBit4Skip();
+void RankedProbeNoteSourceTotal();
+void RankedProbeNoteSourcePair();
+void RankedProbeNoteWritePacked();
+void RankedProbeNoteGameCall();
+void RankedProbeNoteUpload();
+void RankedProbeDumpSummary(const char* reason);
+
+typedef uint32_t(__thiscall* RankUploadStateMachineDirectFn)(void* self);
+RankUploadStateMachineDirectFn orig_RankUploadStateMachineDirect = nullptr;
 
 namespace {
+#pragma intrinsic(_ReturnAddress)
+
 void NormalizeMenuExitModeIfNeeded();
+
+struct RankedProbeStats
+{
+	unsigned int seq = 0;
+	unsigned int matchCycleCount = 0;
+	unsigned int currentMatchStartSeq = 0;
+	unsigned int currentMatchStartUploadCount = 0;
+	unsigned int currentMatchStartState3Count = 0;
+	unsigned int currentMatchStartPackSelectCount = 0;
+	unsigned int currentMatchStartPhase3Count = 0;
+	unsigned int currentMatchStartBit4SkipCount = 0;
+	unsigned int currentMatchStartSourceTotalCount = 0;
+	unsigned int currentMatchStartSourcePairCount = 0;
+	unsigned int currentMatchStartWritePackedCount = 0;
+	unsigned int currentMatchStartGameCallCount = 0;
+	unsigned int lobbyCallerCount = 0;
+	unsigned int builderCount = 0;
+	unsigned int composeCount = 0;
+	unsigned int state3EnterCount = 0;
+	unsigned int packSelectCount = 0;
+	unsigned int phase3Count = 0;
+	unsigned int bit4SkipCount = 0;
+	unsigned int sourceTotalCount = 0;
+	unsigned int sourcePairCount = 0;
+	unsigned int writePackedCount = 0;
+	unsigned int gameCallCount = 0;
+	unsigned int uploadCount = 0;
+
+	unsigned int firstLobbyCallerSeq = 0;
+	unsigned int firstBuilderSeq = 0;
+	unsigned int firstComposeSeq = 0;
+	unsigned int firstState3EnterSeq = 0;
+	unsigned int firstPackSelectSeq = 0;
+	unsigned int firstPhase3Seq = 0;
+	unsigned int firstBit4SkipSeq = 0;
+	unsigned int firstSourceTotalSeq = 0;
+	unsigned int firstSourcePairSeq = 0;
+	unsigned int firstWritePackedSeq = 0;
+	unsigned int firstGameCallSeq = 0;
+	unsigned int firstUploadSeq = 0;
+	unsigned int firstInMatchSeq = 0;
+	unsigned int firstOutOfMatchAfterInMatchSeq = 0;
+
+	bool frameStateInitialized = false;
+	int lastGameMode = -9999;
+	int lastGameState = -9999;
+	int lastSceneStatus = -9999;
+};
+
+RankedProbeStats g_rankedProbeStats;
+
+unsigned int RankedProbeBumpSeq()
+{
+	++g_rankedProbeStats.seq;
+	return g_rankedProbeStats.seq;
+}
+
+void RankedProbeLogStageFirst(const char* stage, unsigned int seq, bool trusted)
+{
+	LOG(2, "[RANK][Stage] seq=%u stage=%s trusted=%d\n",
+		seq,
+		stage ? stage : "(null)",
+		trusted ? 1 : 0);
+}
+
+void RankedProbeNoteStage(unsigned int& count, unsigned int& firstSeq, const char* stage, bool trusted)
+{
+	const unsigned int seq = RankedProbeBumpSeq();
+	++count;
+	if (firstSeq == 0)
+	{
+		firstSeq = seq;
+		RankedProbeLogStageFirst(stage, seq, trusted);
+	}
+}
+
+unsigned int RankedProbeFirstTrustedSeq()
+{
+	unsigned int firstTrusted = 0;
+	const unsigned int trustedSeqs[] = {
+		g_rankedProbeStats.firstState3EnterSeq,
+		g_rankedProbeStats.firstPackSelectSeq,
+		g_rankedProbeStats.firstPhase3Seq,
+		g_rankedProbeStats.firstBit4SkipSeq,
+		g_rankedProbeStats.firstSourceTotalSeq,
+		g_rankedProbeStats.firstSourcePairSeq,
+		g_rankedProbeStats.firstWritePackedSeq,
+		g_rankedProbeStats.firstGameCallSeq,
+		g_rankedProbeStats.firstUploadSeq,
+	};
+
+	for (unsigned int seq : trustedSeqs)
+	{
+		if (seq == 0)
+		{
+			continue;
+		}
+
+		if (firstTrusted == 0 || seq < firstTrusted)
+		{
+			firstTrusted = seq;
+		}
+	}
+
+	return firstTrusted;
+}
+
+void RankedProbeDumpSummaryImpl(const char* reason)
+{
+	const unsigned int firstTrusted = RankedProbeFirstTrustedSeq();
+	const unsigned int firstInMatch = g_rankedProbeStats.firstInMatchSeq;
+	const int trustedBeforeMatch = (firstTrusted != 0 && (firstInMatch == 0 || firstTrusted < firstInMatch)) ? 1 : 0;
+	const int cheapPathTrusted = trustedBeforeMatch;
+
+	LOG(2, "[RANK][VerdictSummary] reason='%s' seq=%u lobby=%u builder=%u compose=%u state3=%u packSelect=%u phase3=%u bit4skip=%u sourceTotal=%u sourcePair=%u writePacked=%u gameCall=%u upload=%u\n",
+		reason ? reason : "<null>",
+		g_rankedProbeStats.seq,
+		g_rankedProbeStats.lobbyCallerCount,
+		g_rankedProbeStats.builderCount,
+		g_rankedProbeStats.composeCount,
+		g_rankedProbeStats.state3EnterCount,
+		g_rankedProbeStats.packSelectCount,
+		g_rankedProbeStats.phase3Count,
+		g_rankedProbeStats.bit4SkipCount,
+		g_rankedProbeStats.sourceTotalCount,
+		g_rankedProbeStats.sourcePairCount,
+		g_rankedProbeStats.writePackedCount,
+		g_rankedProbeStats.gameCallCount,
+		g_rankedProbeStats.uploadCount);
+	LOG(2, "[RANK][VerdictSummary] firstSeq lobby=%u builder=%u compose=%u state3=%u packSelect=%u phase3=%u bit4skip=%u sourceTotal=%u sourcePair=%u writePacked=%u gameCall=%u upload=%u firstInMatch=%u firstOutOfMatchAfterInMatch=%u firstTrusted=%u cheapPathTrusted=%d\n",
+		g_rankedProbeStats.firstLobbyCallerSeq,
+		g_rankedProbeStats.firstBuilderSeq,
+		g_rankedProbeStats.firstComposeSeq,
+		g_rankedProbeStats.firstState3EnterSeq,
+		g_rankedProbeStats.firstPackSelectSeq,
+		g_rankedProbeStats.firstPhase3Seq,
+		g_rankedProbeStats.firstBit4SkipSeq,
+		g_rankedProbeStats.firstSourceTotalSeq,
+		g_rankedProbeStats.firstSourcePairSeq,
+		g_rankedProbeStats.firstWritePackedSeq,
+		g_rankedProbeStats.firstGameCallSeq,
+		g_rankedProbeStats.firstUploadSeq,
+		g_rankedProbeStats.firstInMatchSeq,
+		g_rankedProbeStats.firstOutOfMatchAfterInMatchSeq,
+		firstTrusted,
+		cheapPathTrusted);
+
+	if (cheapPathTrusted != 0)
+	{
+		LOG(2, "[RANK][VerdictSummary] interpretation=trusted_rank_chain_reached_before_first_inmatch_transition\n");
+	}
+	else
+	{
+		LOG(2, "[RANK][VerdictSummary] interpretation=no_trusted_rank_chain_before_first_inmatch_transition\n");
+	}
+}
+
+void RankedProbeDumpCycleSummary(const char* reason, unsigned int seq)
+{
+	if (g_rankedProbeStats.currentMatchStartSeq == 0)
+	{
+		return;
+	}
+
+	const unsigned int uploadsDuringCycle = g_rankedProbeStats.uploadCount - g_rankedProbeStats.currentMatchStartUploadCount;
+	const unsigned int state3DuringCycle = g_rankedProbeStats.state3EnterCount - g_rankedProbeStats.currentMatchStartState3Count;
+	const unsigned int packSelectDuringCycle = g_rankedProbeStats.packSelectCount - g_rankedProbeStats.currentMatchStartPackSelectCount;
+	const unsigned int phase3DuringCycle = g_rankedProbeStats.phase3Count - g_rankedProbeStats.currentMatchStartPhase3Count;
+	const unsigned int bit4SkipDuringCycle = g_rankedProbeStats.bit4SkipCount - g_rankedProbeStats.currentMatchStartBit4SkipCount;
+	const unsigned int sourceTotalDuringCycle = g_rankedProbeStats.sourceTotalCount - g_rankedProbeStats.currentMatchStartSourceTotalCount;
+	const unsigned int sourcePairDuringCycle = g_rankedProbeStats.sourcePairCount - g_rankedProbeStats.currentMatchStartSourcePairCount;
+	const unsigned int writePackedDuringCycle = g_rankedProbeStats.writePackedCount - g_rankedProbeStats.currentMatchStartWritePackedCount;
+	const unsigned int gameCallDuringCycle = g_rankedProbeStats.gameCallCount - g_rankedProbeStats.currentMatchStartGameCallCount;
+	const unsigned int trustedDuringCycle = state3DuringCycle + packSelectDuringCycle + phase3DuringCycle + bit4SkipDuringCycle +
+		sourceTotalDuringCycle + sourcePairDuringCycle + writePackedDuringCycle + gameCallDuringCycle + uploadsDuringCycle;
+
+	LOG(2, "[RANK][CycleSummary] reason='%s' cycle=%u startSeq=%u endSeq=%u uploads=%u state3=%u packSelect=%u phase3=%u bit4skip=%u sourceTotal=%u sourcePair=%u writePacked=%u gameCall=%u trusted=%u\n",
+		reason ? reason : "<null>",
+		g_rankedProbeStats.matchCycleCount,
+		g_rankedProbeStats.currentMatchStartSeq,
+		seq,
+		uploadsDuringCycle,
+		state3DuringCycle,
+		packSelectDuringCycle,
+		phase3DuringCycle,
+		bit4SkipDuringCycle,
+		sourceTotalDuringCycle,
+		sourcePairDuringCycle,
+		writePackedDuringCycle,
+		gameCallDuringCycle,
+		trustedDuringCycle);
+}
+
+void LogRankUiProbeDword(const char* label, uint32_t value)
+{
+	const uint32_t rankId = (value >> 16) & 0xFFFF;
+	const uint32_t subscore = value & 0xFFFF;
+	LOG(2, "[RANK][UiProbe] %s=0x%08X (%u) parts rank_id=0x%04X subscore=0x%04X\n",
+		label ? label : "(null)",
+		static_cast<unsigned int>(value),
+		static_cast<unsigned int>(value),
+		static_cast<unsigned int>(rankId),
+		static_cast<unsigned int>(subscore));
+}
+
+void LogRankUiProbe(const char* tag)
+{
+	static int s_budget = 12;
+	if (s_budget <= 0)
+	{
+		return;
+	}
+
+	uint8_t* const base = reinterpret_cast<uint8_t*>(GetBbcfBaseAdress());
+	if (!base)
+	{
+		return;
+	}
+
+	uint8_t* const netUserData = base + 0x004AD0C0;
+	if (IsBadReadPtr(netUserData, 0x1C2C0))
+	{
+		LOG(2, "[RANK][UiProbe] tag=%s netUserData=0x%p unreadable\n",
+			tag ? tag : "(null)",
+			netUserData);
+		--s_budget;
+		return;
+	}
+
+	const uint32_t searchFlag = *reinterpret_cast<uint32_t*>(base + 0x008F7758);
+	const uint32_t net22d10 = *reinterpret_cast<uint32_t*>(netUserData + 0x22D10);
+	const uint32_t net23218Raw = *reinterpret_cast<uint32_t*>(netUserData + 0x23218);
+	const uint32_t off6a1c = *reinterpret_cast<uint32_t*>(netUserData + 0x6A1C);
+	const uint32_t off6a20 = *reinterpret_cast<uint32_t*>(netUserData + 0x6A20);
+	const uint32_t off6a24 = *reinterpret_cast<uint32_t*>(netUserData + 0x6A24);
+	const uint32_t off6a28 = *reinterpret_cast<uint32_t*>(netUserData + 0x6A28);
+	const uint32_t off1c2ac = *reinterpret_cast<uint32_t*>(netUserData + 0x1C2AC);
+	const uint32_t off1c2b0 = *reinterpret_cast<uint32_t*>(netUserData + 0x1C2B0);
+	const uint32_t off1c2b4 = *reinterpret_cast<uint32_t*>(netUserData + 0x1C2B4);
+	const uint32_t off1c2b8 = *reinterpret_cast<uint32_t*>(netUserData + 0x1C2B8);
+
+	LOG(2, "[RANK][UiProbe] tag=%s netUserData=0x%p searchFlag=0x%08X roomPtr=0x%p\n",
+		tag ? tag : "(null)",
+		netUserData,
+		static_cast<unsigned int>(searchFlag),
+		g_gameVals.pRoom);
+	LogRankUiProbeDword("net_22d10", net22d10);
+	LogRankUiProbeDword("net_23218_raw", net23218Raw);
+	LogRankUiProbeDword("net_6a1c", off6a1c);
+	LogRankUiProbeDword("net_6a20", off6a20);
+	LogRankUiProbeDword("net_6a24", off6a24);
+	LogRankUiProbeDword("net_6a28", off6a28);
+	LogRankUiProbeDword("net_1c2ac", off1c2ac);
+	LogRankUiProbeDword("net_1c2b0", off1c2b0);
+	LogRankUiProbeDword("net_1c2b4", off1c2b4);
+	LogRankUiProbeDword("net_1c2b8", off1c2b8);
+	--s_budget;
+}
+
+void LogRankUploadCallsiteState(uint32_t ediValue, uint32_t esiValue, uint32_t eaxValue, uint32_t edxValue)
+{
+	RankedProbeNoteGameCall();
+
+	uint8_t* const bbcfBase = reinterpret_cast<uint8_t*>(GetBbcfBaseAdress());
+	uint8_t* const self = reinterpret_cast<uint8_t*>(ediValue);
+	if (!bbcfBase)
+	{
+		LOG(2, "[RANK][GameCall] base=<null>\n");
+		return;
+	}
+
+	if (!self || IsBadReadPtr(self, 0x2614))
+	{
+		LOG(2, "[RANK][GameCall] self=0x%p unreadable esi=0x%08X target=0x%08X vtbl_src=0x%08X\n",
+			self,
+			static_cast<unsigned int>(esiValue),
+			static_cast<unsigned int>(eaxValue),
+			static_cast<unsigned int>(edxValue));
+		return;
+	}
+
+	const uint32_t field18 = *reinterpret_cast<uint32_t*>(self + 0x18);
+	const uint32_t field1c = *reinterpret_cast<uint32_t*>(self + 0x1C);
+	const uint32_t field2610 = *reinterpret_cast<uint32_t*>(self + 0x2610);
+	const uint32_t detail0 = *reinterpret_cast<uint32_t*>(self + 0x0CC8);
+	const uint32_t detail1 = *reinterpret_cast<uint32_t*>(self + 0x0CCC);
+	const uint32_t detail2 = *reinterpret_cast<uint32_t*>(self + 0x0CD0);
+	const uint32_t detail3 = *reinterpret_cast<uint32_t*>(self + 0x0CD4);
+	const uint32_t scoreRankId = (field2610 >> 16) & 0xFFFF;
+	const uint32_t scoreSub = field2610 & 0xFFFF;
+
+	LOG(2, "[RANK][GameCall] callsite=BBCF+0x0001EF5F self=0x%p target=0x%08X vtbl_src=0x%08X field18=0x%08X (%u) field1C=0x%08X (%u) esi=0x%08X (%u) field2610=0x%08X (%u)\n",
+		self,
+		static_cast<unsigned int>(eaxValue),
+		static_cast<unsigned int>(edxValue),
+		static_cast<unsigned int>(field18),
+		static_cast<unsigned int>(field18),
+		static_cast<unsigned int>(field1c),
+		static_cast<unsigned int>(field1c),
+		static_cast<unsigned int>(esiValue),
+		static_cast<unsigned int>(esiValue),
+		static_cast<unsigned int>(field2610),
+		static_cast<unsigned int>(field2610));
+	LOG(2, "[RANK][GameCall] field2610_parts rank_id=0x%04X (%u) subscore=0x%04X (%u) details=[%u,%u,%u,%u]\n",
+		static_cast<unsigned int>(scoreRankId),
+		static_cast<unsigned int>(scoreRankId),
+		static_cast<unsigned int>(scoreSub),
+		static_cast<unsigned int>(scoreSub),
+		static_cast<unsigned int>(detail0),
+		static_cast<unsigned int>(detail1),
+		static_cast<unsigned int>(detail2),
+		static_cast<unsigned int>(detail3));
+}
+
+void LogRankUploadBuilderState(uint32_t esiValue, uint32_t eaxValue, uint32_t ecxValue, uint32_t ebpValue)
+{
+	RankedProbeNoteBuilder();
+
+	uint8_t* const manager = reinterpret_cast<uint8_t*>(esiValue);
+	uint8_t* const ownerRegion = manager ? manager + 0x313C : nullptr;
+	uint8_t* const frame = reinterpret_cast<uint8_t*>(ebpValue);
+
+	uint32_t localMinus24 = 0;
+	uint32_t localMinus1C = 0;
+	uint32_t localMinus18 = 0;
+	if (frame && !IsBadReadPtr(frame - 0x24, 0x24))
+	{
+		localMinus24 = *reinterpret_cast<uint32_t*>(frame - 0x24);
+		localMinus1C = *reinterpret_cast<uint32_t*>(frame - 0x1C);
+		localMinus18 = *reinterpret_cast<uint32_t*>(frame - 0x18);
+	}
+
+	LOG(2, "[RANK][Builder] callsite=BBCF+0x0001D1A2 manager=0x%p owner_region=0x%p ecx_local=0x%08X (%u) eax_local=0x%08X (%u) ebp=0x%08X local_m24=0x%08X (%u) local_m1C=0x%08X (%u) local_m18=0x%08X (%u)\n",
+		manager,
+		ownerRegion,
+		static_cast<unsigned int>(ecxValue),
+		static_cast<unsigned int>(ecxValue),
+		static_cast<unsigned int>(eaxValue),
+		static_cast<unsigned int>(eaxValue),
+		static_cast<unsigned int>(ebpValue),
+		static_cast<unsigned int>(localMinus24),
+		static_cast<unsigned int>(localMinus24),
+		static_cast<unsigned int>(localMinus1C),
+		static_cast<unsigned int>(localMinus1C),
+		static_cast<unsigned int>(localMinus18),
+		static_cast<unsigned int>(localMinus18));
+}
+
+struct RankedStateMachineSnapshot
+{
+	uint32_t self = 0;
+	uint32_t state = 0xFFFFFFFFu;
+	uint32_t count = 0xFFFFFFFFu;
+	uint32_t field910 = 0xFFFFFFFFu;
+	uint32_t field914 = 0xFFFFFFFFu;
+	uint32_t field918 = 0xFFFFFFFFu;
+	unsigned int seenCalls = 0;
+	unsigned int lastLoggedCycle = 0xFFFFFFFFu;
+	bool used = false;
+};
+
+bool TryLogRankUploadStateMachineCandidate(const char* callsite, const char* label, uint32_t selfValue)
+{
+	uint8_t* const self = reinterpret_cast<uint8_t*>(selfValue);
+	if (!self || IsBadReadPtr(self, 0x91C))
+	{
+		return false;
+	}
+
+	const uint32_t state = *reinterpret_cast<uint32_t*>(self + 0x4);
+	const uint32_t count = *reinterpret_cast<uint32_t*>(self + 0x8);
+	const uint32_t field910 = *reinterpret_cast<uint32_t*>(self + 0x910);
+	const uint32_t field914 = *reinterpret_cast<uint32_t*>(self + 0x914);
+	const uint32_t field918 = *reinterpret_cast<uint32_t*>(self + 0x918);
+
+	static RankedStateMachineSnapshot s_snapshots[32];
+	RankedStateMachineSnapshot* slot = nullptr;
+	for (RankedStateMachineSnapshot& snapshot : s_snapshots)
+	{
+		if (snapshot.used && snapshot.self == selfValue)
+		{
+			slot = &snapshot;
+			break;
+		}
+		if (!snapshot.used && !slot)
+		{
+			slot = &snapshot;
+		}
+	}
+
+	if (!slot)
+	{
+		return false;
+	}
+
+	const bool changed = !slot->used
+		|| slot->state != state
+		|| slot->count != count
+		|| slot->field910 != field910
+		|| slot->field914 != field914
+		|| slot->field918 != field918;
+	const bool firstSeenThisCycle = (!slot->used || slot->lastLoggedCycle != g_rankedProbeStats.matchCycleCount);
+	const bool periodicHeartbeat = slot->used && ((slot->seenCalls % 256u) == 0u);
+	const bool state3Entered = (!slot->used || slot->state != 3) && state == 3;
+
+	if (state3Entered)
+	{
+		RankedProbeNoteState3Enter();
+	}
+
+	if (changed || firstSeenThisCycle || periodicHeartbeat)
+	{
+		LOG(2, "[RANK][StateMachine] callsite=%s source=%s self=0x%p state=%u count=%u field910=0x%08X (%u) field914=0x%08X (%u) field918=0x%08X (%u) seenCalls=%u\n",
+			callsite ? callsite : "(null)",
+			label ? label : "(null)",
+			self,
+			static_cast<unsigned int>(state),
+			static_cast<unsigned int>(count),
+			static_cast<unsigned int>(field910),
+			static_cast<unsigned int>(field910),
+			static_cast<unsigned int>(field914),
+			static_cast<unsigned int>(field914),
+			static_cast<unsigned int>(field918),
+			static_cast<unsigned int>(field918),
+			static_cast<unsigned int>(slot->seenCalls));
+	}
+
+	slot->used = true;
+	slot->self = selfValue;
+	slot->state = state;
+	slot->count = count;
+	slot->field910 = field910;
+	slot->field914 = field914;
+	slot->field918 = field918;
+	++slot->seenCalls;
+	slot->lastLoggedCycle = g_rankedProbeStats.matchCycleCount;
+	return true;
+}
+
+const char* FormatRankedDirectCallsiteLabel(const void* returnAddr, char* buffer, size_t bufferSize)
+{
+	if (!buffer || bufferSize == 0)
+	{
+		return "(null)";
+	}
+
+	const uintptr_t rawReturn = reinterpret_cast<uintptr_t>(returnAddr);
+	const uintptr_t base = reinterpret_cast<uintptr_t>(GetBbcfBaseAdress());
+	if (base != 0 && rawReturn >= base)
+	{
+		_snprintf_s(buffer, bufferSize, _TRUNCATE, "BBCF+0x%08X", static_cast<unsigned int>(rawReturn - base));
+	}
+	else
+	{
+		_snprintf_s(buffer, bufferSize, _TRUNCATE, "RET=0x%08X", static_cast<unsigned int>(rawReturn));
+	}
+
+	return buffer;
+}
+
+void LogRankUploadStateMachineDirectPass(const char* phase, void* selfPtr, const void* returnAddr, uint32_t resultValue)
+{
+	char callsiteLabel[32] = {};
+	const char* const callsite = FormatRankedDirectCallsiteLabel(returnAddr, callsiteLabel, sizeof(callsiteLabel));
+	if (!TryLogRankUploadStateMachineCandidate(callsite, phase, static_cast<uint32_t>(reinterpret_cast<uintptr_t>(selfPtr))))
+	{
+		LOG(2, "[RANK][StateMachineDirect] callsite=%s phase=%s self=0x%p unreadable result=0x%08X\n",
+			callsite,
+			phase ? phase : "(null)",
+			selfPtr,
+			static_cast<unsigned int>(resultValue));
+	}
+}
+
+void LogRankUploadStateMachineAfter(uint32_t ecxValue, uint32_t ebxValue, uint32_t esiValue, uint32_t ediValue, uint32_t ebpValue)
+{
+	bool logged = false;
+	logged = TryLogRankUploadStateMachineCandidate("BBCF+0x0001D10D", "ecx", ecxValue) || logged;
+	logged = TryLogRankUploadStateMachineCandidate("BBCF+0x0001D10D", "ebx", ebxValue) || logged;
+	logged = TryLogRankUploadStateMachineCandidate("BBCF+0x0001D10D", "esi", esiValue) || logged;
+	logged = TryLogRankUploadStateMachineCandidate("BBCF+0x0001D10D", "edi", ediValue) || logged;
+
+	if (!logged)
+	{
+		LOG(2, "[RANK][StateMachine] callsite=BBCF+0x0001D10D candidates unreadable ecx=0x%08X ebx=0x%08X esi=0x%08X edi=0x%08X ebp=0x%08X\n",
+			static_cast<unsigned int>(ecxValue),
+			static_cast<unsigned int>(ebxValue),
+			static_cast<unsigned int>(esiValue),
+			static_cast<unsigned int>(ediValue),
+			static_cast<unsigned int>(ebpValue));
+	}
+}
+
+uint32_t __fastcall HookedRankUploadStateMachineDirect(void* self, void* /*edx*/)
+{
+	const void* const returnAddr = _ReturnAddress();
+	LogRankUploadStateMachineDirectPass("entry", self, returnAddr, 0);
+
+	const uint32_t result = orig_RankUploadStateMachineDirect ? orig_RankUploadStateMachineDirect(self) : 0;
+
+	LogRankUploadStateMachineDirectPass("exit", self, returnAddr, result);
+	return result;
+}
+
+void LogRankUploadPackSelectPostCall(uint32_t stateValue, uint32_t selectorPrimary, uint32_t selectorSecondary, uint32_t tableValue)
+{
+	RankedProbeNotePackSelect();
+
+	uint8_t* const state = reinterpret_cast<uint8_t*>(stateValue);
+	if (!state || IsBadReadPtr(state, 0x91C))
+	{
+		LOG(2, "[RANK][PackSelect] site=BBCF+0x00020534 state=0x%p unreadable selPrimary=%u selSecondary=%u table=0x%08X\n",
+			state,
+			static_cast<unsigned int>(selectorPrimary),
+			static_cast<unsigned int>(selectorSecondary),
+			static_cast<unsigned int>(tableValue));
+		return;
+	}
+
+	const uint32_t stateId = *reinterpret_cast<uint32_t*>(state + 0x4);
+	const uint32_t count = *reinterpret_cast<uint32_t*>(state + 0x8);
+	const uint32_t field910 = *reinterpret_cast<uint32_t*>(state + 0x910);
+	const uint32_t field914 = *reinterpret_cast<uint32_t*>(state + 0x914);
+	const uint32_t field918 = *reinterpret_cast<uint32_t*>(state + 0x918);
+
+	LOG(2, "[RANK][PackSelect] site=BBCF+0x00020534 state=0x%p stateId=%u count=%u field910=0x%08X (%u) field914=0x%08X (%u) field918=0x%08X (%u) selPrimary=%u selSecondary=%u table=0x%08X\n",
+		state,
+		static_cast<unsigned int>(stateId),
+		static_cast<unsigned int>(count),
+		static_cast<unsigned int>(field910),
+		static_cast<unsigned int>(field910),
+		static_cast<unsigned int>(field914),
+		static_cast<unsigned int>(field914),
+		static_cast<unsigned int>(field918),
+		static_cast<unsigned int>(field918),
+		static_cast<unsigned int>(selectorPrimary),
+		static_cast<unsigned int>(selectorSecondary),
+		static_cast<unsigned int>(tableValue));
+}
+
+void LogRankUploadComposeBefore(uint32_t providerValue, uint32_t entryValue, uint32_t ebpValue)
+{
+	RankedProbeNoteCompose();
+
+	static int s_budget = 48;
+	if (s_budget <= 0)
+	{
+		return;
+	}
+
+	uint8_t* const frame = reinterpret_cast<uint8_t*>(ebpValue);
+	uint8_t* const entry = reinterpret_cast<uint8_t*>(entryValue);
+	if (!frame || !entry || IsBadReadPtr(frame - 0x55F8, 0x10) || IsBadReadPtr(entry + 0x30, sizeof(uint32_t)))
+	{
+		LOG(2, "[RANK][Compose] pre unreadable provider=0x%08X entry=0x%p ebp=0x%08X\n",
+			static_cast<unsigned int>(providerValue),
+			entry,
+			static_cast<unsigned int>(ebpValue));
+		--s_budget;
+		return;
+	}
+
+	const uint32_t count = *reinterpret_cast<uint32_t*>(frame - 0x55F8);
+	const uint32_t field18 = *reinterpret_cast<uint32_t*>(entry + 0x18);
+	const uint32_t field20 = *reinterpret_cast<uint32_t*>(entry + 0x20);
+	const uint32_t field24 = *reinterpret_cast<uint32_t*>(entry + 0x24);
+	const uint32_t key = *reinterpret_cast<uint32_t*>(entry + 0x30);
+	const uint32_t buf0 = *reinterpret_cast<uint32_t*>(frame - 0x55F4);
+	const uint32_t buf1 = *reinterpret_cast<uint32_t*>(frame - 0x55F0);
+	const uint32_t buf2 = *reinterpret_cast<uint32_t*>(frame - 0x55EC);
+	const uint32_t buf3 = *reinterpret_cast<uint32_t*>(frame - 0x55E8);
+	const uint32_t rankId = (buf0 >> 16) & 0xFFFF;
+	const uint32_t subscore = buf0 & 0xFFFF;
+
+	LOG(2, "[RANK][Compose] pre callsite=BBCF+0x00024ABC provider=0x%08X entry=0x%p field18=0x%08X field20=0x%08X field24=0x%08X key_30=0x%08X (%u) count=0x%08X (%u) buf=[0x%08X,0x%08X,0x%08X,0x%08X] parts rank_id=0x%04X subscore=0x%04X\n",
+		static_cast<unsigned int>(providerValue),
+		entry,
+		static_cast<unsigned int>(field18),
+		static_cast<unsigned int>(field20),
+		static_cast<unsigned int>(field24),
+		static_cast<unsigned int>(key),
+		static_cast<unsigned int>(key),
+		static_cast<unsigned int>(count),
+		static_cast<unsigned int>(count),
+		static_cast<unsigned int>(buf0),
+		static_cast<unsigned int>(buf1),
+		static_cast<unsigned int>(buf2),
+		static_cast<unsigned int>(buf3),
+		static_cast<unsigned int>(rankId),
+		static_cast<unsigned int>(subscore));
+	--s_budget;
+}
+
+void LogRankUploadComposeAfter(uint32_t entryValue, uint32_t ebpValue, uint32_t returnValue)
+{
+	static int s_budget = 48;
+	if (s_budget <= 0)
+	{
+		return;
+	}
+
+	uint8_t* const frame = reinterpret_cast<uint8_t*>(ebpValue);
+	uint8_t* const entry = reinterpret_cast<uint8_t*>(entryValue);
+	if (!frame || !entry || IsBadReadPtr(frame - 0x55F8, 0x10) || IsBadReadPtr(entry + 0x30, sizeof(uint32_t)))
+	{
+		LOG(2, "[RANK][Compose] post unreadable retval=0x%08X entry=0x%p ebp=0x%08X\n",
+			static_cast<unsigned int>(returnValue),
+			entry,
+			static_cast<unsigned int>(ebpValue));
+		--s_budget;
+		return;
+	}
+
+	const uint32_t count = *reinterpret_cast<uint32_t*>(frame - 0x55F8);
+	const uint32_t field18 = *reinterpret_cast<uint32_t*>(entry + 0x18);
+	const uint32_t field20 = *reinterpret_cast<uint32_t*>(entry + 0x20);
+	const uint32_t field24 = *reinterpret_cast<uint32_t*>(entry + 0x24);
+	const uint32_t key = *reinterpret_cast<uint32_t*>(entry + 0x30);
+	const uint32_t buf0 = *reinterpret_cast<uint32_t*>(frame - 0x55F4);
+	const uint32_t buf1 = *reinterpret_cast<uint32_t*>(frame - 0x55F0);
+	const uint32_t buf2 = *reinterpret_cast<uint32_t*>(frame - 0x55EC);
+	const uint32_t buf3 = *reinterpret_cast<uint32_t*>(frame - 0x55E8);
+	const uint32_t rankId = (buf0 >> 16) & 0xFFFF;
+	const uint32_t subscore = buf0 & 0xFFFF;
+
+	LOG(2, "[RANK][Compose] post retval=0x%08X (%u) entry=0x%p field18=0x%08X field20=0x%08X field24=0x%08X key_30=0x%08X (%u) count=0x%08X (%u) buf=[0x%08X,0x%08X,0x%08X,0x%08X] parts rank_id=0x%04X subscore=0x%04X\n",
+		static_cast<unsigned int>(returnValue),
+		static_cast<unsigned int>(returnValue),
+		entry,
+		static_cast<unsigned int>(field18),
+		static_cast<unsigned int>(field20),
+		static_cast<unsigned int>(field24),
+		static_cast<unsigned int>(key),
+		static_cast<unsigned int>(key),
+		static_cast<unsigned int>(count),
+		static_cast<unsigned int>(count),
+		static_cast<unsigned int>(buf0),
+		static_cast<unsigned int>(buf1),
+		static_cast<unsigned int>(buf2),
+		static_cast<unsigned int>(buf3),
+		static_cast<unsigned int>(rankId),
+		static_cast<unsigned int>(subscore));
+	--s_budget;
+}
+
+void LogRankUploadPackedWrite(uint32_t objectValue, uint32_t tailValue, uint32_t sourceValue, uint32_t sourceSlotValue, uint32_t frameValue)
+{
+	RankedProbeNoteWritePacked();
+
+	static int s_budget = 36;
+	if (s_budget <= 0)
+	{
+		return;
+	}
+
+	uint8_t* const self = reinterpret_cast<uint8_t*>(objectValue);
+	uint8_t* const tail = reinterpret_cast<uint8_t*>(tailValue);
+	uint8_t* const sourceSlot = reinterpret_cast<uint8_t*>(sourceSlotValue);
+	uint8_t* const frame = reinterpret_cast<uint8_t*>(frameValue);
+	if (!self || IsBadReadPtr(self, 0x2614))
+	{
+		LOG(2, "[RANK][WritePacked] unreadable self=0x%p tail=0x%p src=0x%08X (%u) srcSlot=0x%p ebp=0x%08X\n",
+			self,
+			tail,
+			static_cast<unsigned int>(sourceValue),
+			static_cast<unsigned int>(sourceValue),
+			sourceSlot,
+			static_cast<unsigned int>(frameValue));
+		--s_budget;
+		return;
+	}
+
+	const uint32_t handle = *reinterpret_cast<uint32_t*>(self + 0x18);
+	const uint32_t field1c = *reinterpret_cast<uint32_t*>(self + 0x1C);
+	const uint32_t field2610 = *reinterpret_cast<uint32_t*>(self + 0x2610);
+	const uint32_t field2614 = *reinterpret_cast<uint32_t*>(self + 0x2614);
+	const uint32_t detail0 = *reinterpret_cast<uint32_t*>(self + 0x0CC8);
+	const uint32_t detail1 = *reinterpret_cast<uint32_t*>(self + 0x0CCC);
+	const uint32_t scoreRankId = (field2610 >> 16) & 0xFFFF;
+	const uint32_t scoreSub = field2610 & 0xFFFF;
+	const bool isRankAll = (handle == 1759932);
+	uint32_t slotPrevLo = 0;
+	uint32_t slotPrevHi = 0;
+	uint32_t slotCurLo = 0;
+	uint32_t slotCurHi = 0;
+	uint32_t slotNextLo = 0;
+	uint32_t slotNextHi = 0;
+	if (sourceSlot && !IsBadReadPtr(sourceSlot, 0x10))
+	{
+		slotCurLo = *reinterpret_cast<uint32_t*>(sourceSlot + 0x00);
+		slotCurHi = *reinterpret_cast<uint32_t*>(sourceSlot + 0x04);
+		slotNextLo = *reinterpret_cast<uint32_t*>(sourceSlot + 0x08);
+		slotNextHi = *reinterpret_cast<uint32_t*>(sourceSlot + 0x0C);
+	}
+	if (sourceSlotValue >= 8 && !IsBadReadPtr(sourceSlot - 0x08, 0x08))
+	{
+		slotPrevLo = *reinterpret_cast<uint32_t*>(sourceSlot - 0x08);
+		slotPrevHi = *reinterpret_cast<uint32_t*>(sourceSlot - 0x04);
+	}
+	uint32_t localM44 = 0;
+	uint32_t localM40 = 0;
+	uint32_t localM3C = 0;
+	uint32_t localM38 = 0;
+	if (frame && !IsBadReadPtr(frame - 0x44, 0x10))
+	{
+		localM44 = *reinterpret_cast<uint32_t*>(frame - 0x44);
+		localM40 = *reinterpret_cast<uint32_t*>(frame - 0x40);
+		localM3C = *reinterpret_cast<uint32_t*>(frame - 0x3C);
+		localM38 = *reinterpret_cast<uint32_t*>(frame - 0x38);
+	}
+
+	LOG(2, "[RANK][WritePacked] site=BBCF+0x000205A7 self=0x%p tail=0x%p handle=0x%08X (%u)%s field1C=0x%08X (%u) written=0x%08X (%u) live2610=0x%08X (%u) parts rank_id=0x%04X subscore=0x%04X field2614=0x%08X detail0=%u detail1=%u srcSlot=0x%p prev=[0x%08X,0x%08X] cur=[0x%08X,0x%08X] next=[0x%08X,0x%08X] locals=[0x%08X,0x%08X,0x%08X,0x%08X]\n",
+		self,
+		tail,
+		static_cast<unsigned int>(handle),
+		static_cast<unsigned int>(handle),
+		isRankAll ? " RANK_ALL" : "",
+		static_cast<unsigned int>(field1c),
+		static_cast<unsigned int>(field1c),
+		static_cast<unsigned int>(sourceValue),
+		static_cast<unsigned int>(sourceValue),
+		static_cast<unsigned int>(field2610),
+		static_cast<unsigned int>(field2610),
+		static_cast<unsigned int>(scoreRankId),
+		static_cast<unsigned int>(scoreSub),
+		static_cast<unsigned int>(field2614),
+		static_cast<unsigned int>(detail0),
+		static_cast<unsigned int>(detail1),
+		sourceSlot,
+		static_cast<unsigned int>(slotPrevLo),
+		static_cast<unsigned int>(slotPrevHi),
+		static_cast<unsigned int>(slotCurLo),
+		static_cast<unsigned int>(slotCurHi),
+		static_cast<unsigned int>(slotNextLo),
+		static_cast<unsigned int>(slotNextHi),
+		static_cast<unsigned int>(localM44),
+		static_cast<unsigned int>(localM40),
+		static_cast<unsigned int>(localM3C),
+		static_cast<unsigned int>(localM38));
+	--s_budget;
+}
+
+void LogRankUploadSourcePair(uint32_t sourceSlotValue, uint32_t stateValue, uint32_t frameValue)
+{
+	RankedProbeNoteSourcePair();
+
+	static int s_budget = 48;
+	if (s_budget <= 0)
+	{
+		return;
+	}
+
+	uint8_t* const sourceSlot = reinterpret_cast<uint8_t*>(sourceSlotValue);
+	uint8_t* const state = reinterpret_cast<uint8_t*>(stateValue);
+	uint8_t* const frame = reinterpret_cast<uint8_t*>(frameValue);
+	if (!sourceSlot || !state || !frame || IsBadReadPtr(sourceSlot, 0x40) || IsBadReadPtr(state - 0x20, 0x24) || IsBadReadPtr(frame - 0x54, 0x14))
+	{
+		LOG(2, "[RANK][SourcePair] unreadable slot=0x%p state=0x%p ebp=0x%08X\n",
+			sourceSlot,
+			state,
+			static_cast<unsigned int>(frameValue));
+		--s_budget;
+		return;
+	}
+
+	const uint32_t tableBase = *reinterpret_cast<uint32_t*>(frame - 0x48);
+	const uint32_t idListPtr = *reinterpret_cast<uint32_t*>(frame - 0x54);
+	uint32_t entryId = 0xFFFFFFFF;
+	if (idListPtr && !IsBadReadPtr(reinterpret_cast<void*>(idListPtr), sizeof(uint32_t)))
+	{
+		entryId = *reinterpret_cast<uint32_t*>(idListPtr);
+	}
+
+	uint8_t* sourceEntry = nullptr;
+	if (tableBase && entryId != 0xFFFFFFFF)
+	{
+		sourceEntry = reinterpret_cast<uint8_t*>(tableBase + static_cast<size_t>(entryId) * 0x48);
+	}
+
+	const uint32_t srcPairLo = *reinterpret_cast<uint32_t*>(frame - 0x44);
+	const uint32_t srcPairHi = *reinterpret_cast<uint32_t*>(frame - 0x40);
+	const uint32_t src2Lo = *reinterpret_cast<uint32_t*>(frame - 0x3C);
+	const uint32_t src2Hi = *reinterpret_cast<uint32_t*>(frame - 0x38);
+	const uint32_t srcTotalLo = sourceEntry && !IsBadReadPtr(sourceEntry + 0x18, 0x10) ? *reinterpret_cast<uint32_t*>(sourceEntry + 0x10) : 0;
+	const uint32_t srcTotalHi = sourceEntry && !IsBadReadPtr(sourceEntry + 0x18, 0x10) ? *reinterpret_cast<uint32_t*>(sourceEntry + 0x14) : 0;
+	const uint32_t oldPairLo = *reinterpret_cast<uint32_t*>(sourceSlot + 0x00);
+	const uint32_t oldPairHi = *reinterpret_cast<uint32_t*>(sourceSlot + 0x04);
+	const uint32_t guardAdd = *reinterpret_cast<uint32_t*>(state - 0x20);
+	const uint32_t guardCopy = *reinterpret_cast<uint32_t*>(state + 0x00);
+	const bool doAdd = (guardAdd != 0);
+	const bool doCopy = (!doAdd && guardCopy == 0);
+	const char* mode = doAdd ? "add" : (doCopy ? "copy" : "skip");
+	uint64_t newPair = (static_cast<uint64_t>(oldPairHi) << 32) | oldPairLo;
+	if (doAdd)
+	{
+		newPair += (static_cast<uint64_t>(srcPairHi) << 32) | srcPairLo;
+	}
+	else if (doCopy)
+	{
+		newPair = (static_cast<uint64_t>(srcPairHi) << 32) | srcPairLo;
+	}
+	const uint32_t newPairLo = static_cast<uint32_t>(newPair & 0xFFFFFFFFu);
+	const uint32_t newPairHi = static_cast<uint32_t>(newPair >> 32);
+	const uint32_t rankId = (newPairLo >> 16) & 0xFFFF;
+	const uint32_t subscore = newPairLo & 0xFFFF;
+
+	LOG(2, "[RANK][SourcePair] site=BBCF+0x000202AB slot=0x%p state=0x%p id=%u table=0x%08X srcEntry=0x%p mode=%s old=[0x%08X,0x%08X] src18=[0x%08X,0x%08X] src20=[0x%08X,0x%08X] src10=[0x%08X,0x%08X] new=[0x%08X,0x%08X] parts rank_id=0x%04X subscore=0x%04X\n",
+		sourceSlot,
+		state,
+		static_cast<unsigned int>(entryId),
+		static_cast<unsigned int>(tableBase),
+		sourceEntry,
+		mode,
+		static_cast<unsigned int>(oldPairLo),
+		static_cast<unsigned int>(oldPairHi),
+		static_cast<unsigned int>(srcPairLo),
+		static_cast<unsigned int>(srcPairHi),
+		static_cast<unsigned int>(src2Lo),
+		static_cast<unsigned int>(src2Hi),
+		static_cast<unsigned int>(srcTotalLo),
+		static_cast<unsigned int>(srcTotalHi),
+		static_cast<unsigned int>(newPairLo),
+		static_cast<unsigned int>(newPairHi),
+		static_cast<unsigned int>(rankId),
+		static_cast<unsigned int>(subscore));
+	--s_budget;
+}
+
+void LogRankUploadSourceTotal(uint32_t destSlotValue, uint32_t sourceEntryValue, uint32_t frameValue)
+{
+	RankedProbeNoteSourceTotal();
+
+	static int s_budget = 64;
+	if (s_budget <= 0)
+	{
+		return;
+	}
+
+	uint8_t* const destSlot = reinterpret_cast<uint8_t*>(destSlotValue);
+	uint8_t* const sourceEntry = reinterpret_cast<uint8_t*>(sourceEntryValue);
+	uint8_t* const frame = reinterpret_cast<uint8_t*>(frameValue);
+	if (!destSlot || !sourceEntry || !frame || IsBadReadPtr(destSlot, 0x10) || IsBadReadPtr(sourceEntry + 0x18, 0x10) || IsBadReadPtr(frame - 0x54, 0x14))
+	{
+		LOG(2, "[RANK][SourceTotal] unreadable dest=0x%p srcEntry=0x%p ebp=0x%08X\n",
+			destSlot,
+			sourceEntry,
+			static_cast<unsigned int>(frameValue));
+		--s_budget;
+		return;
+	}
+
+	const uint32_t tableBase = *reinterpret_cast<uint32_t*>(frame - 0x48);
+	const uint32_t idListPtr = *reinterpret_cast<uint32_t*>(frame - 0x54);
+	uint32_t entryId = 0xFFFFFFFF;
+	if (idListPtr && !IsBadReadPtr(reinterpret_cast<void*>(idListPtr), sizeof(uint32_t)))
+	{
+		entryId = *reinterpret_cast<uint32_t*>(idListPtr);
+	}
+
+	const uint32_t oldLo = *reinterpret_cast<uint32_t*>(destSlot + 0x00);
+	const uint32_t oldHi = *reinterpret_cast<uint32_t*>(destSlot + 0x04);
+	const uint32_t nextLo = *reinterpret_cast<uint32_t*>(destSlot + 0x08);
+	const uint32_t nextHi = *reinterpret_cast<uint32_t*>(destSlot + 0x0C);
+	const uint32_t src10Lo = *reinterpret_cast<uint32_t*>(sourceEntry + 0x10);
+	const uint32_t src10Hi = *reinterpret_cast<uint32_t*>(sourceEntry + 0x14);
+	const uint32_t src18Lo = *reinterpret_cast<uint32_t*>(sourceEntry + 0x18);
+	const uint32_t src18Hi = *reinterpret_cast<uint32_t*>(sourceEntry + 0x1C);
+
+	const uint64_t newPair = ((static_cast<uint64_t>(oldHi) << 32) | oldLo) + ((static_cast<uint64_t>(src10Hi) << 32) | src10Lo);
+	const uint32_t newLo = static_cast<uint32_t>(newPair & 0xFFFFFFFFu);
+	const uint32_t newHi = static_cast<uint32_t>(newPair >> 32);
+	const uint32_t rankId = (newLo >> 16) & 0xFFFF;
+	const uint32_t subscore = newLo & 0xFFFF;
+
+	LOG(2, "[RANK][SourceTotal] site=BBCF+0x00020291 slot=0x%p id=%u table=0x%08X srcEntry=0x%p old=[0x%08X,0x%08X] src10=[0x%08X,0x%08X] src18=[0x%08X,0x%08X] new=[0x%08X,0x%08X] next=[0x%08X,0x%08X] parts rank_id=0x%04X subscore=0x%04X\n",
+		destSlot,
+		static_cast<unsigned int>(entryId),
+		static_cast<unsigned int>(tableBase),
+		sourceEntry,
+		static_cast<unsigned int>(oldLo),
+		static_cast<unsigned int>(oldHi),
+		static_cast<unsigned int>(src10Lo),
+		static_cast<unsigned int>(src10Hi),
+		static_cast<unsigned int>(src18Lo),
+		static_cast<unsigned int>(src18Hi),
+		static_cast<unsigned int>(newLo),
+		static_cast<unsigned int>(newHi),
+		static_cast<unsigned int>(nextLo),
+		static_cast<unsigned int>(nextHi),
+		static_cast<unsigned int>(rankId),
+		static_cast<unsigned int>(subscore));
+	--s_budget;
+}
+
+void LogRankUploadBit4Skip(uint32_t entryIdValue, uint32_t slotValue, uint32_t frameValue)
+{
+	RankedProbeNoteBit4Skip();
+
+	static int s_budget = 16;
+	if (s_budget <= 0)
+	{
+		return;
+	}
+
+	uint8_t* const slot = reinterpret_cast<uint8_t*>(slotValue);
+	uint8_t* const frame = reinterpret_cast<uint8_t*>(frameValue);
+	if (!slot || !frame || IsBadReadPtr(slot, 0x10) || IsBadReadPtr(frame - 0x54, 0x14))
+	{
+		LOG(2, "[RANK][Bit4Skip] unreadable id=%u slot=0x%p ebp=0x%08X\n",
+			static_cast<unsigned int>(entryIdValue),
+			slot,
+			static_cast<unsigned int>(frameValue));
+		--s_budget;
+		return;
+	}
+
+	const uint32_t slotIndex = *reinterpret_cast<uint32_t*>(frame - 0x50);
+	if (slotIndex != 1)
+	{
+		return;
+	}
+
+	const uint32_t tableBase = *reinterpret_cast<uint32_t*>(frame - 0x48);
+	uint8_t* sourceEntry = nullptr;
+	if (tableBase)
+	{
+		sourceEntry = reinterpret_cast<uint8_t*>(tableBase + static_cast<size_t>(entryIdValue) * 0x48);
+	}
+
+	const uint32_t slotLo = *reinterpret_cast<uint32_t*>(slot + 0x00);
+	const uint32_t slotHi = *reinterpret_cast<uint32_t*>(slot + 0x04);
+	const uint32_t nextLo = *reinterpret_cast<uint32_t*>(slot + 0x08);
+	const uint32_t nextHi = *reinterpret_cast<uint32_t*>(slot + 0x0C);
+	uint32_t src10Lo = 0;
+	uint32_t src10Hi = 0;
+	uint32_t src18Lo = 0;
+	uint32_t src18Hi = 0;
+	if (sourceEntry && !IsBadReadPtr(sourceEntry + 0x18, 0x10))
+	{
+		src10Lo = *reinterpret_cast<uint32_t*>(sourceEntry + 0x10);
+		src10Hi = *reinterpret_cast<uint32_t*>(sourceEntry + 0x14);
+		src18Lo = *reinterpret_cast<uint32_t*>(sourceEntry + 0x18);
+		src18Hi = *reinterpret_cast<uint32_t*>(sourceEntry + 0x1C);
+	}
+
+	const uint32_t rankId = (slotLo >> 16) & 0xFFFF;
+	const uint32_t subscore = slotLo & 0xFFFF;
+
+	LOG(2, "[RANK][Bit4Skip] site=BBCF+0x0002027F slotIndex=%u id=%u slot=0x%p table=0x%08X srcEntry=0x%p cur=[0x%08X,0x%08X] next=[0x%08X,0x%08X] src10=[0x%08X,0x%08X] src18=[0x%08X,0x%08X] parts rank_id=0x%04X subscore=0x%04X\n",
+		static_cast<unsigned int>(slotIndex),
+		static_cast<unsigned int>(entryIdValue),
+		slot,
+		static_cast<unsigned int>(tableBase),
+		sourceEntry,
+		static_cast<unsigned int>(slotLo),
+		static_cast<unsigned int>(slotHi),
+		static_cast<unsigned int>(nextLo),
+		static_cast<unsigned int>(nextHi),
+		static_cast<unsigned int>(src10Lo),
+		static_cast<unsigned int>(src10Hi),
+		static_cast<unsigned int>(src18Lo),
+		static_cast<unsigned int>(src18Hi),
+		static_cast<unsigned int>(rankId),
+		static_cast<unsigned int>(subscore));
+	if (entryIdValue == 1)
+	{
+		LOG(2, "[RANK][PreUploadVerify] phase=Bit4Skip slotIndex=1 id=1 slot=0x%p cur=0x%08X src10=0x%08X src18=0x%08X parts rank_id=0x%04X subscore=0x%04X\n",
+			slot,
+			static_cast<unsigned int>(slotLo),
+			static_cast<unsigned int>(src10Lo),
+			static_cast<unsigned int>(src18Lo),
+			static_cast<unsigned int>(rankId),
+			static_cast<unsigned int>(subscore));
+	}
+	--s_budget;
+}
+
+void LogRankUploadPhase3PostCall(uint32_t stateValue, uint32_t returnValue)
+{
+	RankedProbeNotePhase3();
+
+	static int s_budget = 16;
+	if (s_budget <= 0)
+	{
+		return;
+	}
+
+	uint8_t* const state = reinterpret_cast<uint8_t*>(stateValue);
+	uint8_t* const slot = state ? (state + 0x118) : nullptr; // slotIndex 1 in the 0x88-stride family rooted at edi+0x90
+	if (!state || !slot || IsBadReadPtr(state + 0x918, 4) || IsBadReadPtr(slot, 0x10))
+	{
+		LOG(2, "[RANK][Phase3After41E980] unreadable state=0x%p ret=0x%08X\n",
+			state,
+			static_cast<unsigned int>(returnValue));
+		--s_budget;
+		return;
+	}
+
+	const uint32_t slotLo = *reinterpret_cast<uint32_t*>(slot + 0x00);
+	const uint32_t slotHi = *reinterpret_cast<uint32_t*>(slot + 0x04);
+	const uint32_t nextLo = *reinterpret_cast<uint32_t*>(slot + 0x08);
+	const uint32_t nextHi = *reinterpret_cast<uint32_t*>(slot + 0x0C);
+	const uint32_t state914 = *reinterpret_cast<uint32_t*>(state + 0x914);
+	const uint32_t state918 = *reinterpret_cast<uint32_t*>(state + 0x918);
+	const uint32_t tableBase = returnValue;
+	uint32_t src10Lo = 0;
+	uint32_t src10Hi = 0;
+	uint32_t src18Lo = 0;
+	uint32_t src18Hi = 0;
+	if (tableBase && !IsBadReadPtr(reinterpret_cast<void*>(tableBase + 0x48 + 0x1C), 0x10))
+	{
+		uint8_t* const entry1 = reinterpret_cast<uint8_t*>(tableBase + 0x48);
+		src10Lo = *reinterpret_cast<uint32_t*>(entry1 + 0x10);
+		src10Hi = *reinterpret_cast<uint32_t*>(entry1 + 0x14);
+		src18Lo = *reinterpret_cast<uint32_t*>(entry1 + 0x18);
+		src18Hi = *reinterpret_cast<uint32_t*>(entry1 + 0x1C);
+	}
+
+	const uint32_t rankId = (slotLo >> 16) & 0xFFFF;
+	const uint32_t subscore = slotLo & 0xFFFF;
+
+	LOG(2, "[RANK][Phase3After41E980] site=BBCF+0x00020035 state=0x%p ret_table=0x%08X state914=0x%08X state918=0x%08X slotIndex=1 slot=0x%p cur=[0x%08X,0x%08X] next=[0x%08X,0x%08X] entry1_src10=[0x%08X,0x%08X] entry1_src18=[0x%08X,0x%08X] parts rank_id=0x%04X subscore=0x%04X\n",
+		state,
+		static_cast<unsigned int>(tableBase),
+		static_cast<unsigned int>(state914),
+		static_cast<unsigned int>(state918),
+		slot,
+		static_cast<unsigned int>(slotLo),
+		static_cast<unsigned int>(slotHi),
+		static_cast<unsigned int>(nextLo),
+		static_cast<unsigned int>(nextHi),
+		static_cast<unsigned int>(src10Lo),
+		static_cast<unsigned int>(src10Hi),
+		static_cast<unsigned int>(src18Lo),
+		static_cast<unsigned int>(src18Hi),
+		static_cast<unsigned int>(rankId),
+		static_cast<unsigned int>(subscore));
+	LOG(2, "[RANK][PreUploadVerify] phase=After41E980 slotIndex=1 slot=0x%p cur=0x%08X entry1_src10=0x%08X entry1_src18=0x%08X parts rank_id=0x%04X subscore=0x%04X\n",
+		slot,
+		static_cast<unsigned int>(slotLo),
+		static_cast<unsigned int>(src10Lo),
+		static_cast<unsigned int>(src18Lo),
+		static_cast<unsigned int>(rankId),
+		static_cast<unsigned int>(subscore));
+	--s_budget;
+}
 
 void LogMenuExitState(const char* tag)
 {
@@ -83,6 +1167,438 @@ void NormalizeMenuExitModeIfNeeded()
 		*g_gameVals.pGameMode = GameMode_Training;
 	}
 }
+}
+
+void RankedProbeTickFrameState()
+{
+	if (!g_gameVals.pGameMode || !g_gameVals.pGameState)
+	{
+		return;
+	}
+
+	const int gameMode = *g_gameVals.pGameMode;
+	const int gameState = *g_gameVals.pGameState;
+	const int sceneStatus = GetGameSceneStatus();
+	if (!g_rankedProbeStats.frameStateInitialized)
+	{
+		g_rankedProbeStats.frameStateInitialized = true;
+		g_rankedProbeStats.lastGameMode = gameMode;
+		g_rankedProbeStats.lastGameState = gameState;
+		g_rankedProbeStats.lastSceneStatus = sceneStatus;
+
+		const unsigned int seq = RankedProbeBumpSeq();
+		LOG(2, "[RANK][State] seq=%u init mode=%d state=%d scene=%d\n",
+			seq,
+			gameMode,
+			gameState,
+			sceneStatus);
+		return;
+	}
+
+	if (gameMode == g_rankedProbeStats.lastGameMode &&
+		gameState == g_rankedProbeStats.lastGameState &&
+		sceneStatus == g_rankedProbeStats.lastSceneStatus)
+	{
+		return;
+	}
+
+	const int previousGameState = g_rankedProbeStats.lastGameState;
+	g_rankedProbeStats.lastGameMode = gameMode;
+	g_rankedProbeStats.lastGameState = gameState;
+	g_rankedProbeStats.lastSceneStatus = sceneStatus;
+
+	const unsigned int seq = RankedProbeBumpSeq();
+	LOG(2, "[RANK][State] seq=%u mode=%d state=%d scene=%d\n",
+		seq,
+		gameMode,
+		gameState,
+		sceneStatus);
+
+	if (gameState == GameState_InMatch && g_rankedProbeStats.firstInMatchSeq == 0)
+	{
+		g_rankedProbeStats.firstInMatchSeq = seq;
+		LOG(2, "[RANK][State] seq=%u marker=first_inmatch_transition\n", seq);
+	}
+	if (gameState == GameState_InMatch && previousGameState != GameState_InMatch)
+	{
+		++g_rankedProbeStats.matchCycleCount;
+		g_rankedProbeStats.currentMatchStartSeq = seq;
+		g_rankedProbeStats.currentMatchStartUploadCount = g_rankedProbeStats.uploadCount;
+		g_rankedProbeStats.currentMatchStartState3Count = g_rankedProbeStats.state3EnterCount;
+		g_rankedProbeStats.currentMatchStartPackSelectCount = g_rankedProbeStats.packSelectCount;
+		g_rankedProbeStats.currentMatchStartPhase3Count = g_rankedProbeStats.phase3Count;
+		g_rankedProbeStats.currentMatchStartBit4SkipCount = g_rankedProbeStats.bit4SkipCount;
+		g_rankedProbeStats.currentMatchStartSourceTotalCount = g_rankedProbeStats.sourceTotalCount;
+		g_rankedProbeStats.currentMatchStartSourcePairCount = g_rankedProbeStats.sourcePairCount;
+		g_rankedProbeStats.currentMatchStartWritePackedCount = g_rankedProbeStats.writePackedCount;
+		g_rankedProbeStats.currentMatchStartGameCallCount = g_rankedProbeStats.gameCallCount;
+		LOG(2, "[RANK][State] seq=%u marker=match_cycle_begin cycle=%u uploadBaseline=%u\n",
+			seq,
+			g_rankedProbeStats.matchCycleCount,
+			g_rankedProbeStats.currentMatchStartUploadCount);
+	}
+
+	if (previousGameState == GameState_InMatch &&
+		gameState != GameState_InMatch &&
+		g_rankedProbeStats.firstOutOfMatchAfterInMatchSeq == 0)
+	{
+		g_rankedProbeStats.firstOutOfMatchAfterInMatchSeq = seq;
+		LOG(2, "[RANK][State] seq=%u marker=first_out_of_match_after_inmatch\n", seq);
+		if (g_rankedProbeStats.uploadCount == 0)
+		{
+			RankedProbeDumpSummary("first_out_of_match_after_inmatch_no_upload");
+		}
+	}
+	if (previousGameState == GameState_InMatch &&
+		gameState != GameState_InMatch)
+	{
+		RankedProbeDumpCycleSummary("left_inmatch", seq);
+	}
+}
+
+void RankedProbeNoteLobbyCaller()
+{
+	RankedProbeNoteStage(g_rankedProbeStats.lobbyCallerCount, g_rankedProbeStats.firstLobbyCallerSeq, "LobbyCaller", false);
+}
+
+void RankedProbeNoteBuilder()
+{
+	RankedProbeNoteStage(g_rankedProbeStats.builderCount, g_rankedProbeStats.firstBuilderSeq, "Builder", false);
+}
+
+void RankedProbeNoteCompose()
+{
+	RankedProbeNoteStage(g_rankedProbeStats.composeCount, g_rankedProbeStats.firstComposeSeq, "Compose", false);
+}
+
+void RankedProbeNoteState3Enter()
+{
+	RankedProbeNoteStage(g_rankedProbeStats.state3EnterCount, g_rankedProbeStats.firstState3EnterSeq, "State3Enter", true);
+}
+
+void RankedProbeNotePackSelect()
+{
+	RankedProbeNoteStage(g_rankedProbeStats.packSelectCount, g_rankedProbeStats.firstPackSelectSeq, "PackSelect", true);
+}
+
+void RankedProbeNotePhase3()
+{
+	RankedProbeNoteStage(g_rankedProbeStats.phase3Count, g_rankedProbeStats.firstPhase3Seq, "Phase3After41E980", true);
+}
+
+void RankedProbeNoteBit4Skip()
+{
+	RankedProbeNoteStage(g_rankedProbeStats.bit4SkipCount, g_rankedProbeStats.firstBit4SkipSeq, "Bit4Skip", true);
+}
+
+void RankedProbeNoteSourceTotal()
+{
+	RankedProbeNoteStage(g_rankedProbeStats.sourceTotalCount, g_rankedProbeStats.firstSourceTotalSeq, "SourceTotal", true);
+}
+
+void RankedProbeNoteSourcePair()
+{
+	RankedProbeNoteStage(g_rankedProbeStats.sourcePairCount, g_rankedProbeStats.firstSourcePairSeq, "SourcePair", true);
+}
+
+void RankedProbeNoteWritePacked()
+{
+	RankedProbeNoteStage(g_rankedProbeStats.writePackedCount, g_rankedProbeStats.firstWritePackedSeq, "WritePacked", true);
+}
+
+void RankedProbeNoteGameCall()
+{
+	RankedProbeNoteStage(g_rankedProbeStats.gameCallCount, g_rankedProbeStats.firstGameCallSeq, "GameCall", true);
+}
+
+void RankedProbeNoteUpload()
+{
+	RankedProbeNoteStage(g_rankedProbeStats.uploadCount, g_rankedProbeStats.firstUploadSeq, "Upload", true);
+}
+
+void RankedProbeDumpSummary(const char* reason)
+{
+	RankedProbeDumpSummaryImpl(reason);
+}
+
+void __declspec(naked) RankUploadCallsiteTrace()
+{
+	LOG_ASM(2, "RankUploadCallsiteTrace\n");
+
+	__asm
+	{
+		pushfd
+		pushad
+		push edx
+		push eax
+		push esi
+		push edi
+		call LogRankUploadCallsiteState
+		add esp, 16
+		popad
+		popfd
+
+		push esi
+		push dword ptr [edi + 1Ch]
+		push dword ptr [edi + 18h]
+		call eax
+		jmp [RankUploadCallsiteTraceJmpBackAddr]
+	}
+}
+
+void __declspec(naked) RankUploadBuilderTrace()
+{
+	LOG_ASM(2, "RankUploadBuilderTrace\n");
+
+	__asm
+	{
+		pushfd
+		pushad
+		push ebp
+		push ecx
+		push eax
+		push esi
+		call LogRankUploadBuilderState
+		add esp, 16
+		popad
+		popfd
+
+		push esi
+		push eax
+		push ecx
+		mov [ebp - 14h], ecx
+		mov [ebp - 10h], eax
+		mov dword ptr [ebp - 0Ch], 3E8h
+		jmp [RankUploadBuilderTraceJmpBackAddr]
+	}
+}
+
+void __declspec(naked) RankUploadStateMachineTrace()
+{
+	LOG_ASM(2, "RankUploadStateMachineTrace\n");
+
+	__asm
+	{
+		push ecx
+		call [RankUploadStateMachineCallTargetAddr]
+		mov edx, eax
+
+		pushfd
+		pushad
+		push ebp
+		push edi
+		push esi
+		push ebx
+		push dword ptr [esp + 34h]
+		call LogRankUploadStateMachineAfter
+		add esp, 20
+		popad
+		popfd
+
+		pop ecx
+		mov eax, edx
+		jmp [RankUploadStateMachineTraceJmpBackAddr]
+	}
+}
+
+void __declspec(naked) RankUploadComposeTrace()
+{
+	LOG_ASM(2, "RankUploadComposeTrace\n");
+
+	__asm
+	{
+		pushfd
+		pushad
+		push ebp
+		push esi
+		push eax
+		call LogRankUploadComposeBefore
+		add esp, 12
+		popad
+		popfd
+
+		push dword ptr [ebp - 55F8h]
+		mov edx, dword ptr [eax]
+		lea ecx, [ebp - 55F4h]
+		push ecx
+		push dword ptr [esi + 30h]
+		mov ecx, eax
+		call dword ptr [edx + 10h]
+
+		pushfd
+		pushad
+		push eax
+		push ebp
+		push esi
+		call LogRankUploadComposeAfter
+		add esp, 12
+		popad
+		popfd
+
+		jmp [RankUploadComposeTraceJmpBackAddr]
+	}
+}
+
+void __declspec(naked) RankUploadPackSelectTrace()
+{
+	LOG_ASM(2, "RankUploadPackSelectTrace\n");
+
+	__asm
+	{
+		call [RankUploadPackSelectCallTargetAddr]
+
+		pushfd
+		pushad
+		push eax
+		push dword ptr [ebp - 58h]
+		push dword ptr [ebp - 50h]
+		push edi
+		call LogRankUploadPackSelectPostCall
+		add esp, 16
+		popad
+		popfd
+
+		jmp [RankUploadPackSelectTraceJmpBackAddr]
+	}
+}
+
+void __declspec(naked) RankUploadPackedWriteTrace()
+{
+	LOG_ASM(2, "RankUploadPackedWriteTrace\n");
+
+	__asm
+	{
+		mov eax, [esi - 8]
+		mov dword ptr [ebx + 25F0h], eax
+
+		pushfd
+		pushad
+		push ebp
+		lea ecx, [esi - 8]
+		push ecx
+		push eax
+		push ebx
+		lea ecx, [ebx - 20h]
+		push ecx
+		call LogRankUploadPackedWrite
+		add esp, 20
+		popad
+		popfd
+
+		mov eax, [esi - 4]
+		jmp [RankUploadPackedWriteTraceJmpBackAddr]
+	}
+}
+
+void __declspec(naked) RankUploadSourcePairTrace()
+{
+	LOG_ASM(2, "RankUploadSourcePairTrace\n");
+
+	__asm
+	{
+		pushfd
+		pushad
+		push ebp
+		push ebx
+		lea eax, [esi - 8]
+		push eax
+		call LogRankUploadSourcePair
+		add esp, 12
+		popad
+		popfd
+
+		cmp dword ptr [ebx - 20h], 0
+		je copy_check
+
+		mov eax, [ebp - 44h]
+		add dword ptr [esi - 8], eax
+		mov eax, [ebp - 40h]
+		adc dword ptr [esi - 4], eax
+		jmp done
+
+	copy_check:
+		jmp [RankUploadSourcePairCopyCheckAddr]
+
+	done:
+		jmp [RankUploadSourcePairTraceJmpBackAddr]
+	}
+}
+
+void __declspec(naked) RankUploadSourceTotalTrace()
+{
+	LOG_ASM(2, "RankUploadSourceTotalTrace\n");
+
+	__asm
+	{
+		pushfd
+		pushad
+		push ebp
+		push ecx
+		push edx
+		call LogRankUploadSourceTotal
+		add esp, 12
+		popad
+		popfd
+
+		push 40h
+		mov eax, [ecx + 10h]
+		add dword ptr [edx], eax
+		mov eax, [ecx + 14h]
+		adc dword ptr [edx + 4], eax
+		jmp [RankUploadSourceTotalTraceJmpBackAddr]
+	}
+}
+
+void __declspec(naked) RankUploadBit4SkipTrace()
+{
+	LOG_ASM(2, "RankUploadBit4SkipTrace\n");
+
+	__asm
+	{
+		mov edx, [ecx]
+		mov eax, [ebp - 48h]
+		lea ecx, [edx + edx * 2]
+		mov eax, [eax]
+		test byte ptr [eax + ecx * 8 + 10h], 4
+		jz continue_total
+
+		pushfd
+		pushad
+		push ebp
+		mov eax, [ebp - 4Ch]
+		push eax
+		push edx
+		call LogRankUploadBit4Skip
+		add esp, 12
+		popad
+		popfd
+
+		jmp [RankUploadBit4SkipJmpAddr]
+
+	continue_total:
+		jmp [RankUploadBit4SkipContinueAddr]
+	}
+}
+
+void __declspec(naked) RankUploadPhase3PostCallTrace()
+{
+	LOG_ASM(2, "RankUploadPhase3PostCallTrace\n");
+
+	__asm
+	{
+		call [RankUploadPhase3CallTargetAddr]
+
+		pushfd
+		pushad
+		push eax
+		push edi
+		call LogRankUploadPhase3PostCall
+		add esp, 8
+		popad
+		popfd
+
+		jmp [RankUploadPhase3PostCallTraceJmpBackAddr]
+	}
 }
 
 void __declspec(naked)GetGameStateTitleScreen()
@@ -171,6 +1687,7 @@ void __declspec(naked)GetGameStateLobby()
 	__asm pushad
 
 	MatchState::OnMatchEnd();
+	LogRankUiProbe("LobbyEnter");
 
 	__asm popad
 
@@ -649,6 +2166,8 @@ void __declspec(naked)GetFrameCounter()
 	__asm pushad
 	ControllerOverrideManager::GetInstance().TickAutoRefresh();
 	UnlimitedPlaybackManager::Instance().Tick();
+	RankedProbeTickFrameState();
+	RankedAutomationHarness::Tick();
 #if BBCF_ENABLE_UNLIMITED_REPLAY_TAKEOVER
 	{
 		UnlimitedReplayTakeoverManager::Instance().Tick();
@@ -680,6 +2199,7 @@ void __declspec(naked)GetRoomOne()
 	__asm pushad
 
 	g_interfaces.pRoomManager->JoinRoom(g_gameVals.pRoom);
+	LogRankUiProbe("RoomOne");
 
 	__asm popad
 
@@ -711,6 +2231,7 @@ void __declspec(naked)GetRoomTwo()
 	__asm pushad
 
 	g_interfaces.pRoomManager->JoinRoom(g_gameVals.pRoom);
+	LogRankUiProbe("RoomTwo");
 
 	__asm popad
 
@@ -954,7 +2475,36 @@ bool placeHooks_bbcf()
 
 	BeforeWriteReplayListDatJmpBackAddr = HookManager::SetHook("BeforeWriteReplayListDat", (DWORD)(GetBbcfBaseAdress() + 0x2C2AF8), 5, BeforeWriteReplayListDat);
 
-	HookManager::SetHook("SkipReplayListConfirm", (DWORD)(GetBbcfBaseAdress() + 0x002c3038), 5, SkipReplayListConfirm);
+		HookManager::SetHook("SkipReplayListConfirm", (DWORD)(GetBbcfBaseAdress() + 0x002c3038), 5, SkipReplayListConfirm);
+
+		RankUploadPhase3CallTargetAddr = (DWORD)(GetBbcfBaseAdress() + 0x0001E980);
+		RankUploadPhase3PostCallTraceJmpBackAddr = HookManager::SetHook("RankUploadPhase3PostCallTrace", (DWORD)(GetBbcfBaseAdress() + 0x00020035), 5, RankUploadPhase3PostCallTrace);
+		RankUploadCallsiteTraceJmpBackAddr = HookManager::SetHook("RankUploadCallsiteTrace", (DWORD)(GetBbcfBaseAdress() + 0x0001EF5F), 9, RankUploadCallsiteTrace);
+		// [DISABLED: BuilderTrace 0x1D1A2 - confirmed dead-end; builder front-end fires on cheap/lobby path without reaching trusted upload chain (section 50)]
+		// RankUploadBuilderTraceJmpBackAddr = HookManager::SetHook("RankUploadBuilderTrace", (DWORD)(GetBbcfBaseAdress() + 0x0001D1A2), 16, RankUploadBuilderTrace);
+
+		// [DISABLED: direct 0x1FEA0 state-machine Detour - regression suspect; state machine stays frozen at state=0 since this was added;
+		//  if 0x1FEA0 has a hidden stack arg (section 53 inline stub pushed ECX before calling), the __thiscall typedef and orig call here would miss it,
+		//  silently preventing state transitions 3/7/8/10 where all trusted stages fire (section 70)]
+		// RankUploadStateMachineCallTargetAddr = (DWORD)(GetBbcfBaseAdress() + 0x0001FEA0);
+		// if (!orig_RankUploadStateMachineDirect)
+		// {
+		// 	orig_RankUploadStateMachineDirect = reinterpret_cast<RankUploadStateMachineDirectFn>(
+		// 		DetourFunction(reinterpret_cast<PBYTE>(RankUploadStateMachineCallTargetAddr), reinterpret_cast<PBYTE>(HookedRankUploadStateMachineDirect)));
+		// 	LOG(2, "[RANK][StateMachineDirect] Hooked BBCF+0x0001FEA0 orig=0x%p\n", orig_RankUploadStateMachineDirect);
+		// }
+
+		// [DISABLED: ComposeTrace 0x24ABC - confirmed dead-end; never fired in upload runs, composition not at this site (sections 46-47)]
+		// RankUploadComposeTraceJmpBackAddr = HookManager::SetHook("RankUploadComposeTrace", (DWORD)(GetBbcfBaseAdress() + 0x00024ABC), 20, RankUploadComposeTrace);
+		RankUploadPackSelectCallTargetAddr = (DWORD)(GetBbcfBaseAdress() + 0x0001E980);
+		RankUploadPackSelectTraceJmpBackAddr = HookManager::SetHook("RankUploadPackSelectTrace", (DWORD)(GetBbcfBaseAdress() + 0x00020534), 5, RankUploadPackSelectTrace);
+		RankUploadBit4SkipContinueAddr = (DWORD)(GetBbcfBaseAdress() + 0x00020285);
+		RankUploadBit4SkipJmpAddr = (DWORD)(GetBbcfBaseAdress() + 0x000203DB);
+		HookManager::SetHook("RankUploadBit4SkipTrace", (DWORD)(GetBbcfBaseAdress() + 0x00020270), 15, RankUploadBit4SkipTrace);
+		RankUploadSourceTotalTraceJmpBackAddr = HookManager::SetHook("RankUploadSourceTotalTrace", (DWORD)(GetBbcfBaseAdress() + 0x00020291), 13, RankUploadSourceTotalTrace);
+		RankUploadSourcePairCopyCheckAddr = (DWORD)(GetBbcfBaseAdress() + 0x000202C2);
+		RankUploadSourcePairTraceJmpBackAddr = HookManager::SetHook("RankUploadSourcePairTrace", (DWORD)(GetBbcfBaseAdress() + 0x000202AE), 20, RankUploadSourcePairTrace);
+		RankUploadPackedWriteTraceJmpBackAddr = HookManager::SetHook("RankUploadPackedWriteTrace", (DWORD)(GetBbcfBaseAdress() + 0x000205A4), 12, RankUploadPackedWriteTrace);
 
 	return true;
 }
