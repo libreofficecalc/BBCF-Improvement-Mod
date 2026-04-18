@@ -63,7 +63,7 @@ void RankedProbeNoteGameCall();
 void RankedProbeNoteUpload();
 void RankedProbeDumpSummary(const char* reason);
 
-typedef uint32_t(__thiscall* RankUploadStateMachineDirectFn)(void* self);
+typedef uint32_t(__fastcall* RankUploadStateMachineDirectFn)(void* self, void* edx, void* selfArg);
 RankUploadStateMachineDirectFn orig_RankUploadStateMachineDirect = nullptr;
 
 namespace {
@@ -431,7 +431,15 @@ struct RankedStateMachineSnapshot
 	bool used = false;
 };
 
-bool TryLogRankUploadStateMachineCandidate(const char* callsite, const char* label, uint32_t selfValue)
+struct RankedStateMachineTransitionSnapshot
+{
+	uint32_t self = 0;
+	uint32_t lastState = 0xFFFFFFFFu;
+	uint32_t lastCount = 0xFFFFFFFFu;
+	bool used = false;
+};
+
+bool TryReadRankUploadStateMachineFields(uint32_t selfValue, uint32_t* outState, uint32_t* outCount, uint32_t* outField910, uint32_t* outField914, uint32_t* outField918)
 {
 	uint8_t* const self = reinterpret_cast<uint8_t*>(selfValue);
 	if (!self || IsBadReadPtr(self, 0x91C))
@@ -439,11 +447,43 @@ bool TryLogRankUploadStateMachineCandidate(const char* callsite, const char* lab
 		return false;
 	}
 
-	const uint32_t state = *reinterpret_cast<uint32_t*>(self + 0x4);
-	const uint32_t count = *reinterpret_cast<uint32_t*>(self + 0x8);
-	const uint32_t field910 = *reinterpret_cast<uint32_t*>(self + 0x910);
-	const uint32_t field914 = *reinterpret_cast<uint32_t*>(self + 0x914);
-	const uint32_t field918 = *reinterpret_cast<uint32_t*>(self + 0x918);
+	if (outState)
+	{
+		*outState = *reinterpret_cast<uint32_t*>(self + 0x4);
+	}
+	if (outCount)
+	{
+		*outCount = *reinterpret_cast<uint32_t*>(self + 0x8);
+	}
+	if (outField910)
+	{
+		*outField910 = *reinterpret_cast<uint32_t*>(self + 0x910);
+	}
+	if (outField914)
+	{
+		*outField914 = *reinterpret_cast<uint32_t*>(self + 0x914);
+	}
+	if (outField918)
+	{
+		*outField918 = *reinterpret_cast<uint32_t*>(self + 0x918);
+	}
+
+	return true;
+}
+
+bool TryLogRankUploadStateMachineCandidate(const char* callsite, const char* label, uint32_t selfValue)
+{
+	uint32_t state = 0;
+	uint32_t count = 0;
+	uint32_t field910 = 0;
+	uint32_t field914 = 0;
+	uint32_t field918 = 0;
+	if (!TryReadRankUploadStateMachineFields(selfValue, &state, &count, &field910, &field914, &field918))
+	{
+		return false;
+	}
+
+	uint8_t* const self = reinterpret_cast<uint8_t*>(selfValue);
 
 	static RankedStateMachineSnapshot s_snapshots[32];
 	RankedStateMachineSnapshot* slot = nullptr;
@@ -530,16 +570,297 @@ const char* FormatRankedDirectCallsiteLabel(const void* returnAddr, char* buffer
 	return buffer;
 }
 
-void LogRankUploadStateMachineDirectPass(const char* phase, void* selfPtr, const void* returnAddr, uint32_t resultValue)
+void LogRankedReturnAddressProbe(const char* label, uintptr_t returnAddr, uintptr_t moduleBase)
+{
+	if (!label || returnAddr < 8)
+	{
+		return;
+	}
+
+	const uint8_t* const probeStart = reinterpret_cast<const uint8_t*>(returnAddr - 16);
+	if (IsBadReadPtr(probeStart, 20))
+	{
+		return;
+	}
+
+	const uint8_t* exactCall = nullptr;
+	const char* exactKind = nullptr;
+	for (size_t offset = 0; offset < 16; ++offset)
+	{
+		const uint8_t* const cursor = probeStart + offset;
+		const uintptr_t cursorAddr = reinterpret_cast<uintptr_t>(cursor);
+		if (cursor[0] == 0xE8 && cursorAddr + 5 == returnAddr)
+		{
+			exactCall = cursor;
+			exactKind = "rel32";
+			break;
+		}
+		if (cursor[0] == 0xFF)
+		{
+			const uint8_t modrm = cursor[1];
+			const uint8_t reg = static_cast<uint8_t>((modrm >> 3) & 0x07);
+			if (reg == 2)
+			{
+				if (cursorAddr + 2 == returnAddr && modrm >= 0xD0 && modrm <= 0xD7)
+				{
+					exactCall = cursor;
+					exactKind = "ff_reg";
+					break;
+				}
+				if (modrm == 0x15 && cursorAddr + 6 == returnAddr)
+				{
+					exactCall = cursor;
+					exactKind = "ff_mem";
+					break;
+				}
+			}
+		}
+	}
+
+	if (!exactCall)
+	{
+		return;
+	}
+
+	const uintptr_t callAddr = reinterpret_cast<uintptr_t>(exactCall);
+	uintptr_t targetAddr = 0;
+	if (exactCall[0] == 0xE8)
+	{
+		const int32_t rel = *reinterpret_cast<const int32_t*>(exactCall + 1);
+		targetAddr = callAddr + 5 + rel;
+	}
+	else if (exactCall[0] == 0xFF && exactCall[1] == 0x15)
+	{
+		const uintptr_t ptrAddr = *reinterpret_cast<const uint32_t*>(exactCall + 2);
+		if (!IsBadReadPtr(reinterpret_cast<const void*>(ptrAddr), sizeof(uintptr_t)))
+		{
+			targetAddr = *reinterpret_cast<const uintptr_t*>(ptrAddr);
+		}
+	}
+
+	std::string bytes;
+	bytes.reserve(10 * 3);
+	for (size_t i = 0; i < 10; ++i)
+	{
+		char byteText[4] = {};
+		_snprintf_s(byteText, sizeof(byteText), _TRUNCATE, "%02X", static_cast<unsigned int>(exactCall[i]));
+		if (!bytes.empty())
+		{
+			bytes += ' ';
+		}
+		bytes += byteText;
+	}
+
+	LOG(2, "[RANK][StateMachineTransition] %s call_end=0x%p call_addr=0x%p call_rva=0x%08X kind=%s target=0x%p target_rva=0x%08X bytes=%s\n",
+		label,
+		reinterpret_cast<void*>(returnAddr),
+		reinterpret_cast<void*>(callAddr),
+		(moduleBase && callAddr >= moduleBase) ? static_cast<unsigned int>(callAddr - moduleBase) : 0u,
+		exactKind ? exactKind : "(null)",
+		reinterpret_cast<void*>(targetAddr),
+		(moduleBase && targetAddr >= moduleBase) ? static_cast<unsigned int>(targetAddr - moduleBase) : 0u,
+		bytes.c_str());
+}
+
+void LogRankUploadStateMachineTransitionContext(const char* phase, uint32_t selfValue, uint32_t previousState, uint32_t currentState, uint32_t previousCount, uint32_t currentCount, const void* returnAddr)
+{
+	static int s_budget = 24;
+	if (s_budget <= 0)
+	{
+		return;
+	}
+
+	void* const returnSlot = _AddressOfReturnAddress();
+	const uintptr_t moduleBase = reinterpret_cast<uintptr_t>(GetBbcfBaseAdress());
+	const uintptr_t rawReturn = reinterpret_cast<uintptr_t>(returnAddr);
+
+	LOG(2, "[RANK][StateMachineTransition] phase=%s self=0x%p state=%u->%u count=%u->%u return_addr=0x%p bbcf_rva=0x%08X return_slot=0x%p\n",
+		phase ? phase : "(null)",
+		reinterpret_cast<void*>(static_cast<uintptr_t>(selfValue)),
+		static_cast<unsigned int>(previousState),
+		static_cast<unsigned int>(currentState),
+		static_cast<unsigned int>(previousCount),
+		static_cast<unsigned int>(currentCount),
+		reinterpret_cast<void*>(rawReturn),
+		(moduleBase && rawReturn >= moduleBase) ? static_cast<unsigned int>(rawReturn - moduleBase) : 0u,
+		returnSlot);
+
+	if (returnSlot && !IsBadReadPtr(reinterpret_cast<const uint8_t*>(returnSlot) - (4 * sizeof(uint32_t)), 9 * sizeof(uint32_t)))
+	{
+		const uint32_t* const slotBase = reinterpret_cast<const uint32_t*>(returnSlot);
+		LOG(2, "[RANK][StateMachineTransition] stack=[%08X,%08X,%08X,%08X,%08X]\n",
+			static_cast<unsigned int>(slotBase[-1]),
+			static_cast<unsigned int>(slotBase[0]),
+			static_cast<unsigned int>(slotBase[1]),
+			static_cast<unsigned int>(slotBase[2]),
+			static_cast<unsigned int>(slotBase[3]));
+
+		bool loggedAnyFrame = false;
+		uintptr_t framePtr = static_cast<uintptr_t>(slotBase[-1]);
+		for (unsigned int depth = 0; depth < 4; ++depth)
+		{
+			if (framePtr == 0 || IsBadReadPtr(reinterpret_cast<const void*>(framePtr), 8))
+			{
+				break;
+			}
+
+			const uintptr_t nextFrame = *reinterpret_cast<const uintptr_t*>(framePtr);
+			const uintptr_t frameReturn = *reinterpret_cast<const uintptr_t*>(framePtr + sizeof(uintptr_t));
+			LOG(2, "[RANK][StateMachineTransition] ebp_bt_%u frame=0x%p return=0x%p bbcf_rva=0x%08X next=0x%p\n",
+				depth,
+				reinterpret_cast<void*>(framePtr),
+				reinterpret_cast<void*>(frameReturn),
+				(moduleBase && frameReturn >= moduleBase) ? static_cast<unsigned int>(frameReturn - moduleBase) : 0u,
+				reinterpret_cast<void*>(nextFrame));
+			loggedAnyFrame = true;
+
+			if (frameReturn >= 8)
+			{
+				const uint8_t* const frameCode = reinterpret_cast<const uint8_t*>(frameReturn - 8);
+				if (!IsBadReadPtr(frameCode, 16))
+				{
+					std::string bytes;
+					bytes.reserve(16 * 3);
+					for (size_t i = 0; i < 16; ++i)
+					{
+						char byteText[4] = {};
+						_snprintf_s(byteText, sizeof(byteText), _TRUNCATE, "%02X", static_cast<unsigned int>(frameCode[i]));
+						if (!bytes.empty())
+						{
+							bytes += ' ';
+						}
+						bytes += byteText;
+					}
+					LOG(2, "[RANK][StateMachineTransition] ebp_bt_%u code_bytes=%s\n", depth, bytes.c_str());
+				}
+			}
+
+			if (nextFrame <= framePtr)
+			{
+				break;
+			}
+			framePtr = nextFrame;
+		}
+
+		if (!loggedAnyFrame)
+		{
+			LOG(2, "[RANK][StateMachineTransition] ebp_bt_unavailable saved_ebp=0x%08X\n",
+				static_cast<unsigned int>(slotBase[-1]));
+		}
+	}
+
+	if (rawReturn >= 16)
+	{
+		const uint8_t* const codeStart = reinterpret_cast<const uint8_t*>(rawReturn - 16);
+		if (!IsBadReadPtr(codeStart, 24))
+		{
+			std::string bytes;
+			bytes.reserve(24 * 3);
+			for (size_t i = 0; i < 24; ++i)
+			{
+				char byteText[4] = {};
+				_snprintf_s(byteText, sizeof(byteText), _TRUNCATE, "%02X", static_cast<unsigned int>(codeStart[i]));
+				if (!bytes.empty())
+				{
+					bytes += ' ';
+				}
+				bytes += byteText;
+			}
+			LOG(2, "[RANK][StateMachineTransition] code_bytes=%s\n", bytes.c_str());
+		}
+	}
+
+	PVOID frames[6] = {};
+	const USHORT captured = CaptureStackBackTrace(0, 6, frames, nullptr);
+	for (USHORT i = 0; i < captured; ++i)
+	{
+		const uintptr_t frame = reinterpret_cast<uintptr_t>(frames[i]);
+		LOG(2, "[RANK][StateMachineTransition] bt_%u=0x%p bbcf_rva=0x%08X\n",
+			static_cast<unsigned int>(i),
+			reinterpret_cast<void*>(frame),
+			(moduleBase && frame >= moduleBase) ? static_cast<unsigned int>(frame - moduleBase) : 0u);
+
+		if (i >= 3)
+		{
+			char probeLabel[16] = {};
+			_snprintf_s(probeLabel, sizeof(probeLabel), _TRUNCATE, "bt_%u_probe", static_cast<unsigned int>(i));
+			LogRankedReturnAddressProbe(probeLabel, frame, moduleBase);
+		}
+	}
+
+	--s_budget;
+}
+
+void LogRankUploadStateMachineDirectPass(const char* phase, void* selfPtr, void* selfArgPtr, const void* returnAddr, uint32_t resultValue)
 {
 	char callsiteLabel[32] = {};
 	const char* const callsite = FormatRankedDirectCallsiteLabel(returnAddr, callsiteLabel, sizeof(callsiteLabel));
-	if (!TryLogRankUploadStateMachineCandidate(callsite, phase, static_cast<uint32_t>(reinterpret_cast<uintptr_t>(selfPtr))))
+	const uint32_t selfValue = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(selfPtr));
+	const uint32_t selfArgValue = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(selfArgPtr));
+	uint32_t state = 0;
+	uint32_t count = 0;
+	const bool readable = TryReadRankUploadStateMachineFields(selfValue, &state, &count, nullptr, nullptr, nullptr);
+
+	static RankedStateMachineTransitionSnapshot s_transitionSnapshots[32];
+	RankedStateMachineTransitionSnapshot* transitionSlot = nullptr;
+	for (RankedStateMachineTransitionSnapshot& snapshot : s_transitionSnapshots)
 	{
-		LOG(2, "[RANK][StateMachineDirect] callsite=%s phase=%s self=0x%p unreadable result=0x%08X\n",
+		if (snapshot.used && snapshot.self == selfValue)
+		{
+			transitionSlot = &snapshot;
+			break;
+		}
+		if (!snapshot.used && !transitionSlot)
+		{
+			transitionSlot = &snapshot;
+		}
+	}
+
+	if (readable && transitionSlot)
+	{
+		const bool changed = !transitionSlot->used || transitionSlot->lastState != state || transitionSlot->lastCount != count;
+		const bool meaningful = changed && (state != 0 || transitionSlot->lastState != 0xFFFFFFFFu);
+		if (meaningful)
+		{
+			LogRankUploadStateMachineTransitionContext(
+				phase,
+				selfValue,
+				transitionSlot->lastState,
+				state,
+				transitionSlot->lastCount,
+				count,
+				returnAddr);
+		}
+
+		transitionSlot->used = true;
+		transitionSlot->self = selfValue;
+		transitionSlot->lastState = state;
+		transitionSlot->lastCount = count;
+	}
+
+	bool logged = false;
+	logged = TryLogRankUploadStateMachineCandidate(callsite, phase, selfValue) || logged;
+	if (selfArgValue != 0 && selfArgValue != selfValue)
+	{
+		logged = TryLogRankUploadStateMachineCandidate(callsite, "stack_arg", selfArgValue) || logged;
+	}
+
+	if (!logged)
+	{
+		LOG(2, "[RANK][StateMachineDirect] callsite=%s phase=%s self=0x%p selfArg=0x%p unreadable result=0x%08X\n",
 			callsite,
 			phase ? phase : "(null)",
 			selfPtr,
+			selfArgPtr,
+			static_cast<unsigned int>(resultValue));
+	}
+	else if (selfArgValue != 0 && selfArgValue != selfValue)
+	{
+		LOG(2, "[RANK][StateMachineDirect] callsite=%s phase=%s self=0x%p selfArg=0x%p result=0x%08X\n",
+			callsite,
+			phase ? phase : "(null)",
+			selfPtr,
+			selfArgPtr,
 			static_cast<unsigned int>(resultValue));
 	}
 }
@@ -563,14 +884,14 @@ void LogRankUploadStateMachineAfter(uint32_t ecxValue, uint32_t ebxValue, uint32
 	}
 }
 
-uint32_t __fastcall HookedRankUploadStateMachineDirect(void* self, void* /*edx*/)
+uint32_t __fastcall HookedRankUploadStateMachineDirect(void* self, void* edx, void* selfArg)
 {
 	const void* const returnAddr = _ReturnAddress();
-	LogRankUploadStateMachineDirectPass("entry", self, returnAddr, 0);
+	LogRankUploadStateMachineDirectPass("entry", self, selfArg, returnAddr, 0);
 
-	const uint32_t result = orig_RankUploadStateMachineDirect ? orig_RankUploadStateMachineDirect(self) : 0;
+	const uint32_t result = orig_RankUploadStateMachineDirect ? orig_RankUploadStateMachineDirect(self, edx, selfArg) : 0;
 
-	LogRankUploadStateMachineDirectPass("exit", self, returnAddr, result);
+	LogRankUploadStateMachineDirectPass("exit", self, selfArg, returnAddr, result);
 	return result;
 }
 
@@ -2483,16 +2804,15 @@ bool placeHooks_bbcf()
 		// [DISABLED: BuilderTrace 0x1D1A2 - confirmed dead-end; builder front-end fires on cheap/lobby path without reaching trusted upload chain (section 50)]
 		// RankUploadBuilderTraceJmpBackAddr = HookManager::SetHook("RankUploadBuilderTrace", (DWORD)(GetBbcfBaseAdress() + 0x0001D1A2), 16, RankUploadBuilderTrace);
 
-		// [DISABLED: direct 0x1FEA0 state-machine Detour - regression suspect; state machine stays frozen at state=0 since this was added;
-		//  if 0x1FEA0 has a hidden stack arg (section 53 inline stub pushed ECX before calling), the __thiscall typedef and orig call here would miss it,
-		//  silently preventing state transitions 3/7/8/10 where all trusted stages fire (section 70)]
-		// RankUploadStateMachineCallTargetAddr = (DWORD)(GetBbcfBaseAdress() + 0x0001FEA0);
-		// if (!orig_RankUploadStateMachineDirect)
-		// {
-		// 	orig_RankUploadStateMachineDirect = reinterpret_cast<RankUploadStateMachineDirectFn>(
-		// 		DetourFunction(reinterpret_cast<PBYTE>(RankUploadStateMachineCallTargetAddr), reinterpret_cast<PBYTE>(HookedRankUploadStateMachineDirect)));
-		// 	LOG(2, "[RANK][StateMachineDirect] Hooked BBCF+0x0001FEA0 orig=0x%p\n", orig_RankUploadStateMachineDirect);
-		// }
+		// Direct 0x1FEA0 state-machine detour restored with hidden stack arg preserved.
+		// Old regression came from treating this as plain __thiscall and dropping caller-pushed ECX.
+		RankUploadStateMachineCallTargetAddr = (DWORD)(GetBbcfBaseAdress() + 0x0001FEA0);
+		if (!orig_RankUploadStateMachineDirect)
+		{
+			orig_RankUploadStateMachineDirect = reinterpret_cast<RankUploadStateMachineDirectFn>(
+				DetourFunction(reinterpret_cast<PBYTE>(RankUploadStateMachineCallTargetAddr), reinterpret_cast<PBYTE>(HookedRankUploadStateMachineDirect)));
+			LOG(2, "[RANK][StateMachineDirect] Hooked BBCF+0x0001FEA0 orig=0x%p\n", orig_RankUploadStateMachineDirect);
+		}
 
 		// [DISABLED: ComposeTrace 0x24ABC - confirmed dead-end; never fired in upload runs, composition not at this site (sections 46-47)]
 		// RankUploadComposeTraceJmpBackAddr = HookManager::SetHook("RankUploadComposeTrace", (DWORD)(GetBbcfBaseAdress() + 0x00024ABC), 20, RankUploadComposeTrace);

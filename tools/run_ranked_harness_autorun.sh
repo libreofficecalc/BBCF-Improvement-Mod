@@ -76,7 +76,14 @@ set_or_add_key "RankedAutomationHarnessAutorun" "1" "${SETTINGS_PATH}"
 set_or_add_key "RankedAutomationHarnessQuitOnFinish" "${QUIT_ON_FINISH}" "${SETTINGS_PATH}"
 
 bbcf_running() {
-  /mnt/c/Windows/System32/tasklist.exe //FI "IMAGENAME eq BBCF.exe" 2>/dev/null | grep -Fq "BBCF.exe"
+  /mnt/c/Windows/System32/tasklist.exe /FI "IMAGENAME eq BBCF.exe" 2>/dev/null | grep -Fq "BBCF.exe"
+}
+
+read_new_log() {
+  if [[ ! -f "${LOG_PATH}" ]]; then
+    return 0
+  fi
+  tail -n +"$((baseline_lines + 1))" "${LOG_PATH}"
 }
 
 print_last_ranked_log_lines() {
@@ -119,17 +126,9 @@ fi
 deadline=$(( $(date +%s) + TIMEOUT_SECONDS ))
 seen_bbcf_process=0
 while [[ "$(date +%s)" -lt "${deadline}" ]]; do
-  if bbcf_running; then
-    seen_bbcf_process=1
-  elif [[ "${seen_bbcf_process}" -eq 1 ]]; then
-    echo "BBCF.exe exited before ranked automation sentinel." >&2
-    print_last_ranked_log_lines >&2
-    exit 3
-  fi
-
+  new_log=""
   if [[ -f "${LOG_PATH}" ]]; then
-    start_line=$(( baseline_lines + 1 ))
-    new_log="$(tail -n +"${start_line}" "${LOG_PATH}")"
+    new_log="$(read_new_log)"
     if grep -Fq "[RankedAuto] COMPLETED" <<<"${new_log}"; then
       grep -F "[RankedAuto] COMPLETED" <<<"${new_log}" | tail -n 1
       exit 0
@@ -138,6 +137,18 @@ while [[ "$(date +%s)" -lt "${deadline}" ]]; do
       grep -F "[RankedAuto] FAILED" <<<"${new_log}" | tail -n 1 >&2
       exit 1
     fi
+  fi
+
+  if bbcf_running; then
+    seen_bbcf_process=1
+  elif [[ "${seen_bbcf_process}" -eq 1 ]]; then
+    if grep -Fq "[RankedAuto] finished:" <<<"${new_log}" || grep -Fq "BBCF_IM_Shutdown" <<<"${new_log}"; then
+      print_last_ranked_log_lines
+      exit 0
+    fi
+    echo "BBCF.exe exited before ranked automation sentinel." >&2
+    print_last_ranked_log_lines >&2
+    exit 3
   fi
   sleep 1
 done

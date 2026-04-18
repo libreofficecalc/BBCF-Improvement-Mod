@@ -1642,3 +1642,177 @@ match ends and the game transitions out of match:
 
 All three packed values (`written`, `field2610`, `score`) must match. If they do, the baseline
 trusted chain is restored and upstream producer RE can resume safely.
+
+## 71. 2026-04-18 cheap-path rerun on current code: still useless for trusted ranked-chain verification
+
+Tool status:
+
+- ranked harness autorun was already documented above under `Debug Automation Harness`
+- wrapper bug found while re-running it from shell:
+  - `tools/run_ranked_harness_autorun.sh` used `tasklist.exe //FI ...`
+  - `//FI` is invalid for Windows `tasklist.exe`; correct form is `/FI`
+  - this made the wrapper's `bbcf_running()` check always fail
+  - result: harness could finish and close BBCF, but shell wait loop might not terminate promptly/reliably
+- wrapper was fixed by:
+  - changing `//FI` -> `/FI`
+  - checking fresh log slice for `[RankedAuto] COMPLETED` / `[RankedAuto] FAILED` before process-exit handling
+  - accepting post-exit success if the new log already contains `[RankedAuto] finished:` or `BBCF_IM_Shutdown`
+
+Verification run:
+
+- command used:
+  - `bash tools/run_ranked_harness_autorun.sh --no-build --timeout=180`
+- wrapper now exits correctly on completion and printed:
+  - `[RankedAuto] COMPLETED reason=scenario complete`
+- live `DEBUG.txt` from this run ended with:
+  - `[RankedAuto] COMPLETED reason=scenario complete`
+  - `[RANK][VerdictSummary] reason='BBCF_IM_Shutdown' seq=65 lobby=64 builder=0 compose=0 state3=0 packSelect=0 phase3=0 bit4skip=0 sourceTotal=0 sourcePair=0 writePacked=0 gameCall=0 upload=0`
+  - `[RANK][VerdictSummary] firstSeq ... firstTrusted=0 cheapPathTrusted=0`
+  - `[RANK][VerdictSummary] interpretation=no_trusted_rank_chain_before_first_inmatch_transition`
+
+Negative evidence from same run:
+
+- no `[RANK][Bit4Skip]`
+- no `[RANK][WritePacked]`
+- no `[RANK][GameCall]`
+- no `[Leaderboard] UploadLeaderboardScore`
+
+Current conclusion:
+
+- latest cheap-path result is consistent with earlier conclusion; regression recovery did **not** change it
+- cheap path remains useful only for front-end/lobby instrumentation (`LobbyCaller`, harness control flow, menu state, ranked search observation)
+- cheap path is still **not** a trusted substitute for a real ranked-producing event
+- therefore the prior "cheap path fully useless" conclusion stands for upstream ranked-progress verification
+- next proof-bearing run still must be a real ranked-result path that reaches:
+  - `Bit4Skip`
+  - `WritePacked`
+  - `GameCall`
+  - `UploadLeaderboardScore`
+
+## 72. 2026-04-18 hidden-arg-safe direct `0x1FEA0` detour restored trusted chain
+
+The earlier `0x1FEA0` regression was not caused by direct interception itself. The breakage was
+the calling convention.
+
+Patch now in code:
+
+- direct detour on `BBCF+0x1FEA0` restored
+- trampoline typedef corrected to preserve the hidden caller-pushed argument:
+  - `uint32_t __fastcall HookedRankUploadStateMachineDirect(void* self, void* edx, void* selfArg)`
+- hook now forwards `selfArg` back into the trampoline instead of calling the state machine as a
+  plain `__thiscall(self)` function
+
+Live result after this fix:
+
+- trusted chain came back immediately on a real ranked-result run
+- observed sequence:
+  - `Phase3After41E980`
+  - `Bit4Skip`
+  - `WritePacked`
+  - `GameCall`
+  - `UploadLeaderboardScore`
+- packed `RANK_ALL` value remained identical end-to-end:
+  - `Bit4Skip cur=0x00217BFF`
+  - `WritePacked written=0x00217BFF`
+  - `GameCall field2610=0x00217BFF`
+  - `UploadLeaderboardScore score=2194431`
+- `RANK_ALL` handle remained correct:
+  - `field18=1759932`
+
+Conclusion:
+
+- no rollback-to-trusted patch is needed anymore
+- hidden-arg-safe direct state-machine interception is now considered safe enough to keep using
+
+## 73. 2026-04-18 direct state-machine progression proven, but only on real ranked-result path
+
+With the safe direct `0x1FEA0` detour active, the real ranked-result path now shows the upload
+state machine advancing on one stable object instead of staying frozen:
+
+- caller stable at `return_addr=BBCF+0x0001D112`
+- same state object observed:
+  - `self=0x17273EB8`
+- real transition sequence:
+  - `0 -> 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10 -> 0`
+
+Trusted boundary correlation:
+
+- `Phase3After41E980` appears at `state=3`
+- `Bit4Skip` occurs after `state=5 -> 6`
+- `WritePacked` occurs near `state=9 -> 10`
+- `GameCall` / `UploadLeaderboardScore` follow immediately after
+
+Cheap-path verdict remains unchanged:
+
+- `firstInMatch=66`
+- `firstOutOfMatchAfterInMatch=67`
+- `firstTrusted=68`
+- `cheapPathTrusted=0`
+
+Interpretation:
+
+- cheap path is still not enough
+- the new direct detour did not create an earlier trusted verification point by itself
+- but it did prove the state machine family that really feeds the trusted chain
+
+## 74. 2026-04-18 current ceiling: upstream caller above `0x1D112` still not exact
+
+Current transition logging now proves the direct caller into `0x1FEA0`, but the next frames up are
+still not clean enough to choose a safe new hook site.
+
+Stable evidence from live runs:
+
+- direct caller:
+  - `bt_3=BBCF+0x0001D112`
+- higher frames repeatedly observed:
+  - `bt_4=BBCF+0x0000768C`
+  - `bt_5=BBCF+0x0004F281`
+
+Problem:
+
+- those higher RVAs do not yet look instruction-aligned or hook-ready
+- raw bytes around them suggest unwind/imprecision rather than immediately trustworthy callsites
+- first attempt to walk the x86 EBP chain did not yield usable output in the log
+
+Current interpretation:
+
+- `0x1D112` is a real stable caller into the upload state machine
+- the next upstream BBCF parent still needs a better extraction method than plain
+  `CaptureStackBackTrace`
+
+## 75. 2026-04-18 next probe patch: return-address call-end scan added
+
+New instrumentation added in `src/Hooks/hooks_bbcf.cpp`:
+
+- keep hidden-arg-safe `0x1FEA0` direct detour active
+- keep transition logging on meaningful state/count changes
+- keep existing `bt_*` frame logging
+- add one-line fallback when EBP walking yields nothing:
+  - `[RANK][StateMachineTransition] ebp_bt_unavailable ...`
+- add exact return-address probe scan for captured `bt_3+` frames:
+  - scans backward from each frame for nearby `call` endings
+  - recognizes:
+    - `E8 rel32`
+    - `FF /2` register-call endings
+    - `FF 15` memory-call endings
+- logs:
+  - `call_end`
+  - `call_addr`
+  - `call_rva`
+  - `kind`
+  - `target`
+  - `target_rva`
+  - raw bytes at the inferred call
+
+Expected next proof line:
+
+```text
+[RANK][StateMachineTransition] bt_4_probe call_end=... call_addr=... call_rva=... target=... target_rva=...
+```
+
+Next decision rule:
+
+- if a clean BBCF-side `bt_4_probe` or `bt_5_probe` appears repeatedly across real runs, that
+  caller becomes the next upstream hook target
+- if probes still stay fuzzy, move to a different exact-caller strategy instead of trusting raw
+  unwind RVAs
