@@ -17,7 +17,8 @@ Loop:
 5. Agent reads the latest game log from the fixed path below.
 6. Agent concludes what the new `DEBUG.txt` proves or disproves.
 7. Agent patches again if there is still an actionable next step.
-8. Agent updates this file with:
+8. Agent builds `Debug|Win32` and fixes any compile errors before handing off.
+9. Agent updates this file with:
    - what test was run
    - what `DEBUG.txt` proved
    - what patch was made
@@ -27,6 +28,7 @@ Hard rule:
 
 - do not make future agents rediscover the log path or current conclusions from scratch
 - do not stop at log reading alone if there is a clear next instrumentation patch to make
+- do not hand off ranked RE patches without a successful `Debug|Win32` build check
 
 Fixed game log path:
 
@@ -3107,3 +3109,570 @@ What next `DEBUG.txt` should contain:
   - `[RANK][SourcePair] ... id=1 ...`
   - `[RANK][StageBacktrace] stage=state7_total_id1`
   - `[RANK][StageBacktrace] stage=state7_pair_id1`
+
+## 96. 2026-04-18 newest `DEBUG.txt`: stage-7 add hooks proven unrelated to ranked entry `1`; jump to direct copy block at `0x202CA`
+
+Newest `DEBUG.txt` answered previous question cleanly.
+
+Trusted chain still held:
+
+- `Phase3After41E980`:
+  - `entry1_src10=[0x002183BF,0x00000000]`
+- `Bit4Skip`:
+  - `id=1`
+  - `src10=[0x002183BF,0x00000000]`
+- `Stage8Copy`:
+  - `id=1`
+  - `srcBuf=state+0x120`
+  - `src10=[0x002183BF,0x00000000]`
+  - `dst10=[0x002183BF,0x00000000]`
+
+New reject-path proof:
+
+- `SourceTotalReject` showed:
+  - `rawId=38`
+  - `matchEntry1=0`
+- `SourcePairReject` showed:
+  - `rawId=38`
+  - `matchLocal120=0`
+- second pair showed:
+  - `rawId=39`
+  - `matchEntry1=0`
+  - `matchLocal120=0`
+
+Interpretation:
+
+- current trusted stage-7 hooks at:
+  - `BBCF+0x20291`
+  - `BBCF+0x202AE`
+  are real
+- but for this ranked upload they only touched ids `38` and `39`
+- therefore ranked entry `1` does not materialize through those add/copy-probe sites
+- fastest next cut is direct stage-7 copy store:
+  - `BBCF+0x202CA`
+  - `BBCF+0x202D0`
+
+Patch made immediately after this analysis:
+
+- added direct copy-path hook:
+  - `RankUploadSourceCopyTrace`
+  - hooked at `BBCF+0x202CA`
+- new log family:
+  - `[RANK][SourceCopy]`
+- it logs:
+  - destination local slot
+  - state base
+  - `slot - state` delta
+  - whether slot matches `state + 0x118` (real local packed pair for ranked entry `1`)
+  - raw entry id
+  - table base
+  - `idListPtr`
+  - computed source entry
+  - old slot pair
+  - copied source pair from locals
+  - next pair at slot `+8`
+- if copy-path is ranked entry `1`, it emits:
+  - `[RANK][StageBacktrace] stage=state7_copy_id1`
+
+Why this is right move:
+
+- it skips proven-unrelated ids `38/39`
+- it hooks exact first-write initialization path identified earlier in disassembly
+- if ranked pair is copied into `state+0x118` here, next climb becomes strictly above this block
+
+Next test requested:
+
+- run one more ranked progression-producing match with this DLL
+- send next `DEBUG.txt`
+
+What next `DEBUG.txt` should contain:
+
+- `[RANK][SourceCopy]`
+- ideally one winning line with either:
+  - `id=1`
+  - or `matchLocal118=1`
+- best case:
+  - `src=[0x002183BF,0x00000000]`
+  - `[RANK][StageBacktrace] stage=state7_copy_id1`
+
+## 97. 2026-04-18 newest `DEBUG.txt`: `0x202CA` also only covers ids `38/39`; revive page-guard writer trace at earliest trusted `state3`
+
+Newest `DEBUG.txt` gave the next elimination.
+
+New `SourceCopy` proof:
+
+- `BBCF+0x202CA` fired
+- but only for:
+  - `id=38`
+  - `id=39`
+- and both showed:
+  - `matchLocal118=0`
+
+Meaning:
+
+- direct stage-7 copy init at `0x202CA` is real
+- but still unrelated to ranked local slot `state+0x118`
+- therefore ranked `id=1` source pair already exists before the whole:
+  - `0x20270 .. 0x202D0`
+  loop
+
+Trusted chain still unchanged:
+
+- `Phase3After41E980`
+- `Bit4Skip id=1`
+- `Stage8Copy id=1 srcBuf=state+0x120 src10=0x002183BF`
+
+Important codebase finding after this run:
+
+- existing PAGE_GUARD writer tracer (`BeginRankedSlotWriteTrace`) still exists
+- but it had no live arming callsite anymore
+- that explains why recent runs had no `[RANK][DataFlow]` logs at all
+
+Patch made immediately after this analysis:
+
+- re-armed page-guard writer tracing at earliest trusted state-machine point:
+  - on `state3Entered`
+  - target slot:
+    - `self + 0x118`
+  - reason:
+    - `state3_enter_window`
+
+Why this is right next move:
+
+- no more guessing among late static copy/add sites
+- it watches actual local ranked slot page before `phase3` sees packed value
+- if slot changes during trusted state-3 -> phase-3 interval, next log should finally expose writer EIP/RVA
+
+Next test requested:
+
+- run one more ranked progression-producing match with this DLL
+- send next `DEBUG.txt`
+
+What next `DEBUG.txt` should contain:
+
+- `[RANK][DataFlow] begin reason=state3_enter_window`
+- ideally one winner line:
+  - `[RANK][DataFlow] seq=... writer=0x... writer_rva=0x...`
+- and still:
+  - `[RANK][Phase3After41E980]`
+  - `[RANK][Bit4Skip]`
+  - `[RANK][Stage8Copy]`
+
+## 98. 2026-04-18 newest `DEBUG.txt`: guard tracer armed, but safe-mode killed it at state-machine entry; move arm to first out-of-match boundary and stop auto-cancel
+
+Newest `DEBUG.txt` finally exposed why PAGE_GUARD still produced no writer RVA.
+
+What log proved:
+
+- tracer now does arm:
+  - `[RANK][DataFlow] begin reason=state3_enter_window ...`
+- but it ends almost immediately with:
+  - `reason=safe_mode_disable_page_guard`
+  - `guardHits=8`
+  - `valueChanges=0`
+- same run still shows:
+  - `Phase3After41E980` with packed ranked slot
+  - `Bit4Skip id=1`
+  - `Stage8Copy id=1`
+
+Critical interpretation:
+
+- guard tracer itself works
+- but it was being force-disabled at entry to `HookedRankUploadStateMachineDirect`
+- so even when armed, it could not survive into the real writer path
+
+Also important timing proof from same log:
+
+- pre-match idle state had:
+  - `slot118=[0x00000A12,0x00000386]`
+- first post-match state-machine pass already had:
+  - `state=1`
+  - `slot118=[0x002183BF,0x00000000]`
+- therefore writer happens between:
+  - `first_out_of_match_after_inmatch`
+  - and earliest post-match state-machine passes
+- not as late as trusted `state3`
+
+Patch made immediately after this analysis:
+
+- removed unconditional guard shutdown at state-machine direct entry
+- now track latest observed ranked state-machine `self`
+- arm PAGE_GUARD earlier at:
+  - `first_out_of_match_after_inmatch`
+- new arm reason:
+  - `first_out_of_match_after_inmatch_window`
+
+Why this is right next move:
+
+- it fixes real internal tracer blocker
+- it arms before slot flips from old non-ranked value to packed ranked value
+- if writer happens in or just after earliest post-match state-machine pass, next run should finally emit writer EIP/RVA
+
+Next test requested:
+
+- run one more ranked progression-producing match with this DLL
+- send next `DEBUG.txt`
+
+What next `DEBUG.txt` should contain:
+
+- `[RANK][DataFlow] begin reason=first_out_of_match_after_inmatch_window`
+- ideally:
+  - `[RANK][DataFlow] seq=... writer=0x... writer_rva=0x...`
+- and normal chain:
+  - `[RANK][Phase3After41E980]`
+  - `[RANK][Bit4Skip]`
+  - `[RANK][Stage8Copy]`
+
+## 99. 2026-04-18 newest `DEBUG.txt`: early guard window proves true slot mutation; widen attribution and stop guard after first detected change
+
+Newest `DEBUG.txt` gave strongest proof yet.
+
+What early window proved:
+
+- first arm at:
+  - `reason=first_out_of_match_after_inmatch_window`
+- armed value was:
+  - `cur=[0xFFFFFFFF,0x0000CA50]`
+- same guarded window ended at upload with:
+  - `last=[0x002187BF,0x00000000]`
+- therefore real ranked local slot mutation definitely happened inside that early window
+
+Trusted chain in same run:
+
+- `Phase3After41E980`:
+  - local slot already `0x002187BF`
+  - table entry still `0x002183BF`
+- `Bit4Skip`:
+  - local slot still `0x002187BF`
+  - source entry `src10=0x002183BF`
+- `Stage8Copy`:
+  - entry `1` copies `src10=[0x002187BF,0]` into table
+
+Important interpretation:
+
+- we are no longer looking for “whether mutation happened”
+- that is now proven
+- remaining bug is attribution:
+  - guard window saw `guardHits=656`
+  - but `valueChanges=0`
+- likely reason:
+  - current code only trusts `pendingWrite` path (`accessType==1`)
+  - real slot change may be attributable only by last page candidate, not strict write-classified hit
+
+Possible crash contribution:
+
+- because first change was not recognized, PAGE_GUARD stayed armed for hundreds of hits
+- this is a plausible cause of the end-of-set crash risk / instability
+
+Patch made immediately after this analysis:
+
+- track last owner-thread page-access candidate on every guard hit, not only strict writes
+- on single-step, detect slot change against last observed slot value even if `pendingWrite` was not set
+- when change is found, log:
+  - writer
+  - writer RVA
+  - access address
+  - access type
+  - whether pendingWrite path was active
+- stop re-arming PAGE_GUARD after first meaningful change
+  - this should reduce guard-hit spam and lower crash risk
+
+Next test requested:
+
+- run one more ranked progression-producing match
+- if possible keep note whether end-of-set crash is gone
+- send next `DEBUG.txt`
+
+What next `DEBUG.txt` should contain:
+
+- `[RANK][DataFlow] begin reason=first_out_of_match_after_inmatch_window`
+- ideally winner line:
+  - `[RANK][DataFlow] seq=... writer=0x... writer_rva=0x...`
+- and normal validation chain:
+  - `[RANK][Phase3After41E980]`
+  - `[RANK][Bit4Skip]`
+  - `[RANK][Stage8Copy]`
+
+## 100. 2026-04-18 newest `DEBUG.txt`: no crash now; early no-upload summary still kills correct PAGE_GUARD window
+
+Newest `DEBUG.txt` changed conclusion again.
+
+What log proved:
+
+- ranked set completed without crash
+- earliest useful arm now happens exactly where expected:
+  - `[RANK][DataFlow] begin reason=first_out_of_match_after_inmatch_window ... cur=[0x00000000,0x00000000]`
+- but same frame immediately logs:
+  - `[RANK][DataFlow] end reason=first_out_of_match_after_inmatch_no_upload ... guardHits=0 valueChanges=0`
+- later `state3_enter_window` arms with slot already packed:
+  - `cur=[0x002187BF,0x00000000]`
+- upload-end summary still closes that later window with no writer attribution:
+  - `guardHits=6744 valueChanges=0`
+
+Trusted chain remained intact in same run:
+
+- `Phase3After41E980` shows local slot and `entry1_src10` already aligned at `0x002187BF`
+- `Bit4Skip id=1` still executes on that same packed value
+- `Stage8Copy id=1` still copies `0x002187BF`
+
+Critical interpretation:
+
+- previous patch fixed crash risk enough for this run
+- real blocker now is not PAGE_GUARD machinery itself
+- real blocker is control flow:
+  - `RankedProbeDumpSummary("first_out_of_match_after_inmatch_no_upload")`
+  - calls `RankedProbeDumpSummaryImpl`
+  - which unconditionally called `EndRankedSlotWriteTrace`
+- that means correct early zero-valued guard window dies immediately, before true slot writer runs
+
+Patch made immediately after this analysis:
+
+- keep normal `EndRankedSlotWriteTrace` behavior for all summaries
+- except skip guard shutdown for:
+  - `first_out_of_match_after_inmatch_no_upload`
+- purpose:
+  - preserve earliest zero-valued PAGE_GUARD window into first post-match ranked upload activity
+
+Why this is next right cut:
+
+- this is smallest control-flow fix consistent with newest log
+- it preserves early writer-attribution window without weakening later upload-end cleanup
+- if writer happens between first out-of-match transition and first trusted upload state, next run should finally emit writer EIP/RVA from zero baseline
+
+Next test requested:
+
+- build/deploy this DLL
+- run one more ranked progression-producing match
+- send next `DEBUG.txt`
+
+What next `DEBUG.txt` should contain:
+
+- `[RANK][DataFlow] begin reason=first_out_of_match_after_inmatch_window`
+- no immediate paired end with:
+  - `reason=first_out_of_match_after_inmatch_no_upload`
+- ideally winner line:
+  - `[RANK][DataFlow] seq=... writer=0x... writer_rva=0x...`
+- still expect normal chain:
+  - `[RANK][Phase3After41E980]`
+  - `[RANK][Bit4Skip]`
+  - `[RANK][Stage8Copy]`
+
+## 101. 2026-04-18 newest `DEBUG.txt`: actual local-slot writer found; next test can move to no-match menu navigation
+
+Newest `DEBUG.txt` produced first concrete writer attribution.
+
+What log proved:
+
+- early guard window now survives long enough to catch true first write
+- first meaningful mutation is:
+  - `[RANK][DataFlow] seq=76 cycle=1 change#1 ... old=[0x00000000,0x00000000] new=[0x002183BF,0x00000000] writer_rva=0x00020761 accessType=1 directSlotAccess=1`
+- same moment, state-machine detour logs:
+  - `[RANK][SlotSeeded] phase=entry callsite=BBCF+0x0001D112 ... new=[0x002183BF,0x00000000] state=1 count=6`
+- so local ranked slot is seeded inside `RankUploadStateMachineDirect` (`BBCF+0x0001FEA0`) on the trusted caller path from:
+  - `BBCF+0x0001D10D` call
+  - `BBCF+0x0001D112` return site
+- writer itself is now narrowed to:
+  - `BBCF+0x00020761`
+
+Trusted chain after seed remains consistent:
+
+- cycle 1:
+  - local slot seeds to `0x002183BF`
+  - `state2/phase3` create `entry1_src10=0x002187BF`
+  - `Bit4Skip id=1` sees slot `0x002183BF`, src10 `0x002187BF`
+  - `Stage8Copy id=1` copies local slot `0x002183BF`
+- later cycles continue alternating slot/src10 values as before
+
+Critical interpretation:
+
+- we no longer need blind PAGE_GUARD hunting for first write site
+- first local slot seed point is now known:
+  - state-machine entry path
+  - writer `BBCF+0x00020761`
+- this is first realistic place to pursue no-match testing, because it happens before trusted upload states and is already visible from state-machine detour logs
+
+Patch made immediately after this analysis:
+
+- enriched `[RANK][SlotSeeded]` log with:
+  - cached table
+  - mode / gameState / scene
+  - local `next` pair
+  - cached `entry1_src10`
+  - cached `entry1_src18`
+- purpose:
+  - verify whether same seed path can happen during menu-only / no-match navigation
+  - if it does, we can pivot testing away from full ranked matches
+
+Next test requested:
+
+- build/deploy this DLL
+- do **not** play a ranked match
+- instead:
+  - launch game
+  - go into online / ranked-related menus where normal lobby polling happens
+  - wait a few seconds
+  - back out and quit
+- send next `DEBUG.txt`
+
+What next `DEBUG.txt` should contain:
+
+- any `[RANK][SlotSeeded]`
+- especially if:
+  - `mode`, `gameState`, `scene` show no-match context
+  - or cycle remains `0`
+- still useful if absent:
+  - repeated `post_1FD80` / `post_1FEA0` with slot staying zero
+
+Success condition for no-match pivot:
+
+- same `SlotSeeded` / `writer_rva=0x00020761` behavior appears without completing a ranked match
+- if that happens, next patch can focus on controlled offline trigger around `1FEA0` / `20761` instead of match-end timing
+
+## 102. 2026-04-18 newest `DEBUG.txt`: no-match menus hit `1FD80` / `1FEA0`, but current `1FEA0` target looks table-like, not real ranked state machine
+
+Newest no-match `DEBUG.txt` answered offline-trigger branch.
+
+What log proved:
+
+- no ranked match played
+- no trusted chain appeared:
+  - no `state3`
+  - no `Phase3After41E980`
+  - no `Bit4Skip`
+  - no `Stage8Copy`
+  - no `DataFlow`
+  - no `SlotSeeded`
+- but no-match menus do repeatedly hit:
+  - `post_1FD80`
+  - `post_1FEA0`
+  - all on `cycle=0`
+
+Most important mismatch:
+
+- `post_1FD80` shows:
+  - `state=0x0839ACDC`
+  - `table=0x16F12FA8`
+  - `slot=[0,0]`
+- immediately after, `post_1FEA0` shows:
+  - `chosen=0x16F12FA8`
+  - same as cached table
+  - `slot=[0x00030003,0x00000045]`
+- so current logging is interpreting a table-like object as if it were ranked state-machine memory
+
+Critical interpretation:
+
+- offline menus do reach same broad caller family
+- but not same real ranked-state path that seeds slot through writer `BBCF+0x00020761`
+- current candidate acceptance is too permissive:
+  - any readable 0x91C region passes as state-machine-like
+  - table memory can therefore masquerade as `self`
+
+Patch made immediately after this analysis:
+
+- classify direct `1FEA0` candidates as:
+  - `table_like`
+  - `state_like`
+  - `unknown_like`
+- enrich `[RANK][StateMachine]` with:
+  - `object`
+  - `cachedTable`
+  - `selfIsCachedTable`
+  - `stateOk`
+  - `countOk`
+- enrich `post_1FEA0_args` with:
+  - `table`
+  - `selfIsTable`
+  - `argIsTable`
+  - `chosenIsTable`
+
+Why this is next right cut:
+
+- we already know no-match menus are not enough by themselves
+- next needed distinction is:
+  - are we seeing real state-object calls at all offline?
+  - or only table-like false positives?
+- this patch makes that explicit without changing runtime behavior
+
+Next test requested:
+
+- build/deploy this DLL
+- repeat same no-match ranked-menu navigation
+- send next `DEBUG.txt`
+
+What next `DEBUG.txt` should contain:
+
+- `[RANK][CallCluster] stage=post_1FEA0_args ... chosenIsTable=...`
+- `[RANK][StateMachine] ... object=... selfIsCachedTable=...`
+
+Decision rule for next step:
+
+- if no-match path is always `chosenIsTable=1` / `object=table_like`:
+  - offline menu path is dead end for real seed path
+  - next patch should move to forcing / emulating transition into real ranked state machine near post-match entry, not menus
+- if any no-match path shows `object=state_like` with sane state/count:
+  - that is new offline foothold
+  - next patch can target that branch directly
+
+## 103. 2026-04-18 newest `DEBUG.txt`: classifier confirms menu path is only table-like junk; preserve only plausible ranked-state candidates
+
+Newest classifier run closed menu branch cleanly.
+
+What log proved:
+
+- no-match menus are consistently:
+  - `chosenIsTable=1`
+  - `selfIsTable=1`
+  - `object=table_like`
+- representative line:
+  - `self=0x172C06E8 object=table_like cachedTable=0x172C06E8 selfIsCachedTable=1 state=0 count=388816848 stateOk=1 countOk=0 slot118=[0x172C0AC0,0x00000003]`
+- so offline path is not reaching real ranked state machine
+- it is repeatedly feeding cached table memory back through current `1FEA0` caller family
+- still no:
+  - `SlotSeeded`
+  - `DataFlow`
+  - `state3`
+  - trusted upload chain
+
+Critical interpretation:
+
+- ranked-menu-only path is now a verified dead end for finding real seed/write path
+- next useful work is no longer “search menus more”
+- next useful work is:
+  - keep menu junk from poisoning later ranked traces
+  - focus future instrumentation on plausible post-match state objects only
+
+Patch made immediately after this analysis:
+
+- added `slotShape` classifier:
+  - `zero`
+  - `packed_like`
+  - `pointer_like`
+  - `mixed`
+- added `plausible` flag to `[RANK][StateMachine]`
+- only preserve `g_lastPlausibleRankedStateMachineSelf` when:
+  - state/count look sane
+  - slot is not `pointer_like`
+- early post-match PAGE_GUARD arming now prefers:
+  - `g_lastPlausibleRankedStateMachineSelf`
+- this prevents offline table-like junk from contaminating later ranked runs
+
+Next test requested:
+
+- build/deploy this DLL
+- run one real ranked progression-producing match again
+- send next `DEBUG.txt`
+
+What next `DEBUG.txt` should contain:
+
+- `[RANK][StateMachine] ... plausible=1 ... slotShape=...`
+- `[RANK][DataFlow] begin reason=first_out_of_match_after_inmatch_window`
+- ideally same winner:
+  - `writer_rva=0x00020761`
+
+Why next test returns to real ranked match:
+
+- menu path is now conclusively exhausted
+- only real post-match transition has produced:
+  - `SlotSeeded`
+  - writer `BBCF+0x00020761`
+- so next RE step must refine around that real path, not menu-only navigation
