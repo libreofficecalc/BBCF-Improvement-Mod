@@ -2816,3 +2816,294 @@ What the next `DEBUG.txt` should contain:
 - `[RANK][1E980Delta] stage=packselect`
 - ideally one of them shows:
   - `createdInsideSrc10=1`
+
+## 92. 2026-04-18 newest `DEBUG.txt`: explicit producer store target is stage-8 copy at `BBCF+0x2044D`
+
+Newest `DEBUG.txt` gave the fast result:
+
+- `phase3` repeatedly logged:
+  - `createdInsideSrc10=1`
+- `packselect` repeatedly logged:
+  - `createdInsideSrc10=1`
+- trusted packed score stayed:
+  - `0x002183BF`
+
+Important raw proof lines:
+
+- `[RANK][1E980Delta] stage=phase3 ... post_src10=[0x002183BF,0x00000000] ... createdInsideSrc10=1`
+- `[RANK][1E980Delta] stage=packselect ... post_src10=[0x002183BF,0x00000000] ... createdInsideSrc10=1`
+
+But the next static check changed the interpretation:
+
+- disassembly of `BBCF+0x1E980` itself looks like object allocation / reset / reuse plumbing
+- the explicit score-materialization write sequence appears later in state `8`:
+  - `BBCF+0x2044A  mov eax,[esi-8]`
+  - `BBCF+0x2044D  mov [ecx+10],eax`
+  - `BBCF+0x20450  mov eax,[esi-4]`
+  - `BBCF+0x20453  mov [ecx+14],eax`
+  - then byte copy into `+0x18`
+
+Interpretation:
+
+- the `1E980Delta` logs were still useful as a timing bound
+- but the first explicit producer store now visible in code is the stage-8 copy at:
+  - `BBCF+0x2044D`
+  - `BBCF+0x20453`
+- that means the remaining tighter question is:
+  - who produced local aggregate `[esi-8/-4]` before stage `8` copied it into the table entry
+
+Patch made immediately after this analysis:
+
+- add direct hook on `BBCF+0x2044A`
+- new log family:
+  - `[RANK][Stage8Copy]`
+- it logs:
+  - entry id
+  - destination entry pointer
+  - source aggregate buffer
+  - `src10`
+  - `dst10`
+  - `src18`
+  - `dst18`
+- if entry `1` copies the packed ranked value, it emits:
+  - `[RANK][StageBacktrace] stage=stage8_copy_src10`
+
+Why this is the right fast move:
+
+- it hooks the explicit producer store, not only the surrounding timing envelope
+- it should prove the exact write that materializes `entry1_src10`
+- after that, the next climb is only:
+  - who filled `[esi-8/-4]`
+  which is much narrower than re-probing `1E980`
+
+Next test requested:
+
+- run one more ranked progression-producing match with this DLL
+- send the next `DEBUG.txt`
+
+What the next `DEBUG.txt` should contain:
+
+- `[RANK][Stage8Copy]`
+- ideally:
+  - `id=1`
+  - `src10=[0x002183BF,0]`
+  - `dst10=[0x002183BF,0]`
+- and one-shot:
+  - `[RANK][StageBacktrace] stage=stage8_copy_src10`
+
+## 93. 2026-04-18 newest `DEBUG.txt`: stage-8 copy confirmed, next fast cut is earlier `1E980` callsite fanout
+
+Newest `DEBUG.txt` confirmed the stage-8 copy hook worked.
+
+Key proof:
+
+- `[RANK][Stage8Copy] ... id=1 ... src10=[0x002183BF,0x00000000] dst10=[0x002183BF,0x00000000]`
+- source buffer for ranked entry `1` is:
+  - `srcBuf = state + 0x120`
+- therefore the packed ranked value already exists in the local aggregate buffer before stage `8` copies it into the table entry
+
+Important consequence:
+
+- `BBCF+0x2044D` is an explicit producer store for the table entry
+- but it is not the earliest producer of the packed rank itself
+- the tighter remaining question is:
+  - which earlier `BBCF+0x1E980` callsite inside `1FEA0` first makes `state+0x118/+0x120` hold the packed value?
+
+Static code shape behind that conclusion:
+
+- stage `8` copy:
+  - `BBCF+0x2044D  mov [ecx+10],eax`
+  - source comes from `[esi-8/-4]`
+- for entry `1`, that source buffer maps to:
+  - `state+0x118`
+  - `state+0x120`
+
+Patch made immediately after this analysis:
+
+- instrument earlier `call 0041E980` sites inside `1FEA0` in parallel:
+  - `BBCF+0x1FF06`
+  - `BBCF+0x1FF7D`
+  - `BBCF+0x2018A`
+  - `BBCF+0x20201`
+  - `BBCF+0x20421`
+- each now emits the same delta-style log family:
+  - `[RANK][1E980Delta] stage=state1`
+  - `[RANK][1E980Delta] stage=state2`
+  - `[RANK][1E980Delta] stage=state5`
+  - `[RANK][1E980Delta] stage=state6`
+  - `[RANK][1E980Delta] stage=state7`
+
+Why this is the fastest next move:
+
+- it avoids slow one-site ladder climbing
+- it brackets the whole earlier `1FEA0` call fanout in one run
+- next log should tell us the first state where `state+0x118` becomes packed
+
+Next test requested:
+
+- run one more ranked progression-producing match with this DLL
+- send the next `DEBUG.txt`
+
+What the next `DEBUG.txt` should contain:
+
+- `[RANK][1E980Delta] stage=state1`
+- `[RANK][1E980Delta] stage=state2`
+- `[RANK][1E980Delta] stage=state5`
+- `[RANK][1E980Delta] stage=state6`
+- `[RANK][1E980Delta] stage=state7`
+- winner condition:
+  - earliest stage with packed `post_slot` or `createdInsideSrc10=1`
+
+## 94. 2026-04-18 newest `DEBUG.txt`: early `1E980Delta` hits are contaminated; jump to direct stage-7 local producer
+
+Newest `DEBUG.txt` did not validate the earlier fanout the way it first seemed.
+
+Trusted lines:
+
+- `[RANK][Phase3After41E980] ... ret_table=0x17336478 ... entry1_src10=[0x002183BF,0x00000000]`
+- `[RANK][Bit4Skip] ... id=1 ... table=0x17336478 ... src10=[0x002183BF,0x00000000]`
+- `[RANK][Stage8Copy] ... id=1 ... src10=[0x002183BF,0x00000000] dst10=[0x002183BF,0x00000000]`
+
+Bad / contaminated lines:
+
+- every earlier `1E980Delta` used:
+  - `preTable=0x1730EFA0`
+  - `postTable=0x17336478`
+- `0x1730EFA0` is the state object, not the real returned ranked table
+- that means the apparent `createdInsideSrc10=1` hits for `state1/state2/state5/state6/state7` cannot be trusted as proof that those specific `1E980` calls created the ranked entry
+
+Important conclusion:
+
+- the previous fanout was still useful because it exposed the exact mismatch:
+  - pre-snapshot was reading from fake `state-as-table`
+  - post-snapshot was reading from the real table returned by `1E980`
+- but the fastest correct next cut is no longer “which `1E980` call first looked nonzero?”
+- the fastest correct next cut is:
+  - instrument the direct stage-7 writes that fill the local aggregate buffer copied by stage `8`
+
+Static code reason for that jump:
+
+- stage `7` writes the local producer here:
+  - `BBCF+0x202B7 / 0x202BD` add into `[esi-8/-4]`
+  - `BBCF+0x202CA / 0x202D0` copy into `[esi-8/-4]`
+- stage `8` later copies exactly that local pair into the ranked entry:
+  - `BBCF+0x2044D / 0x20453`
+- for ranked entry `1`, that local pair is the real upstream producer we care about
+
+Patch made immediately after this analysis:
+
+- `LogRankedStageBacktrace` dedupe is now stage-aware, so a real `stage8`/`state7` backtrace is no longer suppressed just because an earlier contaminated stage logged the same packed value first
+- `1E980Delta` backtraces now only fire when pre/post snapshots came from the same real table base
+- `SourceTotal` and `SourcePair` probes were retargeted to `id=1` only, so they stop burning budget on unrelated entries and instead focus on the local ranked producer
+- next run should now emit:
+  - `[RANK][SourceTotal] ... id=1 ...`
+  - `[RANK][SourcePair] ... id=1 ...`
+  - `[RANK][StageBacktrace] stage=state7_total_id1`
+  - `[RANK][StageBacktrace] stage=state7_pair_id1`
+
+Why this is faster than more ladder-climbing:
+
+- it skips the ambiguous timing envelope
+- it instruments the exact state-7 write block that populates the stage-8 source buffer
+- if `state7_pair_id1` hits with the packed value, the next jump is straight above that local producer path
+
+Next test requested:
+
+- run one more ranked progression-producing match with this DLL
+- send the next `DEBUG.txt`
+
+What the next `DEBUG.txt` should contain:
+
+- `[RANK][SourceTotal] ... id=1 ...`
+- `[RANK][SourcePair] ... id=1 ...`
+- `[RANK][StageBacktrace] stage=state7_total_id1`
+- `[RANK][StageBacktrace] stage=state7_pair_id1`
+- normal trusted chain still present:
+  - `[RANK][Phase3After41E980]`
+  - `[RANK][Bit4Skip]`
+  - `[RANK][Stage8Copy]`
+
+## 95. 2026-04-18 newest `DEBUG.txt`: stage-7 hooks fire, but `id=1` filter blind; next run must expose raw reject path
+
+Newest `DEBUG.txt` changed question again.
+
+Trusted chain still confirmed:
+
+- `Phase3After41E980` showed:
+  - `entry1_src10=[0x002183BF,0x00000000]`
+- `Bit4Skip` still showed:
+  - `id=1`
+  - `src10=[0x002183BF,0x00000000]`
+- `Stage8Copy` still showed:
+  - `id=1`
+  - `src10=[0x002183BF,0x00000000]`
+  - `dst10=[0x002183BF,0x00000000]`
+
+But new important proof is:
+
+- the assembly trace hooks definitely fired at stage `7`:
+  - `RankUploadSourceTotalTrace`
+  - `RankUploadSourcePairTrace`
+- stage accounting confirmed trusted hits:
+  - `seq=921 stage=SourceTotal trusted=1`
+  - `seq=922 stage=SourcePair trusted=1`
+- yet there were no detailed payload logs:
+  - no `[RANK][SourceTotal]`
+  - no `[RANK][SourcePair]`
+  - no `state7_total_id1`
+  - no `state7_pair_id1`
+
+Interpretation:
+
+- stage-7 hook placement is real
+- but current `entryId != 1` filter is probably reading wrong identity source for these sites
+- so current blind spot is no longer “did stage-7 run?”
+- current blind spot is:
+  - “what raw id / slot / source-entry values existed when stage-7 hooks fired?”
+
+Patch made immediately after this analysis:
+
+- `SourcePair` now logs reject-path raw data before early return:
+  - `[RANK][SourcePairReject]`
+  - source slot pointer
+  - state pointer
+  - `slot - state` delta
+  - whether slot matches `state + 0x120` (known local ranked-entry-1 buffer)
+  - `table`
+  - `idListPtr`
+  - raw id value
+- `SourceTotal` now logs reject-path raw data before early return:
+  - `[RANK][SourceTotalReject]`
+  - destination slot
+  - source entry
+  - `table`
+  - expected `table + 0x48` for entry `1`
+  - whether source entry matches that expected entry-1 address
+  - `idListPtr`
+  - raw id value
+
+Why this is right next move:
+
+- it keeps current trusted stage-7 hook sites
+- it tests exact failure mode shown by newest log
+- it will tell us whether:
+  - `id=1` is really passing through these sites but id source is wrong
+  - or `id=1` uses different stage-7 path entirely
+
+Next test requested:
+
+- run one more ranked progression-producing match with this DLL
+- send next `DEBUG.txt`
+
+What next `DEBUG.txt` should contain:
+
+- `[RANK][SourcePairReject]`
+- `[RANK][SourceTotalReject]`
+- ideally one of:
+  - `matchLocal120=1`
+  - `matchEntry1=1`
+- if filter becomes correct instead, then winner lines are:
+  - `[RANK][SourceTotal] ... id=1 ...`
+  - `[RANK][SourcePair] ... id=1 ...`
+  - `[RANK][StageBacktrace] stage=state7_total_id1`
+  - `[RANK][StageBacktrace] stage=state7_pair_id1`
