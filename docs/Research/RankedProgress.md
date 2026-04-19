@@ -3676,3 +3676,1292 @@ Why next test returns to real ranked match:
   - `SlotSeeded`
   - writer `BBCF+0x00020761`
 - so next RE step must refine around that real path, not menu-only navigation
+
+## 104. 2026-04-18 newest `DEBUG.txt`: real ranked path still seeds at `0x20761`; next cut is caller context around first local-slot write
+
+Newest ranked `DEBUG.txt` kept menu verdict unchanged and confirmed real seed path again.
+
+What log proved:
+
+- first meaningful local-slot mutation still happens in early post-match window:
+  - `[RANK][DataFlow] begin reason=first_out_of_match_after_inmatch_window ... cur=[0,0]`
+  - `[RANK][DataFlow] ... change#1 ... new=[0x00218BBF,0] writer_rva=0x00020761 accessType=1 directSlotAccess=1`
+- same value is then observed by trusted chain:
+  - `[RANK][SlotSeeded] ... callsite=BBCF+0x0001D112 ... new=[0x00218BBF,0] state=1 count=6`
+  - `[RANK][Phase3After41E980] ... entry1_src10=[0x00218BBF,0]`
+  - `[RANK][Bit4Skip] ... id=1 ... src10=[0x00218BBF,0]`
+  - `[RANK][Stage8Copy] ... id=1 ... src10=[0x00218BBF,0]`
+- later `post_1FEA0` spam still shows table-like calls only:
+  - `chosenIsTable=1`
+  - no new offline foothold yet
+
+Interpretation:
+
+- menu branch remains exhausted
+- real branch remains:
+  - early post-match local-slot write at `BBCF+0x00020761`
+  - then `1D112`
+  - then later trusted upload chain
+- next useful cut is not more menu work
+- next useful cut is more context around first real write site so we can climb to a caller we may be able to trigger without a ranked match
+
+Patch made immediately after this analysis:
+
+- added `[RANK][DataFlowWriter]` on first meaningful slot change only
+- it logs:
+  - writer RVA
+  - slot / old / new pair
+  - direct-slot-access flag
+  - 32 bytes around writer instruction
+- it also emits nearby-call scan via:
+  - `[RANK][StateMachineTransition] dataflow_writer ...`
+
+Next test requested:
+
+- build/deploy this DLL
+- run one real ranked progression-producing match again
+- send next `DEBUG.txt`
+
+What next `DEBUG.txt` should contain:
+
+- `[RANK][DataFlowWriter]`
+- `[RANK][StateMachineTransition] dataflow_writer ...`
+- still expect:
+  - `[RANK][SlotSeeded]`
+  - `[RANK][Phase3After41E980]`
+  - `[RANK][Bit4Skip]`
+  - `[RANK][Stage8Copy]`
+
+Goal of this cut:
+
+- identify caller neighborhood above `0x20761`
+- if that caller is reachable from already-known non-match code, next step can return to offline/menu-style testing with a tighter forced-entry point
+
+## 105. 2026-04-18 newest `DEBUG.txt`: first writer-context captured, but true window still has at least one more mutation
+
+Newest ranked `DEBUG.txt` gave first concrete writer-site bytes/call context.
+
+What log proved:
+
+- first guarded write still lands at:
+  - `writer_rva=0x00020761`
+- bytes around that site are:
+  - `... F3 A5 FF 15 50 A6 E6 00 ...`
+- nearby call scan found only post-write import call:
+  - `[RANK][StateMachineTransition] dataflow_writer candidate_0 ... call_rva=0x00020763 kind=ff_mem ...`
+- but more important: this run started from dirty local slot:
+  - `begin ... cur=[0x00008C00,0x00000F78]`
+- first change only updated low dword:
+  - `old=[0x00008C00,0x00000F78]`
+  - `new=[0x00218BBF,0x00000F78]`
+- later trusted chain shows final pair with high dword cleared:
+  - `Phase3After41E980 ... cur=[0x00218BBF,0x00000000]`
+  - `Bit4Skip ... cur=[0x00218BBF,0x00000000]`
+  - `Stage8Copy id=1 ... src10=[0x00218BBF,0x00000000]`
+
+Interpretation:
+
+- `0x20761` is real, but not whole story
+- current trace stopped after first meaningful change
+- so we captured low-dword seed write, but missed later write that clears/finalizes high dword
+- that second mutation may expose better caller context than current `FF 15` post-write import
+
+Patch made immediately after this analysis:
+
+- `RankedSlotWriteTrace` now keeps PAGE_GUARD alive for up to 2 changes when window begins dirty
+- zero-start windows still stop after first change
+- writer-context logging now records each captured change up to current limit
+- tracer version bumped to:
+  - `post_match_window_v3`
+
+Next test requested:
+
+- build/deploy this DLL
+- run one real ranked progression-producing match again
+- send next `DEBUG.txt`
+
+What next `DEBUG.txt` should contain:
+
+- `[RANK][DataFlow] tracer_version=post_match_window_v3 ... maxValueChanges=2`
+- first write as before
+- ideally second write:
+  - another `[RANK][DataFlow] ... change#2 ...`
+  - another `[RANK][DataFlowWriter] ...`
+- still expect trusted chain:
+  - `Phase3After41E980`
+  - `Bit4Skip`
+  - `Stage8Copy`
+
+Why this is next right cut:
+
+- if change #2 gives cleaner writer/caller than `0x20761`, that likely becomes next upstream offline foothold
+- if no change #2 appears, then high-dword clear happens outside current PAGE_GUARD owner thread/window and we move to direct hook on surrounding copy/finalize block instead
+
+## 106. 2026-04-18 newest `DEBUG.txt`: no second mutation on clean runs; real next cut is stack above writer `0x20761`
+
+Newest ranked `DEBUG.txt` closed the temporary “change #2” branch.
+
+What log proved:
+
+- clean post-match window begins:
+  - `cur=[0x00000000,0x00000000]`
+  - `zeroWindowOnly=1`
+  - `maxValueChanges=1`
+- first and only observed change is:
+  - `new=[0x00218BBF,0x00000000]`
+  - `writer_rva=0x00020761`
+- `SlotSeeded` immediately agrees:
+  - `new=[0x00218BBF,0x00000000]`
+- later trusted chain also agrees with no extra local-slot mutation:
+  - `Phase3After41E980`
+  - `Bit4Skip`
+  - `Stage8Copy`
+- later `state3_enter_window` also showed:
+  - `valueChanges=0`
+
+Interpretation:
+
+- previous dirty-high-dword run was stale-state noise, not required finalize step
+- on clean real runs, `0x20761` writes the final local pair in one shot
+- so next work is no longer “capture second change”
+- next work is:
+  - climb above `0x20761`
+  - find caller chain that reaches this writer
+
+Patch made immediately after this analysis:
+
+- `[RANK][DataFlowWriter]` now captures stack backtrace at exact writer-hit moment
+- for stack frames it also emits:
+  - return-address probes
+  - nearby-call scans
+- new useful lines expected:
+  - `[RANK][DataFlowWriter] bt_N=...`
+  - `[RANK][StateMachineTransition] dfw_bt_N ...`
+  - `[RANK][StateMachineTransition] dfw_fz_N ...`
+
+Next test requested:
+
+- build/deploy this DLL
+- run one real ranked progression-producing match again
+- send next `DEBUG.txt`
+
+What next `DEBUG.txt` should contain:
+
+- `[RANK][DataFlowWriter] bt_`
+- `[RANK][StateMachineTransition] dfw_bt_`
+- `[RANK][StateMachineTransition] dfw_fz_`
+- still expect:
+  - `[RANK][SlotSeeded]`
+  - `[RANK][Phase3After41E980]`
+  - `[RANK][Bit4Skip]`
+  - `[RANK][Stage8Copy]`
+
+Goal now:
+
+- identify caller above `0x20761`
+- if that caller matches an already-seen non-match family, that becomes next offline/menu retest point
+
+## 107. 2026-04-19 newest `DEBUG.txt`: writer backtrace escaped `1FEA0` family; next probe moves to higher BBCF caller pair `22AD81` / `22B259`
+
+Newest ranked `DEBUG.txt` gave the first useful stack above `0x20761`.
+
+What log proved:
+
+- exact local-slot writer still:
+  - `BBCF+0x00020761`
+- but backtrace above writer does **not** immediately climb through previously trusted `1D112 / 1FEA0` upload-family stack
+- first BBCF frames found were:
+  - `bt_5 = BBCF+0x000A84C5`
+  - `bt_6 = BBCF+0x0022AD86`
+    - exact call: `BBCF+0x0022AD81 -> BBCF+0x000A8190`
+  - `bt_7 = BBCF+0x0022B25E`
+    - exact call: `BBCF+0x0022B259 -> BBCF+0x0022AC30`
+- these RVAs were not previously instrumented anywhere in repo/progress
+
+Interpretation:
+
+- current writer is being reached from a higher/parallel BBCF caller family not yet traced
+- this is now better upstream foothold than continuing to stare at `0x20761` itself
+- next question is:
+  - do `22AD81` / `22B259` belong to ranked-only path?
+  - or do they also execute in menu/no-match flow, giving us offline retest point?
+
+Patch made immediately after this analysis:
+
+- added direct callsite probes:
+  - `BBCF+0x0022AD81 -> BBCF+0x000A8190`
+  - `BBCF+0x0022B259 -> BBCF+0x0022AC30`
+- new logs:
+  - `[RANK][WriterParent] stage=writer_parent_22AD86 ...`
+  - `[RANK][WriterParent] stage=writer_parent_22B25E ...`
+  - paired `[RANK][CallCluster] stage=writer_parent_22AD86 ...`
+  - paired `[RANK][CallCluster] stage=writer_parent_22B25E ...`
+- these are rate-limited per cycle so logs do not explode
+
+Next test requested:
+
+- build/deploy this DLL
+- **do not play a ranked match yet**
+- go through same ranked-related no-match menu navigation
+- back out and quit
+- send next `DEBUG.txt`
+
+What next `DEBUG.txt` should contain:
+
+- `[RANK][WriterParent] stage=writer_parent_22AD86`
+- `[RANK][WriterParent] stage=writer_parent_22B25E`
+
+Decision rule:
+
+- if either parent fires during no-match menus, that is new offline foothold and next step stays offline
+- if neither fires offline, then these parents are still ranked-only and next test goes back to one real ranked match
+
+## 108. 2026-04-19 newest `DEBUG.txt`: `22AD81` / `22B259` do not fire offline; next climb is parent-stack from those callsites during real ranked run
+
+Newest no-match menu `DEBUG.txt` answered the immediate offline question cleanly.
+
+What log proved:
+
+- there were **no**:
+  - `[RANK][WriterParent] stage=writer_parent_22AD86`
+  - `[RANK][WriterParent] stage=writer_parent_22B25E`
+- offline run still only showed old junk family:
+  - repeated `post_1FEA0`
+  - `selfIsTable=1`
+  - zero slot / zero entry payload
+
+Interpretation:
+
+- `BBCF+0x0022AD81 -> 0x000A8190`
+- `BBCF+0x0022B259 -> 0x0022AC30`
+- both are still ranked-only in observed traffic
+- so they are not yet the offline/menu foothold
+- but they are higher than `0x20761`, so next step is to climb one more level above them during real ranked execution
+
+Patch made immediately after this analysis:
+
+- when either writer-parent callsite fires, it now logs:
+  - `[RANK][WriterParent] ...`
+  - `[RANK][WriterParent] stage=... bt_N=...`
+  - return-address probes for stack frames
+  - nearby-call scans for higher frames
+
+Next test requested:
+
+- build/deploy this DLL
+- run one real ranked progression-producing match again
+- send next `DEBUG.txt`
+
+What next `DEBUG.txt` should contain:
+
+- `[RANK][WriterParent] stage=writer_parent_22AD86`
+- `[RANK][WriterParent] stage=writer_parent_22B25E`
+- `[RANK][WriterParent] stage=writer_parent_22AD86 bt_`
+- `[RANK][WriterParent] stage=writer_parent_22B25E bt_`
+- associated:
+  - `[RANK][StateMachineTransition] writer_parent_22AD86_bt_...`
+  - `[RANK][StateMachineTransition] writer_parent_22B25E_bt_...`
+
+Goal now:
+
+- identify parent above `22AD81 / 22B259`
+- if that next parent overlaps no-match traffic, that becomes next offline retest point
+
+## 109. 2026-04-19 newest `DEBUG.txt`: `0x20761` is a bulk-copy write inside `BBCF+0x1F720`; next probe moves to pre-copy source object
+
+Newest real ranked `DEBUG.txt` plus on-disk disassembly closed the ambiguity around the local-slot writer.
+
+What the log proved:
+
+- trusted-chain verdict is still unchanged:
+  - `cheapPathTrusted=0`
+  - `interpretation=no_trusted_rank_chain_before_first_inmatch_transition`
+- latest trusted values showed an important shape change:
+  - local ranked slot already held final packed value like `0x002197BF`
+  - earlier table entry `id=1 + 0x10` still lagged at `0x002193BF`
+  - later `Stage8Copy id=1` copied the local slot value into the table entry
+- so `Stage8Copy` is downstream mirror/copy, not original producer
+
+What the disassembly proved:
+
+- exact writer site from `[RANK][DataFlowWriter]`:
+  - `BBCF+0x00020761`
+- is **not** arithmetic composition
+- it is the `rep movsd` inside function `BBCF+0x0001F720`
+- concrete block:
+  - `lea edi, [ebx + 0x8]`
+  - `mov ecx, 0x246`
+  - `rep movsd`
+  - then `call BBCF+0x0001E980`
+- meaning:
+  - destination ranked slot `state + 0x118`
+  - is copied from source object slot `src + 0x110`
+  - before the later `1E980`/`Bit4Skip`/`Stage8Copy` work happens
+
+Interpretation:
+
+- `0x20761` is a real local-slot seed write, but only as part of a bulk structure copy
+- so continuing to climb from the `rep movsd` itself is lower value than probing the source object that already contains the seeded pair
+- current best next offline foothold candidate is therefore:
+  - whichever caller feeds `BBCF+0x0001F720` with a source object whose `+0x110` slot already looks packed
+
+Patch made immediately after this analysis:
+
+- added direct pre-copy hook at:
+  - `BBCF+0x00020750`
+- new log tag:
+  - `[RANK][SeedCopy]`
+- it logs:
+  - destination ranked state object
+  - source object pointer
+  - source object fields at:
+    - `src + 0x110`
+    - `src + 0x118`
+  - destination local slot at:
+    - `state + 0x118`
+    - `state + 0x120`
+  - source count/state header
+  - bounded backtrace from the actual copy-call boundary
+
+Why this is the right next cut:
+
+- it moves upstream from the misleading `rep movsd` write
+- it tells us whether the packed pair already exists in the copy source object
+- and it gives a cleaner call boundary than the mid-copy PAGE_GUARD writer hit
+
+Next test requested:
+
+- build/deploy this DLL
+- do **not** play a ranked match yet
+- run the same ranked-related no-match menu navigation that was used for offline retests
+- back out and quit
+- send next `DEBUG.txt`
+
+What next `DEBUG.txt` should contain:
+
+- ideally:
+  - `[RANK][SeedCopy]`
+- if it fires offline, include:
+  - `[RANK][SeedCopy] bt_`
+  - `[RANK][StateMachineTransition] seedcopy_bt_...`
+
+Decision rule:
+
+- if `[RANK][SeedCopy]` fires during no-match menu flow, this becomes the new offline foothold and next work stays off-match
+- if it does not fire offline, then source-object seeding is still match-only and next test goes back to one real ranked run with the new pre-copy probe
+
+## 110. 2026-04-19 newest `DEBUG.txt`: offline retest still does not reach `[RANK][SeedCopy]`; pre-copy seed path remains match-only in observed traffic
+
+Newest no-match `DEBUG.txt` answered the immediate question from step 109.
+
+What the log showed:
+
+- there were **no** `[RANK][SeedCopy]` lines anywhere in the file
+- shutdown verdict stayed fully cold:
+  - `[RANK][VerdictSummary] reason='BBCF_IM_Shutdown' seq=185 lobby=184 builder=0 compose=0 state3=0 packSelect=0 phase3=0 bit4skip=0 sourceTotal=0 sourcePair=0 writePacked=0 gameCall=0 upload=0`
+  - `firstInMatch=0`
+  - `firstTrusted=0`
+  - `cheapPathTrusted=0`
+  - `interpretation=no_trusted_rank_chain_before_first_inmatch_transition`
+- near shutdown, only the already-known low-value call-cluster probes were active, with no trusted rank-chain progression
+
+Interpretation:
+
+- the new pre-copy hook at `BBCF+0x00020750` did **not** fire during ranked-related menu navigation
+- so the source-object path feeding `BBCF+0x0001F720` still appears to be match-only in observed traffic
+- that means there is currently no evidence that this seed stage can be reached from the same off-match path that hits lobby/menu code
+
+Decision:
+
+- stop spending more offline retests on the current `SeedCopy` probe
+- keep the probe installed as-is
+- move back to one real ranked progression-producing match so the new upstream source-object hook can capture the first actual seed event
+
+Next test requested:
+
+- deploy the current debug DLL already built on this branch
+- play exactly one real ranked match that should progress rank state
+- quit and send the next `DEBUG.txt`
+
+What the next `DEBUG.txt` should contain:
+
+- `[RANK][SeedCopy]`
+- `[RANK][SeedCopy] bt_`
+- if present in the same run, any later trusted-chain markers tied to the same seed:
+  - `[RANK][Bit4Skip]`
+  - `[RANK][Stage8Copy]`
+  - `[RANK][DataFlowWriter]`
+
+Goal now:
+
+- capture the first real source-object seed event
+- compare `src + 0x110` against the later local-slot/table values in the same ranked run
+- then climb one frame above the copy boundary if needed, using the bounded `SeedCopy` backtrace rather than the noisier PAGE_GUARD writer hit
+
+## 111. 2026-04-19 newest `DEBUG.txt`: first real `SeedCopy` hit confirms source-object seed pair, but hook is unstable and must be disabled before next run
+
+Newest real ranked run finally hit the pre-copy source-object probe.
+
+What the log proved:
+
+- first real seed event:
+  - `[RANK][SeedCopy] site=BBCF+0x00020750 ... self=0x171E9F50 src=0x021AE774 srcCount=6 srcState=0 src110=[0x00218FBF,0] src118=[0x00000018,0] dst118=[0x00000000,0] dst120=[0x00000000,0]`
+- immediate follow-up local-slot write:
+  - `[RANK][DataFlow] ... new=[0x00218FBF,0] writer_rva=0x00020761`
+- so source object already carries packed ranked pair at:
+  - `src + 0x110`
+- and `BBCF+0x00020761` really is downstream bulk-copy seeding into local slot, not composition
+
+Useful upstream frames captured from same event:
+
+- `seedcopy_bt_5=BBCF+0x0014FBF4`
+- `seedcopy_bt_6=BBCF+0x0004F281`
+- `seedcopy_bt_7=BBCF+0x00083065`
+- overlapping writer-parent chain still visible:
+  - `BBCF+0x0022AD81 -> 0x000A8190`
+  - `BBCF+0x0022B259 -> 0x0022AC30`
+  - `BBCF+0x0004EDB6 -> 0x00082C00`
+  - `BBCF+0x003A5670 -> 0x0004EB10`
+
+What went wrong operationally:
+
+- operator reported game crash after one ranked match with this hook active
+- latest `DEBUG.txt` stops immediately after first `SeedCopy`/`DataFlowWriter` burst and `SetDumpfileCommentString`
+- no normal `BBCF_IM_Shutdown` appears
+- no new trusted-chain stages appeared before termination
+
+Interpretation:
+
+- research goal for `SeedCopy` is complete enough for now:
+  - packed rank pair originates in source object before bulk copy
+- but hook at `BBCF+0x00020750` is too unstable to keep enabled during normal repro runs
+- safest next move is:
+  - disable live `SeedCopy` install
+  - continue climbing through safer callsite-level parents already visible in this run
+
+Next test requested after disabling `SeedCopy` hook:
+
+- deploy updated debug DLL
+- run ranked-related flow again
+- if stable, do one more real ranked progression-producing match
+- send next `DEBUG.txt`
+
+Next likely upstream footholds to evaluate:
+
+- `BBCF+0x0004EDB6 -> 0x00082C00`
+- `BBCF+0x003A5670 -> 0x0004EB10`
+
+Reason for these two:
+
+- they sit above both `22AD81 / 22B259` and the now-confirmed `1F720 / 20750` bulk-copy seed
+- they are ordinary call boundaries, so they should be safer to hook than mid-block copy site `0x20750`
+- if one of them appears during no-match flow, that becomes next offline foothold candidate
+
+## 112. 2026-04-19 newest `DEBUG.txt`: stable ranked run confirms packed progress value format; next fast-test cut moves to `4EDB6` / `3A5670`
+
+Newest `DEBUG.txt` stayed stable through shutdown and preserved full trusted upload chain.
+
+What this stable run proved for progress-bar work:
+
+- packed local value still has stable format:
+  - high 16 bits = rank id
+  - low 16 bits = internal subscore
+- concrete observed packed value:
+  - `0x00218FBF`
+  - `rank_id = 0x0021`
+  - `subscore = 0x8FBF`
+- trusted chain still lines up in same order:
+  - `state3=894`
+  - `bit4skip=896`
+  - `sourceTotal=899`
+  - `sourcePair=900`
+  - `writePacked=905`
+  - `gameCall=911`
+  - `upload=913`
+- stable upload summary:
+  - `[RANK][VerdictSummary] ... sourceTotal=2 sourcePair=2 writePacked=6 gameCall=6 upload=2`
+
+Useful semantics from same run:
+
+- local slot before seed held older/stale pair:
+  - `old=[0x00008C00,0x00000F78]`
+- writer `BBCF+0x00020761` then replaced it in two writes:
+  - change #1 low dword became `0x00218FBF`
+  - change #2 high dword became `0x00000000`
+- after seeding:
+  - local slot `slot=[0x00218FBF,0]`
+  - local aux pair `next=[0x00000018,0]`
+- later table copy for id 1:
+  - `[RANK][Stage8Copy] ... id=1 ... src10=[0x00218FBF,0] ... src18=[0x00000018,0] ... dst18=[0x0000A018,0]`
+
+Interpretation:
+
+- progress-bar raw numerator candidate is now strongly supported:
+  - `subscore = packed_value & 0xFFFF`
+- rank bucket candidate is now strongly supported:
+  - `rank_id = packed_value >> 16`
+- still missing:
+  - threshold table / max-subscore-per-rank mapping
+- so best next acceleration path is not more full ranked matches by default
+- best next acceleration path is finding a safer parent that may also fire in ranked-related menu flow
+
+Why next hook target changes:
+
+- current stable parent stack above seed is repeatable:
+  - `BBCF+0x0004EDB6 -> 0x00082C00`
+  - `BBCF+0x003A5670 -> 0x0004EB10`
+- both are above:
+  - `22AD81 / 22B259`
+  - `1F720 / 20750`
+  - `20761`
+- both are plain call boundaries, so lower crash risk than mid-block `SeedCopy`
+
+Patch made immediately after this analysis:
+
+- added safer parent-call probes at:
+  - `BBCF+0x0004EDB6`
+  - `BBCF+0x003A5670`
+- new log stages expected:
+  - `[RANK][WriterParent] stage=writer_parent_4EDB6`
+  - `[RANK][WriterParent] stage=writer_parent_3A5670`
+
+Next test requested:
+
+- deploy updated debug DLL
+- do ranked-related menu/navigation flow **without** playing a full ranked match first
+- quit and send next `DEBUG.txt`
+
+What next `DEBUG.txt` should contain:
+
+- ideally:
+  - `stage=writer_parent_4EDB6`
+  - `stage=writer_parent_3A5670`
+- if one fires offline, include:
+  - corresponding `bt_`
+  - corresponding `CallCluster`
+
+Decision rule:
+
+- if either new parent fires offline, that becomes next fast-test foothold for threshold/subscore RE
+- if neither fires offline, then current best practical route for threshold discovery remains controlled real ranked snapshots plus value comparison across runs
+
+## 113. 2026-04-19 newest `DEBUG.txt`: `4EDB6` / `3A5670` also stay cold offline; no menu-path foothold yet above packed seed chain
+
+Newest no-match `DEBUG.txt` answered step 112 cleanly.
+
+What the log showed:
+
+- there were **no**:
+  - `[RANK][WriterParent] stage=writer_parent_4EDB6`
+  - `[RANK][WriterParent] stage=writer_parent_3A5670`
+- shutdown verdict stayed fully cold again:
+  - `[RANK][VerdictSummary] ... state3=0 packSelect=0 phase3=0 bit4skip=0 sourceTotal=0 sourcePair=0 writePacked=0 gameCall=0 upload=0`
+  - `firstInMatch=0`
+  - `firstTrusted=0`
+  - `cheapPathTrusted=0`
+- only old cheap/lobby family remained active:
+  - repeated `post_1FD80`
+  - repeated `post_1FEA0`
+  - `selfIsTable=1`
+  - stale slot payloads like `[0x00008C00,0x00000F78]`
+
+Interpretation:
+
+- `BBCF+0x0004EDB6 -> 0x00082C00` is still not reachable from current no-match ranked-menu flow
+- `BBCF+0x003A5670 -> 0x0004EB10` is also still not reachable from current no-match ranked-menu flow
+- so current upstream packed-seed chain remains match-only in observed traffic all the way through:
+  - `3A5670`
+  - `4EDB6`
+  - `22AD81 / 22B259`
+  - `1F720 / 20750`
+  - `20761`
+
+Decision:
+
+- stop spending more menu-only retests on this parent ladder for now
+- keep these safer parent probes installed
+- for fast progress-bar RE, pivot effort toward:
+  - controlled ranked snapshots across real runs
+  - and/or direct static search for threshold table / comparison logic keyed off `rank_id` and `subscore`
+
+Why this matters for progress bar:
+
+- packed progress value format is already strongly supported:
+  - `rank_id = packed >> 16`
+  - `subscore = packed & 0xFFFF`
+- missing piece is no longer field format
+- missing piece is threshold mapping per rank
+- menu-only flow is not currently exposing that mapping path
+
+Best next routes now:
+
+- route A: one or more controlled real ranked runs, collecting packed values before/after known rank movement
+- route B: static RE around threshold/compare logic, likely closer to rank evaluation than upload packaging
+
+Preferred next route:
+
+- start with static RE for threshold logic before asking for more full ranked matches
+- use existing observed sample:
+  - `rank_id=0x0021`
+  - `subscore=0x8FBF`
+- search for compare/table code that consumes:
+  - high-word rank bucket
+  - low-word internal score
+
+## 114. 2026-04-19 static pivot: rank-menu UI looks like the best no-match foothold, so next probe moves to `CNetworkUIRankMatchTopMenu__update` and `CNetworkUIRankMatchCharSele__init`
+
+After section 113, static RE continued instead of spending another full match.
+
+What static RE found:
+
+- `BBCF+0x001421A0` is `CNetworkUIRankMatchTopMenu__update`
+- `BBCF+0x00144A40` is `CNetworkUIRankMatchCharSele__init`
+- the rank-menu UI code clearly uses state around:
+  - `self+0x1730`
+  - `self+0x1734`
+  - `self+0x1738`
+  - `self+0x173C`
+  - `self+0x1744`
+  - `self+0x1760`
+  - `self+0x1960`
+  - `self+0x1964`
+  - `self+0x1A68`
+  - `self+0x1BAC`
+  - `self+0x1BB0`
+- one top-menu path formats `SkillRank_%02d`, which is much closer to the visible ranked UI than the upload/replay chain
+- this is promising because it may expose:
+  - current displayed rank bucket
+  - rank animation/progress state
+  - selected rank-entry tables
+- that would give us a faster path toward progress-bar research without forcing a full ranked match every iteration
+
+What was ruled out during the static pass:
+
+- config keys like:
+  - `NetSetsudanAddPt`
+  - `NetSetsudanDecPt`
+  - `NetSetsudanMaxPt`
+  - `NetSetsudanMinPt`
+- are part of config load / clamp logic, not the rank-threshold table we want
+- they look more like disconnect / penalty side parameters than per-rank progression thresholds
+
+Patch made:
+
+- added detour-style menu probes at:
+  - `BBCF+0x001421A0` (`TopMenu__update`)
+  - `BBCF+0x00144A40` (`CharSele__init`)
+- new logs use:
+  - `[RANK][MenuProbe]`
+- probe records the rank-menu fields above, including:
+  - selected entry from `+0x1964`
+  - selected entry from `+0x1A68`
+  - raw/animated fields around `+0x173C` and `+0x1744`
+  - `+0x1BB0`
+- each candidate still gets split as:
+  - `rank_id = value >> 16`
+  - `subscore = value & 0xFFFF`
+- this is only a logging pivot; no build or deploy done in this step
+
+Why this is the right next test:
+
+- the upload-seed chain is now clearly match-only in observed traffic
+- the menu UI is the first strong no-match candidate that appears to know the visible rank presentation directly
+- if these fields move offline while navigating ranked menus, we may be able to map:
+  - displayed rank bucket
+  - progress animation state
+  - candidate internal values
+
+Next requested test:
+
+- build/deploy the current debug DLL
+- go through ranked-related menu flow without playing a full ranked match
+- especially enter the ranked top menu and ranked character select
+- quit and send the new `DEBUG.txt`
+
+What the next `DEBUG.txt` should contain:
+
+- `[RANK][MenuProbe] Hooked BBCF+0x001421A0`
+- `[RANK][MenuProbe] Hooked BBCF+0x00144A40`
+- `[RANK][MenuProbe] tag=TopUpdate_...`
+- `[RANK][MenuProbe] tag=CharSeleInit_...`
+
+Decision rule:
+
+- if menu probes fire and one of `sel1964`, `sel1A68`, or `raw1BB0` looks stable and meaningful offline, that becomes the new fast-turn RE anchor for progress-bar work
+- if the menu probes stay cold or only show junk, next pivot should be deeper static RE around the code that formats `SkillRank_%02d` and whatever feeds that rank index
+
+## 115. 2026-04-19 newest `DEBUG.txt`: char-select init probe is safe, but top-menu update detour crashes immediately after first `TopUpdate_pre`
+
+Newest run answered the ABI-risk question fast.
+
+What the log showed:
+
+- both menu detours installed:
+  - `[RANK][MenuProbe] Hooked BBCF+0x001421A0`
+  - `[RANK][MenuProbe] Hooked BBCF+0x00144A40`
+- char-select init fired and returned safely:
+  - `[RANK][MenuProbe] tag=CharSeleInit_pre ...`
+  - `[RANK][MenuProbe] tag=CharSeleInit_post ...`
+- top-menu update fired once:
+  - `[RANK][MenuProbe] tag=TopUpdate_pre self=0x017CAF70 ... sel1A68=0x00F6DCCC ...`
+- but there was **no** matching:
+  - `tag=TopUpdate_post`
+- immediately after that first `TopUpdate_pre`, log went straight to:
+  - `SetDumpfileCommentString`
+  - `[MenuExit] SetDumpfileCommentString: gameMode=13 gameState=27 sceneStatus=9`
+
+Interpretation:
+
+- `CNetworkUIRankMatchTopMenu__update` detour at `BBCF+0x001421A0` is not ABI-safe enough in live execution
+- the crash is very likely from the detour boundary itself, not from the pure logging body
+- `CNetworkUIRankMatchCharSele__init` at `BBCF+0x00144A40` appears safe enough to keep for now
+
+Useful data recovered before crash:
+
+- char-select init object stayed mostly zeroed on entry
+- post-init still showed no obvious packed self-rank value yet:
+  - `sel1964=0x00000000`
+  - `raw1BB0=0x00000000`
+- one field worth keeping an eye on:
+  - `sel1A68`
+- but the crashing top-update path is not usable in current detour form
+
+Patch made immediately after this result:
+
+- disabled live install of the `0x001421A0` top-menu update detour
+- kept:
+  - the implementation for later
+  - the safe `0x00144A40` char-select init detour
+
+Next safer test:
+
+- deploy updated debug DLL
+- enter ranked menu
+- continue into ranked character select
+- move around there if possible
+- quit before starting a real ranked match
+- send the new `DEBUG.txt`
+
+What next log should contain:
+
+- `[RANK][MenuProbe] Hooked BBCF+0x00144A40`
+- `[RANK][MenuProbe] tag=CharSeleInit_pre`
+- `[RANK][MenuProbe] tag=CharSeleInit_post`
+- and importantly it should **not** crash on rank-menu entry anymore
+
+Decision:
+
+- if char-select init stays stable and begins exposing meaningful `sel1964` / `sel1A68` / `raw1BB0` values, keep using it as the no-match foothold
+- if it stays zero/junk, next pivot should be a safer callsite near the `SkillRank_%02d` formatting path instead of another full-function detour
+
+## 116. 2026-04-19 newest `DEBUG.txt`: char-select init stays stable but still zero/junk; next foothold moves to exact `SkillRank_%02d` render callsite
+
+Newest no-match run stayed stable and answered the remaining char-select question.
+
+What the log showed:
+
+- only the safe char-select init detour was active:
+  - `[RANK][MenuProbe] Hooked BBCF+0x00144A40`
+- it fired once:
+  - `CharSeleInit_pre`
+  - `CharSeleInit_post`
+- after using all ranked-menu options, there were still no additional `[RANK][MenuProbe]` hits
+- the captured init-time values stayed unhelpful:
+  - `sel1964=0x00000000`
+  - `raw1BB0=0x00000000`
+  - `sel1A68=0xFFFFFFFF` post-init
+- shutdown still showed no trusted ranked upload chain
+
+Important operator observation:
+
+- the player's rank is visibly rendered on screen in ranked character select even though init-time fields stayed zero/junk
+
+Interpretation:
+
+- rank display is not coming from one-time char-select init state in a directly readable form
+- the useful value is likely computed later during draw/update, closer to the `SkillRank_%02d` formatting path found in static RE
+- that means the next safe foothold should be a narrow callsite hook, not another whole-function detour
+
+Static anchor now used:
+
+- `BBCF+0x001443B4` is inside the exact render path that:
+  - reads `self+0x173C`
+  - passes `edi`
+  - calls `BBCF+0x000BDF20`
+  - then formats `SkillRank_%02d` via `BBCF+0x0005F820`
+- this is much closer to the visible rank on screen than `CharSeleInit`
+
+Patch made:
+
+- kept safe `CharSeleInit` detour at `0x00144A40`
+- added a mid-block trace at:
+  - `BBCF+0x001443B4`
+- new log tag:
+  - `[RANK][SkillRankRender]`
+- probe logs:
+  - rendered `rankIndex` from `edi`
+  - `off173C`
+  - `off1744`
+  - `sel1964`
+  - `sel1A68`
+  - `raw1BB0`
+
+Why this should be safer:
+
+- it does not detour the whole top-menu update function
+- it only wraps the exact 16-byte sequence that prepares the `SkillRank_%02d` render path
+- original instructions are replayed byte-for-byte, including the call to `0x000BDF20`
+
+Next requested test:
+
+- deploy updated debug DLL
+- enter ranked character select where your rank is visible
+- stay there briefly and move through options if needed
+- quit without playing a full ranked match
+- send the new `DEBUG.txt`
+
+What the next log should contain:
+
+- `[RANK][SkillRankRender]`
+- ideally repeated with a stable `rankIndex=...`
+
+Decision rule:
+
+- if `rankIndex` is stable and matches the visible on-screen rank, we finally have a fast no-match anchor for progress-bar RE
+- if this still does not fire or is unstable, next pivot should move one notch later or earlier in the same narrow render chain, not back to whole-function detours
+
+## 117. 2026-04-19 newest `DEBUG.txt`: visible-rank render hook works; next step climbs into the source helpers behind `rankIndex`
+
+Newest no-match run is the first strong success on the visible-rank side.
+
+What the log showed:
+
+- `[RANK][SkillRankRender]` fired repeatedly and safely
+- same char-select object stayed active:
+  - `self=0x017CC9D8`
+- one stable render series showed:
+  - `rankIndex=26`
+  - `idx1960=21`
+  - `sel1964=0x00000008`
+  - `sel1A68=0x00000200`
+- later another stable render series showed:
+  - `rankIndex=33`
+  - `idx1960=24`
+  - `sel1964=0x00000005`
+  - `sel1A68=0x00000200`
+- the animation fields behaved like render tween values, not raw progression storage:
+  - `off173C` moved `0.000 -> 1.000`
+  - `off1744` moved `-32.000 -> 0.000`
+- `raw1BB0` still stayed zero
+
+Interpretation:
+
+- the visible on-screen rank definitely comes through this render path now
+- `rankIndex` is a real drawn asset/category id, not random junk
+- but it is not yet the packed progression field we need for the progress bar
+- the next job is to climb one step upstream and log the helper outputs that feed `rankIndex`
+
+Static source chain now confirmed:
+
+- `0x544323` calls `0x4A11C0`
+- return of `0x4A11C0` becomes `edi` and later becomes `rankIndex`
+- `0x544344` calls `0x4A1410`
+- return of `0x4A1410` is an entry object pointer
+- nearby helper accessors suggest interesting object fields:
+  - `+0xC8`
+  - `+0xD0`
+  - `+0xF4`
+
+Patch made:
+
+- kept the working `[RANK][SkillRankRender]` hook
+- added helper detours:
+  - `BBCF+0x000A11C0`
+  - `BBCF+0x000A1410`
+- these are filtered by return address so they only log when called from the char-select visible-rank path
+- new log tag:
+  - `[RANK][EntrySource]`
+- object probe logs:
+  - entry object pointer
+  - `c8`
+  - `d0`
+  - `f4`
+  - `f8`
+  - `fc`
+  - `f100`
+
+Why this is the right next move:
+
+- render hook already proved the path is live and safe offline
+- source-helper detours are smaller and safer than re-detouring a whole UI update function
+- if one of the entry-object fields tracks real rank/subscore metadata, this may finally bridge visible rank to internal progression data without a full match
+
+## 118. 2026-04-19 newest `DEBUG.txt`: `0x4A11C0` is the exact visible-rank accessor; sampled entry-object fields are stable but not yet progression
+
+Test run:
+
+- operator ran another no-match ranked char-select pass and sent new `DEBUG.txt`
+- no ranked match was played
+- no `RANK_ALL` upload chain fired in this run
+
+What the log proved:
+
+- visible-rank path is still safe and repeatable offline:
+  - `[RANK][SkillRankRender]` fired many times
+  - same menu object stayed active:
+    - `self=0x017CC9D8`
+- one stable visible-rank state was:
+  - `rankIndex=33`
+  - `idx1960=24`
+  - `sel1964=0x00000005`
+  - `sel1A68=0x00000200`
+- the paired source-helper logs matched that state exactly:
+  - `[RANK][EntrySource] tag=rank_word self=0x012CD190 index=24 result=0x00000021`
+  - `0x21 == 33`, so `BBCF+0x000A11C0` is not just adjacent to the visible rank path; it directly returns the rendered rank index for this menu state
+- the matching entry-object helper stayed stable too:
+  - `[RANK][EntrySource] tag=entry_object self=0x012CD190 index=24 result=0x012CF664`
+  - sampled fields stayed:
+    - `c8=0x00140002`
+    - `d0=0x0015000C`
+    - `f4=f8=fc=f100=0`
+- interpretation:
+  - this is strong proof that the menu can expose the visible rank/title path without playing a match
+  - but the first sampled entry-object fields do not contain the packed progress dword or any obvious `(rank_id << 16) | subscore` value
+  - so the no-match path is currently good for visible-rank/title mapping, not yet for subscore/progress extraction
+
+Important run-end verdict:
+
+- end summary still said:
+  - `cheapPathTrusted=0`
+  - `interpretation=no_trusted_rank_chain_before_first_inmatch_transition`
+- this is expected for this run because no upload/builder chain fired; the new value of this run is the visible-rank side, not upload-side progression
+
+Problem observed in the instrumentation itself:
+
+- `[RANK][EntrySource]` logged every frame for the same unchanged `(self,index,result,obj)` tuple
+- that burned the log budget on the first stable state (`index=24`, `rankIndex=33`)
+- later visible states such as the `rankIndex=26` / `idx1960=21` state were still visible in `[RANK][SkillRankRender]`, but the helper logs for the second state were mostly or fully exhausted by then
+
+Patch made after analyzing this log:
+
+- kept the working offline hooks:
+  - `[RANK][SkillRankRender]`
+  - helper detours at `BBCF+0x000A11C0` and `BBCF+0x000A1410`
+- changed `[RANK][EntrySource]` logging to be change-driven instead of frame-spam:
+  - `rank_word` logs only when `(self,index,result)` changes
+  - `entry_object` logs only when `(self,index,result)` or the sampled object fields change
+- widened the entry-object field sample so the next no-match run can compare more structure across multiple visible-rank states:
+  - `+0xC0`
+  - `+0xC4`
+  - `+0xC8`
+  - `+0xCC`
+  - `+0xD0`
+  - `+0xD4`
+  - `+0xF0`
+  - `+0xF4`
+  - `+0xF8`
+  - `+0xFC`
+  - `+0x100`
+  - `+0x104`
+- build check:
+  - `Debug|Win32` build succeeded after this patch
+  - only existing warning seen was:
+    - `hooks_bbcf.cpp(4703,2): warning C4102: 'NOT_CUSTOM_PACKET': unreferenced label`
+
+Why this is the right next step:
+
+- we already have the no-match anchor for visible rank via `0x4A11C0`
+- the next gap is comparing the helper-fed metadata across more than one visible-rank state in the same run
+- change-driven logging should preserve budget so later state changes are captured instead of wasting lines on identical frames
+- widened field sampling gives a better chance to spot which part of the entry object varies with visible rank/title selection
+
+Next requested test:
+
+- deploy the updated `Debug` DLL
+- enter ranked character select where the rank badge/title is visible
+- deliberately move through enough options/pages to make the visible rank display switch between at least two distinct stable states
+- wait briefly on each stable state
+- quit without playing a ranked match
+- send the new `DEBUG.txt`
+
+What the next log should contain:
+
+- `[RANK][SkillRankRender]` for at least two different stable `rankIndex=...` states
+- matching change-driven `[RANK][EntrySource] tag=rank_word ...`
+- matching change-driven `[RANK][EntrySource] tag=entry_object ...`
+- ideally one tuple for the `rankIndex=33` family and one for the `rankIndex=26` family, so we can compare which entry-object fields actually track the visible rank source
+
+## 119. 2026-04-19 newest `DEBUG.txt`: change-driven menu probe captured both stable states; offline `rank_word` now looks like true packed `rank_id`
+
+Test run:
+
+- operator ran another no-match ranked char-select pass with the change-driven entry-source patch
+- no ranked match was played
+- no ranked upload/builder chain fired in this run
+
+What the log proved:
+
+- the change-driven patch worked:
+  - we now captured clean helper snapshots for more than one stable visible-rank state in the same `DEBUG.txt`
+  - log budget was no longer burned on frame-by-frame repeats of one state
+- first stable captured state:
+  - `[RANK][EntrySource] tag=rank_word ... index=21 result=0x0000001A`
+  - matching render:
+    - `[RANK][SkillRankRender] ... rankIndex=26 idx1960=21 sel1964=0x00000008`
+  - matching entry object:
+    - `obj=0x012CF1E4`
+    - `c0=0x00050000`
+    - `c4=0x00060000`
+    - `c8=0x00020002`
+    - `cc=0x00020003`
+    - `d0=0x00090008`
+    - `d4=0x000B0000`
+- second stable captured state:
+  - `[RANK][EntrySource] tag=rank_word ... index=24 result=0x00000021`
+  - matching render:
+    - `[RANK][SkillRankRender] ... rankIndex=33 idx1960=24 sel1964=0x00000005`
+  - matching entry object:
+    - `obj=0x012CF664`
+    - `c0=0x00070003`
+    - `c4=0x00080005`
+    - `c8=0x00140002`
+    - `cc=0x00190004`
+    - `d0=0x0015000C`
+    - `d4=0x0022000D`
+- intermediate menu rows were also informative:
+  - `index=22 -> result=0`
+  - `index=23 -> result=0`
+  - corresponding entry objects were all-zero in the sampled region
+  - this strongly suggests the menu helper is walking a sparse rank-row table, not a flat always-populated array
+
+Most important new interpretation:
+
+- offline `rank_word` values now look like the same semantic domain as live packed upload `rank_id`, not a separate UI-only sprite id
+- strongest evidence:
+  - this run's visible-rank state logged:
+    - `result=0x00000021`
+    - rendered `rankIndex=33`
+  - prior real ranked upload runs already proved packed values like:
+    - `0x00218FBF`
+    - high word `rank_id = 0x0021`
+- so `BBCF+0x000A11C0` now appears to expose the visible rank id directly in a no-match menu path
+- this is a major step toward the fast-test goal:
+  - we can likely validate current visible rank id offline, without playing a ranked match
+
+What is still not proven:
+
+- no sampled entry-object field is yet proven to be:
+  - current packed progress subscore
+  - next-rank threshold
+  - or a direct `(rank_id << 16) | subscore` pair
+- the sampled row metadata clearly changes across rank rows, but its meaning is still unresolved
+
+Current best model of the no-match path:
+
+- `BBCF+0x000A11C0`:
+  - returns the visible rank id for the currently selected rank-row entry
+- `BBCF+0x000A1410`:
+  - returns the metadata row object for that same menu entry
+- rows with no visible rank content currently return:
+  - rank id `0`
+  - mostly/all zero metadata in the sampled region
+
+Important run-end verdict:
+
+- shutdown summary stayed cold again:
+  - `cheapPathTrusted=0`
+  - `interpretation=no_trusted_rank_chain_before_first_inmatch_transition`
+- expected, because this was still a menu-only run
+- but the menu-side objective advanced meaningfully anyway:
+  - offline visible rank id is now plausibly bridged to live upload `rank_id`
+
+Patch made after this analysis:
+
+- kept the working menu-side hooks:
+  - `[RANK][SkillRankRender]`
+  - `[RANK][EntrySource]` via `BBCF+0x000A11C0`
+  - `[RANK][EntrySource]` via `BBCF+0x000A1410`
+- tightened the row-summary log so the next no-match run compares row metadata directly against the paired offline rank id:
+  - store the last paired `rank_word` for the `(self,index)` tuple
+  - include `pairedRankWord`
+  - include `pairedRankWord + 1`
+  - split and print:
+    - `c0`
+    - `c4`
+    - `c8`
+    - `cc`
+    - `d0`
+    - `d4`
+  - add quick match flags:
+    - `match_d0_hi`
+    - `match_d4_hi`
+    - `match_d4_hi_next`
+- build check:
+  - `Debug|Win32` build succeeded after this patch
+  - only existing warning remained:
+    - `hooks_bbcf.cpp(4747,2): warning C4102: 'NOT_CUSTOM_PACKET': unreferenced label`
+
+Why this is the right next move:
+
+- the no-match path is still paying off
+- we now have a plausible offline source for true `rank_id`
+- the next question is whether one of the entry-object row fields tracks:
+  - current rank id
+  - next rank id
+  - or some threshold-like metadata relative to that current rank id
+- the new comparative row summary is a cheaper next probe than going back to a full ranked match immediately
+
+Next requested test:
+
+- deploy the updated `Debug` DLL
+- enter ranked character select again
+- move through several distinct stable visible-rank rows, not just two if possible
+- pause briefly on each visible rank so one clean helper snapshot is emitted
+- quit without playing a ranked match
+- send the new `DEBUG.txt`
+
+What the next log should contain:
+
+- `[RANK][EntrySource] tag=rank_word ...`
+- `[RANK][EntrySource] row index=... pairedRankWord=...`
+- `[RANK][SkillRankRender] ...`
+- ideally at least 3 distinct nonzero visible-rank rows so we can compare whether:
+  - `d0.hi`
+  - `d4.hi`
+  - or another split field
+  tracks current rank id or next-rank progression structure
+
+## 120. 2026-04-19 newest `DEBUG.txt`: `rank_word` exactly equals rendered rank on nonzero rows; `d4.hi` is first credible offline next-rank candidate
+
+Test run:
+
+- operator ran another no-match ranked char-select pass
+- no ranked match was played
+- no upload/builder chain fired
+
+What the log proved:
+
+- offline correlation tightened further:
+  - for the nonzero rows we have now observed, `rank_word` is not merely in the same domain as the rendered rank
+  - it is numerically identical to the rendered rank value
+- concrete row/state correlations:
+  - row `index=21`
+    - `rank_word = 0x0000001A`
+    - rendered `rankIndex = 26`
+    - `0x1A == 26`
+  - row `index=24`
+    - `rank_word = 0x00000021`
+    - rendered `rankIndex = 33`
+    - `0x21 == 33`
+- this materially strengthens the offline foothold:
+  - `BBCF+0x000A11C0` now looks like a direct no-match getter for the current visible rank id/value, not a nearby proxy
+
+What the row-metadata comparison proved:
+
+- rows with `rank_word = 0` continue to have all-zero metadata in the sampled region:
+  - `index=17`
+  - `index=18`
+  - `index=19`
+  - `index=20`
+  - `index=22`
+  - `index=23`
+  - `index=25`
+- this confirms the table is sparse in the region the menu is traversing
+- nonzero rows still expose structured metadata:
+  - for `index=21 / rank_word=0x1A`:
+    - `c0=0x00050000`
+    - `c4=0x00060000`
+    - `c8=0x00020002`
+    - `cc=0x00020003`
+    - `d0=0x00090008`
+    - `d4=0x000B0000`
+  - for `index=24 / rank_word=0x21`:
+    - `c0=0x00070003`
+    - `c4=0x00080005`
+    - `c8=0x00140002`
+    - `cc=0x00190004`
+    - `d0=0x0015000C`
+    - `d4=0x0022000D`
+
+Most important new interpretation:
+
+- row `index=24` is the first strong offline hint of next-rank structure:
+  - paired current rank word:
+    - `0x21`
+  - row summary logged:
+    - `next=0x22`
+    - `parts_d4 hi=0x0022`
+    - `match_d4_hi_next=1`
+- so for this row at least:
+  - `d4.hi == current_rank + 1`
+- that makes `d4.hi` the first credible no-match candidate for “next rank id” metadata
+
+Important caution:
+
+- this is not yet universal
+- row `index=21 / rank_word=0x1A` did **not** show the same pattern:
+  - `d4.hi = 0x000B`
+  - `current_rank + 1 = 0x001B`
+  - no match
+- so one of these must be true:
+  - only some rows are true current-rank rows in the way we think
+  - `d4` has mode/category-dependent meaning
+  - or the row family changes layout/semantics across sparse regions
+
+Current best menu-side model:
+
+- `BBCF+0x000A11C0`:
+  - direct offline getter for the visible rank id/value shown in the menu
+- `BBCF+0x000A1410`:
+  - returns the row/metadata object associated with that visible rank row
+- `d4.hi`:
+  - best current candidate for “next rank id” on at least some rows
+- subscore/progress:
+  - still not exposed by any sampled field so far
+
+Run-end verdict:
+
+- still cold by trusted-chain standards:
+  - `cheapPathTrusted=0`
+  - `interpretation=no_trusted_rank_chain_before_first_inmatch_transition`
+- expected, since this was still purely offline/menu-side
+
+Patch made after this analysis:
+
+- kept the existing menu-side hooks
+- added direct row-to-render correlation in the row-summary log:
+  - paired rendered menu row index
+  - paired rendered rank index
+  - `rankWordEqRender`
+  - `match_d4_hi_render_next`
+- purpose:
+  - make future offline logs self-proving instead of requiring manual cross-reading between `EntrySource` and `SkillRankRender`
+- build check:
+  - `Debug|Win32` build succeeded after the patch
+  - only existing warning remained:
+    - `hooks_bbcf.cpp(4759,2): warning C4102: 'NOT_CUSTOM_PACKET': unreferenced label`
+
+Why the next test should still stay offline:
+
+- we now appear to have the visible current rank available without a match
+- the remaining offline question is whether we can find stable “next rank” metadata the same way
+- that is still cheaper and safer than returning to full ranked-match loops immediately
+
+Next requested test:
+
+- deploy the updated `Debug` DLL
+- enter ranked character select again
+- move across as many distinct visible nonzero rank rows as you can find
+- pause briefly on each one
+- quit without playing a ranked match
+- send the new `DEBUG.txt`
+
+What the next log should contain:
+
+- `[RANK][EntrySource] row index=... pairedRankWord=... renderRankIndex=... rankWordEqRender=...`
+- ideally several nonzero rows beyond the currently known:
+  - `0x1A`
+  - `0x21`
+- main thing to look for next:
+  - whether `d4.hi == pairedRankWord + 1` repeats across multiple nonzero rows
+- if that pattern repeats, we likely have an offline current-rank / next-rank pair source

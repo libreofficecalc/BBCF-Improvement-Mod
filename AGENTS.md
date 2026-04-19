@@ -75,6 +75,7 @@ This handbook is a one-stop map for agents modifying the BBCF Improvement Mod. T
 - **`USER_README.txt` / `README.md`**: Player-facing documentation, features list, and installation instructions.
 
 ## Working guidance for agents
+- Use caveman skill by default for user-facing responses in this repo. Only stop if user explicitly asks for normal mode.
 - To add a feature toggle or hotkey, declare it in `src/Core/settings.def`, consume it via `Settings::settingsIni` or `Settings::savedSettings`, and expose controls in `Overlay/WindowManager` using ImGui helpers.
 - To hook game/engine behavior, prefer `HookManager` for JMP patches and `hooks_detours` for Detours-based API intercepts. Populate any new shared pointers in `g_interfaces` so other systems (overlay, palettes, networking) can observe state.
 - Rendering/UI changes should go through the wrapper classes so ImGui draws safely; avoid direct device calls without routing through `ID3D9EXWrapper_Device` and friends.
@@ -87,6 +88,7 @@ This handbook is a one-stop map for agents modifying the BBCF Improvement Mod. T
 
 ## Operator deploy workflow
 - User has their own easy deploy workflow. Default rule for agents: do **not** build or deploy automatically unless user explicitly asks. For RE/testing turns, agents should normally stop after preparing code/logging/config changes and tell the operator exactly what to run/test in game.
+- Agents should still verify their own code edits with a local build before ending the turn unless the user explicitly says not to build or the build environment is unavailable.
 - For repetitive URT repro loops, agents can run one automated cycle via `./tools/urt_automation/run_bbcf_debug_cycle.sh` (repo root). This launches `tools/urt_automation/BBCF-Automatic-Debugger.ahk`, waits for AHK completion, and then closes `BBCF.exe` if still running.
 - Automation caveat: AHK may temporarily take full keyboard/mouse control while the macro runs.
 - Exact current definition of "one cycle" (toast-by-toast behavior) is documented in `docs/replay_takeover/URT_RE_EXECUTION_PLAN.md` under `Automation mode (single debug cycle)`.
