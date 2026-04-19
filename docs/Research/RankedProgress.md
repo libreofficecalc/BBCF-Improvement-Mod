@@ -4,6 +4,38 @@
 
 Reverse engineer BBCF ranked progression source of truth so mod can read true rank state from memory, not infer it from Steam.
 
+## Agent Workflow
+
+This investigation is now an explicit agent/user loop. Every agent should follow it and keep this file current.
+
+Loop:
+
+1. Agent reads this file first to recover latest ranked RE context.
+2. Agent patches code for the current ranked goal.
+3. Agent tells operator exactly what to test.
+4. Operator runs the test and replies with a message like "next debug.txt is in".
+5. Agent reads the latest game log from the fixed path below.
+6. Agent concludes what the new `DEBUG.txt` proves or disproves.
+7. Agent patches again if there is still an actionable next step.
+8. Agent updates this file with:
+   - what test was run
+   - what `DEBUG.txt` proved
+   - what patch was made
+   - what exact next test the operator should run
+
+Hard rule:
+
+- do not make future agents rediscover the log path or current conclusions from scratch
+- do not stop at log reading alone if there is a clear next instrumentation patch to make
+
+Fixed game log path:
+
+- `/mnt/d/SteamLibrary/steamapps/common/BlazBlue Centralfiction/BBCF_IM/DEBUG.txt`
+
+Related game binary path:
+
+- `/mnt/d/SteamLibrary/steamapps/common/BlazBlue Centralfiction/BBCF.exe`
+
 ## Project Goal / Definition of Done
 
 End goal is not only to identify the packed `RANK_ALL` upload value. End goal is to fully support ranked tracking in the mod with enough proof to build a real user-facing ranked progress UI.
@@ -719,6 +751,419 @@ What is now disproven:
 - `*(*(NetUserData + 0x23218) + 0x30)` is not currently validated as the uploaded packed score in this runtime context.
 - The `+0x23218` slot cannot currently be treated as a plain dereferenceable pointer during the Steam upload hook.
 - the widened `0x6a1c` / `0x1c2ac` direct-window scans did not reveal the packed score or its split halves on the latest live upload
+
+## 50. 2026-04-18 zero-window test result from latest `DEBUG.txt`
+
+Test context:
+
+- operator ran the latest build after the zero-window tracer patch
+- analyzed log path:
+  - `/mnt/d/SteamLibrary/steamapps/common/BlazBlue Centralfiction/BBCF_IM/DEBUG.txt`
+- analyzed session end:
+  - `2026-04-18 20:00:28`
+
+What the log proved:
+
+- first in-match transition still occurred at:
+  - `seq=74`
+- first out-of-match-after-inmatch still occurred at:
+  - `seq=75`
+- first trusted ranked chain stage still occurred only after that:
+  - `State3Enter seq=76`
+  - `Phase3After41E980 seq=77`
+  - `Bit4Skip seq=78`
+  - `WritePacked seq=87`
+  - `GameCall seq=93`
+  - `Upload seq=95`
+- final verdict remained:
+  - `cheapPathTrusted=0`
+  - `interpretation=no_trusted_rank_chain_before_first_inmatch_transition`
+
+Most important negative evidence:
+
+- the zero-window slot tracer produced no `[RANK][DataFlow] begin`
+- it also produced no `[RANK][DataFlow] seq=... change#...`
+- so the previous zero-window implementation did not actually arm during the real post-match ranked-state build
+
+Concrete ranked value from this run:
+
+- trusted `RANK_ALL` upload remained normal and internally consistent:
+  - packed score `0x002183BF`
+  - `rank_id=0x0021`
+  - `subscore=0x83BF`
+  - details began with character id `24`
+
+Interpretation:
+
+- the previous tracer failure does **not** mean the state-machine path is wrong
+- it means the zero-only arming condition was too narrow for the real post-match slot state
+- likely causes were:
+  - tracked slot was already nonzero when the first useful post-match state-machine calls happened
+  - and/or the 4-call budget was too short to catch the real writer
+
+Patch made immediately after this analysis:
+
+- widened slot-write tracing from `zero_window_v1` to `post_match_window_v2`
+- state-machine logs now include tracked `slot118=[lo,hi]` and packed-score split when readable
+- post-match tracer now arms after the first out-of-match-after-inmatch transition even if the slot is already nonzero
+- direct-call trace budget increased from `4` to `16`
+- tracer reason now distinguishes:
+  - `state_machine_direct_zero_slot`
+  - `state_machine_direct_post_match_window`
+  - `post_match_window_budget`
+
+Next proof target:
+
+- catch the first real write to tracked slot `self + 0x118` during the earliest post-match state-machine passes
+- if `[RANK][DataFlow]` now fires, the writer EIP/RVA becomes the next upstream RE target
+- if it still does not fire, then the slot is likely seeded outside the currently hooked direct state-machine call and the next pivot should move one caller earlier
+
+## 51. 2026-04-18 `post_match_window_v2` result from newest `DEBUG.txt`
+
+Analyzed log:
+
+- `/mnt/d/SteamLibrary/steamapps/common/BlazBlue Centralfiction/BBCF_IM/DEBUG.txt`
+- newest shutdown in this run:
+  - `2026-04-18 20:26:43`
+
+What the new log proved:
+
+- the widened tracer finally did arm
+- first useful armed window was:
+  - `[RANK][DataFlow] begin reason=state_machine_direct_zero_slot cycle=1 ... cur=[0x00000000,0x00000000]`
+- that same guarded window ended with:
+  - `last=[0x002183BF,0x00000000]`
+- but still logged:
+  - `valueChanges=0`
+- so the tracked slot changed from zero to the final packed `RANK_ALL` value while the PAGE_GUARD was active, yet the old VEH filter still failed to attribute a writer
+
+Critical interpretation:
+
+- this is no longer a timing problem
+- the guarded window did cover the real zero -> packed transition
+- the remaining bug is attribution logic inside the guard handler
+
+Most likely cause:
+
+- the actual write that changed `slot118` did not fault with an address inside the exact 8-byte slot
+- instead it likely happened through a wider block write / copy / nearby structure write on the same page
+- old code only treated a guard hit as a pending candidate when:
+  - `accessType == 1`
+  - and `accessAddr` was inside `slotAddr .. slotAddr+7`
+- therefore the slot could change during the guarded interval and still produce `valueChanges=0`
+
+Other stable evidence from the same run:
+
+- long pre-match idle state still showed:
+  - `state=0 count=0 slot118=[0,0]`
+- later pre-trusted state still showed:
+  - `state=0 count=6 slot118=[0x002183BF,0]`
+- first trusted stage ordering remained:
+  - `firstInMatch=1314`
+  - `firstOutOfMatchAfterInMatch=1315`
+  - `firstTrusted=1316`
+  - `cheapPathTrusted=0`
+
+Patch made immediately after this analysis:
+
+- keep `post_match_window_v2`
+- widen VEH candidate capture from exact-slot writes to any owner-thread page write during the armed window
+- on the following single-step, if the tracked slot changed, log:
+  - `writer`
+  - `writer_rva`
+  - `access`
+  - `accessType`
+  - `directSlotAccess`
+- `directSlotAccess=0` will now explicitly tell us the change came from a wider page/block write rather than a direct store into the exact slot address
+
+New next proof target:
+
+- obtain the first `[RANK][DataFlow] change#1 ...` line for the zero -> packed transition
+- if `directSlotAccess=1`, the writer is likely the exact store site
+- if `directSlotAccess=0`, the writer is still highly valuable and likely marks the memcpy/block-copy helper or adjacent producer phase that seeds the slot
+
+## 52. 2026-04-18 crash stabilization after `post_match_window_v2`
+
+New operator report after the previous patch:
+
+- game now crashes at the end of a ranked match
+
+Most likely cause:
+
+- the widened PAGE_GUARD tracer reached the real zero -> packed transition window
+- but that slot lives on a hot page and the guard/single-step loop became too invasive during the end-of-match cleanup / upload sequence
+- so the tracing method itself became unstable before it produced the first trusted `change#1` attribution line
+
+Stability-first patch made immediately after this report:
+
+- `HookedRankUploadStateMachineDirect` now force-ends any active slot PAGE_GUARD trace on entry:
+  - `EndRankedSlotWriteTrace("safe_mode_disable_page_guard")`
+- this keeps all already-proven state-machine and trusted-chain logging
+- but disables the crash-prone live guard tracing for now
+
+New safe progression logging added:
+
+- state-machine direct logging now tracks previous `slot118=[lo,hi]`
+- on the first observed transition from:
+  - old `[0,0]`
+  - to new `[nonzero, *]`
+- it emits:
+  - `[RANK][SlotSeeded] ... old=[...] new=[...] ... parts rank_id=... subscore=...`
+- and immediately emits a matching state-machine transition context with:
+  - `phase=slot_seeded`
+
+Why this is still useful:
+
+- it removes the crashy write-trap path
+- but still narrows the exact first direct state-machine pass where the tracked slot is known to have become seeded
+- that gives the next reverse-engineering pivot without risking another end-of-match crash
+
+Current safe-mode status:
+
+- live producer attribution by PAGE_GUARD is temporarily disabled
+- first-seen slot seeding observation is enabled
+- trusted ranked chain remains intact and still must be correlated against the same packed `RANK_ALL` value
+
+Next test requested from operator:
+
+- run another ranked progression-producing match with this safe patch
+- confirm the game no longer crashes at match end
+- then send the new log from:
+  - `/mnt/d/SteamLibrary/steamapps/common/BlazBlue Centralfiction/BBCF_IM/DEBUG.txt`
+
+What the next `DEBUG.txt` should contain:
+
+- `[RANK][SlotSeeded]`
+- nearby `[RANK][StateMachineTransition] phase=slot_seeded`
+- the normal trusted post-match ranked chain
+- and ideally no crash / abnormal shutdown at the end of the match
+
+## 53. 2026-04-18 stable follow-up after safe-mode patch
+
+Operator result:
+
+- new run was stable
+- no end-of-match crash
+
+What the stable log proved:
+
+- safe-mode stabilization worked
+- trusted ranked chain is still intact
+- `cheapPathTrusted` is still `0`
+- but the new `SlotSeeded` marker did not become the useful pivot
+
+Most important new evidence from the stable `DEBUG.txt`:
+
+- exact log path analyzed:
+  - `/mnt/d/SteamLibrary/steamapps/common/BlazBlue Centralfiction/BBCF_IM/DEBUG.txt`
+- trusted upload still matched:
+  - `RANK_ALL`
+  - packed score `0x002183BF`
+  - `rank_id=0x0021`
+  - `subscore=0x83BF`
+  - details began with `24`
+- exact write still happened at:
+  - `[RANK][WritePacked] site=BBCF+0x000205A7`
+- and that write was still a clean zero -> packed transition for the real `RANK_ALL` object:
+  - `prev=[0x00000000,0x00000000]`
+  - `cur=[0x002183BF,0x00000000]`
+
+Critical upstream finding:
+
+- this run also proved the packed ranked value already exists earlier in table entry `1`
+- specifically:
+  - `[RANK][Phase3After41E980] ... slotIndex=1 ... cur=[0x002183BF,0] entry1_src10=[0x002183BF,0]`
+  - `[RANK][Bit4Skip] ... slotIndex=1 id=1 ... src10=[0x002183BF,0]`
+- so `BBCF+0x205A7` is still the exact object-field write into upload object `field2610`
+- but it is **not** the first construction point of the packed score
+- by the time `WritePacked` runs, table entry `1 + 0x10` already contains the final packed rank
+
+Interpretation:
+
+- current `SlotSeeded` pivot is lower value than expected
+- the real producer now most likely lives upstream of:
+  - `Phase3After41E980`
+  - `Bit4Skip`
+  - `SourcePair`
+- next useful target is the code that seeds table entry `1 + 0x10`
+
+Patch made immediately after this analysis:
+
+- keep safe mode; do not re-enable PAGE_GUARD
+- add one-shot stack/backtrace logging when the trusted path first shows:
+  - slot index `1`
+  - nonzero packed value
+  - and `slot == entry1_src10`
+- new log tag:
+  - `[RANK][StageBacktrace]`
+- it now fires from:
+  - `phase3_src10`
+  - `bit4skip_src10`
+
+Why this is the right next pivot:
+
+- it stays crash-safe
+- it moves upstream from the copy/write site
+- it asks a sharper question:
+  - who populated table entry `1 + 0x10` with the final packed ranked value before `WritePacked` copied it into the upload object?
+
+Next test requested from operator:
+
+- run another ranked progression-producing match with this patch
+- then send the new `DEBUG.txt`
+
+What the next `DEBUG.txt` should contain:
+
+- `[RANK][StageBacktrace] stage=phase3_src10`
+- and/or `[RANK][StageBacktrace] stage=bit4skip_src10`
+- nearby `bt_*` frames and call probes
+- normal trusted `RANK_ALL` upload still present
+
+## 54. 2026-04-18 direct upstream branch cluster identified from `StageBacktrace`
+
+User guidance for this step:
+
+- move toward the real producer as fast as possible
+- avoid slow one-hook-at-a-time ladder climbing
+
+Newest stable `DEBUG.txt` conclusion:
+
+- the new backtrace was useful
+- it identified the exact immediate caller cluster around the trusted path
+- repeated result across cycles:
+  - `bt_4 = BBCF+0x0001D112`
+  - nearby calls:
+    - `BBCF+0x1D106 -> BBCF+0x1FD80`
+    - `BBCF+0x1D10D -> BBCF+0x1FEA0`
+    - `BBCF+0x1D112 -> BBCF+0x248D0`
+    - `BBCF+0x1D119 -> BBCF+0x24D40`
+
+Interpretation:
+
+- this is the real hot cluster immediately upstream of the trusted ranked-result path
+- instead of walking one tiny step at a time, the next patch should instrument this whole cluster
+- the question is now:
+  - at which point in this four-call chain does `table + 0x48 + 0x10` first become the final packed `RANK_ALL` value?
+
+Patch made immediately after this analysis:
+
+- keep safe mode; no PAGE_GUARD
+- keep current trusted-chain probes
+- add direct call-cluster probes for:
+  - post `BBCF+0x1FD80`
+  - post `BBCF+0x1FEA0`
+  - post `BBCF+0x248D0`
+  - post `BBCF+0x24D40`
+- new log family:
+  - `[RANK][CallCluster] stage=post_1FD80`
+  - `[RANK][CallCluster] stage=post_1FEA0`
+  - `[RANK][CallCluster] stage=post_248D0`
+  - `[RANK][CallCluster] stage=post_24D40`
+
+How it works:
+
+- cache the table base returned by `BBCF+0x1FD80`
+- reuse that cached table across the following sibling calls in the same cycle/thread
+- log:
+  - trusted state pointer
+  - cached table base
+  - slot `state + 0x118`
+  - `entry1_src10`
+  - `entry1_src18`
+- if any of those stages already owns:
+  - `slot == entry1_src10 == packed rank`
+  - then emit the one-shot upstream backtrace there immediately
+
+Why this is faster:
+
+- it skips the slow ladder
+- it instruments the entire immediate producer-side branch in one test
+- next run should tell us whether the packed score is already ready after `1FD80`, only after `1FEA0`, or only after one of the later sibling helpers
+
+Next test requested:
+
+- run one more ranked progression-producing match with this patch
+- then send the new `DEBUG.txt`
+
+What the next `DEBUG.txt` should contain:
+
+- `[RANK][CallCluster] stage=post_1FD80`
+- `[RANK][CallCluster] stage=post_1FEA0`
+- `[RANK][CallCluster] stage=post_248D0`
+- `[RANK][CallCluster] stage=post_24D40`
+- whichever stage first shows:
+  - `entry1_src10=[0x002183BF,0]`
+
+## 55. 2026-04-18 call-cluster result: narrowed to `1FEA0 -> 1E980` interval
+
+Newest `DEBUG.txt` result from the aggressive cluster patch:
+
+- `post_1FD80` repeatedly showed:
+  - `entry1_src10=[0,0]`
+- `post_248D0` repeatedly showed:
+  - `entry1_src10=[0,0]`
+- `post_24D40` repeatedly showed:
+  - `entry1_src10=[0,0]`
+
+This is strong negative evidence:
+
+- those sibling helpers are still before table-entry seeding
+- so the packed ranked value is not yet in `table + 0x48 + 0x10` after:
+  - `BBCF+0x1FD80`
+  - `BBCF+0x248D0`
+  - `BBCF+0x24D40`
+
+But one bug remained in the probe:
+
+- `post_1FEA0` was logging the wrong object as `state`
+- symptom in the log:
+  - `state=0x172B4F48`
+  - `table=0x00000000`
+  - while slot already looked like packed ranked data
+- this means the direct `0x1FEA0` hook was using the wrong arg for cluster-state correlation
+
+Current best narrowing:
+
+- earliest confirmed zero table-entry stage:
+  - `post_1FD80`
+- earliest confirmed packed table-entry stage remains:
+  - `Phase3After41E980`
+- therefore the real table-entry producer is now narrowed to:
+  - either inside `BBCF+0x1FEA0`
+  - or inside / by `BBCF+0x1E980`
+
+Patch made immediately after this analysis:
+
+- fix `post_1FEA0` cluster logging to consider hidden stack arg as the likely real state object
+- also log raw arg correlation:
+  - `self`
+  - `selfArg`
+  - chosen state
+  - cached table by chosen state
+  - cached table by thread/cycle fallback
+- new log line:
+  - `[RANK][CallCluster] stage=post_1FEA0_args ...`
+
+Why this is the fastest next move:
+
+- it does not waste another run on already-cleared helpers
+- it resolves the only ambiguous stage in the narrowed interval
+- next run should tell us whether:
+  - `1FEA0` already seeds entry 1
+  - or the seeding first appears only later at `1E980`
+
+Next test requested:
+
+- run another ranked progression-producing match
+- send next `DEBUG.txt`
+
+What the next `DEBUG.txt` should contain:
+
+- `[RANK][CallCluster] stage=post_1FEA0_args`
+- corrected `[RANK][CallCluster] stage=post_1FEA0`
+- and then comparison against existing:
+  - zero at `post_1FD80`
+  - packed at `Phase3After41E980`
 
 ## Next Logging Direction
 
@@ -1816,3 +2261,558 @@ Next decision rule:
   caller becomes the next upstream hook target
 - if probes still stay fuzzy, move to a different exact-caller strategy instead of trusting raw
   unwind RVAs
+
+## 76. 2026-04-18 exact proof gained for direct callsite into `0x1FEA0`
+
+Next live run validated the new probe and finally turned the previously inferred `0x1D112` caller
+into an exact instruction-level proof.
+
+New stable lines:
+
+```text
+[RANK][StateMachineTransition] bt_3=0x00A3D112 bbcf_rva=0x0001D112
+[RANK][StateMachineTransition] bt_3_probe call_end=0x00A3D112 call_addr=0x00A3D10D call_rva=0x0001D10D kind=rel32 target=0x00A3FEA0 target_rva=0x0001FEA0
+```
+
+This proves:
+
+- `BBCF+0x1D10D` is the exact direct `call` instruction
+- that call returns at `BBCF+0x1D112`
+- the direct call target is `BBCF+0x1FEA0`
+
+So the old inline observation at `0x1D10D -> 0x1FEA0` is now no longer only circumstantial. It is
+instruction-level confirmed on the trusted real ranked-result path.
+
+Other results from same run:
+
+- trusted chain still fully intact
+- real ranked-result sequence still advances:
+  - `0 -> 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10 -> 0`
+- exact same `RANK_ALL` packed value still survives end-to-end:
+  - `Bit4Skip cur=0x002183FF`
+  - `WritePacked written=0x002183FF`
+  - `GameCall field2610=0x002183FF`
+  - `UploadLeaderboardScore score=2196479`
+- cheap path still not trusted:
+  - `firstInMatch=282`
+  - `firstOutOfMatchAfterInMatch=283`
+  - `firstTrusted=284`
+  - `cheapPathTrusted=0`
+
+## 77. 2026-04-18 EBP-chain failure confirmed; upstream search still one level higher
+
+The EBP-chain fallback is now conclusively not helping on this path.
+
+Stable lines:
+
+```text
+[RANK][StateMachineTransition] ebp_bt_unavailable saved_ebp=0x00000000
+```
+
+Interpretation:
+
+- this call path does not give a usable saved EBP chain for this probe
+- do not spend more time on frame-pointer walking here unless a completely different capture point
+  is used
+
+Current ceiling therefore becomes:
+
+- exact direct caller known:
+  - `BBCF+0x1D10D -> BBCF+0x1FEA0`
+- still unresolved:
+  - who called into the `0x1D10D/0x1D112` family above that point
+
+## 78. 2026-04-18 next patch: fuzzy near-anchor scan for `bt_4` / `bt_5`
+
+The current run did **not** produce clean `bt_4_probe` or `bt_5_probe` lines, meaning those unwind
+frames are probably not exact call-end addresses.
+
+New follow-up instrumentation now added:
+
+- keep exact `bt_3_probe`
+- for `bt_4` and `bt_5`, scan a wider window around each anchor instead of requiring an exact
+  return-end match
+- log nearby call candidates whose `call_end` lands within roughly `+/-12` bytes of the anchor
+- recognize:
+  - `E8 rel32`
+  - `FF /2` register-call endings
+  - `FF 15` memory-call endings
+
+Expected next new lines:
+
+```text
+[RANK][StateMachineTransition] bt_4_fuzzy candidate_0 anchor=... delta=... call_addr=... target=...
+[RANK][StateMachineTransition] bt_5_fuzzy candidate_0 anchor=... delta=... call_addr=... target=...
+```
+
+Decision rule from here:
+
+- if one nearby candidate repeats across real runs, that candidate becomes the next upstream hook
+  target above `0x1D10D`
+- if even fuzzy candidates stay noisy, the next climb should use a different method than backtrace
+  unwinding
+
+## 79. 2026-04-18 fuzzy scan result: one stable upstream candidate, one dead anchor
+
+Next real ranked-result run produced a useful split:
+
+- `bt_4` anchor remains dead:
+  - `bt_4=BBCF+0x0000768C`
+  - `bt_4_fuzzy no_nearby_call_candidates`
+- `bt_5` anchor now yields one stable repeated candidate:
+
+```text
+[RANK][StateMachineTransition] bt_5=0x00A6F281 bbcf_rva=0x0004F281
+[RANK][StateMachineTransition] bt_5_fuzzy candidate_0 anchor=0x00A6F281 delta=9 call_end=0x00A6F28A call_addr=0x00A6F288 call_rva=0x0004F288 kind=ff_reg target=0x00000000 target_rva=0x00000000 bytes=FF D7 C7 45 FC FF FF FF FF 8D
+```
+
+This means:
+
+- the `bt_5` unwind anchor is not exact, but it consistently lands near the same nearby call
+- the repeated upstream candidate is:
+  - `BBCF+0x4F288`
+  - opcode `FF D7`
+  - register-indirect call (`call edi`)
+- target is still unknown from static bytes alone because it is register-indirect, not immediate
+
+Current interpretation:
+
+- `0x4F288` is now the best upstream BBCF-side lead above `0x1D10D`
+- `0x768C` is currently not useful for climb purposes
+- next useful logs should stop treating `ff_reg` as anonymous and instead print which register was
+  used
+
+Other results from same run stayed healthy:
+
+- trusted chain still intact
+- `RANK_ALL` still preserved as `0x002183FF -> 2196479`
+- cheap path still dead:
+  - `firstInMatch=1778`
+  - `firstOutOfMatchAfterInMatch=1779`
+  - `firstTrusted=1780`
+  - `cheapPathTrusted=0`
+
+## 80. 2026-04-18 next patch: identify register for register-indirect upstream candidates
+
+Follow-up instrumentation change:
+
+- fuzzy candidate logs now decode the register for `FF /2` register-call endings
+- expected next useful line:
+
+```text
+[RANK][StateMachineTransition] bt_5_fuzzy candidate_0 ... kind=ff_reg call_reg=edi ...
+```
+
+Reason:
+
+- the stable upstream candidate already strongly suggests `FF D7` = `call edi`
+- making the register explicit in logs reduces ambiguity before deciding whether to hook around
+  `BBCF+0x4F288` or climb through the function containing it
+
+## 81. 2026-04-18 register-indirect upstream candidate confirmed as `call edi`
+
+Next live run confirmed the follow-up exactly as expected.
+
+Stable lines now read:
+
+```text
+[RANK][StateMachineTransition] bt_5_fuzzy candidate_0 anchor=0x00A6F281 delta=9 call_end=0x00A6F28A call_addr=0x00A6F288 call_rva=0x0004F288 kind=ff_reg call_reg=edi target=0x00000000 target_rva=0x00000000 bytes=FF D7 C7 45 FC FF FF FF FF 8D
+```
+
+So current upstream chain status is now:
+
+- exact lower call:
+  - `BBCF+0x1D10D -> call BBCF+0x1FEA0`
+- best repeated higher lead:
+  - `BBCF+0x4F288`
+  - `kind=ff_reg`
+  - `call_reg=edi`
+  - runtime target still unknown from this passive backtrace method
+- dead anchor:
+  - `BBCF+0x768C`
+
+Interpretation:
+
+- this is no longer anonymous unwind noise
+- `0x4F288` is the first repeated upstream BBCF-side site above `0x1D10D` with a concrete calling
+  shape
+- but because it is `call edi`, not `call imm32`, passive backtrace logging alone cannot reveal the
+  final callee target
+
+Trusted path health stayed good in the same run:
+
+- trusted chain still intact
+- packed `RANK_ALL` still matches end-to-end:
+  - `0x002183FF`
+  - score `2196479`
+- cheap path still not trusted:
+  - `firstInMatch=426`
+  - `firstOutOfMatchAfterInMatch=427`
+  - `firstTrusted=428`
+  - `cheapPathTrusted=0`
+
+## 82. 2026-04-18 next safe move: do not hook `0x4F288` blindly yet
+
+Current recommendation:
+
+- treat `BBCF+0x4F288` as the next serious RE lead
+- but do **not** patch live control flow there blindly until the exact surrounding instruction
+  layout is validated well enough for a safe trampoline/replay
+
+Reason:
+
+- the site is register-indirect (`call edi`)
+- patching directly at a tiny callsite is more fragile than the current passive probes
+- trusted chain is already healthy, so there is no reason to risk destabilizing it before a safer
+  capture plan is chosen
+
+Practical next step:
+
+- keep current passive trusted-chain instrumentation
+- if more climb is needed, prefer a probe that captures the runtime `edi` target around the
+  containing function/site rather than blindly replacing the `call edi` instruction itself
+
+## 83. 2026-04-18 active climb patch: runtime probe added at `BBCF+0x4F288`
+
+Search direction now moves one level above passive unwind inference.
+
+New code patch:
+
+- added a passive inline trace at:
+  - `BBCF+0x4F288`
+- this site was chosen because repeated real ranked-result runs proved it as the best upstream lead:
+  - `kind=ff_reg`
+  - `call_reg=edi`
+- probe behavior:
+  - replay original instructions:
+    - `call edi`
+    - `mov dword ptr [ebp - 4], 0xFFFFFFFF`
+  - then log:
+    - runtime `edi` target
+    - `target_rva` if target is inside BBCF
+    - `eax/ecx/ebx/esi/edi/ebp`
+    - any state-machine-shaped candidate object seen in `ecx`, `ebx`, or `esi`
+
+Why this is the right next move:
+
+- it keeps the trusted chain alive by replaying the original instructions before logging
+- it finally reveals the real runtime callee behind the repeated `call edi` site
+- it is safer than blindly redirecting a tiny register-indirect callsite without first knowing the
+  callee target
+
+Expected next proof lines:
+
+```text
+[RANK][UpperEdiCall] callsite=BBCF+0x0004F288 target=0x........ target_rva=0x........ eax=... ecx=... ebx=... esi=... edi=...
+[RANK][StateMachine] callsite=BBCF+0x0004F288 source=ecx self=...
+```
+
+Decision rule for the next run:
+
+- if `target_rva` is stable and inside BBCF, that target becomes the next concrete upstream hook
+  candidate
+- if one of `ecx` / `ebx` / `esi` already looks like the upload state-machine object at this site,
+  then `0x4F288` may already be near the real producer path
+- if `0x4F288` fires during a cheaper action than a full ranked-result path, it becomes an
+  important candidate for reducing future test cost
+
+## 84. 2026-04-18 strategy pivot: from control-flow tracing to data-flow tracing
+
+Current strategy is now explicitly:
+
+- pivot from control-flow tracing to data-flow tracing to find the true producer of the packed
+  ranked value
+
+Reason for pivot:
+
+- the trusted copy/upload chain is already proven:
+  - main slot for `slotIndex=1`
+  - `Bit4Skip`
+  - `WritePacked`
+  - `GameCall`
+  - `UploadLeaderboardScore`
+- continuing to walk instruction-by-instruction upstream is no longer the fastest route to the true
+  producer
+- the real question is now:
+  - where does the correct packed value first appear in the main slot before the later mirror/copy
+    stages
+
+Data-flow target:
+
+- earliest confirmed pre-upload destination is the main slot for `slotIndex=1`
+- confirmed layout:
+  - slot lives at `state + 0x118`
+  - low dword is the packed `(rank_id << 16) | subscore`
+
+Producer-search rule:
+
+- ignore later mirrors/copies of the already-correct value
+- only treat writes into the tracked main slot as meaningful evidence
+- highest-value evidence is the first write in a post-match cycle that changes the tracked slot to
+  the later trusted packed score
+
+## 85. 2026-04-18 active data-flow patch: PAGE_GUARD tracing on the tracked ranked slot
+
+New runtime mechanism:
+
+- once the direct upload state-machine object is readable, arm a narrow PAGE_GUARD trace on the
+  page containing the tracked ranked slot:
+  - tracked slot address = `self + 0x118`
+- this happens from the direct `BBCF+0x1FEA0` state-machine detour, which means the guard is armed
+  before the later producer/copy writes in the same ranked-result cycle
+- guard handling is bounded and crash-safe:
+  - one page only
+  - one slot only
+  - only log when the tracked 8-byte slot actually changes
+  - re-arm with single-step just like the existing SnapshotApparatus guard pattern
+  - disarm on cycle reset / summary / state-machine `10 -> 0`
+
+Expected proof lines:
+
+```text
+[RANK][DataFlow] begin reason=state_machine_direct cycle=... slot=0x...
+[RANK][DataFlow] seq=... cycle=... change#1 slot=0x... old=[0x...,0x...] new=[0x...,0x...] writer=0x... writer_rva=0x... access=0x... origin_candidate=1 parts rank_id=0x.... subscore=0x....
+```
+
+What will count as real origin evidence:
+
+- a `DataFlow change#1` line that occurs before `Bit4Skip` / `WritePacked`
+- writer RVA stable across runs
+- new low dword either equals or leads directly into the later trusted packed score
+
+If this works:
+
+- we stop asking “which upstream caller eventually reaches the chain?”
+- we instead get the exact writer EIP that first introduced the packed ranked value into the main
+  slot
+
+## 86. 2026-04-18 first PAGE_GUARD run: useful proof, but too broad and noisy
+
+What the first run proved:
+
+- the data-flow tracer did see the tracked main slot change before the later trusted copy chain
+- trusted path still remained visible afterward:
+  - `Phase3After41E980`
+  - `Bit4Skip`
+  - `WritePacked`
+  - `GameCall`
+  - `UploadLeaderboardScore`
+- this confirms the pivot direction was correct:
+  - the tracked slot can be observed before the later mirror/copy stages
+
+What went wrong:
+
+- the first implementation left the PAGE_GUARD active across too much of the post-match cycle
+- result was excessive page traffic and repeated non-useful logs:
+  - very large `guardHits`
+  - repeated identical `change#...` lines
+  - `writer=0x00000000`
+  - `access=0x00000000`
+- the run then crashed after the set, which means this broad guard window is not acceptable for
+  ongoing testing
+
+Conclusion from the failed first run:
+
+- keep the data-flow strategy
+- narrow the mechanism sharply
+- stop trying to observe the whole cycle
+- instead trace only one direct `BBCF+0x1FEA0` invocation at a time and only keep the first
+  meaningful slot write seen inside that call
+
+## 87. 2026-04-18 narrowed data-flow patch: per-call guarded tracing only
+
+New bounded rule:
+
+- arm the tracked slot guard only immediately around a single `HookedRankUploadStateMachineDirect`
+  call
+- disarm immediately when that one call returns
+- only the owner thread is allowed to produce a write candidate
+- after the first meaningful tracked-slot change in that call, suppress further candidate logging
+
+Why this is safer:
+
+- no long-lived guard across the full post-match flow
+- much smaller chance of post-set instability
+- still keeps the search focused on the earliest write that appears during direct state-machine work
+
+New expected proof line:
+
+```text
+[RANK][DataFlow] seq=... cycle=... change#1 slot=0x... old=[0x...,0x...] new=[0x...,0x...] writer=0x... writer_rva=0x... access=0x... origin_candidate=1 ...
+```
+
+What counts as real producer evidence now:
+
+- `change#1` appears during `state_machine_direct_call_end`, before `Bit4Skip` and `WritePacked`
+- writer is nonzero and stable across runs
+- repeated identical change spam is gone
+- crash after set is gone
+
+## 88. 2026-04-18 result of narrowed per-call run: stable, but still too late
+
+Newest stable run result:
+
+- no crash after the set
+- trusted chain still fully good
+- but data-flow still did not capture a writer
+- every guarded direct-call window ended with:
+  - `valueChanges=0`
+
+Important evidence from the log:
+
+- first post-match guarded windows still saw the old value:
+  - `cur=[0x000008AA,0x00000308]`
+- then the very next guarded window already opened with the new packed value present:
+  - `cur=[0x0021841F,0x00000000]`
+- this means the true producer write happened between two direct `BBCF+0x1FEA0` invocations, not
+  inside the tiny per-call guard window
+
+Conclusion:
+
+- data-flow strategy still correct
+- per-call scope is now too narrow
+- next patch should keep the guard alive across the short post-match producer window, while still:
+  - owner-thread only
+  - first-change only
+  - auto-disarm once the first meaningful write is captured
+
+Expected proof after this adjustment:
+
+```text
+[RANK][DataFlow] begin reason=state_machine_direct_call cycle=... slot=0x... cur=[old...]
+[RANK][DataFlow] seq=... cycle=... change#1 slot=0x... old=[old...] new=[0x0021....,0x00000000] writer=0x... writer_rva=0x... access=0x... origin_candidate=1 ...
+[RANK][DataFlow] end reason=first_meaningful_change_captured ...
+```
+
+## 89. 2026-04-18 widened short-window attempt regressed stability
+
+Result:
+
+- widening the PAGE_GUARD across the short post-match producer window caused end-of-ranked-match
+  crashes
+- therefore that version is not acceptable, even though it was the right timing hypothesis
+
+Decision:
+
+- revert to the last known non-crashing per-call trace scope
+- keep the data-flow pivot
+- treat the “between two direct calls” finding as established evidence, but do not keep the wider
+  live guard in gameplay builds
+
+Current safe state again:
+
+- one direct-call guard window at a time
+- owner-thread only
+- first-change filtering still available
+- trusted chain remains testable without the widened crash regression
+
+Interpretation:
+
+- the true producer still looks like it lands between consecutive `BBCF+0x1FEA0` invocations
+- but that gap must be approached with a safer mechanism than a longer-lived PAGE_GUARD
+
+## 90. 2026-04-18 newest safe run: producer window narrowed to zero -> packed transition
+
+Newest non-crashing `DEBUG.txt` added a sharper timing fact:
+
+- first two post-match direct-call windows saw the tracked slot still zero:
+  - `cur=[0x00000000,0x00000000]`
+- the next direct-call window already saw the packed ranked value present:
+  - `cur=[0x002183BF,0x00000000]`
+- trusted chain then continued normally from there
+
+Meaning:
+
+- the true producer is still earlier than the first trusted `state 0 -> 1` transition
+- but we now know the producer gap is specifically:
+  - after a direct-call window where the tracked slot is still zero
+  - before the next direct-call window where the packed value is already present
+
+Safer new patch strategy:
+
+- do not keep PAGE_GUARD alive across the full post-match path
+- instead keep it alive only during a tiny “zero-window”:
+  - arm when the tracked slot is still `[0,0]`
+  - preserve the guard across only a few consecutive direct-call windows
+  - disarm immediately if:
+    - first meaningful write is captured
+    - tracked slot is observed nonzero on the next window
+    - tiny call budget is exceeded
+
+Goal:
+
+- catch the exact zero -> packed transition without reviving the earlier end-of-match crash
+
+Deployment note:
+
+- if a future `DEBUG.txt` still shows old end reasons like `state_machine_direct_call_end`, then the
+  latest zero-window DLL was not the one actually loaded by the game
+- latest build now emits:
+  - `[RANK][DataFlow] tracer_version=zero_window_v1 ...`
+  so deployment mismatches can be identified immediately
+
+## 91. 2026-04-18 corrected `1FEA0` result: producer interval now points straight at `1E980`
+
+Newest `DEBUG.txt` after the corrected `post_1FEA0_args` patch gave the missing answer:
+
+- `post_1FD80` still showed:
+  - `entry1_src10=[0,0]`
+- corrected `post_1FEA0` still showed:
+  - `slot=[0x002183BF,0]`
+  - `entry1_src10=[0,0]`
+- `post_248D0` still showed:
+  - `entry1_src10=[0,0]`
+- `post_24D40` still showed:
+  - `entry1_src10=[0,0]`
+
+Important raw line shape from the log:
+
+- `[RANK][CallCluster] stage=post_1FEA0_args self=0x17113A60 selfArg=0x00000000 chosen=0x17113A60 cachedChosen=0x00000000 cachedAny=0x17113A60 retval=0xFFFFFFFF`
+- `[RANK][CallCluster] stage=post_1FEA0 cycle=1 state=0x17113A60 table=0x17113A60 retval=0xFFFFFFFF slot=[0x002183BF,0x00000000] ... entry1_src10=[0x00000000,0x00000000]`
+
+Conclusion:
+
+- the corrected `1FEA0` probe is no longer ambiguous
+- `1FEA0` is not the table-entry producer for `entry1_src10`
+- sibling helpers `1FD80`, `248D0`, and `24D40` are also cleared
+- earliest known zero point remains before `1E980`
+- earliest known packed table-entry point remains after `1E980`
+- so the fastest next cut is to instrument the `1E980` call itself with before/after deltas, not to climb one helper at a time
+
+Patch made immediately after this result:
+
+- add safe per-call before/after snapshots around both `BBCF+0x1E980` callsites:
+  - `BBCF+0x20035` (`phase3`)
+  - `BBCF+0x20534` (`packselect`)
+- new log line:
+  - `[RANK][1E980Delta] ...`
+- each delta prints:
+  - `pre_slot` / `post_slot`
+  - `pre_src10` / `post_src10`
+  - `pre_src18` / `post_src18`
+  - `state914` / `state918`
+  - `changedSlot`
+  - `changedSrc10`
+  - `createdInsideSrc10`
+- if `entry1_src10` is born inside the call, log a one-shot backtrace tag:
+  - `phase3_1E980_created`
+  - or `packselect_1E980_created`
+
+Why this is the right fast move:
+
+- it directly answers whether `1E980` itself seeds the ranked table entry
+- it avoids unstable PAGE_GUARD methods
+- it skips more ladder-climbing through already-cleared siblings
+- once one `1E980Delta` shows `createdInsideSrc10=1`, the next run can jump straight into `1E980` internals
+
+Next test requested:
+
+- run one more ranked progression-producing match with this DLL
+- then send the new `DEBUG.txt`
+
+What the next `DEBUG.txt` should contain:
+
+- `[RANK][1E980Delta] stage=phase3`
+- `[RANK][1E980Delta] stage=packselect`
+- ideally one of them shows:
+  - `createdInsideSrc10=1`

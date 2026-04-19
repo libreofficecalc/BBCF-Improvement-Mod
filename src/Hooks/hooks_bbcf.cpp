@@ -47,6 +47,13 @@ DWORD RankUploadBit4SkipContinueAddr = 0;
 DWORD RankUploadBit4SkipJmpAddr = 0;
 DWORD RankUploadPhase3PostCallTraceJmpBackAddr = 0;
 DWORD RankUploadPhase3CallTargetAddr = 0;
+DWORD RankUploadUpperEdiCallTraceJmpBackAddr = 0;
+DWORD RankUploadCall1FD80TraceJmpBackAddr = 0;
+DWORD RankUploadCall248D0TraceJmpBackAddr = 0;
+DWORD RankUploadCall24D40TraceJmpBackAddr = 0;
+DWORD RankUploadCall1FD80TargetAddr = 0;
+DWORD RankUploadCall248D0TargetAddr = 0;
+DWORD RankUploadCall24D40TargetAddr = 0;
 
 void RankedProbeTickFrameState();
 void RankedProbeNoteLobbyCaller();
@@ -70,6 +77,8 @@ namespace {
 #pragma intrinsic(_ReturnAddress)
 
 void NormalizeMenuExitModeIfNeeded();
+void EndRankedSlotWriteTrace(const char* reason);
+void BeginRankedSlotWriteTrace(uint32_t slotAddr, const char* reason);
 
 struct RankedProbeStats
 {
@@ -179,6 +188,8 @@ unsigned int RankedProbeFirstTrustedSeq()
 
 void RankedProbeDumpSummaryImpl(const char* reason)
 {
+	EndRankedSlotWriteTrace(reason ? reason : "summary");
+
 	const unsigned int firstTrusted = RankedProbeFirstTrustedSeq();
 	const unsigned int firstInMatch = g_rankedProbeStats.firstInMatchSeq;
 	const int trustedBeforeMatch = (firstTrusted != 0 && (firstInMatch == 0 || firstTrusted < firstInMatch)) ? 1 : 0;
@@ -436,8 +447,350 @@ struct RankedStateMachineTransitionSnapshot
 	uint32_t self = 0;
 	uint32_t lastState = 0xFFFFFFFFu;
 	uint32_t lastCount = 0xFFFFFFFFu;
+	uint32_t lastSlotLo = 0xFFFFFFFFu;
+	uint32_t lastSlotHi = 0xFFFFFFFFu;
 	bool used = false;
 };
+
+struct RankedSlotWriteTraceState
+{
+	bool active = false;
+	bool pendingWrite = false;
+	bool stopAfterFirstChange = true;
+	bool sawMeaningfulChange = false;
+	bool zeroWindowOnly = true;
+	uint32_t slotAddr = 0;
+	uint32_t pageBase = 0;
+	uint32_t pageSize = 0x1000u;
+	DWORD origProt = 0;
+	PVOID vehHandle = nullptr;
+	DWORD ownerThreadId = 0;
+	uint32_t lastLo = 0;
+	uint32_t lastHi = 0;
+	uint32_t pendingWriterEip = 0;
+	uint32_t pendingAccessAddr = 0;
+	uint32_t pendingAccessType = 0;
+	uint32_t pendingOldLo = 0;
+	uint32_t pendingOldHi = 0;
+	unsigned int guardHitCount = 0;
+	unsigned int valueChangeCount = 0;
+	unsigned int directCallWindowCount = 0;
+	unsigned int cycle = 0xFFFFFFFFu;
+};
+
+RankedSlotWriteTraceState g_rankedSlotWriteTrace;
+
+struct RankedUploadCallClusterCache
+{
+	DWORD ownerThreadId = 0;
+	unsigned int cycle = 0xFFFFFFFFu;
+	uint32_t stateValue = 0;
+	uint32_t tableBase = 0;
+};
+
+RankedUploadCallClusterCache g_rankedUploadCallClusterCache;
+
+enum Ranked1E980CallSite : uint32_t
+{
+	Ranked1E980CallSite_None = 0,
+	Ranked1E980CallSite_Phase3 = 1,
+	Ranked1E980CallSite_PackSelect = 2,
+};
+
+struct Ranked1E980Snapshot
+{
+	bool valid = false;
+	uint32_t stateValue = 0;
+	uint32_t tableBase = 0;
+	uint32_t state914 = 0;
+	uint32_t state918 = 0;
+	uint32_t slotLo = 0;
+	uint32_t slotHi = 0;
+	uint32_t nextLo = 0;
+	uint32_t nextHi = 0;
+	uint32_t src10Lo = 0;
+	uint32_t src10Hi = 0;
+	uint32_t src18Lo = 0;
+	uint32_t src18Hi = 0;
+};
+
+struct Ranked1E980TraceWindow
+{
+	bool active = false;
+	DWORD ownerThreadId = 0;
+	unsigned int cycle = 0xFFFFFFFFu;
+	Ranked1E980CallSite callSite = Ranked1E980CallSite_None;
+	Ranked1E980Snapshot preSnapshot = {};
+};
+
+Ranked1E980TraceWindow g_ranked1E980TraceWindow;
+
+LONG CALLBACK RankedSlotWriteTraceVeh(PEXCEPTION_POINTERS ep);
+void EndRankedSlotWriteTrace(const char* reason);
+
+bool ReadRankedTrackedSlotPair(uint32_t slotAddr, uint32_t* outLo, uint32_t* outHi)
+{
+	uint8_t* const slot = reinterpret_cast<uint8_t*>(slotAddr);
+	if (!slot || IsBadReadPtr(slot, 0x08))
+	{
+		return false;
+	}
+
+	if (outLo)
+	{
+		*outLo = *reinterpret_cast<uint32_t*>(slot + 0x00);
+	}
+	if (outHi)
+	{
+		*outHi = *reinterpret_cast<uint32_t*>(slot + 0x04);
+	}
+	return true;
+}
+
+void BeginRankedSlotWriteTrace(uint32_t slotAddr, const char* reason)
+{
+	uint32_t slotLo = 0;
+	uint32_t slotHi = 0;
+	if (!ReadRankedTrackedSlotPair(slotAddr, &slotLo, &slotHi))
+	{
+		return;
+	}
+
+	SYSTEM_INFO si = {};
+	GetSystemInfo(&si);
+	const uint32_t pageSize = (si.dwPageSize > 0) ? static_cast<uint32_t>(si.dwPageSize) : 0x1000u;
+	const uint32_t pageMask = ~(pageSize - 1u);
+	const uint32_t pageBase = slotAddr & pageMask;
+
+	if (g_rankedSlotWriteTrace.active)
+	{
+		if (g_rankedSlotWriteTrace.slotAddr == slotAddr &&
+			g_rankedSlotWriteTrace.pageBase == pageBase &&
+			g_rankedSlotWriteTrace.cycle == g_rankedProbeStats.matchCycleCount)
+		{
+			++g_rankedSlotWriteTrace.directCallWindowCount;
+			return;
+		}
+		EndRankedSlotWriteTrace("switch_slot");
+	}
+
+	MEMORY_BASIC_INFORMATION mbi = {};
+	if (VirtualQuery(reinterpret_cast<const void*>(pageBase), &mbi, sizeof(mbi)) == 0)
+	{
+		LOG(1, "[RANK][DataFlow] begin failed slot=0x%08X page=0x%08X err=%u\n",
+			static_cast<unsigned int>(slotAddr),
+			static_cast<unsigned int>(pageBase),
+			static_cast<unsigned int>(GetLastError()));
+		return;
+	}
+
+	DWORD oldProt = 0;
+	if (!VirtualProtect(reinterpret_cast<void*>(pageBase), pageSize, (mbi.Protect & ~PAGE_GUARD) | PAGE_GUARD, &oldProt))
+	{
+		LOG(1, "[RANK][DataFlow] begin failed slot=0x%08X page=0x%08X protect_err=%u\n",
+			static_cast<unsigned int>(slotAddr),
+			static_cast<unsigned int>(pageBase),
+			static_cast<unsigned int>(GetLastError()));
+		return;
+	}
+
+	if (!g_rankedSlotWriteTrace.vehHandle)
+	{
+		g_rankedSlotWriteTrace.vehHandle = AddVectoredExceptionHandler(1, RankedSlotWriteTraceVeh);
+	}
+
+	g_rankedSlotWriteTrace.active = true;
+	g_rankedSlotWriteTrace.pendingWrite = false;
+	g_rankedSlotWriteTrace.stopAfterFirstChange = true;
+	g_rankedSlotWriteTrace.sawMeaningfulChange = false;
+	g_rankedSlotWriteTrace.zeroWindowOnly = (slotLo == 0u && slotHi == 0u);
+	g_rankedSlotWriteTrace.slotAddr = slotAddr;
+	g_rankedSlotWriteTrace.pageBase = pageBase;
+	g_rankedSlotWriteTrace.pageSize = pageSize;
+	g_rankedSlotWriteTrace.origProt = (mbi.Protect & ~PAGE_GUARD);
+	g_rankedSlotWriteTrace.lastLo = slotLo;
+	g_rankedSlotWriteTrace.lastHi = slotHi;
+	g_rankedSlotWriteTrace.ownerThreadId = GetCurrentThreadId();
+	g_rankedSlotWriteTrace.pendingWriterEip = 0;
+	g_rankedSlotWriteTrace.pendingAccessAddr = 0;
+	g_rankedSlotWriteTrace.pendingAccessType = 0;
+	g_rankedSlotWriteTrace.pendingOldLo = 0;
+	g_rankedSlotWriteTrace.pendingOldHi = 0;
+	g_rankedSlotWriteTrace.guardHitCount = 0;
+	g_rankedSlotWriteTrace.valueChangeCount = 0;
+	g_rankedSlotWriteTrace.directCallWindowCount = 1;
+	g_rankedSlotWriteTrace.cycle = g_rankedProbeStats.matchCycleCount;
+
+LOG(2, "[RANK][DataFlow] begin reason=%s cycle=%u slot=0x%p page=0x%08X pageSize=0x%X cur=[0x%08X,0x%08X] veh=%p\n",
+		reason ? reason : "(null)",
+		g_rankedSlotWriteTrace.cycle,
+		reinterpret_cast<void*>(static_cast<uintptr_t>(slotAddr)),
+		static_cast<unsigned int>(pageBase),
+		static_cast<unsigned int>(pageSize),
+		static_cast<unsigned int>(slotLo),
+		static_cast<unsigned int>(slotHi),
+		g_rankedSlotWriteTrace.vehHandle);
+	LOG(2, "[RANK][DataFlow] tracer_version=post_match_window_v2 directCallWindowCount=%u zeroWindowOnly=%d stopAfterFirstChange=%d\n",
+		g_rankedSlotWriteTrace.directCallWindowCount,
+		g_rankedSlotWriteTrace.zeroWindowOnly ? 1 : 0,
+		g_rankedSlotWriteTrace.stopAfterFirstChange ? 1 : 0);
+}
+
+void EndRankedSlotWriteTrace(const char* reason)
+{
+	if (!g_rankedSlotWriteTrace.active)
+	{
+		return;
+	}
+
+	const uint32_t slotAddr = g_rankedSlotWriteTrace.slotAddr;
+	const uint32_t pageBase = g_rankedSlotWriteTrace.pageBase;
+	const uint32_t pageSize = g_rankedSlotWriteTrace.pageSize ? g_rankedSlotWriteTrace.pageSize : 0x1000u;
+	const DWORD prot = g_rankedSlotWriteTrace.origProt;
+	const unsigned int guardHits = g_rankedSlotWriteTrace.guardHitCount;
+	const unsigned int valueChanges = g_rankedSlotWriteTrace.valueChangeCount;
+	const uint32_t lastLo = g_rankedSlotWriteTrace.lastLo;
+	const uint32_t lastHi = g_rankedSlotWriteTrace.lastHi;
+
+	g_rankedSlotWriteTrace.active = false;
+	g_rankedSlotWriteTrace.pendingWrite = false;
+	g_rankedSlotWriteTrace.stopAfterFirstChange = true;
+	g_rankedSlotWriteTrace.sawMeaningfulChange = false;
+	g_rankedSlotWriteTrace.zeroWindowOnly = true;
+	g_rankedSlotWriteTrace.slotAddr = 0;
+	g_rankedSlotWriteTrace.pageBase = 0;
+	g_rankedSlotWriteTrace.pageSize = 0x1000u;
+	g_rankedSlotWriteTrace.origProt = 0;
+	g_rankedSlotWriteTrace.ownerThreadId = 0;
+	g_rankedSlotWriteTrace.pendingWriterEip = 0;
+	g_rankedSlotWriteTrace.pendingAccessAddr = 0;
+	g_rankedSlotWriteTrace.pendingAccessType = 0;
+	g_rankedSlotWriteTrace.pendingOldLo = 0;
+	g_rankedSlotWriteTrace.pendingOldHi = 0;
+	g_rankedSlotWriteTrace.guardHitCount = 0;
+	g_rankedSlotWriteTrace.valueChangeCount = 0;
+	g_rankedSlotWriteTrace.directCallWindowCount = 0;
+	g_rankedSlotWriteTrace.cycle = 0xFFFFFFFFu;
+
+	if (pageBase != 0 && prot != 0)
+	{
+		DWORD tmpProt = 0;
+		VirtualProtect(reinterpret_cast<void*>(pageBase), pageSize, prot, &tmpProt);
+	}
+
+	LOG(2, "[RANK][DataFlow] end reason=%s slot=0x%p page=0x%08X guardHits=%u valueChanges=%u last=[0x%08X,0x%08X]\n",
+		reason ? reason : "(null)",
+		reinterpret_cast<void*>(static_cast<uintptr_t>(slotAddr)),
+		static_cast<unsigned int>(pageBase),
+		guardHits,
+		valueChanges,
+		static_cast<unsigned int>(lastLo),
+		static_cast<unsigned int>(lastHi));
+}
+
+LONG CALLBACK RankedSlotWriteTraceVeh(PEXCEPTION_POINTERS ep)
+{
+	if (!g_rankedSlotWriteTrace.active || !ep || !ep->ExceptionRecord || !ep->ContextRecord)
+	{
+		return EXCEPTION_CONTINUE_SEARCH;
+	}
+
+	const DWORD currentThreadId = GetCurrentThreadId();
+	const bool ownerThread =
+		(g_rankedSlotWriteTrace.ownerThreadId == 0 || currentThreadId == g_rankedSlotWriteTrace.ownerThreadId);
+
+	const DWORD code = ep->ExceptionRecord->ExceptionCode;
+	if (code == STATUS_GUARD_PAGE_VIOLATION)
+	{
+		const ULONG_PTR* const info = ep->ExceptionRecord->ExceptionInformation;
+		const uint32_t accessType = (ep->ExceptionRecord->NumberParameters >= 1) ? static_cast<uint32_t>(info[0]) : 0u;
+		const uint32_t accessAddr = (ep->ExceptionRecord->NumberParameters >= 2) ? static_cast<uint32_t>(info[1]) : 0u;
+		const uint32_t accessPage = g_rankedSlotWriteTrace.pageSize ? (accessAddr & ~(g_rankedSlotWriteTrace.pageSize - 1u)) : accessAddr;
+		if (accessPage == g_rankedSlotWriteTrace.pageBase)
+		{
+			++g_rankedSlotWriteTrace.guardHitCount;
+			if (ownerThread &&
+				!g_rankedSlotWriteTrace.sawMeaningfulChange &&
+				accessType == 1)
+			{
+				g_rankedSlotWriteTrace.pendingWrite = true;
+				g_rankedSlotWriteTrace.pendingWriterEip = static_cast<uint32_t>(ep->ContextRecord->Eip);
+				g_rankedSlotWriteTrace.pendingAccessAddr = accessAddr;
+				g_rankedSlotWriteTrace.pendingAccessType = accessType;
+				g_rankedSlotWriteTrace.pendingOldLo = g_rankedSlotWriteTrace.lastLo;
+				g_rankedSlotWriteTrace.pendingOldHi = g_rankedSlotWriteTrace.lastHi;
+			}
+			ep->ContextRecord->EFlags |= 0x100u;
+			return EXCEPTION_CONTINUE_EXECUTION;
+		}
+	}
+	if (code == STATUS_SINGLE_STEP)
+	{
+		if (g_rankedSlotWriteTrace.pageBase != 0 && g_rankedSlotWriteTrace.origProt != 0)
+		{
+			DWORD tmpProt = 0;
+			VirtualProtect(reinterpret_cast<void*>(g_rankedSlotWriteTrace.pageBase),
+				g_rankedSlotWriteTrace.pageSize ? g_rankedSlotWriteTrace.pageSize : 0x1000u,
+				g_rankedSlotWriteTrace.origProt | PAGE_GUARD,
+				&tmpProt);
+		}
+
+		if (ownerThread && g_rankedSlotWriteTrace.pendingWrite)
+		{
+			uint32_t newLo = 0;
+			uint32_t newHi = 0;
+			if (ReadRankedTrackedSlotPair(g_rankedSlotWriteTrace.slotAddr, &newLo, &newHi))
+			{
+				const bool changed = (newLo != g_rankedSlotWriteTrace.pendingOldLo || newHi != g_rankedSlotWriteTrace.pendingOldHi);
+				const bool writerKnown = (g_rankedSlotWriteTrace.pendingWriterEip != 0 && g_rankedSlotWriteTrace.pendingAccessAddr != 0);
+				if (changed && writerKnown)
+				{
+					++g_rankedSlotWriteTrace.valueChangeCount;
+					const unsigned int seq = RankedProbeBumpSeq();
+					const uint32_t rankId = (newLo >> 16) & 0xFFFFu;
+					const uint32_t subscore = newLo & 0xFFFFu;
+					const uintptr_t moduleBase = reinterpret_cast<uintptr_t>(GetBbcfBaseAdress());
+					const uint32_t writerEip = g_rankedSlotWriteTrace.pendingWriterEip;
+					const bool directSlotAccess =
+						(g_rankedSlotWriteTrace.pendingAccessAddr >= g_rankedSlotWriteTrace.slotAddr) &&
+						(g_rankedSlotWriteTrace.pendingAccessAddr < (g_rankedSlotWriteTrace.slotAddr + 8u));
+					LOG(2, "[RANK][DataFlow] seq=%u cycle=%u change#%u slot=0x%p old=[0x%08X,0x%08X] new=[0x%08X,0x%08X] writer=0x%p writer_rva=0x%08X access=0x%08X accessType=%u directSlotAccess=%d origin_candidate=%d parts rank_id=0x%04X subscore=0x%04X\n",
+						seq,
+						g_rankedSlotWriteTrace.cycle,
+						g_rankedSlotWriteTrace.valueChangeCount,
+						reinterpret_cast<void*>(static_cast<uintptr_t>(g_rankedSlotWriteTrace.slotAddr)),
+						static_cast<unsigned int>(g_rankedSlotWriteTrace.pendingOldLo),
+						static_cast<unsigned int>(g_rankedSlotWriteTrace.pendingOldHi),
+						static_cast<unsigned int>(newLo),
+						static_cast<unsigned int>(newHi),
+						reinterpret_cast<void*>(static_cast<uintptr_t>(writerEip)),
+						(moduleBase && writerEip >= moduleBase) ? static_cast<unsigned int>(writerEip - moduleBase) : 0u,
+						static_cast<unsigned int>(g_rankedSlotWriteTrace.pendingAccessAddr),
+						static_cast<unsigned int>(g_rankedSlotWriteTrace.pendingAccessType),
+						directSlotAccess ? 1 : 0,
+						(g_rankedSlotWriteTrace.valueChangeCount == 1) ? 1 : 0,
+						static_cast<unsigned int>(rankId),
+						static_cast<unsigned int>(subscore));
+					if (g_rankedSlotWriteTrace.stopAfterFirstChange)
+					{
+						g_rankedSlotWriteTrace.sawMeaningfulChange = true;
+					}
+				}
+				g_rankedSlotWriteTrace.lastLo = newLo;
+				g_rankedSlotWriteTrace.lastHi = newHi;
+			}
+			g_rankedSlotWriteTrace.pendingWrite = false;
+			g_rankedSlotWriteTrace.pendingWriterEip = 0;
+			g_rankedSlotWriteTrace.pendingAccessAddr = 0;
+			g_rankedSlotWriteTrace.pendingAccessType = 0;
+			g_rankedSlotWriteTrace.pendingOldLo = 0;
+			g_rankedSlotWriteTrace.pendingOldHi = 0;
+		}
+		return EXCEPTION_CONTINUE_EXECUTION;
+	}
+
+	return EXCEPTION_CONTINUE_SEARCH;
+}
 
 bool TryReadRankUploadStateMachineFields(uint32_t selfValue, uint32_t* outState, uint32_t* outCount, uint32_t* outField910, uint32_t* outField914, uint32_t* outField918)
 {
@@ -484,6 +837,11 @@ bool TryLogRankUploadStateMachineCandidate(const char* callsite, const char* lab
 	}
 
 	uint8_t* const self = reinterpret_cast<uint8_t*>(selfValue);
+	uint32_t slot118Lo = 0;
+	uint32_t slot118Hi = 0;
+	const bool slot118Readable = ReadRankedTrackedSlotPair(selfValue + 0x118u, &slot118Lo, &slot118Hi);
+	const uint32_t slot118RankId = (slot118Lo >> 16) & 0xFFFFu;
+	const uint32_t slot118Subscore = slot118Lo & 0xFFFFu;
 
 	static RankedStateMachineSnapshot s_snapshots[32];
 	RankedStateMachineSnapshot* slot = nullptr;
@@ -522,19 +880,42 @@ bool TryLogRankUploadStateMachineCandidate(const char* callsite, const char* lab
 
 	if (changed || firstSeenThisCycle || periodicHeartbeat)
 	{
-		LOG(2, "[RANK][StateMachine] callsite=%s source=%s self=0x%p state=%u count=%u field910=0x%08X (%u) field914=0x%08X (%u) field918=0x%08X (%u) seenCalls=%u\n",
-			callsite ? callsite : "(null)",
-			label ? label : "(null)",
-			self,
-			static_cast<unsigned int>(state),
-			static_cast<unsigned int>(count),
-			static_cast<unsigned int>(field910),
-			static_cast<unsigned int>(field910),
-			static_cast<unsigned int>(field914),
-			static_cast<unsigned int>(field914),
-			static_cast<unsigned int>(field918),
-			static_cast<unsigned int>(field918),
-			static_cast<unsigned int>(slot->seenCalls));
+		if (slot118Readable)
+		{
+			LOG(2, "[RANK][StateMachine] callsite=%s source=%s self=0x%p state=%u count=%u field910=0x%08X (%u) field914=0x%08X (%u) field918=0x%08X (%u) slot118=[0x%08X,0x%08X] parts rank_id=0x%04X subscore=0x%04X seenCalls=%u\n",
+				callsite ? callsite : "(null)",
+				label ? label : "(null)",
+				self,
+				static_cast<unsigned int>(state),
+				static_cast<unsigned int>(count),
+				static_cast<unsigned int>(field910),
+				static_cast<unsigned int>(field910),
+				static_cast<unsigned int>(field914),
+				static_cast<unsigned int>(field914),
+				static_cast<unsigned int>(field918),
+				static_cast<unsigned int>(field918),
+				static_cast<unsigned int>(slot118Lo),
+				static_cast<unsigned int>(slot118Hi),
+				static_cast<unsigned int>(slot118RankId),
+				static_cast<unsigned int>(slot118Subscore),
+				static_cast<unsigned int>(slot->seenCalls));
+		}
+		else
+		{
+			LOG(2, "[RANK][StateMachine] callsite=%s source=%s self=0x%p state=%u count=%u field910=0x%08X (%u) field914=0x%08X (%u) field918=0x%08X (%u) slot118=<unreadable> seenCalls=%u\n",
+				callsite ? callsite : "(null)",
+				label ? label : "(null)",
+				self,
+				static_cast<unsigned int>(state),
+				static_cast<unsigned int>(count),
+				static_cast<unsigned int>(field910),
+				static_cast<unsigned int>(field910),
+				static_cast<unsigned int>(field914),
+				static_cast<unsigned int>(field914),
+				static_cast<unsigned int>(field918),
+				static_cast<unsigned int>(field918),
+				static_cast<unsigned int>(slot->seenCalls));
+		}
 	}
 
 	slot->used = true;
@@ -568,6 +949,26 @@ const char* FormatRankedDirectCallsiteLabel(const void* returnAddr, char* buffer
 	}
 
 	return buffer;
+}
+
+const char* DescribeRankedCallRegister(uint8_t modrm)
+{
+	if (modrm < 0xD0 || modrm > 0xD7)
+	{
+		return nullptr;
+	}
+
+	static const char* const kRegs[8] = {
+		"eax",
+		"ecx",
+		"edx",
+		"ebx",
+		"esp",
+		"ebp",
+		"esi",
+		"edi"
+	};
+	return kRegs[modrm & 0x07];
 }
 
 void LogRankedReturnAddressProbe(const char* label, uintptr_t returnAddr, uintptr_t moduleBase)
@@ -624,10 +1025,15 @@ void LogRankedReturnAddressProbe(const char* label, uintptr_t returnAddr, uintpt
 
 	const uintptr_t callAddr = reinterpret_cast<uintptr_t>(exactCall);
 	uintptr_t targetAddr = 0;
+	const char* callRegister = nullptr;
 	if (exactCall[0] == 0xE8)
 	{
 		const int32_t rel = *reinterpret_cast<const int32_t*>(exactCall + 1);
 		targetAddr = callAddr + 5 + rel;
+	}
+	else if (exactCall[0] == 0xFF && exactCall[1] >= 0xD0 && exactCall[1] <= 0xD7)
+	{
+		callRegister = DescribeRankedCallRegister(exactCall[1]);
 	}
 	else if (exactCall[0] == 0xFF && exactCall[1] == 0x15)
 	{
@@ -651,15 +1057,450 @@ void LogRankedReturnAddressProbe(const char* label, uintptr_t returnAddr, uintpt
 		bytes += byteText;
 	}
 
-	LOG(2, "[RANK][StateMachineTransition] %s call_end=0x%p call_addr=0x%p call_rva=0x%08X kind=%s target=0x%p target_rva=0x%08X bytes=%s\n",
+	LOG(2, "[RANK][StateMachineTransition] %s call_end=0x%p call_addr=0x%p call_rva=0x%08X kind=%s call_reg=%s target=0x%p target_rva=0x%08X bytes=%s\n",
 		label,
 		reinterpret_cast<void*>(returnAddr),
 		reinterpret_cast<void*>(callAddr),
 		(moduleBase && callAddr >= moduleBase) ? static_cast<unsigned int>(callAddr - moduleBase) : 0u,
 		exactKind ? exactKind : "(null)",
+		callRegister ? callRegister : "-",
 		reinterpret_cast<void*>(targetAddr),
 		(moduleBase && targetAddr >= moduleBase) ? static_cast<unsigned int>(targetAddr - moduleBase) : 0u,
 		bytes.c_str());
+}
+
+void LogRankedNearbyCallCandidates(const char* label, uintptr_t anchorAddr, uintptr_t moduleBase)
+{
+	if (!label || anchorAddr < 32)
+	{
+		return;
+	}
+
+	const uint8_t* const scanStart = reinterpret_cast<const uint8_t*>(anchorAddr - 32);
+	if (IsBadReadPtr(scanStart, 48))
+	{
+		return;
+	}
+
+	unsigned int candidateCount = 0;
+	for (size_t offset = 0; offset < 40 && candidateCount < 6; ++offset)
+	{
+		const uint8_t* const cursor = scanStart + offset;
+		const uintptr_t cursorAddr = reinterpret_cast<uintptr_t>(cursor);
+		uintptr_t callEnd = 0;
+		uintptr_t targetAddr = 0;
+		const char* kind = nullptr;
+		const char* callRegister = nullptr;
+
+		if (cursor[0] == 0xE8)
+		{
+			callEnd = cursorAddr + 5;
+			const int32_t rel = *reinterpret_cast<const int32_t*>(cursor + 1);
+			targetAddr = cursorAddr + 5 + rel;
+			kind = "rel32";
+		}
+		else if (cursor[0] == 0xFF)
+		{
+			const uint8_t modrm = cursor[1];
+			const uint8_t reg = static_cast<uint8_t>((modrm >> 3) & 0x07);
+			if (reg == 2)
+			{
+				if (modrm >= 0xD0 && modrm <= 0xD7)
+				{
+					callEnd = cursorAddr + 2;
+					kind = "ff_reg";
+					callRegister = DescribeRankedCallRegister(modrm);
+				}
+				else if (modrm == 0x15)
+				{
+					callEnd = cursorAddr + 6;
+					const uintptr_t ptrAddr = *reinterpret_cast<const uint32_t*>(cursor + 2);
+					if (!IsBadReadPtr(reinterpret_cast<const void*>(ptrAddr), sizeof(uintptr_t)))
+					{
+						targetAddr = *reinterpret_cast<const uintptr_t*>(ptrAddr);
+					}
+					kind = "ff_mem";
+				}
+			}
+		}
+
+		if (!kind || callEnd == 0)
+		{
+			continue;
+		}
+
+		const intptr_t delta = static_cast<intptr_t>(callEnd) - static_cast<intptr_t>(anchorAddr);
+		if (delta < -12 || delta > 12)
+		{
+			continue;
+		}
+
+		std::string bytes;
+		bytes.reserve(10 * 3);
+		for (size_t i = 0; i < 10; ++i)
+		{
+			char byteText[4] = {};
+			_snprintf_s(byteText, sizeof(byteText), _TRUNCATE, "%02X", static_cast<unsigned int>(cursor[i]));
+			if (!bytes.empty())
+			{
+				bytes += ' ';
+			}
+			bytes += byteText;
+		}
+
+		LOG(2, "[RANK][StateMachineTransition] %s candidate_%u anchor=0x%p delta=%d call_end=0x%p call_addr=0x%p call_rva=0x%08X kind=%s call_reg=%s target=0x%p target_rva=0x%08X bytes=%s\n",
+			label,
+			candidateCount,
+			reinterpret_cast<void*>(anchorAddr),
+			static_cast<int>(delta),
+			reinterpret_cast<void*>(callEnd),
+			reinterpret_cast<void*>(cursorAddr),
+			(moduleBase && cursorAddr >= moduleBase) ? static_cast<unsigned int>(cursorAddr - moduleBase) : 0u,
+			kind,
+			callRegister ? callRegister : "-",
+			reinterpret_cast<void*>(targetAddr),
+			(moduleBase && targetAddr >= moduleBase) ? static_cast<unsigned int>(targetAddr - moduleBase) : 0u,
+			bytes.c_str());
+		++candidateCount;
+	}
+
+	if (candidateCount == 0)
+	{
+		LOG(2, "[RANK][StateMachineTransition] %s no_nearby_call_candidates anchor=0x%p\n",
+			label,
+			reinterpret_cast<void*>(anchorAddr));
+	}
+}
+
+void LogRankedStageBacktrace(const char* stageTag, uint32_t tableBase, uint32_t slotAddr, uint32_t packedLo, uint32_t packedHi)
+{
+	static unsigned int s_lastCycle = 0xFFFFFFFFu;
+	static uint32_t s_lastTableBase = 0;
+	static uint32_t s_lastPackedLo = 0;
+	static uint32_t s_lastPackedHi = 0;
+
+	if (!stageTag)
+	{
+		stageTag = "(null)";
+	}
+
+	if (s_lastCycle == g_rankedProbeStats.matchCycleCount &&
+		s_lastTableBase == tableBase &&
+		s_lastPackedLo == packedLo &&
+		s_lastPackedHi == packedHi)
+	{
+		return;
+	}
+
+	s_lastCycle = g_rankedProbeStats.matchCycleCount;
+	s_lastTableBase = tableBase;
+	s_lastPackedLo = packedLo;
+	s_lastPackedHi = packedHi;
+
+	const uintptr_t moduleBase = reinterpret_cast<uintptr_t>(GetBbcfBaseAdress());
+	const uint32_t rankId = (packedLo >> 16) & 0xFFFFu;
+	const uint32_t subscore = packedLo & 0xFFFFu;
+
+	LOG(2, "[RANK][StageBacktrace] stage=%s cycle=%u table=0x%08X slot=0x%p packed=[0x%08X,0x%08X] parts rank_id=0x%04X subscore=0x%04X\n",
+		stageTag,
+		g_rankedProbeStats.matchCycleCount,
+		static_cast<unsigned int>(tableBase),
+		reinterpret_cast<void*>(static_cast<uintptr_t>(slotAddr)),
+		static_cast<unsigned int>(packedLo),
+		static_cast<unsigned int>(packedHi),
+		static_cast<unsigned int>(rankId),
+		static_cast<unsigned int>(subscore));
+
+	PVOID frames[6] = {};
+	const USHORT captured = CaptureStackBackTrace(0, 6, frames, nullptr);
+	for (USHORT i = 0; i < captured; ++i)
+	{
+		const uintptr_t frame = reinterpret_cast<uintptr_t>(frames[i]);
+		LOG(2, "[RANK][StageBacktrace] bt_%u=0x%p bbcf_rva=0x%08X\n",
+			static_cast<unsigned int>(i),
+			reinterpret_cast<void*>(frame),
+			(moduleBase && frame >= moduleBase) ? static_cast<unsigned int>(frame - moduleBase) : 0u);
+
+		if (i >= 3)
+		{
+			char probeLabel[24] = {};
+			_snprintf_s(probeLabel, sizeof(probeLabel), _TRUNCATE, "%s_bt_%u", stageTag, static_cast<unsigned int>(i));
+			LogRankedReturnAddressProbe(probeLabel, frame, moduleBase);
+			if (i >= 4)
+			{
+				char fuzzyLabel[24] = {};
+				_snprintf_s(fuzzyLabel, sizeof(fuzzyLabel), _TRUNCATE, "%s_fz_%u", stageTag, static_cast<unsigned int>(i));
+				LogRankedNearbyCallCandidates(fuzzyLabel, frame, moduleBase);
+			}
+		}
+	}
+}
+
+void CacheRankUploadClusterState(uint32_t stateValue, uint32_t tableBase)
+{
+	g_rankedUploadCallClusterCache.ownerThreadId = GetCurrentThreadId();
+	g_rankedUploadCallClusterCache.cycle = g_rankedProbeStats.matchCycleCount;
+	g_rankedUploadCallClusterCache.stateValue = stateValue;
+	g_rankedUploadCallClusterCache.tableBase = tableBase;
+}
+
+uint32_t GetCachedRankUploadClusterTable(uint32_t stateValue)
+{
+	if (g_rankedUploadCallClusterCache.ownerThreadId != GetCurrentThreadId())
+	{
+		return 0;
+	}
+	if (g_rankedUploadCallClusterCache.cycle != g_rankedProbeStats.matchCycleCount)
+	{
+		return 0;
+	}
+	if (stateValue != 0 && g_rankedUploadCallClusterCache.stateValue != 0 && g_rankedUploadCallClusterCache.stateValue != stateValue)
+	{
+		return 0;
+	}
+	return g_rankedUploadCallClusterCache.tableBase;
+}
+
+const char* DescribeRanked1E980CallSite(Ranked1E980CallSite callSite)
+{
+	switch (callSite)
+	{
+	case Ranked1E980CallSite_Phase3:
+		return "phase3";
+	case Ranked1E980CallSite_PackSelect:
+		return "packselect";
+	default:
+		return "unknown";
+	}
+}
+
+bool CaptureRanked1E980Snapshot(uint32_t stateValue, uint32_t tableBaseHint, Ranked1E980Snapshot* outSnapshot)
+{
+	if (!outSnapshot)
+	{
+		return false;
+	}
+
+	*outSnapshot = {};
+	uint8_t* const state = reinterpret_cast<uint8_t*>(stateValue);
+	uint8_t* const slot = state ? (state + 0x118) : nullptr;
+	if (!state || !slot || IsBadReadPtr(state + 0x918, 4) || IsBadReadPtr(slot, 0x10))
+	{
+		return false;
+	}
+
+	outSnapshot->valid = true;
+	outSnapshot->stateValue = stateValue;
+	outSnapshot->tableBase = tableBaseHint;
+	outSnapshot->state914 = *reinterpret_cast<uint32_t*>(state + 0x914);
+	outSnapshot->state918 = *reinterpret_cast<uint32_t*>(state + 0x918);
+	outSnapshot->slotLo = *reinterpret_cast<uint32_t*>(slot + 0x00);
+	outSnapshot->slotHi = *reinterpret_cast<uint32_t*>(slot + 0x04);
+	outSnapshot->nextLo = *reinterpret_cast<uint32_t*>(slot + 0x08);
+	outSnapshot->nextHi = *reinterpret_cast<uint32_t*>(slot + 0x0C);
+
+	if (tableBaseHint && !IsBadReadPtr(reinterpret_cast<void*>(tableBaseHint + 0x48 + 0x1C), 0x10))
+	{
+		uint8_t* const entry1 = reinterpret_cast<uint8_t*>(tableBaseHint + 0x48);
+		outSnapshot->src10Lo = *reinterpret_cast<uint32_t*>(entry1 + 0x10);
+		outSnapshot->src10Hi = *reinterpret_cast<uint32_t*>(entry1 + 0x14);
+		outSnapshot->src18Lo = *reinterpret_cast<uint32_t*>(entry1 + 0x18);
+		outSnapshot->src18Hi = *reinterpret_cast<uint32_t*>(entry1 + 0x1C);
+	}
+
+	return true;
+}
+
+void BeginRanked1E980TraceWindow(Ranked1E980CallSite callSite, uint32_t stateValue)
+{
+	const uint32_t cachedByState = GetCachedRankUploadClusterTable(stateValue);
+	const uint32_t cachedAny = GetCachedRankUploadClusterTable(0);
+	const uint32_t tableBaseHint = cachedByState ? cachedByState : cachedAny;
+
+	g_ranked1E980TraceWindow = {};
+	g_ranked1E980TraceWindow.ownerThreadId = GetCurrentThreadId();
+	g_ranked1E980TraceWindow.cycle = g_rankedProbeStats.matchCycleCount;
+	g_ranked1E980TraceWindow.callSite = callSite;
+	g_ranked1E980TraceWindow.active = CaptureRanked1E980Snapshot(stateValue, tableBaseHint, &g_ranked1E980TraceWindow.preSnapshot);
+}
+
+void LogRanked1E980Delta(Ranked1E980CallSite callSite, uint32_t stateValue, uint32_t tableBase, const char* siteLabel)
+{
+	static int s_budget = 24;
+	if (s_budget <= 0)
+	{
+		return;
+	}
+
+	Ranked1E980Snapshot postSnapshot = {};
+	if (!CaptureRanked1E980Snapshot(stateValue, tableBase, &postSnapshot))
+	{
+		LOG(2, "[RANK][1E980Delta] stage=%s site=%s state=0x%p post_unreadable ret_table=0x%08X\n",
+			DescribeRanked1E980CallSite(callSite),
+			siteLabel ? siteLabel : "(null)",
+			reinterpret_cast<void*>(static_cast<uintptr_t>(stateValue)),
+			static_cast<unsigned int>(tableBase));
+		--s_budget;
+		return;
+	}
+
+	bool havePre = false;
+	Ranked1E980Snapshot preSnapshot = {};
+	if (g_ranked1E980TraceWindow.active &&
+		g_ranked1E980TraceWindow.ownerThreadId == GetCurrentThreadId() &&
+		g_ranked1E980TraceWindow.cycle == g_rankedProbeStats.matchCycleCount &&
+		g_ranked1E980TraceWindow.callSite == callSite)
+	{
+		preSnapshot = g_ranked1E980TraceWindow.preSnapshot;
+		havePre = preSnapshot.valid;
+	}
+	g_ranked1E980TraceWindow.active = false;
+
+	const uint32_t rankId = (postSnapshot.slotLo >> 16) & 0xFFFFu;
+	const uint32_t subscore = postSnapshot.slotLo & 0xFFFFu;
+	const int createdInsideSrc10 = havePre &&
+		preSnapshot.src10Lo == 0u && preSnapshot.src10Hi == 0u &&
+		(postSnapshot.src10Lo != 0u || postSnapshot.src10Hi != 0u);
+	const int changedSrc10 = havePre &&
+		(preSnapshot.src10Lo != postSnapshot.src10Lo || preSnapshot.src10Hi != postSnapshot.src10Hi);
+	const int changedSlot = havePre &&
+		(preSnapshot.slotLo != postSnapshot.slotLo || preSnapshot.slotHi != postSnapshot.slotHi);
+
+	LOG(2, "[RANK][1E980Delta] stage=%s site=%s cycle=%u state=0x%p preTable=0x%08X postTable=0x%08X pre_slot=[0x%08X,0x%08X] post_slot=[0x%08X,0x%08X] pre_src10=[0x%08X,0x%08X] post_src10=[0x%08X,0x%08X] pre_src18=[0x%08X,0x%08X] post_src18=[0x%08X,0x%08X] state914=0x%08X->0x%08X state918=0x%08X->0x%08X havePre=%d changedSlot=%d changedSrc10=%d createdInsideSrc10=%d parts rank_id=0x%04X subscore=0x%04X\n",
+		DescribeRanked1E980CallSite(callSite),
+		siteLabel ? siteLabel : "(null)",
+		g_rankedProbeStats.matchCycleCount,
+		reinterpret_cast<void*>(static_cast<uintptr_t>(stateValue)),
+		static_cast<unsigned int>(havePre ? preSnapshot.tableBase : 0u),
+		static_cast<unsigned int>(postSnapshot.tableBase),
+		static_cast<unsigned int>(havePre ? preSnapshot.slotLo : 0u),
+		static_cast<unsigned int>(havePre ? preSnapshot.slotHi : 0u),
+		static_cast<unsigned int>(postSnapshot.slotLo),
+		static_cast<unsigned int>(postSnapshot.slotHi),
+		static_cast<unsigned int>(havePre ? preSnapshot.src10Lo : 0u),
+		static_cast<unsigned int>(havePre ? preSnapshot.src10Hi : 0u),
+		static_cast<unsigned int>(postSnapshot.src10Lo),
+		static_cast<unsigned int>(postSnapshot.src10Hi),
+		static_cast<unsigned int>(havePre ? preSnapshot.src18Lo : 0u),
+		static_cast<unsigned int>(havePre ? preSnapshot.src18Hi : 0u),
+		static_cast<unsigned int>(postSnapshot.src18Lo),
+		static_cast<unsigned int>(postSnapshot.src18Hi),
+		static_cast<unsigned int>(havePre ? preSnapshot.state914 : 0u),
+		static_cast<unsigned int>(postSnapshot.state914),
+		static_cast<unsigned int>(havePre ? preSnapshot.state918 : 0u),
+		static_cast<unsigned int>(postSnapshot.state918),
+		havePre ? 1 : 0,
+		changedSlot,
+		changedSrc10,
+		createdInsideSrc10,
+		static_cast<unsigned int>(rankId),
+		static_cast<unsigned int>(subscore));
+
+	if (createdInsideSrc10 && postSnapshot.src10Lo != 0u)
+	{
+		LogRankedStageBacktrace(callSite == Ranked1E980CallSite_Phase3 ? "phase3_1E980_created" : "packselect_1E980_created",
+			postSnapshot.tableBase,
+			stateValue + 0x118u,
+			postSnapshot.src10Lo,
+			postSnapshot.src10Hi);
+	}
+
+	--s_budget;
+}
+
+void LogRankUploadCallClusterState(const char* stage, uint32_t stateValue, uint32_t tableBase, uint32_t returnValue)
+{
+	uint8_t* const state = reinterpret_cast<uint8_t*>(stateValue);
+	uint8_t* const slot = state ? (state + 0x118) : nullptr;
+	uint8_t* const entry1 = tableBase ? reinterpret_cast<uint8_t*>(tableBase + 0x48) : nullptr;
+	if (!stage)
+	{
+		stage = "(null)";
+	}
+
+	uint32_t slotLo = 0;
+	uint32_t slotHi = 0;
+	uint32_t nextLo = 0;
+	uint32_t nextHi = 0;
+	uint32_t src10Lo = 0;
+	uint32_t src10Hi = 0;
+	uint32_t src18Lo = 0;
+	uint32_t src18Hi = 0;
+
+	const bool slotReadable = slot && !IsBadReadPtr(slot, 0x10);
+	const bool entryReadable = entry1 && !IsBadReadPtr(entry1 + 0x10, 0x10);
+	if (slotReadable)
+	{
+		slotLo = *reinterpret_cast<uint32_t*>(slot + 0x00);
+		slotHi = *reinterpret_cast<uint32_t*>(slot + 0x04);
+		nextLo = *reinterpret_cast<uint32_t*>(slot + 0x08);
+		nextHi = *reinterpret_cast<uint32_t*>(slot + 0x0C);
+	}
+	if (entryReadable)
+	{
+		src10Lo = *reinterpret_cast<uint32_t*>(entry1 + 0x10);
+		src10Hi = *reinterpret_cast<uint32_t*>(entry1 + 0x14);
+		src18Lo = *reinterpret_cast<uint32_t*>(entry1 + 0x18);
+		src18Hi = *reinterpret_cast<uint32_t*>(entry1 + 0x1C);
+	}
+
+	LOG(2, "[RANK][CallCluster] stage=%s cycle=%u state=0x%p table=0x%08X retval=0x%08X slot=[0x%08X,0x%08X] next=[0x%08X,0x%08X] entry1_src10=[0x%08X,0x%08X] entry1_src18=[0x%08X,0x%08X]\n",
+		stage,
+		g_rankedProbeStats.matchCycleCount,
+		reinterpret_cast<void*>(static_cast<uintptr_t>(stateValue)),
+		static_cast<unsigned int>(tableBase),
+		static_cast<unsigned int>(returnValue),
+		static_cast<unsigned int>(slotLo),
+		static_cast<unsigned int>(slotHi),
+		static_cast<unsigned int>(nextLo),
+		static_cast<unsigned int>(nextHi),
+		static_cast<unsigned int>(src10Lo),
+		static_cast<unsigned int>(src10Hi),
+		static_cast<unsigned int>(src18Lo),
+		static_cast<unsigned int>(src18Hi));
+
+	if (tableBase != 0)
+	{
+		CacheRankUploadClusterState(stateValue, tableBase);
+	}
+
+	if (slotReadable && entryReadable && slotLo != 0u && slotLo == src10Lo && slotHi == src10Hi)
+	{
+		LogRankedStageBacktrace(stage, tableBase, stateValue + 0x118u, src10Lo, src10Hi);
+	}
+}
+
+void LogRankUploadPost1FD80(uint32_t stateValue, uint32_t tableBase, uint32_t returnValue)
+{
+	LogRankUploadCallClusterState("post_1FD80", stateValue, tableBase, returnValue);
+}
+
+void LogRankUploadPost248D0(uint32_t stateValue, uint32_t returnValue)
+{
+	LogRankUploadCallClusterState("post_248D0", stateValue, GetCachedRankUploadClusterTable(stateValue), returnValue);
+}
+
+void LogRankUploadPost24D40(uint32_t stateValue, uint32_t returnValue)
+{
+	LogRankUploadCallClusterState("post_24D40", stateValue, GetCachedRankUploadClusterTable(stateValue), returnValue);
+}
+
+void LogRankUploadPost1FEA0(uint32_t selfValue, uint32_t selfArgValue, uint32_t returnValue)
+{
+	const uint32_t chosenState = selfArgValue ? selfArgValue : selfValue;
+	const uint32_t cachedByChosen = GetCachedRankUploadClusterTable(chosenState);
+	const uint32_t cachedAny = GetCachedRankUploadClusterTable(0);
+	const uint32_t tableBase = cachedByChosen ? cachedByChosen : cachedAny;
+
+	LOG(2, "[RANK][CallCluster] stage=post_1FEA0_args self=0x%p selfArg=0x%p chosen=0x%p cachedChosen=0x%08X cachedAny=0x%08X retval=0x%08X\n",
+		reinterpret_cast<void*>(static_cast<uintptr_t>(selfValue)),
+		reinterpret_cast<void*>(static_cast<uintptr_t>(selfArgValue)),
+		reinterpret_cast<void*>(static_cast<uintptr_t>(chosenState)),
+		static_cast<unsigned int>(cachedByChosen),
+		static_cast<unsigned int>(cachedAny),
+		static_cast<unsigned int>(returnValue));
+
+	LogRankUploadCallClusterState("post_1FEA0", chosenState, tableBase, returnValue);
 }
 
 void LogRankUploadStateMachineTransitionContext(const char* phase, uint32_t selfValue, uint32_t previousState, uint32_t currentState, uint32_t previousCount, uint32_t currentCount, const void* returnAddr)
@@ -785,6 +1626,12 @@ void LogRankUploadStateMachineTransitionContext(const char* phase, uint32_t self
 			char probeLabel[16] = {};
 			_snprintf_s(probeLabel, sizeof(probeLabel), _TRUNCATE, "bt_%u_probe", static_cast<unsigned int>(i));
 			LogRankedReturnAddressProbe(probeLabel, frame, moduleBase);
+			if (i >= 4)
+			{
+				char fuzzyLabel[16] = {};
+				_snprintf_s(fuzzyLabel, sizeof(fuzzyLabel), _TRUNCATE, "bt_%u_fuzzy", static_cast<unsigned int>(i));
+				LogRankedNearbyCallCandidates(fuzzyLabel, frame, moduleBase);
+			}
 		}
 	}
 
@@ -799,7 +1646,10 @@ void LogRankUploadStateMachineDirectPass(const char* phase, void* selfPtr, void*
 	const uint32_t selfArgValue = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(selfArgPtr));
 	uint32_t state = 0;
 	uint32_t count = 0;
+	uint32_t slotLo = 0;
+	uint32_t slotHi = 0;
 	const bool readable = TryReadRankUploadStateMachineFields(selfValue, &state, &count, nullptr, nullptr, nullptr);
+	const bool slotReadable = ReadRankedTrackedSlotPair(selfValue + 0x118u, &slotLo, &slotHi);
 
 	static RankedStateMachineTransitionSnapshot s_transitionSnapshots[32];
 	RankedStateMachineTransitionSnapshot* transitionSlot = nullptr;
@@ -820,10 +1670,41 @@ void LogRankUploadStateMachineDirectPass(const char* phase, void* selfPtr, void*
 	{
 		const bool changed = !transitionSlot->used || transitionSlot->lastState != state || transitionSlot->lastCount != count;
 		const bool meaningful = changed && (state != 0 || transitionSlot->lastState != 0xFFFFFFFFu);
+		const bool slotSeeded =
+			slotReadable &&
+			transitionSlot->used &&
+			transitionSlot->lastSlotLo == 0u &&
+			transitionSlot->lastSlotHi == 0u &&
+			(slotLo != 0u || slotHi != 0u);
 		if (meaningful)
 		{
 			LogRankUploadStateMachineTransitionContext(
 				phase,
+				selfValue,
+				transitionSlot->lastState,
+				state,
+				transitionSlot->lastCount,
+				count,
+				returnAddr);
+		}
+		if (slotSeeded)
+		{
+			const uint32_t rankId = (slotLo >> 16) & 0xFFFFu;
+			const uint32_t subscore = slotLo & 0xFFFFu;
+			LOG(2, "[RANK][SlotSeeded] phase=%s callsite=%s self=0x%p old=[0x%08X,0x%08X] new=[0x%08X,0x%08X] state=%u count=%u parts rank_id=0x%04X subscore=0x%04X\n",
+				phase ? phase : "(null)",
+				callsite,
+				reinterpret_cast<void*>(static_cast<uintptr_t>(selfValue)),
+				static_cast<unsigned int>(transitionSlot->lastSlotLo),
+				static_cast<unsigned int>(transitionSlot->lastSlotHi),
+				static_cast<unsigned int>(slotLo),
+				static_cast<unsigned int>(slotHi),
+				static_cast<unsigned int>(state),
+				static_cast<unsigned int>(count),
+				static_cast<unsigned int>(rankId),
+				static_cast<unsigned int>(subscore));
+			LogRankUploadStateMachineTransitionContext(
+				"slot_seeded",
 				selfValue,
 				transitionSlot->lastState,
 				state,
@@ -836,6 +1717,8 @@ void LogRankUploadStateMachineDirectPass(const char* phase, void* selfPtr, void*
 		transitionSlot->self = selfValue;
 		transitionSlot->lastState = state;
 		transitionSlot->lastCount = count;
+		transitionSlot->lastSlotLo = slotReadable ? slotLo : 0xFFFFFFFFu;
+		transitionSlot->lastSlotHi = slotReadable ? slotHi : 0xFFFFFFFFu;
 	}
 
 	bool logged = false;
@@ -884,12 +1767,55 @@ void LogRankUploadStateMachineAfter(uint32_t ecxValue, uint32_t ebxValue, uint32
 	}
 }
 
+void LogRankUploadUpperEdiCall(uint32_t eaxValue, uint32_t ecxValue, uint32_t ebxValue, uint32_t esiValue, uint32_t ediValue, uint32_t ebpValue)
+{
+	static uint32_t s_lastTarget = 0;
+	static uint32_t s_lastCycle = 0xFFFFFFFFu;
+	static unsigned int s_seenCalls = 0;
+
+	const uintptr_t moduleBase = reinterpret_cast<uintptr_t>(GetBbcfBaseAdress());
+	const uint32_t targetValue = ediValue;
+	const bool targetChanged = (targetValue != s_lastTarget);
+	const bool cycleChanged = (g_rankedProbeStats.matchCycleCount != s_lastCycle);
+	const bool periodic = ((s_seenCalls % 64u) == 0u);
+
+	bool loggedCandidate = false;
+	loggedCandidate = TryLogRankUploadStateMachineCandidate("BBCF+0x0004F288", "ecx", ecxValue) || loggedCandidate;
+	loggedCandidate = TryLogRankUploadStateMachineCandidate("BBCF+0x0004F288", "ebx", ebxValue) || loggedCandidate;
+	loggedCandidate = TryLogRankUploadStateMachineCandidate("BBCF+0x0004F288", "esi", esiValue) || loggedCandidate;
+
+	if (targetChanged || cycleChanged || periodic || loggedCandidate)
+	{
+		LOG(2, "[RANK][UpperEdiCall] callsite=BBCF+0x0004F288 target=0x%p target_rva=0x%08X eax=0x%08X ecx=0x%08X ebx=0x%08X esi=0x%08X edi=0x%08X ebp=0x%08X seenCalls=%u\n",
+			reinterpret_cast<void*>(static_cast<uintptr_t>(targetValue)),
+			(moduleBase && targetValue >= moduleBase) ? static_cast<unsigned int>(targetValue - moduleBase) : 0u,
+			static_cast<unsigned int>(eaxValue),
+			static_cast<unsigned int>(ecxValue),
+			static_cast<unsigned int>(ebxValue),
+			static_cast<unsigned int>(esiValue),
+			static_cast<unsigned int>(ediValue),
+			static_cast<unsigned int>(ebpValue),
+			static_cast<unsigned int>(s_seenCalls));
+	}
+
+	s_lastTarget = targetValue;
+	s_lastCycle = g_rankedProbeStats.matchCycleCount;
+	++s_seenCalls;
+}
+
 uint32_t __fastcall HookedRankUploadStateMachineDirect(void* self, void* edx, void* selfArg)
 {
 	const void* const returnAddr = _ReturnAddress();
+	EndRankedSlotWriteTrace("safe_mode_disable_page_guard");
+
 	LogRankUploadStateMachineDirectPass("entry", self, selfArg, returnAddr, 0);
 
 	const uint32_t result = orig_RankUploadStateMachineDirect ? orig_RankUploadStateMachineDirect(self, edx, selfArg) : 0;
+
+	LogRankUploadPost1FEA0(
+		static_cast<uint32_t>(reinterpret_cast<uintptr_t>(self)),
+		static_cast<uint32_t>(reinterpret_cast<uintptr_t>(selfArg)),
+		result);
 
 	LogRankUploadStateMachineDirectPass("exit", self, selfArg, returnAddr, result);
 	return result;
@@ -898,6 +1824,7 @@ uint32_t __fastcall HookedRankUploadStateMachineDirect(void* self, void* edx, vo
 void LogRankUploadPackSelectPostCall(uint32_t stateValue, uint32_t selectorPrimary, uint32_t selectorSecondary, uint32_t tableValue)
 {
 	RankedProbeNotePackSelect();
+	LogRanked1E980Delta(Ranked1E980CallSite_PackSelect, stateValue, tableValue, "BBCF+0x00020534");
 
 	uint8_t* const state = reinterpret_cast<uint8_t*>(stateValue);
 	if (!state || IsBadReadPtr(state, 0x91C))
@@ -1364,6 +2291,10 @@ void LogRankUploadBit4Skip(uint32_t entryIdValue, uint32_t slotValue, uint32_t f
 			static_cast<unsigned int>(src18Lo),
 			static_cast<unsigned int>(rankId),
 			static_cast<unsigned int>(subscore));
+		if (slotLo != 0u && slotHi == src10Hi && slotLo == src10Lo)
+		{
+			LogRankedStageBacktrace("bit4skip_src10", tableBase, slotValue, src10Lo, src10Hi);
+		}
 	}
 	--s_budget;
 }
@@ -1371,6 +2302,7 @@ void LogRankUploadBit4Skip(uint32_t entryIdValue, uint32_t slotValue, uint32_t f
 void LogRankUploadPhase3PostCall(uint32_t stateValue, uint32_t returnValue)
 {
 	RankedProbeNotePhase3();
+	LogRanked1E980Delta(Ranked1E980CallSite_Phase3, stateValue, returnValue, "BBCF+0x00020035");
 
 	static int s_budget = 16;
 	if (s_budget <= 0)
@@ -1435,6 +2367,10 @@ void LogRankUploadPhase3PostCall(uint32_t stateValue, uint32_t returnValue)
 		static_cast<unsigned int>(src18Lo),
 		static_cast<unsigned int>(rankId),
 		static_cast<unsigned int>(subscore));
+	if (slotLo != 0u && slotHi == src10Hi && slotLo == src10Lo)
+	{
+		LogRankedStageBacktrace("phase3_src10", tableBase, stateValue + 0x118u, src10Lo, src10Hi);
+	}
 	--s_budget;
 }
 
@@ -1542,6 +2478,7 @@ void RankedProbeTickFrameState()
 	}
 	if (gameState == GameState_InMatch && previousGameState != GameState_InMatch)
 	{
+		EndRankedSlotWriteTrace("match_cycle_begin");
 		++g_rankedProbeStats.matchCycleCount;
 		g_rankedProbeStats.currentMatchStartSeq = seq;
 		g_rankedProbeStats.currentMatchStartUploadCount = g_rankedProbeStats.uploadCount;
@@ -1766,6 +2703,15 @@ void __declspec(naked) RankUploadPackSelectTrace()
 
 	__asm
 	{
+		pushfd
+		pushad
+		push edi
+		push Ranked1E980CallSite_PackSelect
+		call BeginRanked1E980TraceWindow
+		add esp, 8
+		popad
+		popfd
+
 		call [RankUploadPackSelectCallTargetAddr]
 
 		pushfd
@@ -1866,7 +2812,71 @@ void __declspec(naked) RankUploadSourceTotalTrace()
 		add dword ptr [edx], eax
 		mov eax, [ecx + 14h]
 		adc dword ptr [edx + 4], eax
-		jmp [RankUploadSourceTotalTraceJmpBackAddr]
+			jmp [RankUploadSourceTotalTraceJmpBackAddr]
+		}
+	}
+
+void __declspec(naked) RankUploadCall1FD80Trace()
+{
+	LOG_ASM(2, "RankUploadCall1FD80Trace\n");
+
+	__asm
+	{
+		call [RankUploadCall1FD80TargetAddr]
+
+		pushfd
+		pushad
+		push eax
+		push eax
+		push edi
+		call LogRankUploadPost1FD80
+		add esp, 12
+		popad
+		popfd
+
+		jmp [RankUploadCall1FD80TraceJmpBackAddr]
+	}
+}
+
+void __declspec(naked) RankUploadCall248D0Trace()
+{
+	LOG_ASM(2, "RankUploadCall248D0Trace\n");
+
+	__asm
+	{
+		call [RankUploadCall248D0TargetAddr]
+
+		pushfd
+		pushad
+		push eax
+		push edi
+		call LogRankUploadPost248D0
+		add esp, 8
+		popad
+		popfd
+
+		jmp [RankUploadCall248D0TraceJmpBackAddr]
+	}
+}
+
+void __declspec(naked) RankUploadCall24D40Trace()
+{
+	LOG_ASM(2, "RankUploadCall24D40Trace\n");
+
+	__asm
+	{
+		call [RankUploadCall24D40TargetAddr]
+
+		pushfd
+		pushad
+		push eax
+		push edi
+		call LogRankUploadPost24D40
+		add esp, 8
+		popad
+		popfd
+
+		jmp [RankUploadCall24D40TraceJmpBackAddr]
 	}
 }
 
@@ -1901,12 +2911,47 @@ void __declspec(naked) RankUploadBit4SkipTrace()
 	}
 }
 
+void __declspec(naked) RankUploadUpperEdiCallTrace()
+{
+	LOG_ASM(2, "RankUploadUpperEdiCallTrace\n");
+
+	__asm
+	{
+		call edi
+		mov dword ptr [ebp - 4], 0FFFFFFFFh
+
+		pushfd
+		pushad
+		push ebp
+		push edi
+		push esi
+		push ebx
+		push ecx
+		push eax
+		call LogRankUploadUpperEdiCall
+		add esp, 24
+		popad
+		popfd
+
+		jmp [RankUploadUpperEdiCallTraceJmpBackAddr]
+	}
+}
+
 void __declspec(naked) RankUploadPhase3PostCallTrace()
 {
 	LOG_ASM(2, "RankUploadPhase3PostCallTrace\n");
 
 	__asm
 	{
+		pushfd
+		pushad
+		push edi
+		push Ranked1E980CallSite_Phase3
+		call BeginRanked1E980TraceWindow
+		add esp, 8
+		popad
+		popfd
+
 		call [RankUploadPhase3CallTargetAddr]
 
 		pushfd
@@ -2798,9 +3843,11 @@ bool placeHooks_bbcf()
 
 		HookManager::SetHook("SkipReplayListConfirm", (DWORD)(GetBbcfBaseAdress() + 0x002c3038), 5, SkipReplayListConfirm);
 
-		RankUploadPhase3CallTargetAddr = (DWORD)(GetBbcfBaseAdress() + 0x0001E980);
-		RankUploadPhase3PostCallTraceJmpBackAddr = HookManager::SetHook("RankUploadPhase3PostCallTrace", (DWORD)(GetBbcfBaseAdress() + 0x00020035), 5, RankUploadPhase3PostCallTrace);
-		RankUploadCallsiteTraceJmpBackAddr = HookManager::SetHook("RankUploadCallsiteTrace", (DWORD)(GetBbcfBaseAdress() + 0x0001EF5F), 9, RankUploadCallsiteTrace);
+			RankUploadPhase3CallTargetAddr = (DWORD)(GetBbcfBaseAdress() + 0x0001E980);
+			RankUploadPhase3PostCallTraceJmpBackAddr = HookManager::SetHook("RankUploadPhase3PostCallTrace", (DWORD)(GetBbcfBaseAdress() + 0x00020035), 5, RankUploadPhase3PostCallTrace);
+			RankUploadCall1FD80TargetAddr = (DWORD)(GetBbcfBaseAdress() + 0x0001FD80);
+			RankUploadCall1FD80TraceJmpBackAddr = HookManager::SetHook("RankUploadCall1FD80Trace", (DWORD)(GetBbcfBaseAdress() + 0x0001D106), 5, RankUploadCall1FD80Trace);
+			RankUploadCallsiteTraceJmpBackAddr = HookManager::SetHook("RankUploadCallsiteTrace", (DWORD)(GetBbcfBaseAdress() + 0x0001EF5F), 9, RankUploadCallsiteTrace);
 		// [DISABLED: BuilderTrace 0x1D1A2 - confirmed dead-end; builder front-end fires on cheap/lobby path without reaching trusted upload chain (section 50)]
 		// RankUploadBuilderTraceJmpBackAddr = HookManager::SetHook("RankUploadBuilderTrace", (DWORD)(GetBbcfBaseAdress() + 0x0001D1A2), 16, RankUploadBuilderTrace);
 
@@ -2813,15 +3860,18 @@ bool placeHooks_bbcf()
 				DetourFunction(reinterpret_cast<PBYTE>(RankUploadStateMachineCallTargetAddr), reinterpret_cast<PBYTE>(HookedRankUploadStateMachineDirect)));
 			LOG(2, "[RANK][StateMachineDirect] Hooked BBCF+0x0001FEA0 orig=0x%p\n", orig_RankUploadStateMachineDirect);
 		}
-
 		// [DISABLED: ComposeTrace 0x24ABC - confirmed dead-end; never fired in upload runs, composition not at this site (sections 46-47)]
 		// RankUploadComposeTraceJmpBackAddr = HookManager::SetHook("RankUploadComposeTrace", (DWORD)(GetBbcfBaseAdress() + 0x00024ABC), 20, RankUploadComposeTrace);
 		RankUploadPackSelectCallTargetAddr = (DWORD)(GetBbcfBaseAdress() + 0x0001E980);
 		RankUploadPackSelectTraceJmpBackAddr = HookManager::SetHook("RankUploadPackSelectTrace", (DWORD)(GetBbcfBaseAdress() + 0x00020534), 5, RankUploadPackSelectTrace);
-		RankUploadBit4SkipContinueAddr = (DWORD)(GetBbcfBaseAdress() + 0x00020285);
-		RankUploadBit4SkipJmpAddr = (DWORD)(GetBbcfBaseAdress() + 0x000203DB);
-		HookManager::SetHook("RankUploadBit4SkipTrace", (DWORD)(GetBbcfBaseAdress() + 0x00020270), 15, RankUploadBit4SkipTrace);
-		RankUploadSourceTotalTraceJmpBackAddr = HookManager::SetHook("RankUploadSourceTotalTrace", (DWORD)(GetBbcfBaseAdress() + 0x00020291), 13, RankUploadSourceTotalTrace);
+			RankUploadBit4SkipContinueAddr = (DWORD)(GetBbcfBaseAdress() + 0x00020285);
+			RankUploadBit4SkipJmpAddr = (DWORD)(GetBbcfBaseAdress() + 0x000203DB);
+			HookManager::SetHook("RankUploadBit4SkipTrace", (DWORD)(GetBbcfBaseAdress() + 0x00020270), 15, RankUploadBit4SkipTrace);
+			RankUploadCall248D0TargetAddr = (DWORD)(GetBbcfBaseAdress() + 0x000248D0);
+			RankUploadCall248D0TraceJmpBackAddr = HookManager::SetHook("RankUploadCall248D0Trace", (DWORD)(GetBbcfBaseAdress() + 0x0001D112), 5, RankUploadCall248D0Trace);
+			RankUploadCall24D40TargetAddr = (DWORD)(GetBbcfBaseAdress() + 0x00024D40);
+			RankUploadCall24D40TraceJmpBackAddr = HookManager::SetHook("RankUploadCall24D40Trace", (DWORD)(GetBbcfBaseAdress() + 0x0001D119), 5, RankUploadCall24D40Trace);
+			RankUploadSourceTotalTraceJmpBackAddr = HookManager::SetHook("RankUploadSourceTotalTrace", (DWORD)(GetBbcfBaseAdress() + 0x00020291), 13, RankUploadSourceTotalTrace);
 		RankUploadSourcePairCopyCheckAddr = (DWORD)(GetBbcfBaseAdress() + 0x000202C2);
 		RankUploadSourcePairTraceJmpBackAddr = HookManager::SetHook("RankUploadSourcePairTrace", (DWORD)(GetBbcfBaseAdress() + 0x000202AE), 20, RankUploadSourcePairTrace);
 		RankUploadPackedWriteTraceJmpBackAddr = HookManager::SetHook("RankUploadPackedWriteTrace", (DWORD)(GetBbcfBaseAdress() + 0x000205A4), 12, RankUploadPackedWriteTrace);
