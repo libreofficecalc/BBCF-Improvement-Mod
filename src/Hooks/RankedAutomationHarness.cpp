@@ -798,14 +798,14 @@ namespace
 
                         if (expectedRowIndex == 24)
                         {
-                                if (snapshot.currentRank != 33 || snapshot.earnedPoints != 761 || snapshot.totalPoints != 1730)
+                                if (snapshot.currentRank != 34 || snapshot.earnedPoints != 761 || snapshot.totalPoints != 1730)
                                 {
                                         return false;
                                 }
                         }
                         else if (expectedRowIndex == 21)
                         {
-                                if (snapshot.currentRank != 26 || snapshot.earnedPoints != 180 || snapshot.totalPoints != 426)
+                                if (snapshot.currentRank != 27 || snapshot.earnedPoints != 180 || snapshot.totalPoints != 426)
                                 {
                                         return false;
                                 }

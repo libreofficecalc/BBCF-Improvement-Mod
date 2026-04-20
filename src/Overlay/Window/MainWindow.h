@@ -2,6 +2,7 @@
 #include <cstdint>
 #include "IWindow.h"
 
+#include "Overlay/Window/RankedProgressOverlayState.h"
 #include "Overlay/WindowContainer/WindowContainer.h"
 
 

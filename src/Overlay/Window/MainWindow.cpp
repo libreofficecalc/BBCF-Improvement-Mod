@@ -29,6 +29,7 @@
 #include <sstream>
 #include <utility>
 #include <cstring>
+#include <string>
 
 
 namespace
@@ -37,8 +38,32 @@ namespace
 	constexpr uintptr_t kRankedCharSeleStaticRva = 0x00DAC9D8;
 	constexpr size_t kRankedCharSeleStaticSize = 0x1BC0;
 	constexpr uintptr_t kRankedTableBaseFnRva = 0x0009D5C0;
+	constexpr uint32_t kInvalidRankedCharacterId = 0xFFFFFFFFu;
 
 	RankedProgressOverlaySnapshot g_rankedProgressOverlaySnapshot{};
+	RankedUploadOverlayState g_rankedUploadOverlayState{};
+	std::array<int32_t, 64> g_lastSuccessfulRankScoreByCharacter{};
+	std::array<uint8_t, 64> g_hasLastSuccessfulRankScoreByCharacter{};
+
+	uint32_t InternalRankToVisibleRank(uint32_t internalRank, bool isUnranked)
+	{
+		if (isUnranked)
+		{
+			return 0;
+		}
+
+		return internalRank + 1u;
+	}
+
+	bool IsRankAllOrigin(const char* origin)
+	{
+		if (!origin)
+		{
+			return false;
+		}
+
+		return std::string(origin).find("RANK_ALL") != std::string::npos;
+	}
 
 	bool IsRankedProgressMenuState(int state, int state1)
 	{
@@ -130,8 +155,6 @@ namespace
 		outSnapshot->selectorValue = selectorValue;
 		outSnapshot->cursorValue = cursorValue;
 		outSnapshot->currentRank = *reinterpret_cast<const uint16_t*>(rowObject);
-		outSnapshot->previousRank = outSnapshot->currentRank > 0 ? (outSnapshot->currentRank - 1u) : 0u;
-		outSnapshot->nextRank = outSnapshot->currentRank > 0 ? (outSnapshot->currentRank + 1u) : 1u;
 		outSnapshot->totalPoints = SumRankedWordPairs(rowObject, 0x26);
 		outSnapshot->earnedPoints = SumRankedWordPairs(rowObject, 0xA6);
 		outSnapshot->remainingPoints = outSnapshot->totalPoints > outSnapshot->earnedPoints
@@ -143,6 +166,10 @@ namespace
 			? static_cast<float>(outSnapshot->earnedPoints) / static_cast<float>(outSnapshot->totalPoints)
 			: 0.0f;
 		outSnapshot->isUnranked = outSnapshot->currentRank == 0 || outSnapshot->totalPoints == 0;
+		const uint32_t visibleRank = InternalRankToVisibleRank(outSnapshot->currentRank, outSnapshot->isUnranked);
+		outSnapshot->currentRank = visibleRank;
+		outSnapshot->previousRank = visibleRank > 1u ? (visibleRank - 1u) : 0u;
+		outSnapshot->nextRank = visibleRank > 0u ? (visibleRank + 1u) : 1u;
 		return true;
 	}
 
@@ -197,6 +224,83 @@ namespace
 		g_rankedProgressOverlaySnapshot.networkState1 = -1;
 		g_rankedProgressOverlaySnapshot.isUnranked = true;
 	}
+}
+
+void NoteRankedUploadAttempt(int32_t characterId, int32_t score)
+{
+	g_rankedUploadOverlayState.hasPendingUpload = true;
+	g_rankedUploadOverlayState.characterId =
+		(characterId >= 0 && characterId < 64) ? static_cast<uint32_t>(characterId) : kInvalidRankedCharacterId;
+	g_rankedUploadOverlayState.score = score;
+	g_rankedUploadOverlayState.internalRank = (static_cast<uint32_t>(score) >> 16) & 0xFFFFu;
+	g_rankedUploadOverlayState.visibleRank = InternalRankToVisibleRank(g_rankedUploadOverlayState.internalRank, false);
+	g_rankedUploadOverlayState.subscore = static_cast<uint32_t>(score) & 0xFFFFu;
+}
+
+void NoteRankedUploadCompletion(const char* origin, bool success, bool scoreChanged, int32_t score, int newGlobalRank, int previousGlobalRank)
+{
+	if (!IsRankAllOrigin(origin))
+	{
+		return;
+	}
+
+	g_rankedUploadOverlayState.hasLastUploadResult = true;
+	g_rankedUploadOverlayState.lastUploadSucceeded = success;
+	g_rankedUploadOverlayState.lastUploadScoreChanged = scoreChanged;
+	g_rankedUploadOverlayState.score = score;
+	g_rankedUploadOverlayState.internalRank = (static_cast<uint32_t>(score) >> 16) & 0xFFFFu;
+	g_rankedUploadOverlayState.visibleRank = InternalRankToVisibleRank(g_rankedUploadOverlayState.internalRank, false);
+	g_rankedUploadOverlayState.subscore = static_cast<uint32_t>(score) & 0xFFFFu;
+	g_rankedUploadOverlayState.newGlobalRank = newGlobalRank;
+	g_rankedUploadOverlayState.previousGlobalRank = previousGlobalRank;
+	g_rankedUploadOverlayState.scoreDelta = 0;
+	g_rankedUploadOverlayState.visibleRankDelta = 0;
+	g_rankedUploadOverlayState.subscoreDelta = 0;
+
+	const uint32_t characterId = g_rankedUploadOverlayState.characterId;
+	if (success &&
+		characterId != kInvalidRankedCharacterId &&
+		characterId < g_lastSuccessfulRankScoreByCharacter.size())
+	{
+		if (g_hasLastSuccessfulRankScoreByCharacter[characterId])
+		{
+			const int32_t previousScore = g_lastSuccessfulRankScoreByCharacter[characterId];
+			const uint32_t previousInternalRank = (static_cast<uint32_t>(previousScore) >> 16) & 0xFFFFu;
+			const uint32_t previousVisibleRank = InternalRankToVisibleRank(previousInternalRank, false);
+			const uint32_t previousSubscore = static_cast<uint32_t>(previousScore) & 0xFFFFu;
+			g_rankedUploadOverlayState.scoreDelta = score - previousScore;
+			g_rankedUploadOverlayState.visibleRankDelta = static_cast<int32_t>(g_rankedUploadOverlayState.visibleRank) - static_cast<int32_t>(previousVisibleRank);
+			g_rankedUploadOverlayState.subscoreDelta = static_cast<int32_t>(g_rankedUploadOverlayState.subscore) - static_cast<int32_t>(previousSubscore);
+		}
+
+		g_lastSuccessfulRankScoreByCharacter[characterId] = score;
+		g_hasLastSuccessfulRankScoreByCharacter[characterId] = 1;
+	}
+
+	LOG(1, "[RANK][OverlayUpload] origin='%s' success=%d changed=%d char=%u visibleRank=%u subscore=%u score=%d delta=%d rankDelta=%d subDelta=%d newGlobalRank=%d prevGlobalRank=%d\n",
+		origin ? origin : "<null>",
+		success ? 1 : 0,
+		scoreChanged ? 1 : 0,
+		static_cast<unsigned int>(g_rankedUploadOverlayState.characterId),
+		static_cast<unsigned int>(g_rankedUploadOverlayState.visibleRank),
+		static_cast<unsigned int>(g_rankedUploadOverlayState.subscore),
+		score,
+		g_rankedUploadOverlayState.scoreDelta,
+		g_rankedUploadOverlayState.visibleRankDelta,
+		g_rankedUploadOverlayState.subscoreDelta,
+		newGlobalRank,
+		previousGlobalRank);
+}
+
+bool GetRankedUploadOverlayState(RankedUploadOverlayState* outState)
+{
+	if (!outState)
+	{
+		return false;
+	}
+
+	*outState = g_rankedUploadOverlayState;
+	return g_rankedUploadOverlayState.hasLastUploadResult;
 }
 
 bool CaptureRankedProgressOverlaySnapshot(RankedProgressOverlaySnapshot* outSnapshot)
@@ -779,13 +883,22 @@ void MainWindow::DrawRankedProgressOverlay() const
 	}
 
 	RankedProgressOverlaySnapshot snapshot;
-	if (!CaptureRankedProgressSnapshotInternal(&snapshot))
+	const bool hasLiveSnapshot = CaptureRankedProgressSnapshotInternal(&snapshot);
+	if (!hasLiveSnapshot)
 	{
 		ClearRankedProgressOverlaySnapshot("inactive_context");
-		return;
+	}
+	else
+	{
+		PublishRankedProgressOverlaySnapshot(snapshot);
 	}
 
-	PublishRankedProgressOverlaySnapshot(snapshot);
+	RankedUploadOverlayState uploadState;
+	const bool hasUploadState = GetRankedUploadOverlayState(&uploadState);
+	if (!hasLiveSnapshot && !hasUploadState)
+	{
+		return;
+	}
 
 	ImGui::SetNextWindowPos(ImVec2(360.0f, 20.0f), ImGuiCond_FirstUseEver);
 	ImGui::SetNextWindowSizeConstraints(ImVec2(320.0f, 220.0f), ImVec2(640.0f, 720.0f));
@@ -796,7 +909,7 @@ void MainWindow::DrawRankedProgressOverlay() const
 		return;
 	}
 
-	float clampedProgress = snapshot.progress;
+	float clampedProgress = hasLiveSnapshot ? snapshot.progress : 0.0f;
 	if (clampedProgress < 0.0f)
 	{
 		clampedProgress = 0.0f;
@@ -807,11 +920,15 @@ void MainWindow::DrawRankedProgressOverlay() const
 	}
 	char progressText[64] = {};
 	std::snprintf(progressText, sizeof(progressText), "%u / %u (%.2f%%)",
-		snapshot.earnedPoints,
-		snapshot.totalPoints,
+		hasLiveSnapshot ? snapshot.earnedPoints : 0u,
+		hasLiveSnapshot ? snapshot.totalPoints : 0u,
 		static_cast<double>(clampedProgress * 100.0f));
 
-	if (snapshot.isUnranked)
+	if (!hasLiveSnapshot)
+	{
+		ImGui::TextDisabled("%s", L("Live ranked menu snapshot unavailable. Showing last upload result.").c_str());
+	}
+	else if (snapshot.isUnranked)
 	{
 		ImGui::TextDisabled("%s", L("Current character is unranked (AUTH).").c_str());
 	}
@@ -820,17 +937,35 @@ void MainWindow::DrawRankedProgressOverlay() const
 		ImGui::Text("%s %u", L("Current Rank:").c_str(), snapshot.currentRank);
 	}
 
-	ImGui::Text("%s %u", L("Previous Rank:").c_str(), snapshot.previousRank);
-	ImGui::SameLine();
-	ImGui::Text("%s %u", L("Next Rank:").c_str(), snapshot.nextRank);
-	ImGui::ProgressBar(clampedProgress, ImVec2(300.0f, 0.0f), progressText);
-	ImGui::Text("%s %u", L("Remaining to Next:").c_str(), snapshot.remainingPoints);
-	ImGui::Separator();
-	ImGui::Text("%s %u", L("Row / Character ID:").c_str(), snapshot.rowIndex);
-	ImGui::Text("%s %u / %u", L("Selector / Cursor:").c_str(), snapshot.selectorValue, snapshot.cursorValue);
-	ImGui::Text("%s %d / %d", L("Network State:").c_str(), snapshot.networkState, snapshot.networkState1);
-	ImGui::Text("%s 0x%08X", L("Debug F4:").c_str(), snapshot.debugFieldF4);
-	ImGui::Text("%s %u", L("Metadata Next Rank:").c_str(), snapshot.metadataNextRank);
+	if (hasLiveSnapshot)
+	{
+		ImGui::Text("%s %u", L("Previous Rank:").c_str(), snapshot.previousRank);
+		ImGui::SameLine();
+		ImGui::Text("%s %u", L("Next Rank:").c_str(), snapshot.nextRank);
+		ImGui::ProgressBar(clampedProgress, ImVec2(300.0f, 0.0f), progressText);
+		ImGui::Text("%s %u", L("Remaining to Next:").c_str(), snapshot.remainingPoints);
+		ImGui::Separator();
+		ImGui::Text("%s %u", L("Row / Character ID:").c_str(), snapshot.rowIndex);
+		ImGui::Text("%s %u / %u", L("Selector / Cursor:").c_str(), snapshot.selectorValue, snapshot.cursorValue);
+		ImGui::Text("%s %d / %d", L("Network State:").c_str(), snapshot.networkState, snapshot.networkState1);
+		ImGui::Text("%s 0x%08X", L("Debug F4:").c_str(), snapshot.debugFieldF4);
+		ImGui::Text("%s %u", L("Metadata Next Rank:").c_str(), snapshot.metadataNextRank);
+	}
+
+	if (hasUploadState)
+	{
+		ImGui::Separator();
+		ImGui::Text("%s", L("Last ranked upload:").c_str());
+		ImGui::Text("%s %s", L("Status:").c_str(), uploadState.lastUploadSucceeded ? "success" : "failed");
+		ImGui::SameLine();
+		ImGui::Text("%s %s", L("Changed:").c_str(), uploadState.lastUploadScoreChanged ? "yes" : "no");
+		ImGui::Text("%s %u", L("Character ID:").c_str(), uploadState.characterId);
+		ImGui::Text("%s %u", L("Uploaded Rank:").c_str(), uploadState.visibleRank);
+		ImGui::Text("%s %u", L("Uploaded Subscore:").c_str(), uploadState.subscore);
+		ImGui::Text("%s %+d", L("Score Delta:").c_str(), uploadState.scoreDelta);
+		ImGui::Text("%s %+d", L("Rank Delta:").c_str(), uploadState.visibleRankDelta);
+		ImGui::Text("%s %+d", L("Subscore Delta:").c_str(), uploadState.subscoreDelta);
+		ImGui::Text("%s %d -> %d", L("Global Rank:").c_str(), uploadState.previousGlobalRank, uploadState.newGlobalRank);
+	}
 	ImGui::End();
 }
-

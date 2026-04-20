@@ -3,6 +3,7 @@
 
 #include "Core/logger.h"
 #include "Core/utils.h"
+#include "Overlay/Window/RankedProgressOverlayState.h"
 
 #include <isteamuserstats.h>
 
@@ -201,6 +202,12 @@ bool SteamUtilsWrapper::GetAPICallResult(SteamAPICall_t hSteamAPICall, void *pCa
 			origin.empty() ? "<unknown>" : origin.c_str(),
 			cb->m_bSuccess ? 1 : 0,
 			cb->m_bScoreChanged ? 1 : 0,
+			cb->m_nScore,
+			cb->m_nGlobalRankNew,
+			cb->m_nGlobalRankPrevious);
+		NoteRankedUploadCompletion(origin.empty() ? nullptr : origin.c_str(),
+			cb->m_bSuccess ? true : false,
+			cb->m_bScoreChanged ? true : false,
 			cb->m_nScore,
 			cb->m_nGlobalRankNew,
 			cb->m_nGlobalRankPrevious);

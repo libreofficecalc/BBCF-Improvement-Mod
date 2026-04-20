@@ -5896,3 +5896,53 @@ Practical status after section 131:
 - remaining work is optional polish only, for example:
   - mapping numeric rank ids to exact in-game rank names / badges if desired
   - further RE of the intro-sequence rank-up trigger threshold if user wants the exact pre-rank-up condition surfaced too
+
+## 132. 2026-04-20 visible-rank correction and upload-result plumbing
+
+User follow-up proved one last UI mistake:
+
+- overlay was still showing internal zero-based rank ids, not user-visible rank numbers
+- concrete mismatch from live profile:
+  - Kokonoe visible level is `34`, old overlay showed `33`
+  - Bullet visible level is `27`, old overlay showed `26`
+
+What newest code/logs prove:
+
+- row first word / `SkillRankRender rankIndex` are internal ids
+- user-visible rank number is `internal_rank + 1` for ranked rows
+- corrected live overlay values from fresh `DebugDeploy` harness run:
+  - `[RANK][OverlayProgress] ... row=24 ... rank=34 prev=33 next=35 earned=761 total=1730 ...`
+  - `[RANK][OverlayProgress] ... row=21 ... rank=27 prev=26 next=28 earned=180 total=426 ...`
+
+Patch made:
+
+- `src/Overlay/Window/MainWindow.cpp`
+  - convert ranked row internal rank to visible rank before publishing / drawing overlay snapshot
+  - keep `AUTH` / unranked rows at `0`
+- `src/Hooks/RankedAutomationHarness.cpp`
+  - update offline verification expectations from `33/26` to visible `34/27`
+- added upload-result cache plumbing:
+  - `src/Overlay/Window/RankedProgressOverlayState.h`
+  - `src/SteamApiWrapper/SteamUserStatsWrapper.cpp`
+  - `src/SteamApiWrapper/SteamUtilsWrapper.cpp`
+  - flow now records pending `RANK_ALL` upload attempt from `UploadLeaderboardScore`
+  - on `LeaderboardScoreUploaded_t` callback for `RANK_ALL`, overlay state records:
+    - character id
+    - uploaded visible rank
+    - uploaded subscore
+    - global-rank old/new
+    - score/rank/subscore delta versus last successful upload for that character in current session
+
+Build / test status:
+
+- `Debug|Win32` build succeeded after patch
+- fresh `DebugDeploy|Win32` harness deploy confirmed visible-rank correction in live `DEBUG.txt`
+- offline harness first failed only because verifier still expected stale zero-based values; verifier has now been patched to visible values
+- offline harness cannot exercise real Steam ranked upload completion, so upload-result panel is code-wired but still needs one real ranked match to observe `[RANK][OverlayUpload] ...`
+
+Next test priority:
+
+- rerun offline harness once more after the verifier update; success target is visible-rank checks at `34/27` plus `[RankedAuto] COMPLETED reason=scenario complete`
+- after that, first real ranked match should confirm end-of-match callback logging:
+  - `[STEAM][APICall] LeaderboardScoreUploaded origin='UploadLeaderboardScore:handle=1759932 name='RANK_ALL'' ...`
+  - `[RANK][OverlayUpload] ...`

@@ -5,6 +5,7 @@
 #include "Core/logger.h"
 #include "Core/utils.h"
 #include "Hooks/hooks_bbcf.h"
+#include "Overlay/Window/RankedProgressOverlayState.h"
 
 #include <algorithm>
 #include <cctype>
@@ -541,6 +542,8 @@ SteamAPICall_t SteamUserStatsWrapper::UploadLeaderboardScore(SteamLeaderboard_t 
 	{
 		RankedProbeNoteUpload();
 		RankedProbeDumpSummary("UploadLeaderboardScore:RANK_ALL");
+		const int32_t characterId = (pScoreDetails && cScoreDetailsCount > 0) ? pScoreDetails[0] : -1;
+		NoteRankedUploadAttempt(characterId, nScore);
 	}
 
 	const SteamAPICall_t call = m_SteamUserStats->UploadLeaderboardScore(hSteamLeaderboard, eLeaderboardUploadScoreMethod, nScore, pScoreDetails, cScoreDetailsCount);
