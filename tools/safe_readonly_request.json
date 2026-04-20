@@ -2,8 +2,8 @@
   "exe": "C:\\Program Files (x86)\\Windows Kits\\10\\Debuggers\\x86\\cdb.exe",
   "args": [
     "-z",
-    "C:\\Users\\Usuario\\AppData\\Local\\CrashDumps\\BBCF.exe.29980.dmp",
+    "\"D:\\SteamLibrary\\steamapps\\common\\BlazBlue Centralfiction\\BBCF_IM\\CrashReports\\Crash_20260419_153303\\crash.dmp\"",
     "-c",
-    ".ecxr; !analyze -v; kb 80; r; q"
+    ".ecxr; lm m dinput8; kb 40; u @eip-32 @eip+32; q"
   ]
 }

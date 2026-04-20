@@ -20,6 +20,7 @@ SETTING(int, menusize, "MenuSize", "2");
 SETTING(bool, notifications, "Notifications", "1");
 SETTING(bool, checkupdates, "CheckUpdates", "1");
 SETTING(bool, generateDebugLogs, "GenerateDebugLogs", "1");
+SETTING(bool, showRankedProgress, "ShowRankedProgress", "0");
 SETTING(bool, rankedAutomationHarnessEnabled, "RankedAutomationHarnessEnabled", "0");
 SETTING(std::string, rankedAutomationHarnessHotkey, "RankedAutomationHarnessHotkey", "F8");
 SETTING(bool, rankedAutomationHarnessAutorun, "RankedAutomationHarnessAutorun", "0");

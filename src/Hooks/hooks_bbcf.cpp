@@ -18,6 +18,7 @@
 #include "Game/ReplayFiles/ReplayFileManager.h"
 #include "Game/Playbacks/UnlimitedPlaybackManager.h"
 #include "Game/ReplayTakeover/ReplayTakeoverFeatureFlags.h"
+#include <array>
 #include <cstring>
 #include <detours.h>
 #include <intrin.h>
@@ -65,6 +66,10 @@ DWORD RankMenuSkillRankRenderTraceJmpBackAddr = 0;
 DWORD RankMenuSkillRankCalcTargetAddr = 0;
 DWORD RankMenuEntryRankWordTargetAddr = 0;
 DWORD RankMenuEntryObjectTargetAddr = 0;
+DWORD RankMenuProgressSumTargetAddr = 0;
+DWORD RankMenuProgressFieldF4TargetAddr = 0;
+DWORD RankMenuFieldC8TargetAddr = 0;
+DWORD RankMenuFieldD0TargetAddr = 0;
 DWORD RankUploadState1CallTraceJmpBackAddr = 0;
 DWORD RankUploadState2CallTraceJmpBackAddr = 0;
 DWORD RankUploadState5CallTraceJmpBackAddr = 0;
@@ -100,14 +105,22 @@ RankMenuNoArgFn orig_RankMenuTopUpdate = nullptr;
 RankMenuNoArgFn orig_RankMenuCharSeleInit = nullptr;
 typedef uint32_t(__fastcall* RankMenuEntryRankWordFn)(void* self, void* edx, uint32_t index);
 typedef uint32_t(__fastcall* RankMenuEntryObjectFn)(void* self, void* edx, uint32_t index);
+typedef uint32_t(__fastcall* RankMenuIndexedValueFn)(void* self, void* edx, uint32_t index);
+typedef uint32_t(__fastcall* RankMenuFieldValueFn)(void* self);
 RankMenuEntryRankWordFn orig_RankMenuEntryRankWord = nullptr;
 RankMenuEntryObjectFn orig_RankMenuEntryObject = nullptr;
+RankMenuIndexedValueFn orig_RankMenuProgressSum = nullptr;
+RankMenuIndexedValueFn orig_RankMenuProgressFieldF4 = nullptr;
+RankMenuFieldValueFn orig_RankMenuFieldC8 = nullptr;
+RankMenuFieldValueFn orig_RankMenuFieldD0 = nullptr;
 
 namespace {
 #pragma intrinsic(_ReturnAddress)
 
 uint32_t g_lastRankMenuRenderedIndex = 0xFFFFFFFFu;
 uint32_t g_lastRankMenuRenderedRankIndex = 0xFFFFFFFFu;
+std::array<uint32_t, 0x40> g_lastRankMenuRenderedRankIndexByRow{};
+std::array<uint8_t, 0x40> g_hasRankMenuRenderedRankIndexByRow{};
 
 enum RankedWriterCallerStageId : uint32_t
 {
@@ -544,6 +557,12 @@ void LogRankMenuSkillRankRender(uint32_t selfValue, uint32_t rankIndex)
 	const uint32_t raw1BAC = *reinterpret_cast<uint32_t*>(self + 0x1BAC);
 	const uint32_t raw1BB0 = *reinterpret_cast<uint32_t*>(self + 0x1BB0);
 
+	uint32_t selected1760 = 0xFFFFFFFFu;
+	if (raw1960 < 0x40 && !IsBadReadPtr(self + 0x1760 + raw1960 * 8, sizeof(uint32_t)))
+	{
+		selected1760 = *reinterpret_cast<uint32_t*>(self + 0x1760 + raw1960 * 8);
+	}
+
 	uint32_t selected1964 = 0xFFFFFFFFu;
 	if (raw1960 < 0x40 && !IsBadReadPtr(self + 0x1964 + raw1960 * sizeof(uint32_t), sizeof(uint32_t)))
 	{
@@ -552,6 +571,11 @@ void LogRankMenuSkillRankRender(uint32_t selfValue, uint32_t rankIndex)
 
 	g_lastRankMenuRenderedIndex = raw1960;
 	g_lastRankMenuRenderedRankIndex = rankIndex;
+	if (raw1960 < g_lastRankMenuRenderedRankIndexByRow.size())
+	{
+		g_lastRankMenuRenderedRankIndexByRow[raw1960] = rankIndex;
+		g_hasRankMenuRenderedRankIndexByRow[raw1960] = 1;
+	}
 
 	uint32_t selected1A68 = 0xFFFFFFFFu;
 	if (raw1BAC < 0x40 && !IsBadReadPtr(self + 0x1A68 + raw1BAC * sizeof(uint32_t), sizeof(uint32_t)))
@@ -579,7 +603,7 @@ void LogRankMenuSkillRankRender(uint32_t selfValue, uint32_t rankIndex)
 	memcpy(&f173C, &raw173C, sizeof(f173C));
 	memcpy(&f1744, &raw1744, sizeof(f1744));
 
-	LOG(2, "[RANK][SkillRankRender] self=0x%p rankIndex=%u off173C=%.3f(0x%08X) off1744=%.3f(0x%08X) idx1760=%u idx1960=%u sel1964=0x%08X idx1BAC=%u sel1A68=0x%08X raw1BB0=0x%08X parts1BB0 rank_id=0x%04X subscore=0x%04X\n",
+	LOG(2, "[RANK][SkillRankRender] self=0x%p rankIndex=%u off173C=%.3f(0x%08X) off1744=%.3f(0x%08X) idx1760=%u idx1960=%u sel1760=0x%08X sel1964=0x%08X idx1BAC=%u sel1A68=0x%08X raw1BB0=0x%08X parts1BB0 rank_id=0x%04X subscore=0x%04X\n",
 		self,
 		static_cast<unsigned int>(rankIndex),
 		f173C,
@@ -588,6 +612,7 @@ void LogRankMenuSkillRankRender(uint32_t selfValue, uint32_t rankIndex)
 		static_cast<unsigned int>(raw1744),
 		static_cast<unsigned int>(raw1760),
 		static_cast<unsigned int>(raw1960),
+		static_cast<unsigned int>(selected1760),
 		static_cast<unsigned int>(selected1964),
 		static_cast<unsigned int>(raw1BAC),
 		static_cast<unsigned int>(selected1A68),
@@ -777,6 +802,13 @@ void LogRankMenuEntrySource(const char* tag, uint32_t selfValue, uint32_t indexV
 		const uint32_t pairedRankWordNext = hasPairedRankWord ? (pairedRankWord + 1u) : 0xFFFFFFFFu;
 		const uint32_t pairedRenderedMenuIndex = g_lastRankMenuRenderedIndex;
 		const uint32_t pairedRenderedRankIndex = g_lastRankMenuRenderedRankIndex;
+		const bool hasRememberedRenderRankIndex =
+			indexValue < g_hasRankMenuRenderedRankIndexByRow.size() &&
+			g_hasRankMenuRenderedRankIndexByRow[indexValue] != 0;
+		const uint32_t rememberedRenderRankIndex =
+			hasRememberedRenderRankIndex
+			? g_lastRankMenuRenderedRankIndexByRow[indexValue]
+			: 0xFFFFFFFFu;
 		const uint32_t c0Hi = (fieldC0 >> 16) & 0xFFFFu;
 		const uint32_t c0Lo = fieldC0 & 0xFFFFu;
 		const uint32_t c4Hi = (fieldC4 >> 16) & 0xFFFFu;
@@ -789,13 +821,31 @@ void LogRankMenuEntrySource(const char* tag, uint32_t selfValue, uint32_t indexV
 		const uint32_t d0Lo = fieldD0 & 0xFFFFu;
 		const uint32_t d4Hi = (fieldD4 >> 16) & 0xFFFFu;
 		const uint32_t d4Lo = fieldD4 & 0xFFFFu;
-		LOG(2, "[RANK][EntrySource] row index=%u pairedRankWord=0x%08X next=0x%08X renderIndex=%u renderRankIndex=%u rankWordEqRender=%d parts_c0 hi=0x%04X lo=0x%04X parts_c4 hi=0x%04X lo=0x%04X parts_c8 hi=0x%04X lo=0x%04X parts_cc hi=0x%04X lo=0x%04X parts_d0 hi=0x%04X lo=0x%04X parts_d4 hi=0x%04X lo=0x%04X match_d0_hi=%d match_d4_hi=%d match_d4_hi_next=%d match_d4_hi_render_next=%d\n",
+		uint32_t sumOffset26 = 0;
+		uint32_t sumOffsetA6 = 0;
+		if (!IsBadReadPtr(obj, 0x126))
+		{
+			for (int pairIndex = 0; pairIndex < 0x20; ++pairIndex)
+			{
+				const uint32_t offset26 = 0x26 + pairIndex * 4;
+				const uint32_t offsetA6 = 0xA6 + pairIndex * 4;
+				sumOffset26 += *reinterpret_cast<uint16_t*>(obj + offset26 - 2);
+				sumOffset26 += *reinterpret_cast<uint16_t*>(obj + offset26);
+				sumOffsetA6 += *reinterpret_cast<uint16_t*>(obj + offsetA6 - 2);
+				sumOffsetA6 += *reinterpret_cast<uint16_t*>(obj + offsetA6);
+			}
+		}
+		LOG(2, "[RANK][EntrySource] row index=%u pairedRankWord=0x%08X next=0x%08X renderIndex=%u renderRankIndex=%u rememberedRenderRankIndex=%u rankWordEqRender=%d rankWordEqRememberedRender=%d sum26=%u sumA6=%u parts_c0 hi=0x%04X lo=0x%04X parts_c4 hi=0x%04X lo=0x%04X parts_c8 hi=0x%04X lo=0x%04X parts_cc hi=0x%04X lo=0x%04X parts_d0 hi=0x%04X lo=0x%04X parts_d4 hi=0x%04X lo=0x%04X match_d0_hi=%d match_d4_hi=%d match_d4_hi_next=%d match_d4_hi_render_next=%d match_d4_hi_remembered_render_next=%d\n",
 			static_cast<unsigned int>(indexValue),
 			static_cast<unsigned int>(pairedRankWord),
 			static_cast<unsigned int>(pairedRankWordNext),
 			static_cast<unsigned int>(pairedRenderedMenuIndex),
 			static_cast<unsigned int>(pairedRenderedRankIndex),
+			static_cast<unsigned int>(rememberedRenderRankIndex),
 			(hasPairedRankWord && pairedRenderedMenuIndex == indexValue && pairedRenderedRankIndex == pairedRankWord) ? 1 : 0,
+			(hasPairedRankWord && hasRememberedRenderRankIndex && rememberedRenderRankIndex == pairedRankWord) ? 1 : 0,
+			static_cast<unsigned int>(sumOffset26),
+			static_cast<unsigned int>(sumOffsetA6),
 			static_cast<unsigned int>(c0Hi),
 			static_cast<unsigned int>(c0Lo),
 			static_cast<unsigned int>(c4Hi),
@@ -811,8 +861,142 @@ void LogRankMenuEntrySource(const char* tag, uint32_t selfValue, uint32_t indexV
 			(hasPairedRankWord && d0Hi == pairedRankWord) ? 1 : 0,
 			(hasPairedRankWord && d4Hi == pairedRankWord) ? 1 : 0,
 			(hasPairedRankWord && d4Hi == pairedRankWordNext) ? 1 : 0,
-			(hasPairedRankWord && pairedRenderedMenuIndex == indexValue && d4Hi == (pairedRenderedRankIndex + 1u)) ? 1 : 0);
+			(hasPairedRankWord && pairedRenderedMenuIndex == indexValue && d4Hi == (pairedRenderedRankIndex + 1u)) ? 1 : 0,
+			(hasPairedRankWord && hasRememberedRenderRankIndex && d4Hi == (rememberedRenderRankIndex + 1u)) ? 1 : 0);
 	}
+
+	--s_budget;
+}
+
+void LogRankMenuProgressValue(const char* tag, uint32_t selfValue, uint32_t selectorValue, uint32_t resultValue, uintptr_t returnAddr)
+{
+	static int s_budget = 64;
+	static uint32_t s_lastSelf = 0;
+	static uint32_t s_lastSelector = 0xFFFFFFFFu;
+	static uint32_t s_lastResult = 0xFFFFFFFFu;
+	static uintptr_t s_lastReturn = 0;
+
+	if (s_budget <= 0)
+	{
+		return;
+	}
+
+	uint32_t rawC8 = 0xFFFFFFFFu;
+	uint32_t rawD0 = 0xFFFFFFFFu;
+	uint32_t rawE0 = 0xFFFFFFFFu;
+	uint32_t rawE4 = 0xFFFFFFFFu;
+	uint32_t rawEC = 0xFFFFFFFFu;
+	uint32_t rawF4 = 0xFFFFFFFFu;
+	uint8_t rawC4 = 0xFFu;
+	uint8_t rawC6 = 0xFFu;
+
+	uint8_t* const self = reinterpret_cast<uint8_t*>(selfValue);
+	if (self && !IsBadReadPtr(self, 0xF8))
+	{
+		rawC8 = *reinterpret_cast<uint32_t*>(self + 0xC8);
+		rawD0 = *reinterpret_cast<uint32_t*>(self + 0xD0);
+		rawE0 = *reinterpret_cast<uint32_t*>(self + 0xE0);
+		rawE4 = *reinterpret_cast<uint32_t*>(self + 0xE4);
+		rawEC = *reinterpret_cast<uint32_t*>(self + 0xEC);
+		rawF4 = *reinterpret_cast<uint32_t*>(self + 0xF4);
+		rawC4 = *(self + 0xC4);
+		rawC6 = *(self + 0xC6);
+	}
+
+	if (s_lastSelf == selfValue &&
+		s_lastSelector == selectorValue &&
+		s_lastResult == resultValue &&
+		s_lastReturn == returnAddr)
+	{
+		return;
+	}
+
+	s_lastSelf = selfValue;
+	s_lastSelector = selectorValue;
+	s_lastResult = resultValue;
+	s_lastReturn = returnAddr;
+
+	LOG(2, "[RANK][ProgressProbe] tag=%s self=0x%p selector=0x%08X (%u) result=0x%08X (%u) returnRva=0x%08X c4=%u c6=%u c8=0x%08X d0=0x%08X e0=0x%08X e4=0x%08X ec=0x%08X f4=0x%08X partsF4 rank_id=0x%04X subscore=0x%04X\n",
+		tag ? tag : "(null)",
+		reinterpret_cast<void*>(static_cast<uintptr_t>(selfValue)),
+		static_cast<unsigned int>(selectorValue),
+		static_cast<unsigned int>(selectorValue),
+		static_cast<unsigned int>(resultValue),
+		static_cast<unsigned int>(resultValue),
+		static_cast<unsigned int>(returnAddr - reinterpret_cast<uintptr_t>(GetBbcfBaseAdress())),
+		static_cast<unsigned int>(rawC4),
+		static_cast<unsigned int>(rawC6),
+		static_cast<unsigned int>(rawC8),
+		static_cast<unsigned int>(rawD0),
+		static_cast<unsigned int>(rawE0),
+		static_cast<unsigned int>(rawE4),
+		static_cast<unsigned int>(rawEC),
+		static_cast<unsigned int>(rawF4),
+		static_cast<unsigned int>((rawF4 >> 16) & 0xFFFFu),
+		static_cast<unsigned int>(rawF4 & 0xFFFFu));
+
+	--s_budget;
+}
+
+void LogRankMenuFieldValue(const char* tag, uint32_t selfValue, uint32_t resultValue, uintptr_t returnAddr)
+{
+	static int s_budget = 96;
+	static uint32_t s_lastSelf = 0;
+	static uint32_t s_lastResult = 0xFFFFFFFFu;
+	static uintptr_t s_lastReturn = 0;
+
+	if (s_budget <= 0)
+	{
+		return;
+	}
+
+	uint32_t rankWord = 0xFFFFFFFFu;
+	uint32_t rawC8 = 0xFFFFFFFFu;
+	uint32_t rawD0 = 0xFFFFFFFFu;
+	uint32_t rawD4 = 0xFFFFFFFFu;
+	uint32_t rawF4 = 0xFFFFFFFFu;
+	uint8_t raw49 = 0xFFu;
+
+	uint8_t* const self = reinterpret_cast<uint8_t*>(selfValue);
+	if (self && !IsBadReadPtr(self, 0xF8))
+	{
+		rankWord = *reinterpret_cast<uint16_t*>(self);
+		rawC8 = *reinterpret_cast<uint32_t*>(self + 0xC8);
+		rawD0 = *reinterpret_cast<uint32_t*>(self + 0xD0);
+		rawD4 = *reinterpret_cast<uint32_t*>(self + 0xD4);
+		rawF4 = *reinterpret_cast<uint32_t*>(self + 0xF4);
+		raw49 = *(self + 0x49);
+	}
+
+	if (s_lastSelf == selfValue &&
+		s_lastResult == resultValue &&
+		s_lastReturn == returnAddr)
+	{
+		return;
+	}
+
+	s_lastSelf = selfValue;
+	s_lastResult = resultValue;
+	s_lastReturn = returnAddr;
+
+	LOG(2, "[RANK][FieldProbe] tag=%s self=0x%p result=0x%08X (%u) returnRva=0x%08X rankWord=0x%08X (%u) c8=0x%08X d0=0x%08X d4=0x%08X f4=0x%08X nib49_hi=%u nib49_lo=%u matchRank=%d matchNext=%d f4_rank_id=0x%04X f4_subscore=0x%04X\n",
+		tag ? tag : "(null)",
+		reinterpret_cast<void*>(static_cast<uintptr_t>(selfValue)),
+		static_cast<unsigned int>(resultValue),
+		static_cast<unsigned int>(resultValue),
+		static_cast<unsigned int>(returnAddr - reinterpret_cast<uintptr_t>(GetBbcfBaseAdress())),
+		static_cast<unsigned int>(rankWord),
+		static_cast<unsigned int>(rankWord),
+		static_cast<unsigned int>(rawC8),
+		static_cast<unsigned int>(rawD0),
+		static_cast<unsigned int>(rawD4),
+		static_cast<unsigned int>(rawF4),
+		static_cast<unsigned int>((raw49 >> 4) & 0x0Fu),
+		static_cast<unsigned int>(raw49 & 0x0Fu),
+		(rankWord != 0xFFFFFFFFu && resultValue == rankWord) ? 1 : 0,
+		(rankWord != 0xFFFFFFFFu && resultValue == (rankWord + 1u)) ? 1 : 0,
+		static_cast<unsigned int>((rawF4 >> 16) & 0xFFFFu),
+		static_cast<unsigned int>(rawF4 & 0xFFFFu));
 
 	--s_budget;
 }
@@ -2879,6 +3063,52 @@ uint32_t __fastcall HookedRankMenuEntryObject(void* self, void* edx, uint32_t in
 	if (moduleBase != 0 && returnAddr == moduleBase + 0x00144349)
 	{
 		LogRankMenuEntrySource("entry_object", static_cast<uint32_t>(reinterpret_cast<uintptr_t>(self)), index, result);
+	}
+	return result;
+}
+
+uint32_t __fastcall HookedRankMenuProgressSum(void* self, void* edx, uint32_t index)
+{
+	const uint32_t result = orig_RankMenuProgressSum ? orig_RankMenuProgressSum(self, edx, index) : 0;
+	const uintptr_t returnAddr = reinterpret_cast<uintptr_t>(_ReturnAddress());
+	const uintptr_t moduleBase = reinterpret_cast<uintptr_t>(GetBbcfBaseAdress());
+	if (moduleBase != 0 && returnAddr == moduleBase + 0x0014445E)
+	{
+		LogRankMenuProgressValue("sum_fa", static_cast<uint32_t>(reinterpret_cast<uintptr_t>(self)), index, result, returnAddr);
+	}
+	return result;
+}
+
+uint32_t __fastcall HookedRankMenuProgressFieldF4(void* self, void* edx, uint32_t index)
+{
+	const uint32_t result = orig_RankMenuProgressFieldF4 ? orig_RankMenuProgressFieldF4(self, edx, index) : 0;
+	const uintptr_t returnAddr = reinterpret_cast<uintptr_t>(_ReturnAddress());
+	const uintptr_t moduleBase = reinterpret_cast<uintptr_t>(GetBbcfBaseAdress());
+	if (moduleBase != 0 && returnAddr == moduleBase + 0x00144830)
+	{
+		LogRankMenuProgressValue("field_f4", static_cast<uint32_t>(reinterpret_cast<uintptr_t>(self)), index, result, returnAddr);
+	}
+	return result;
+}
+
+uint32_t __fastcall HookedRankMenuFieldC8(void* self)
+{
+	const uint32_t result = orig_RankMenuFieldC8 ? orig_RankMenuFieldC8(self) : 0;
+	const uintptr_t returnAddr = reinterpret_cast<uintptr_t>(_ReturnAddress());
+	if (GetBbcfBaseAdress() != 0)
+	{
+		LogRankMenuFieldValue("c8_any", static_cast<uint32_t>(reinterpret_cast<uintptr_t>(self)), result, returnAddr);
+	}
+	return result;
+}
+
+uint32_t __fastcall HookedRankMenuFieldD0(void* self)
+{
+	const uint32_t result = orig_RankMenuFieldD0 ? orig_RankMenuFieldD0(self) : 0;
+	const uintptr_t returnAddr = reinterpret_cast<uintptr_t>(_ReturnAddress());
+	if (GetBbcfBaseAdress() != 0)
+	{
+		LogRankMenuFieldValue("d0_any", static_cast<uint32_t>(reinterpret_cast<uintptr_t>(self)), result, returnAddr);
 	}
 	return result;
 }
@@ -5420,6 +5650,34 @@ bool placeHooks_bbcf()
 			orig_RankMenuEntryObject = reinterpret_cast<RankMenuEntryObjectFn>(
 				DetourFunction(reinterpret_cast<PBYTE>(RankMenuEntryObjectTargetAddr), reinterpret_cast<PBYTE>(HookedRankMenuEntryObject)));
 			LOG(2, "[RANK][EntrySource] Hooked BBCF+0x000A1410 orig=0x%p\n", orig_RankMenuEntryObject);
+		}
+		RankMenuProgressSumTargetAddr = (DWORD)(GetBbcfBaseAdress() + 0x000A11F0);
+		if (!orig_RankMenuProgressSum)
+		{
+			orig_RankMenuProgressSum = reinterpret_cast<RankMenuIndexedValueFn>(
+				DetourFunction(reinterpret_cast<PBYTE>(RankMenuProgressSumTargetAddr), reinterpret_cast<PBYTE>(HookedRankMenuProgressSum)));
+			LOG(2, "[RANK][ProgressProbe] Hooked BBCF+0x000A11F0 orig=0x%p\n", orig_RankMenuProgressSum);
+		}
+		RankMenuProgressFieldF4TargetAddr = (DWORD)(GetBbcfBaseAdress() + 0x000A1450);
+		if (!orig_RankMenuProgressFieldF4)
+		{
+			orig_RankMenuProgressFieldF4 = reinterpret_cast<RankMenuIndexedValueFn>(
+				DetourFunction(reinterpret_cast<PBYTE>(RankMenuProgressFieldF4TargetAddr), reinterpret_cast<PBYTE>(HookedRankMenuProgressFieldF4)));
+			LOG(2, "[RANK][ProgressProbe] Hooked BBCF+0x000A1450 orig=0x%p\n", orig_RankMenuProgressFieldF4);
+		}
+		RankMenuFieldC8TargetAddr = (DWORD)(GetBbcfBaseAdress() + 0x000A1490);
+		if (!orig_RankMenuFieldC8)
+		{
+			orig_RankMenuFieldC8 = reinterpret_cast<RankMenuFieldValueFn>(
+				DetourFunction(reinterpret_cast<PBYTE>(RankMenuFieldC8TargetAddr), reinterpret_cast<PBYTE>(HookedRankMenuFieldC8)));
+			LOG(2, "[RANK][FieldProbe] Hooked BBCF+0x000A1490 orig=0x%p\n", orig_RankMenuFieldC8);
+		}
+		RankMenuFieldD0TargetAddr = (DWORD)(GetBbcfBaseAdress() + 0x000A1470);
+		if (!orig_RankMenuFieldD0)
+		{
+			orig_RankMenuFieldD0 = reinterpret_cast<RankMenuFieldValueFn>(
+				DetourFunction(reinterpret_cast<PBYTE>(RankMenuFieldD0TargetAddr), reinterpret_cast<PBYTE>(HookedRankMenuFieldD0)));
+			LOG(2, "[RANK][FieldProbe] Hooked BBCF+0x000A1470 orig=0x%p\n", orig_RankMenuFieldD0);
 		}
 		RankMenuSkillRankCalcTargetAddr = (DWORD)(GetBbcfBaseAdress() + 0x000BDF20);
 		RankMenuSkillRankRenderTraceJmpBackAddr = HookManager::SetHook("RankMenuSkillRankRenderTrace", (DWORD)(GetBbcfBaseAdress() + 0x001443B4), 16, RankMenuSkillRankRenderTrace);

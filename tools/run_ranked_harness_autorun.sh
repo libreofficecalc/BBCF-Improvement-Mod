@@ -86,6 +86,13 @@ read_new_log() {
   tail -n +"$((baseline_lines + 1))" "${LOG_PATH}"
 }
 
+read_full_post_baseline_log() {
+  if [[ ! -f "${LOG_PATH}" ]]; then
+    return 0
+  fi
+  tail -n +"$((baseline_lines + 1))" "${LOG_PATH}"
+}
+
 print_last_ranked_log_lines() {
   local source_log=""
   if [[ -f "${LOG_PATH}" ]]; then
@@ -142,7 +149,10 @@ while [[ "$(date +%s)" -lt "${deadline}" ]]; do
   if bbcf_running; then
     seen_bbcf_process=1
   elif [[ "${seen_bbcf_process}" -eq 1 ]]; then
-    if grep -Fq "[RankedAuto] finished:" <<<"${new_log}" || grep -Fq "BBCF_IM_Shutdown" <<<"${new_log}"; then
+    full_log="$(read_full_post_baseline_log)"
+    if grep -Fq "[RankedAuto] COMPLETED" <<<"${full_log}" || \
+       grep -Fq "[RankedAuto] finished:" <<<"${full_log}" || \
+       grep -Fq "BBCF_IM_Shutdown" <<<"${full_log}"; then
       print_last_ranked_log_lines
       exit 0
     fi

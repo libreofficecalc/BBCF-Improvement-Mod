@@ -1,7 +1,31 @@
 #pragma once
+#include <cstdint>
 #include "IWindow.h"
 
 #include "Overlay/WindowContainer/WindowContainer.h"
+
+
+struct RankedProgressOverlaySnapshot
+{
+	bool active = false;
+	bool isUnranked = true;
+	uint32_t rowIndex = 0xFFFFFFFFu;
+	uint32_t selectorValue = 0xFFFFFFFFu;
+	uint32_t cursorValue = 0xFFFFFFFFu;
+	uint32_t currentRank = 0;
+	uint32_t previousRank = 0;
+	uint32_t nextRank = 0;
+	uint32_t earnedPoints = 0;
+	uint32_t totalPoints = 0;
+	uint32_t remainingPoints = 0;
+	uint32_t metadataNextRank = 0;
+	uint32_t debugFieldF4 = 0;
+	int networkState = -1;
+	int networkState1 = -1;
+	float progress = 0.0f;
+};
+
+bool CaptureRankedProgressOverlaySnapshot(RankedProgressOverlaySnapshot* outSnapshot);
 
 class MainWindow : public IWindow
 {
@@ -28,6 +52,7 @@ private:
         void DrawFrameHistorySection() const;
         void DrawControllerSettingSection() const;
         void DrawLanguageSelector();
+	void DrawRankedProgressOverlay() const;
 
 	const ImVec2 BTN_SIZE = ImVec2(60, 20);
 	WindowContainer* m_pWindowContainer = nullptr;

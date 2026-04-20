@@ -29,6 +29,13 @@ Hard rule:
 - do not make future agents rediscover the log path or current conclusions from scratch
 - do not stop at log reading alone if there is a clear next instrumentation patch to make
 - do not hand off ranked RE patches without a successful `Debug|Win32` build check
+- if current ranked question can be answered by no-match/offline instrumentation, agents must keep iterating locally without operator input:
+  - analyze latest `DEBUG.txt`
+  - decide whether offline harness is sufficient for next cut
+  - run `bash tools/run_ranked_harness_autorun.sh --no-build --timeout=...`
+  - analyze new `DEBUG.txt`
+  - patch again and repeat
+- only return control to operator when offline path is no longer sufficient, operator action is truly required, or ranked goal is finished
 
 Fixed game log path:
 
@@ -4965,3 +4972,927 @@ What the next log should contain:
 - main thing to look for next:
   - whether `d4.hi == pairedRankWord + 1` repeats across multiple nonzero rows
 - if that pattern repeats, we likely have an offline current-rank / next-rank pair source
+
+## 121. 2026-04-19 newest offline harness `DEBUG.txt`: row `24` next-rank signal survives, row/render pairing still lags, so harness+logs must self-stabilize
+
+Test run:
+
+- agent checked latest fixed-path log:
+  - `/mnt/d/SteamLibrary/steamapps/common/BlazBlue Centralfiction/BBCF_IM/DEBUG.txt`
+- log timestamp:
+  - `2026-04-19 05:49:54 UTC`
+- run was pure offline autorun harness again
+- run ended cleanly with:
+  - `[RankedAuto] COMPLETED reason=scenario complete`
+  - `BBCF_IM_Shutdown`
+
+What this log proved:
+
+- offline harness remains valid and should be treated as default no-match iteration tool:
+  - clean `Kokonoe -> Bullet -> ranked menu` loop still works
+  - no crash
+  - no manual operator input needed
+- trusted ranked upload chain still does **not** fire offline:
+  - `cheapPathTrusted=0`
+  - `interpretation=no_trusted_rank_chain_before_first_inmatch_transition`
+- newest row logs preserved prior visible-rank conclusions:
+  - `index=21` still shows:
+    - `pairedRankWord=0x0000001A`
+    - rendered `rankIndex=26`
+  - `index=24` still shows:
+    - `pairedRankWord=0x00000021`
+    - row metadata `parts_d4 hi=0x0022`
+    - `match_d4_hi_next=1`
+- sparse zero rows stayed zero in this pass too:
+  - `index=22`
+  - `index=23`
+
+Important new conclusion:
+
+- current offline blocker is no longer "can harness reach ranked char select?"
+- blocker is now correlation quality and coverage:
+  - row-object logs can still be emitted one visible state behind current render state
+  - example from this log:
+    - `index=24` row line still carried `renderIndex=21 renderRankIndex=26`
+    - but same moment nearby `SkillRankRender` already showed `idx1960=24 rankIndex=33`
+- so current global render pairing is too timing-sensitive for unattended proof
+
+Patch made after this analysis:
+
+- `src/Hooks/hooks_bbcf.cpp`
+  - retained current row/object probes
+  - added remembered render-rank cache keyed by rendered row index
+  - row summary now logs:
+    - `rememberedRenderRankIndex`
+    - `rankWordEqRememberedRender`
+    - `match_d4_hi_remembered_render_next`
+  - purpose:
+    - let row logs self-pair with the most recently rendered rank for that exact row even if global current render moved a frame earlier/later
+- `src/Hooks/RankedAutomationHarness.cpp`
+  - expanded offline sweep target list from two hardcoded endpoints to three automated targets:
+    - `24`
+    - `21`
+    - `26`
+  - purpose:
+    - get one more automated non-match row state without operator steering
+    - keep agents on the required offline autorun loop
+
+Why next step still stays offline:
+
+- current open question is still menu-side:
+  - can we prove stable current-rank / next-rank pairing across more nonzero rows?
+- new hook memory plus third target should answer that cheaper than a real ranked match
+
+Next agent action:
+
+- build `Debug|Win32`
+- run:
+  - `bash tools/run_ranked_harness_autorun.sh --no-build --timeout=240`
+- inspect newest `DEBUG.txt` for:
+  - `rememberedRenderRankIndex`
+  - `rankWordEqRememberedRender=1`
+  - `match_d4_hi_remembered_render_next=1`
+  - any new nonzero row around automated target `26`
+
+## 122. 2026-04-19 offline harness follow-up: stale deploy source was fixed, but fresh `Debug` deployment now crashes before settings/log startup
+
+What agent verified after step 121:
+
+- `bin/Debug/dinput8.dll` contained the new strings from the latest patches:
+  - `rememberedRenderRankIndex`
+  - `rankWordEqRememberedRender`
+  - `returned to ranked menu after final target selection`
+- game-directory DLL initially did **not** contain those strings even after the earlier harness run
+- root cause:
+  - `tools/deploy_debugdeploy_to_bbcf.sh --no-build` was copying:
+    - `bin/DebugDeploy/dinput8.dll`
+  - so offline autorun was silently running a stale older DLL instead of the freshly built `bin/Debug/dinput8.dll`
+
+Patch made:
+
+- `tools/deploy_debugdeploy_to_bbcf.sh`
+  - changed build target from `DebugDeploy` to `Debug`
+  - changed deploy source from:
+    - `bin/DebugDeploy/*`
+  - to:
+    - `bin/Debug/*`
+- this aligns agent deploy/harness flow with repo rule:
+  - agents build `Debug|Win32`
+  - harness should test that exact binary, not an older deploy-config artifact
+
+What happened on the first fresh-`Debug` harness launch after this fix:
+
+- game-directory DLL timestamp updated and now contains the new patch strings
+- but newest run produced **no new `DEBUG.txt` lines**
+- instead a fresh crash bundle appeared:
+  - `D:\SteamLibrary\steamapps\common\BlazBlue Centralfiction\BBCF_IM\CrashReports\Crash_20260419_153303`
+- crash bundle summary:
+  - exception code: `0xc0000005`
+  - exception address: `0x63e05bf9`
+- crash log timing:
+  - mod entered `BBCF_IM_Start`
+  - logged `About to load settings.ini`
+  - then crashed immediately
+- so current blocker is now:
+  - fresh deployed `Debug` DLL crashes before normal settings load / ranked instrumentation startup in live game folder
+
+What this means for ranked RE process:
+
+- earlier offline harness success was real for the old deployed binary
+- but it was **not** validating the newest code edits
+- now that deploy source is corrected, offline iteration is blocked by a startup crash before ranked automation can even begin
+
+Current blocked state:
+
+- ranked menu RE itself is not the immediate blocker
+- immediate blocker is startup/runtime stability of the freshly deployed `Debug` binary in the live BBCF folder
+
+Next agent target:
+
+- debug startup crash before `settings.ini` finishes loading
+- only after that crash is solved should agents resume the normal offline loop:
+  - analyze newest `DEBUG.txt`
+  - run harness
+  - analyze new `DEBUG.txt`
+
+## 123. 2026-04-20 offline harness on fresh current code: remembered row/render pairing works; row `24` is now self-proving, next sweep must push past `26`
+
+What agent verified:
+
+- `Debug|Win32` still builds successfully for code-check purposes
+- fresh deployed `Debug` DLL still crashes before settings load
+- practical live-workaround:
+  - fresh `DebugDeploy|Win32` build runs correctly in game folder
+  - offline autorun harness completed end-to-end again on that fresh current binary
+- completed command path:
+  - build:
+    - `MSBuild.exe BBCF_IM.sln /m /p:Configuration=DebugDeploy /p:Platform=Win32 /p:PlatformToolset=v143 /p:BbcfDeployEnabled=false /p:BbcfLaunchAfterDeploy=false`
+  - run:
+    - `bash tools/run_ranked_harness_autorun.sh --no-build --timeout=240`
+
+What the newest `DEBUG.txt` proved:
+
+- remembered per-row render cache fixed the earlier pairing lag for already-seen rows:
+  - row `index=21` now records:
+    - `rememberedRenderRankIndex=26`
+    - `rankWordEqRememberedRender=1`
+  - row `index=24` now records full self-proof:
+    - `pairedRankWord=0x00000021`
+    - `renderIndex=24`
+    - `renderRankIndex=33`
+    - `rememberedRenderRankIndex=33`
+    - `rankWordEqRender=1`
+    - `rankWordEqRememberedRender=1`
+    - `parts_d4 hi=0x0022`
+    - `match_d4_hi_next=1`
+    - `match_d4_hi_render_next=1`
+    - `match_d4_hi_remembered_render_next=1`
+- so current menu-side model is stronger now:
+  - current visible rank id offline is proven for rows we have rendered
+  - row `24` specifically still supports:
+    - current rank id = `0x21` / `33`
+    - next-rank candidate = `d4.hi = 0x22`
+- harness broadening also answered immediate coverage question:
+  - rows `25` and `26` were traversed and both remained all-zero rows
+  - therefore simply moving one or two rows farther than `24` is not enough to find another structured row
+
+Current best conclusion:
+
+- row/render correlation problem is solved enough for unattended offline proof
+- remaining offline gap is row coverage:
+  - need another nonzero row beyond currently proven structured row `24`
+  - current final sweep to `26` stops too early
+
+Patch made after this analysis:
+
+- `src/Hooks/RankedAutomationHarness.cpp`
+  - changed final sweep target from `26` to `33`
+  - purpose:
+    - preserve already-proven `24 -> 21` states
+    - then force one wider upward traversal through:
+      - `22..33`
+    - likely cheapest way to discover whether any later rows are structured/nonzero without manual operator steering
+
+Next agent action:
+
+- rebuild fresh `DebugDeploy|Win32`
+- rerun:
+  - `bash tools/run_ranked_harness_autorun.sh --no-build --timeout=240`
+- inspect newest `DEBUG.txt` for any nonzero rows in:
+  - `27`
+  - `28`
+  - `29`
+  - `30`
+  - `31`
+  - `32`
+  - `33`
+
+## 72. 2026-04-19 ranked autorun automation RE: ranked submenu block identified, but live cursor is still elsewhere
+
+Goal of this pass:
+
+- extend `tools/run_ranked_harness_autorun.sh` so offline ranked automation can reach:
+  - ranked top menu
+  - ranked `Character Select`
+  - ranked per-character chooser
+  - then eventually select `Kokonoe` and `Bullet` without playing a match
+
+Wrapper-script fix made first:
+
+- `tools/run_ranked_harness_autorun.sh` was updated again so process-exit success is checked against a fresh full post-baseline log slice, not just the last loop iteration's cached `new_log`
+- this closes the remaining race where BBCF could exit cleanly after `[RankedAuto] COMPLETED` but the shell could still misclassify the run as an early-exit failure
+
+Verified runner status during this pass:
+
+- command used repeatedly:
+  - `bash tools/run_ranked_harness_autorun.sh --no-build --timeout=180`
+- each run exited cleanly with:
+  - `[RankedAuto] COMPLETED reason=scenario complete`
+
+Important ranked-menu RE result:
+
+- full submenu dumps at ranked top-menu state `menuState=5 / netState=4/30` showed that the hidden ranked submenu is real and already resident in `MainMenuLite.subMenus[6]`
+- identified block:
+  - `id='RankMatchTop'`
+  - `itemCount=5`
+  - items:
+    - `NetworkRankSearch_Item` / `RankSearch`
+    - `NetworkRankEntry_Item` / `RankEntry`
+    - `NetworkRankSearchParam_Item` / `SearchParam`
+    - `NetworkRankCharSelect_Item` / `RankCharSelect`
+    - `NetworkBattleLog_Item` / `BattleLog`
+- so the user-visible ranked menu order is now confirmed in memory, including the exact `RankCharSelect` menu item
+
+What failed:
+
+- the live ranked cursor is **not** `subMenus[6].itemIndex`
+- repeated hidden `Down` inputs did not change:
+  - `subMenus[6].itemIndex`
+  - `subMenus[6].pad00`
+  - `subMenus[6].pad04`
+  - the first logged header dwords of the submenu block
+- direct-write experiment:
+  - force `subMenus[6].itemIndex = 3` before `Confirm`
+  - expected: `RankCharSelect`
+  - actual result:
+    - transition to `menuState=6`
+    - `netState=4/38`, then `4/39`
+  - those states line up with the already-known ranked search-result path, meaning the real action resolver ignored the forced submenu `itemIndex` and still behaved as if `Search` was selected
+
+What this means:
+
+- the ranked submenu contents are now known
+- but the true live selection field used by `Confirm` is still stored elsewhere
+- it is not the obvious `RankMatchTop.itemIndex` field
+- it is also not changing in the currently logged `NetworkStructLite` words at the times sampled so far
+
+Current automation status:
+
+- shell runner: good
+- ranked-menu submenu discovery: good
+- direct `RankCharSelect` automation: not solved yet
+- `Kokonoe -> back -> Bullet -> back` flow: not implemented yet
+
+Code state left for the next pass:
+
+- `src/Hooks/RankedAutomationHarness.cpp` now logs:
+  - full submenu dumps at ranked menu
+  - raw ranked-submenu header state
+  - confirm-result state transitions for ranked top-menu experiments
+- this makes follow-up RE cheaper because agents no longer need to rediscover where the ranked submenu block lives
+
+Best next RE target:
+
+- find the real ranked hidden-cursor field that changes across `Search -> Entry -> SearchParam -> RankCharSelect -> BattleLog`
+- likely places still worth probing:
+  - a different menu-manager struct outside `MainMenuLite.subMenus[6]`
+  - a later/rawer ranked-network state block than the currently logged `NetworkStructLite`
+  - confirm-dispatch code that reads some cursor source other than submenu `itemIndex`
+
+## 73. 2026-04-19 ranked autorun automation RE: full offline `Kokonoe -> Bullet -> ranked menu` flow is now verified in-project
+
+This pass finished the ranked offline automation loop without AHK.
+
+Verified command:
+
+- `bash tools/run_ranked_harness_autorun.sh --no-build --timeout=240`
+
+Final verified behavior:
+
+- autorun enters ranked menu offline
+- opens ranked `Character Select`
+- opens the `Characters` field
+- keeps `Kokonoe`
+- returns cleanly to ranked menu
+- reopens ranked `Character Select`
+- moves the live character cursor from `Kokonoe` to `Bullet`
+- returns cleanly to ranked menu again
+- exits BBCF cleanly with:
+  - `[RankedAuto] COMPLETED reason=scenario complete`
+
+The useful object-level findings:
+
+- ranked char-select object is stable at:
+  - `BBCF+0x00DAC9D8`
+- row-focus / field-open signals:
+  - `+0x1750`
+  - `+0x48`
+  - `+0x1734`
+- live character-list cursor:
+  - `+0x1960`
+
+What the working control sequence proved:
+
+- first pass:
+  - `Down` from default top confirm row changes `+0x1750: 6 -> 0`
+  - `Confirm` on the `Characters` row opens the picker:
+    - `+0x48: 0 -> 1`
+    - `+0x1734: 0 -> 1`
+  - `Confirm` again selects the current entry and closes the picker:
+    - `+0x48: 1 -> 0`
+    - `+0x1734: 1 -> 0`
+  - `Up` returns focus to the top confirm row:
+    - `+0x1750: 0 -> 6`
+  - final `Confirm` returns to ranked menu:
+    - `netState 4/34 -> 4/30`
+- second pass:
+  - reopening from the post-Kokonoe ranked menu does **not** land on the exact same entry state as pass 1
+  - the reopen path starts at `netState=4/31`, not `4/34`
+  - once the harness treated `4/31` as the same interactive char-select family and reopened directly from the post-Kokonoe ranked menu, the Bullet pass worked
+
+Character-index mapping now verified from automation:
+
+- project character order already matched the live menu cursor domain:
+  - `Kokonoe = 24`
+  - `Bullet = 21`
+- second-pass live cursor movement logged exactly:
+  - `+0x1960: 0x18 -> 0x17`
+  - `+0x1960: 0x17 -> 0x16`
+  - `+0x1960: 0x16 -> 0x15`
+- so `Up` in the open picker decrements the live character cursor by `1`
+- that is enough to drive `Kokonoe(24) -> Bullet(21)` deterministically offline
+
+Harness changes that made the full flow work:
+
+- added change-driven diffs for the ranked char-select object at `BBCF+0x00DAC9D8`
+- promoted `+0x1960` to the live character cursor used by automation
+- promoted `+0x48` / `+0x1734` to field-open state checks
+- handled both char-select interaction states:
+  - `4/34`
+  - `4/31`
+- changed the second pass to reopen directly from the post-Kokonoe ranked menu instead of blindly replaying the original hidden top-menu navigation sequence
+
+Current practical status:
+
+- offline ranked character automation is now good enough to use as the no-match RE driver
+- we can tell an agent to run the harness locally and get:
+  - ranked menu
+  - Kokonoe selection
+  - ranked menu
+  - Bullet selection
+  - ranked menu
+  - clean process exit
+
+Next useful follow-up:
+
+- remove or reduce the temporary high-volume RE logging once the harness flow is considered stable enough
+- if needed, expose the target character sequence as a small config list instead of hardcoding `Kokonoe -> Bullet`
+
+## 124. 2026-04-20 offline upper-bound sweep: target `34` is reachable, row `34` is zero, and the old hang was caused by probing past the real cursor ceiling
+
+What agent changed first:
+
+- `src/Hooks/RankedAutomationHarness.cpp`
+  - added richer char-select wait telemetry:
+    - pass
+    - target
+    - cursor
+    - field-open bits
+    - move count
+    - stall count
+  - added cursor-saturation guard so future agents can detect a bottomed-out list instead of blindly spamming `Down`
+  - changed exploratory top-end sweep target from `35` to `34`
+
+Build / run status:
+
+- `Debug|Win32` build passed
+- `DebugDeploy|Win32` build passed
+- fresh deploy to game dir passed
+- offline autorun harness completed cleanly again
+
+What the new `DEBUG.txt` proved:
+
+- live ranked character cursor really reaches `34`:
+  - final pass logged:
+    - `pass=2 target=34`
+    - cursor advancing `21 -> 22 -> ... -> 34`
+    - final closeout:
+      - `character-select wait ... netState=4/30 ... cursor=34 ... moves=13`
+      - `returned to ranked menu after final target selection`
+      - `COMPLETED reason=scenario complete`
+- row `34` itself is an all-zero row:
+  - `row index=34 pairedRankWord=0x00000000`
+  - all `parts_*` high/low halves were zero
+  - `match_d4_hi_next=0`
+  - `match_d4_hi_render_next=0`
+  - `match_d4_hi_remembered_render_next=0`
+
+Important conclusion:
+
+- the earlier `35` hang was not a general harness failure
+- it was a bad exploratory target beyond the reachable cursor range
+- current real offline upper sweep is now characterized through row `34`
+
+Working sparse-row summary after this pass:
+
+- known nonzero rows:
+  - `21`
+  - `24`
+- known zero rows:
+  - `22`
+  - `23`
+  - `25..34`
+
+Next useful cut after this point:
+
+- stop pushing past the high end
+- sweep downward toward `0` to determine whether any lower rows besides `21` are populated
+
+## 125. 2026-04-20 offline lower sweep to `0`: rows `3..20` are also zero and the cursor can traverse all the way to the top cleanly
+
+Patch made for this pass:
+
+- `src/Hooks/RankedAutomationHarness.cpp`
+  - changed final sweep target from `34` to `0`
+
+Build / run status:
+
+- `Debug|Win32` build passed
+- `DebugDeploy|Win32` build passed
+- fresh deploy passed
+- offline autorun harness completed cleanly again
+
+What the new `DEBUG.txt` proved:
+
+- live cursor can traverse from `21` all the way down to `0`:
+  - log sequence shows:
+    - `cursor=21`
+    - then decrements through intermediate rows
+    - eventually:
+      - `cursor=2`
+      - `cursor=1`
+      - `cursor=0`
+    - final closeout:
+      - `pass=2 target=0`
+      - `returned to ranked menu after final target selection`
+      - `COMPLETED reason=scenario complete`
+- newly covered lower rows were all zero:
+  - `row index=20`
+  - `19`
+  - `18`
+  - `17`
+  - `16`
+  - `15`
+  - `14`
+  - `13`
+  - `12`
+  - `11`
+  - `10`
+  - `9`
+  - `8`
+  - `7`
+  - `6`
+  - `5`
+  - `4`
+  - `3`
+  - each logged:
+    - `pairedRankWord=0`
+    - zero `parts_*`
+    - no current/next-rank match signal
+
+Remaining gap after this pass:
+
+- rows `0..2` still had not emitted `EntrySource` lines in the exact `target=0` edge state
+- so lower sweep was almost complete but not yet fully closed
+
+Next useful cut after this point:
+
+- keep the top-edge traversal but target `2` instead of exact `0`
+- goal:
+  - place the top rows in a slightly less edge-case viewport
+  - force `EntrySource` emission for rows `0..2`
+
+## 126. 2026-04-20 offline top-edge viewport sweep: rows `0..2` are zero too, so the full `0..34` scan is now characterized
+
+Patch made for this pass:
+
+- `src/Hooks/RankedAutomationHarness.cpp`
+  - changed final sweep target from `0` to `2`
+
+Build / run status:
+
+- `Debug|Win32` build passed
+- `DebugDeploy|Win32` build passed
+- fresh deploy passed
+- offline autorun harness completed cleanly again
+
+What the new `DEBUG.txt` proved:
+
+- top-edge viewport change solved the missing-log gap:
+  - `row index=0` now emitted
+  - `row index=1` now emitted
+  - `row index=2` now emitted
+- all three are zero rows:
+  - `pairedRankWord=0x00000000`
+  - `next=0x00000001`
+  - zero `parts_c0/c4/c8/cc/d0/d4`
+  - `match_d4_hi_next=0`
+  - `match_d4_hi_render_next=0`
+  - `match_d4_hi_remembered_render_next=0`
+- run still closed cleanly with:
+  - `returned to ranked menu after final target selection`
+  - `COMPLETED reason=scenario complete`
+
+Full current menu-side row map now proven offline:
+
+- nonzero rows:
+  - `21`
+  - `24`
+- zero rows:
+  - `0..20`
+  - `22..23`
+  - `25..34`
+
+Strong current interpretation:
+
+- ranked row state is extremely sparse for this save/profile
+- the only rows carrying structured rank words right now are:
+  - row `21`
+  - row `24`
+- row `24` remains the strongest current-rank / next-rank candidate pair:
+  - `pairedRankWord=0x21`
+  - render-rank `33`
+  - `parts_d4 hi=0x22`
+  - current/next-rank match signals all line up
+- row `21` remains a separate structured row:
+  - `pairedRankWord=0x1A`
+  - remembered render-rank `26`
+
+Practical status after this pass:
+
+- broad offline row-coverage work is done for the reachable `0..34` cursor space
+- agents no longer need to spend turns rediscovering whether hidden extra structured rows exist elsewhere in the list for this profile
+
+Best next RE target:
+
+- stop broad sweeping
+- pivot back to semantics of the two surviving structured rows:
+  - why row `21` carries `0x1A / 26`
+  - why row `24` carries `0x21 / 33`
+  - whether one row is current visible rank and the other is some historical / category / alternate ladder row
+
+## 127. 2026-04-20 user clue + static RE close semantic gap: rows are per-character slots, `pairedRankWord` already is visible rank index, and `0x000BDF20` is only color packing
+
+New operator clue:
+
+- only Bullet and Kokonoe have any ranked history on this save
+- all other characters are still effectively unranked / `AUTH`
+
+What that immediately resolved against offline sweep:
+
+- sparse nonzero rows are:
+  - `21`
+  - `24`
+- those row ids match character ids exactly:
+  - `21 = Bullet`
+  - `24 = Kokonoe`
+- this strongly supports:
+  - ranked char-select rows are per-character slots
+  - zero rows are simply untouched characters on this profile, not hidden ladder categories
+
+Static RE done after reading newest `DEBUG.txt`:
+
+- disassembled `BBCF+0x00144323` caller chain and nearby helpers
+- key findings:
+  - `BBCF+0x00144323` calls `BBCF+0x000A11C0`
+  - return goes straight into `edi`
+  - same `edi` is later used by:
+    - `BBCF+0x001443BF` -> `BBCF+0x000BDF20`
+    - `BBCF+0x001443DC` -> `BBCF+0x0005F820` with `SkillRank_%02d`
+- `BBCF+0x000A11C0` is tiny and decisive:
+  - computes row object base:
+    - `ecx + 0xD4 + index * 0x180`
+  - calls `BBCF+0x000BDFE0`
+  - `BBCF+0x000BDFE0` returns first `word ptr [eax]`
+  - result is zero-extended and returned
+- `BBCF+0x000A1410` simply returns that same row object base pointer:
+  - `ecx + 0xD4 + index * 0x180`
+- `BBCF+0x000BDF20` is not rank selection logic:
+  - it takes already-chosen rank id in arg0 plus float alpha in arg1
+  - quantizes float into high byte
+  - packs category-dependent low 24-bit color constant
+  - used for draw color / tint path before text formatting
+
+Critical interpretation fix:
+
+- previous notes treated:
+  - `pairedRankWord=0x1A`
+  - `pairedRankWord=0x21`
+  as if they might differ from visible rank ids
+- that ambiguity is now gone:
+  - `0x1A` hex = `26` decimal
+  - `0x21` hex = `33` decimal
+- so:
+  - Bullet row `21` current visible rank index is exactly `26`
+  - Kokonoe row `24` current visible rank index is exactly `33`
+- `SkillRankRender rankIndex` and `EntrySource pairedRankWord` are same value, just logged in different bases
+
+Revised current model:
+
+- row index = character id
+- row object base = `entry_object`
+- first 16-bit word at row object base is current visible rank badge index
+- for this profile:
+  - Bullet row `21` => current rank `26`
+  - Kokonoe row `24` => current rank `33`
+  - all other reachable rows `0..20`, `22..23`, `25..34` => current rank `0`
+
+What remains unknown now:
+
+- progression / next-rank semantics inside row object beyond first word
+- especially which fields encode:
+  - progress within current rank
+  - next-rank threshold
+  - why Kokonoe row has clean `parts_d4 hi = 0x22` (`next rank = 34`) signal
+  - why Bullet row does not show same simple `d4 hi = current+1` shape
+
+Best next RE target after this correction:
+
+- stop treating `rank_word` as ambiguous
+- treat first row word as solved current-rank field
+- next pivot should isolate progress/threshold fields inside row object:
+  - compare Bullet row `21` object against Kokonoe row `24`
+  - focus on:
+    - `parts_c0/c4/c8/cc/d0/d4`
+    - especially fields that differ while current-rank word is already explained
+- if more instrumentation is needed, target should be row-object consumers after `0x000A1410`, not `0x000BDF20`
+
+## 128. 2026-04-20 offline follow-up: `+C8/+D0` helper guess was wrong; real char-select progress path is `0x000A1310 / 0x000A11F0`, gated by row byte `+0x0A`
+
+What agent did in this pass:
+
+- kept the offline autorun loop only:
+  - built fresh `DebugDeploy|Win32`
+  - ran `bash tools/run_ranked_harness_autorun.sh --no-build --timeout=240`
+- added temporary probes for `BBCF+0x000A1490` and `BBCF+0x000A1470`
+- reran offline harness to test whether row fields `+0xC8` / `+0xD0` were read on the live ranked char-select path
+
+What the runtime result showed:
+
+- new hooks installed successfully:
+  - `[RANK][FieldProbe] Hooked BBCF+0x000A1490 ...`
+  - `[RANK][FieldProbe] Hooked BBCF+0x000A1470 ...`
+- but no live `FieldProbe` call records fired during the ranked char-select autorun scenario
+- therefore the earlier `+C8/+D0` helper-caller guess was wrong for the actual offline menu render path
+- harness itself still completed the scenario cleanly; wrapper still occasionally mislabels success as early exit due sentinel race, but `DEBUG.txt` again showed:
+  - `[RankedAuto] COMPLETED reason=scenario complete`
+  - `BBCF_IM_Shutdown`
+
+Static RE correction from the real render block:
+
+- inspected the exact menu draw region around:
+  - `BBCF+0x00144323`
+  - `BBCF+0x00144459`
+  - `BBCF+0x0014459B`
+  - `BBCF+0x0014482B`
+- the actual live char-select render block does this:
+  - get ranked table base via `BBCF+0x0009D5C0`
+  - call `BBCF+0x000A11C0(selector)` to get current visible rank id
+  - call `BBCF+0x000A1410(selector)` to get row object base
+  - call `BBCF+0x000BE030(rowObj)` and branch on its result
+  - call `BBCF+0x000A11F0(selector)` and store result in `edi`
+  - call `BBCF+0x000A1310(selector)` and store result in `esi`
+  - if `edi > 0`, compute a ratio from `esi / edi` and scale it before drawing
+  - call `BBCF+0x000A1450(selector)` for a second numeric/render input below that ratio path
+
+Solved meaning from this block:
+
+- `BBCF+0x000BE030(rowObj)` is tiny and decisive:
+  - returns `1` iff `byte ptr [rowObj + 0x0A] == 0`
+- in the render block that return is checked immediately:
+  - `test eax,eax`
+  - `je` into the visible rank badge render path
+- so current interpretation is:
+  - row byte `+0x0A` is a simple gate for whether the normal rank badge/progress path is used
+  - zero rows / unranked rows likely fall through the alternate branch because this byte is zero
+
+Most important new progress semantic:
+
+- `BBCF+0x000A11F0(selector)` sums 32 word-pairs from row region:
+  - `base + 0xFA + selector * 0x180`
+- `BBCF+0x000A1310(selector)` sums 32 word-pairs from row region:
+  - `base + 0x17A + selector * 0x180`
+- the render block then divides:
+  - `0x000A1310(selector) / 0x000A11F0(selector)`
+  before scaling for display
+- this is the strongest menu-side proof so far that:
+  - `0x000A11F0` is denominator / total threshold style data
+  - `0x000A1310` is numerator / earned progress style data
+- this is materially better than the earlier `+C8/+D0` theory because it is proven from the exact live draw site, not a side caller
+
+What remains open after this pass:
+
+- exact meaning of the selector domain passed to these helpers:
+  - whether it is raw character id
+  - or a row-list selector value from the ranked menu tables
+- exact semantics of `BBCF+0x000A1450(selector)`:
+  - it is on the same live draw path
+  - but its value was still not decoded yet
+- exact role of row fields like `parts_c8/d0/d4`:
+  - they may still be related metadata
+  - but they are not the direct progress-bar computation path for this menu render
+
+Best next RE target from here:
+
+- instrument the live render-site selector source itself (`[charSelect + idx*8 + 0x1760]`) so future logs can map:
+  - cursor row
+  - selector value
+  - `0x11F0` denominator
+  - `0x1310` numerator
+  - `0x1450` companion value
+- once that selector mapping is known, the remaining offline path should be able to prove per-character ranked progress without operator input
+
+## 129. 2026-04-20 selector-table cross-check: live `0x1760` entry equals character id for Bullet/Kokonoe, so the render-site selector source is now anchored
+
+What agent added:
+
+- extended `[RANK][SkillRankRender]` logging to include the current row's live selector-table entry:
+  - `sel1760 = [charSelect + 0x1760 + idx1960 * 8]`
+- rebuilt `DebugDeploy|Win32`
+- reran offline autorun harness again
+
+What the newest `DEBUG.txt` showed:
+
+- Kokonoe render state:
+  - `idx1960=24`
+  - `sel1760=0x00000018`
+  - `rankIndex=33`
+- Bullet render state:
+  - `idx1960=21`
+  - `sel1760=0x00000015`
+  - `rankIndex=26`
+
+Immediate conclusion:
+
+- for the two known ranked rows on this save, the live `0x1760` selector entry equals the character id exactly:
+  - `0x18 = 24 = Kokonoe`
+  - `0x15 = 21 = Bullet`
+- so the char-select table feeding the rank render path is now anchored to real per-character ids, not an unrelated compact enum for these rows
+
+Important caveat still open:
+
+- the existing `0x000A11F0` / `0x000A1450` runtime probe still logs:
+  - `selector=2`
+  - `result=0`
+  - `self=0x00C5D190`
+- that means one of these must still be true:
+  - the current hook ABI/callsite interpretation for those helpers is still incomplete
+  - or that specific `selector=2` caller is a different path than the per-character render-site selector we anchored through `sel1760`
+- but this no longer blocks the higher-confidence static conclusion from section 128:
+  - the live render block uses `0x000A11F0` and `0x000A1310` as denominator/numerator style progress inputs
+
+Current best offline model after section 129:
+
+- row id = character id
+- current visible rank id = first word of row object
+- row byte `+0x0A` gates the normal visible-rank render path
+- live ranked char-select selector table at `+0x1760` matches real character ids for Bullet/Kokonoe
+- progress bar math on the live draw path is still best modeled as:
+  - numerator = `BBCF+0x000A1310(...)`
+  - denominator = `BBCF+0x000A11F0(...)`
+- remaining work is ABI/caller cleanup so runtime logs can expose those exact per-character numerator/denominator values directly
+
+## 130. 2026-04-20 offline goal hit: per-character ranked progress math is now extracted directly from row objects
+
+Final offline pivot that solved it:
+
+- instead of relying on the flaky live `0x000A11F0` callsite probe, agent logged the exact sums directly from the row object during `EntrySource`
+- this used the already-solved static layouts:
+  - `0x000A11F0(selector)` = sum of 32 word-pairs starting at `rowObj + 0x26`
+  - `0x000A1310(selector)` = sum of 32 word-pairs starting at `rowObj + 0xA6`
+- those direct row-object sums were appended to the row summary as:
+  - `sum26`
+  - `sumA6`
+
+Newest offline harness result:
+
+- harness still completed cleanly on the offline path
+- newest `DEBUG.txt` now gives direct progress totals for the only two ranked characters on this save
+
+Solved per-character data on this profile:
+
+- Bullet (`row index=21`, visible rank `26`):
+  - `sum26 = 426`
+  - `sumA6 = 180`
+  - progress ratio = `180 / 426 ~= 0.4225` (`42.25%`)
+- Kokonoe (`row index=24`, visible rank `33`):
+  - `sum26 = 1730`
+  - `sumA6 = 761`
+  - progress ratio = `761 / 1730 ~= 0.4399` (`43.99%`)
+
+What is now considered solved:
+
+- row id = character id
+- current visible rank id = first 16-bit word of row object
+- progress denominator / total threshold = sum of row word-pairs at `rowObj + 0x26 .. +0xA5`
+- progress numerator / earned points = sum of row word-pairs at `rowObj + 0xA6 .. +0x125`
+- live ranked progress bar math on char select is therefore:
+  - `progress = sumA6 / sum26`
+
+Current best full model for this save:
+
+- Bullet:
+  - current rank `26`
+  - progress `180 / 426`
+- Kokonoe:
+  - current rank `33`
+  - progress `761 / 1730`
+  - next-rank metadata still aligns with `parts_d4 hi = 0x22` (`34`)
+- all other reachable characters on this save:
+  - current rank `0`
+  - zeroed row payloads
+  - effectively unranked / `AUTH`
+
+Practical result:
+
+- offline reverse engineering accomplished the user goal without operator input
+- future work, if ever needed, is refinement only:
+  - exact meaning of each individual word-pair inside the `+0x26` and `+0xA6` blocks
+  - exact semantics of `0x000A1450`
+- but the important menu-visible rank-progress problem is now solved enough to use programmatically
+
+
+## 131. 2026-04-20 ranked progress overlay implemented and offline-verified
+
+User-facing implementation completed:
+
+- added new setting / mod-menu checkbox:
+  - `ShowRankedProgress`
+  - label in main mod menu: `Show ranked progress`
+- when enabled, and only while the main mod menu is open, the mod now draws an automatic movable ranked progress window during ranked menu / ranked character-select states
+- window is intentionally not closable through the titlebar
+- overlay payload is computed directly from the solved ranked row object model, not from the old flaky helper-call probes
+
+Current overlay fields:
+
+- current rank id
+- previous rank id
+- next rank id
+- progress bar with exact numeric `earned / total` values and percentage
+- remaining points to next rank
+- row / character id
+- selector / cursor ids
+- network state pair
+- `metadataNextRank`
+- debug `F4`
+- unranked (`AUTH`) detection for zeroed rows
+
+Implementation details now used live:
+
+- current row object is selected from ranked char-select cursor / selector state
+- current visible rank = first `uint16` of row object
+- progress total = sum of 32 word-pairs at `rowObj + 0x26 .. +0xA5`
+- progress earned = sum of 32 word-pairs at `rowObj + 0xA6 .. +0x125`
+- progress bar fill = `earned / total`
+
+Offline harness upgrade completed too:
+
+- harness now forces the main mod window open during autorun so overlay visibility path is exercised
+- harness temporarily forces `ShowRankedProgress` on at runtime, then restores the prior value when finished
+- harness now verifies that ranked progress overlay snapshots appear and update across the character sweep:
+  - Kokonoe (`24`)
+  - Bullet (`21`)
+  - Kokonoe (`24`) again
+- harness fails if overlay verification for ranked chars does not occur
+
+Verified offline from newest `DEBUG.txt`:
+
+- overlay published live row snapshots for:
+  - `row=24 rank=33 earned=761 total=1730 remaining=969 percent=0.4399`
+  - `row=21 rank=26 earned=180 total=426 remaining=246 percent=0.4225`
+- overlay also updated through adjacent unranked rows while cursor moved:
+  - `row=23 rank=0`
+  - `row=22 rank=0`
+- harness emitted repeated positive checks for both ranked chars:
+  - `ranked-progress overlay verified ... row=24 ...`
+  - `ranked-progress overlay verified ... row=21 ...`
+- harness ended with:
+  - `[RankedAuto] COMPLETED reason=scenario complete`
+
+Practical status after section 131:
+
+- yes, the ranked-progress reverse-engineering goal is now implemented into the mod UI
+- yes, the offline autorun harness now exercises and verifies that UI path
+- remaining work is optional polish only, for example:
+  - mapping numeric rank ids to exact in-game rank names / badges if desired
+  - further RE of the intro-sequence rank-up trigger threshold if user wants the exact pre-rank-up condition surfaced too

@@ -5,6 +5,8 @@
 #include "Core/logger.h"
 #include "Core/utils.h"
 #include "Game/gamestates.h"
+#include "Overlay/Window/MainWindow.h"
+#include "Overlay/WindowManager.h"
 
 #include <Windows.h>
 
@@ -21,6 +23,10 @@ namespace
 {
         constexpr int kMainMenuRva = 0x00E8C044;
         constexpr int kNetworkStructRva = 0x008F7958;
+        constexpr int kRankMatchTopStaticRva = 0x00DAAF70;
+        constexpr int kRankMatchTopStaticSize = 0x2CC;
+        constexpr int kRankMatchCharSeleStaticRva = 0x00DAC9D8;
+        constexpr int kRankMatchCharSeleStaticSize = 0x1BC0;
         constexpr int kMaxSubMenus = 0x10;
         constexpr int kMaxMenuItems = 0x18;
         constexpr int kPressFrames = 5;
@@ -36,6 +42,7 @@ namespace
         constexpr int kRankedHiddenMenuMoveReleaseFrames = 18;
         constexpr int kPopupConfirmRetryFrames = 30;
         constexpr DWORD kWorkerSleepMs = 16;
+        constexpr std::array<int, 3> kCharacterSweepTargets = { 24, 21, 24 };
         std::mutex g_harnessMutex;
         LONG g_workerStarted = 0;
 
@@ -114,6 +121,15 @@ namespace
                 uint32_t nextAction = 0;
         };
 
+        struct RankCharSeleSnapshot
+        {
+                bool valid = false;
+                uint32_t field048 = 0;
+                uint32_t field1734 = 0;
+                uint32_t field1750 = 0;
+                uint32_t cursor1960 = 0;
+        };
+
         enum class UiButton
         {
                 Up,
@@ -133,17 +149,9 @@ namespace
                 FindRankedMenu,
                 WaitForRankedCharacterSelect,
                 WaitForRankedMenu,
-                FindSearchResults,
-                WaitForLobbyListRequest,
-                WaitForSearchResults,
-                BackOutOfSearchResults,
-                WaitForRankedMenuAfterBack,
-                FindSetEntry,
-                WaitForSetEntryConfirmation,
-                WaitForWithdrawEntry,
-                FindWithdrawEntry,
-                WaitForWithdrawConfirmation,
-                WaitForEntryReset,
+                NavigateToCharacterSelectRow,
+                OpenCharacterSelectMenu,
+                WaitForCharacterSelectMenu,
                 Completed,
                 Failed
         };
@@ -383,6 +391,258 @@ namespace
                         return true;
         }
 
+        void LogAllSubMenus(const char* reason)
+        {
+                        const uintptr_t base = reinterpret_cast<uintptr_t>(GetBbcfBaseAdress());
+                        if (base == 0)
+                        {
+                                return;
+                        }
+
+                        MainMenuLite* const mainMenu = reinterpret_cast<MainMenuLite*>(base + kMainMenuRva);
+                        if (IsBadReadPtr(mainMenu, sizeof(MainMenuLite)))
+                        {
+                                return;
+                        }
+
+                        LOG(1, "[RankedAuto] submenu dump reason=%s activeIndex=%d menuLevel=%d menuState=%d\n",
+                                reason ? reason : "(none)",
+                                mainMenu->subMenuIndex,
+                                mainMenu->menuLevel,
+                                mainMenu->state);
+
+                        for (int subMenuIndex = 0; subMenuIndex < kMaxSubMenus; ++subMenuIndex)
+                        {
+                                const SubMenuLite& subMenu = mainMenu->subMenus[subMenuIndex];
+                                if (subMenu.itemCount < 0 || subMenu.itemCount > kMaxMenuItems)
+                                {
+                                        LOG(1, "[RankedAuto] submenu[%d] reason=%s INVALID itemCount=%d\n",
+                                                subMenuIndex,
+                                                reason ? reason : "(none)",
+                                                subMenu.itemCount);
+                                        continue;
+                                }
+
+                                const std::string subMenuId = ReadFixedString(subMenu.id, sizeof(subMenu.id));
+                                const std::string subMenuTitle = ReadFixedString(subMenu.title, sizeof(subMenu.title));
+                                LOG(1, "[RankedAuto] submenu[%d] reason=%s id='%s' title='%s' itemIndex=%d itemCount=%d\n",
+                                        subMenuIndex,
+                                        reason ? reason : "(none)",
+                                        subMenuId.c_str(),
+                                        subMenuTitle.c_str(),
+                                        subMenu.itemIndex,
+                                        subMenu.itemCount);
+
+                                for (int itemIndex = 0; itemIndex < subMenu.itemCount; ++itemIndex)
+                                {
+                                        const MenuItemLite& item = subMenu.items[itemIndex];
+                                        const std::string itemId = ReadFixedString(item.id, sizeof(item.id));
+                                        const std::string itemTitle = ReadFixedString(item.title, sizeof(item.title));
+                                        LOG(1, "[RankedAuto] submenu[%d] item[%d/%d] reason=%s action=%d id='%s' title='%s'\n",
+                                                subMenuIndex,
+                                                itemIndex,
+                                                subMenu.itemCount,
+                                                reason ? reason : "(none)",
+                                                item.action,
+                                                itemId.c_str(),
+                                                itemTitle.c_str());
+                                }
+                        }
+        }
+
+        void LogRankedSubMenuRawState(const char* reason)
+        {
+                        const uintptr_t base = reinterpret_cast<uintptr_t>(GetBbcfBaseAdress());
+                        if (base == 0)
+                        {
+                                return;
+                        }
+
+                        MainMenuLite* const mainMenu = reinterpret_cast<MainMenuLite*>(base + kMainMenuRva);
+                        if (IsBadReadPtr(mainMenu, sizeof(MainMenuLite)))
+                        {
+                                return;
+                        }
+
+                        const int rankedSubMenuIndex = 6;
+                        const SubMenuLite& subMenu = mainMenu->subMenus[rankedSubMenuIndex];
+                        const uint32_t* raw = reinterpret_cast<const uint32_t*>(&subMenu);
+                        LOG(1, "[RankedAuto] ranked-submenu raw reason=%s pad00=0x%08X pad04=0x%08X itemCount=%d itemIndex=%d raw00=0x%08X raw01=0x%08X raw02=0x%08X raw03=0x%08X raw04=0x%08X raw05=0x%08X raw06=0x%08X raw07=0x%08X raw08=0x%08X raw09=0x%08X raw10=0x%08X raw11=0x%08X\n",
+                                reason ? reason : "(none)",
+                                static_cast<unsigned int>(subMenu.pad00),
+                                static_cast<unsigned int>(subMenu.pad04),
+                                subMenu.itemCount,
+                                subMenu.itemIndex,
+                                static_cast<unsigned int>(raw[0]),
+                                static_cast<unsigned int>(raw[1]),
+                                static_cast<unsigned int>(raw[2]),
+                                static_cast<unsigned int>(raw[3]),
+                                static_cast<unsigned int>(raw[4]),
+                                static_cast<unsigned int>(raw[5]),
+                                static_cast<unsigned int>(raw[6]),
+                                static_cast<unsigned int>(raw[7]),
+                                static_cast<unsigned int>(raw[8]),
+                                static_cast<unsigned int>(raw[9]),
+                                static_cast<unsigned int>(raw[10]),
+                                static_cast<unsigned int>(raw[11]));
+        }
+
+        bool ForceRankedSubMenuItemIndex(int itemIndex, const char* reason)
+        {
+                        const uintptr_t base = reinterpret_cast<uintptr_t>(GetBbcfBaseAdress());
+                        if (base == 0)
+                        {
+                                return false;
+                        }
+
+                        MainMenuLite* const mainMenu = reinterpret_cast<MainMenuLite*>(base + kMainMenuRva);
+                        if (IsBadWritePtr(mainMenu, sizeof(MainMenuLite)))
+                        {
+                                return false;
+                        }
+
+                        const int rankedSubMenuIndex = 6;
+                        SubMenuLite& subMenu = mainMenu->subMenus[rankedSubMenuIndex];
+                        const int oldIndex = subMenu.itemIndex;
+                        subMenu.itemIndex = itemIndex;
+                        LOG(1, "[RankedAuto] forced ranked submenu itemIndex reason=%s old=%d new=%d\n",
+                                reason ? reason : "(none)",
+                                oldIndex,
+                                subMenu.itemIndex);
+                        return true;
+        }
+
+        void LogNetworkStructDiff(const NetworkStructLite& network, std::array<uint32_t, sizeof(NetworkStructLite) / sizeof(uint32_t)>* lastWords, bool* hasLastWords, const char* reason)
+        {
+                        if (!lastWords || !hasLastWords)
+                        {
+                                return;
+                        }
+
+                        const uint32_t* currentWords = reinterpret_cast<const uint32_t*>(&network);
+                        if (!*hasLastWords)
+                        {
+                                *lastWords = {};
+                                for (size_t i = 0; i < lastWords->size(); ++i)
+                                {
+                                        (*lastWords)[i] = currentWords[i];
+                                }
+                                *hasLastWords = true;
+                                LOG(1, "[RankedAuto] network-diff baseline reason=%s words=%u\n",
+                                        reason ? reason : "(none)",
+                                        static_cast<unsigned int>(lastWords->size()));
+                                return;
+                        }
+
+                        for (size_t i = 0; i < lastWords->size(); ++i)
+                        {
+                                const uint32_t oldValue = (*lastWords)[i];
+                                const uint32_t newValue = currentWords[i];
+                                if (oldValue == newValue)
+                                {
+                                        continue;
+                                }
+
+                                LOG(1, "[RankedAuto] network-diff reason=%s offset=0x%03X old=0x%08X new=0x%08X\n",
+                                        reason ? reason : "(none)",
+                                        static_cast<unsigned int>(i * sizeof(uint32_t)),
+                                        static_cast<unsigned int>(oldValue),
+                                        static_cast<unsigned int>(newValue));
+                                (*lastWords)[i] = newValue;
+                        }
+        }
+
+        void LogMainMenuDiff(const MainMenuLite& mainMenu, std::array<uint32_t, sizeof(MainMenuLite) / sizeof(uint32_t)>* lastWords, bool* hasLastWords, const char* reason)
+        {
+                        if (!lastWords || !hasLastWords)
+                        {
+                                return;
+                        }
+
+                        const uint32_t* currentWords = reinterpret_cast<const uint32_t*>(&mainMenu);
+                        if (!*hasLastWords)
+                        {
+                                *lastWords = {};
+                                for (size_t i = 0; i < lastWords->size(); ++i)
+                                {
+                                        (*lastWords)[i] = currentWords[i];
+                                }
+                                *hasLastWords = true;
+                                LOG(1, "[RankedAuto] mainmenu-diff baseline reason=%s words=%u\n",
+                                        reason ? reason : "(none)",
+                                        static_cast<unsigned int>(lastWords->size()));
+                                return;
+                        }
+
+                        for (size_t i = 0; i < lastWords->size(); ++i)
+                        {
+                                const uint32_t oldValue = (*lastWords)[i];
+                                const uint32_t newValue = currentWords[i];
+                                if (oldValue == newValue)
+                                {
+                                        continue;
+                                }
+
+                                LOG(1, "[RankedAuto] mainmenu-diff reason=%s offset=0x%04X old=0x%08X new=0x%08X\n",
+                                        reason ? reason : "(none)",
+                                        static_cast<unsigned int>(i * sizeof(uint32_t)),
+                                        static_cast<unsigned int>(oldValue),
+                                        static_cast<unsigned int>(newValue));
+                                (*lastWords)[i] = newValue;
+                        }
+        }
+
+        template <size_t N>
+        void LogRawObjectDiff(uintptr_t address, size_t sizeBytes, std::array<uint32_t, N>* lastWords, bool* hasLastWords, const char* tag, const char* reason)
+        {
+                        if (!lastWords || !hasLastWords || address == 0 || sizeBytes > (N * sizeof(uint32_t)))
+                        {
+                                return;
+                        }
+
+                        const uint32_t* currentWords = reinterpret_cast<const uint32_t*>(address);
+                        if (IsBadReadPtr(reinterpret_cast<void*>(address), sizeBytes))
+                        {
+                                return;
+                        }
+
+                        const size_t wordCount = sizeBytes / sizeof(uint32_t);
+                        if (!*hasLastWords)
+                        {
+                                *lastWords = {};
+                                for (size_t i = 0; i < wordCount; ++i)
+                                {
+                                        (*lastWords)[i] = currentWords[i];
+                                }
+                                *hasLastWords = true;
+                                LOG(1, "[RankedAuto] %s-diff baseline reason=%s words=%u addr=0x%08X\n",
+                                        tag ? tag : "rawobj",
+                                        reason ? reason : "(none)",
+                                        static_cast<unsigned int>(wordCount),
+                                        static_cast<unsigned int>(address));
+                                return;
+                        }
+
+                        for (size_t i = 0; i < wordCount; ++i)
+                        {
+                                const uint32_t oldValue = (*lastWords)[i];
+                                const uint32_t newValue = currentWords[i];
+                                if (oldValue == newValue)
+                                {
+                                        continue;
+                                }
+
+                                LOG(1, "[RankedAuto] %s-diff reason=%s offset=0x%03X old=0x%08X new=0x%08X addr=0x%08X\n",
+                                        tag ? tag : "rawobj",
+                                        reason ? reason : "(none)",
+                                        static_cast<unsigned int>(i * sizeof(uint32_t)),
+                                        static_cast<unsigned int>(oldValue),
+                                        static_cast<unsigned int>(newValue),
+                                        static_cast<unsigned int>(address));
+                                (*lastWords)[i] = newValue;
+                        }
+        }
+
         bool CaptureNetworkSnapshot(NetworkSnapshot* outSnapshot)
         {
                         if (!outSnapshot)
@@ -421,6 +681,35 @@ namespace
                                 outSnapshot->nextAction = network->actionQueue[network->queueStart];
                         }
 
+                return true;
+        }
+
+        bool CaptureRankCharSeleSnapshot(RankCharSeleSnapshot* outSnapshot)
+        {
+                        if (!outSnapshot)
+                        {
+                                return false;
+                        }
+
+                        *outSnapshot = {};
+
+                        const uintptr_t base = reinterpret_cast<uintptr_t>(GetBbcfBaseAdress());
+                        if (base == 0)
+                        {
+                                return false;
+                        }
+
+                        uint8_t* const object = reinterpret_cast<uint8_t*>(base + kRankMatchCharSeleStaticRva);
+                        if (IsBadReadPtr(object, kRankMatchCharSeleStaticSize))
+                        {
+                                return false;
+                        }
+
+                        outSnapshot->valid = true;
+                        outSnapshot->field048 = *reinterpret_cast<uint32_t*>(object + 0x48);
+                        outSnapshot->field1734 = *reinterpret_cast<uint32_t*>(object + 0x1734);
+                        outSnapshot->field1750 = *reinterpret_cast<uint32_t*>(object + 0x1750);
+                        outSnapshot->cursor1960 = *reinterpret_cast<uint32_t*>(object + 0x1960);
                         return true;
         }
 
@@ -437,17 +726,9 @@ namespace
                         case HarnessStep::FindRankedMenu: return "FindRankedMenu";
                         case HarnessStep::WaitForRankedCharacterSelect: return "WaitForRankedCharacterSelect";
                         case HarnessStep::WaitForRankedMenu: return "WaitForRankedMenu";
-                        case HarnessStep::FindSearchResults: return "FindSearchResults";
-                        case HarnessStep::WaitForLobbyListRequest: return "WaitForLobbyListRequest";
-                        case HarnessStep::WaitForSearchResults: return "WaitForSearchResults";
-                        case HarnessStep::BackOutOfSearchResults: return "BackOutOfSearchResults";
-                        case HarnessStep::WaitForRankedMenuAfterBack: return "WaitForRankedMenuAfterBack";
-                        case HarnessStep::FindSetEntry: return "FindSetEntry";
-                        case HarnessStep::WaitForSetEntryConfirmation: return "WaitForSetEntryConfirmation";
-                        case HarnessStep::WaitForWithdrawEntry: return "WaitForWithdrawEntry";
-                        case HarnessStep::FindWithdrawEntry: return "FindWithdrawEntry";
-                        case HarnessStep::WaitForWithdrawConfirmation: return "WaitForWithdrawConfirmation";
-                        case HarnessStep::WaitForEntryReset: return "WaitForEntryReset";
+                        case HarnessStep::NavigateToCharacterSelectRow: return "NavigateToCharacterSelectRow";
+                        case HarnessStep::OpenCharacterSelectMenu: return "OpenCharacterSelectMenu";
+                        case HarnessStep::WaitForCharacterSelectMenu: return "WaitForCharacterSelectMenu";
                         case HarnessStep::Completed: return "Completed";
                         case HarnessStep::Failed: return "Failed";
                         }
@@ -470,6 +751,75 @@ namespace
 
                         MenuSnapshot snapshot;
                         return CaptureMenuSnapshot(&snapshot) && snapshot.valid;
+        }
+
+        void EnsureMainWindowOpen(const char* reason)
+        {
+                        WindowManager& windowManager = WindowManager::GetInstance();
+                        if (!windowManager.IsInitialized())
+                        {
+                                return;
+                        }
+
+                        WindowContainer* const windowContainer = windowManager.GetWindowContainer();
+                        if (!windowContainer)
+                        {
+                                return;
+                        }
+
+                        IWindow* const mainWindow = windowContainer->GetWindow(WindowType_Main);
+                        if (!mainWindow || mainWindow->IsOpen())
+                        {
+                                return;
+                        }
+
+                        mainWindow->Open();
+                        LOG(1, "[RankedAuto] opened main window reason=%s\n", reason ? reason : "(none)");
+        }
+
+        bool VerifyRankedProgressOverlayForTarget(int expectedRowIndex, const char* reason)
+        {
+                        RankedProgressOverlaySnapshot snapshot;
+                        if (!CaptureRankedProgressOverlaySnapshot(&snapshot) || !snapshot.active)
+                        {
+                                return false;
+                        }
+
+                        if (snapshot.rowIndex != static_cast<uint32_t>(expectedRowIndex) ||
+                            snapshot.selectorValue != static_cast<uint32_t>(expectedRowIndex))
+                        {
+                                return false;
+                        }
+
+                        if (snapshot.totalPoints == 0 || snapshot.earnedPoints > snapshot.totalPoints)
+                        {
+                                return false;
+                        }
+
+                        if (expectedRowIndex == 24)
+                        {
+                                if (snapshot.currentRank != 33 || snapshot.earnedPoints != 761 || snapshot.totalPoints != 1730)
+                                {
+                                        return false;
+                                }
+                        }
+                        else if (expectedRowIndex == 21)
+                        {
+                                if (snapshot.currentRank != 26 || snapshot.earnedPoints != 180 || snapshot.totalPoints != 426)
+                                {
+                                        return false;
+                                }
+                        }
+
+                        LOG(1, "[RankedAuto] ranked-progress overlay verified reason=%s row=%u rank=%u earned=%u total=%u remaining=%u percent=%.4f\n",
+                                reason ? reason : "(none)",
+                                static_cast<unsigned int>(snapshot.rowIndex),
+                                static_cast<unsigned int>(snapshot.currentRank),
+                                static_cast<unsigned int>(snapshot.earnedPoints),
+                                static_cast<unsigned int>(snapshot.totalPoints),
+                                static_cast<unsigned int>(snapshot.remainingPoints),
+                                snapshot.progress);
+                        return true;
         }
 
         void RequestGameClose()
@@ -521,6 +871,8 @@ namespace
                                 return;
                         }
 
+                        EnsureMainWindowOpen("ranked automation active");
+
                         if (m_pulse.IsActive())
                         {
                                 m_pulse.Advance();
@@ -561,39 +913,14 @@ namespace
                         case HarnessStep::WaitForRankedMenu:
                                 HandleWaitForRankedMenu();
                                 break;
-                        case HarnessStep::FindSearchResults:
-                                HandleFindSearchResults();
+                        case HarnessStep::NavigateToCharacterSelectRow:
+                                HandleNavigateToCharacterSelectRow();
                                 break;
-                        case HarnessStep::WaitForLobbyListRequest:
-                                HandleWaitForLobbyListRequest();
+                        case HarnessStep::OpenCharacterSelectMenu:
+                                HandleOpenCharacterSelectMenu();
                                 break;
-                        case HarnessStep::WaitForSearchResults:
-                                HandleWaitForSearchResults();
-                                break;
-                        case HarnessStep::BackOutOfSearchResults:
-                                QueuePulse(UiButton::ReturnAction, "back out of ranked search results");
-                                SetStep(HarnessStep::WaitForRankedMenuAfterBack, "waiting for ranked menu after backing out");
-                                break;
-                        case HarnessStep::WaitForRankedMenuAfterBack:
-                                HandleWaitForRankedMenuAfterBack();
-                                break;
-                        case HarnessStep::FindSetEntry:
-                                HandleFindSetEntry();
-                                break;
-                        case HarnessStep::WaitForSetEntryConfirmation:
-                                HandleWaitForSetEntryConfirmation();
-                                break;
-                        case HarnessStep::WaitForWithdrawEntry:
-                                HandleWaitForWithdrawEntry();
-                                break;
-                        case HarnessStep::FindWithdrawEntry:
-                                HandleFindWithdrawEntry();
-                                break;
-                        case HarnessStep::WaitForWithdrawConfirmation:
-                                HandleWaitForWithdrawConfirmation();
-                                break;
-                        case HarnessStep::WaitForEntryReset:
-                                HandleWaitForEntryReset();
+                        case HarnessStep::WaitForCharacterSelectMenu:
+                                HandleWaitForCharacterSelectMenu();
                                 break;
                         case HarnessStep::Completed:
                         case HarnessStep::Failed:
@@ -717,7 +1044,31 @@ namespace
                         m_rankedLobbyDataBaseline = m_rankedLobbyDataCount;
                         m_lastMenuSignature.clear();
                         m_pulse.Reset();
-                        m_rankedMenuEntryMoveIssued = false;
+                        m_hiddenMenuMoveIssued = false;
+                        m_hiddenMenuMoveCount = 0;
+                        m_hasLastRankedNetworkWords = false;
+                        m_hasLastRankedMainMenuWords = false;
+                        m_hasLastRankMatchTopWords = false;
+                        m_hasLastRankMatchCharSeleWords = false;
+                        m_characterMenuMoveIssued = false;
+                        m_characterMenuConfirmIssued = false;
+                        m_characterListMoveCount = 0;
+                        m_hasLastCharacterCursor = false;
+                        m_lastCharacterCursor = 0;
+                        m_characterCursorStallCount = 0;
+                        m_loggedCharacterCursorSaturation = false;
+                        m_characterListSelectIssued = false;
+                        m_returnToConfirmIssued = false;
+                        m_exitConfirmIssued = false;
+                        m_characterSelectionPass = 0;
+                        m_verifiedRankedProgressRow24 = false;
+                        m_verifiedRankedProgressRow21 = false;
+                        m_savedShowRankedProgress = Settings::settingsIni.showRankedProgress;
+                        if (!Settings::settingsIni.showRankedProgress)
+                        {
+                                Settings::settingsIni.showRankedProgress = true;
+                                LOG(1, "[RankedAuto] forced ShowRankedProgress on for automation\n");
+                        }
 
                         LOG(1, "[RankedAuto] START source=%s\n", source ? source : "unknown");
                         SetStep(HarnessStep::WaitForSafeStart, "begin ranked RE automation sequence");
@@ -731,7 +1082,26 @@ namespace
                         m_stepAgeFrames = 0;
                         m_pulse.Reset();
                         m_lastMenuSignature.clear();
-                        m_rankedMenuEntryMoveIssued = false;
+                        m_hiddenMenuMoveIssued = false;
+                        m_hiddenMenuMoveCount = 0;
+                        m_hasLastRankedNetworkWords = false;
+                        m_hasLastRankedMainMenuWords = false;
+                        m_hasLastRankMatchTopWords = false;
+                        m_hasLastRankMatchCharSeleWords = false;
+                        m_characterMenuMoveIssued = false;
+                        m_characterMenuConfirmIssued = false;
+                        m_characterListMoveCount = 0;
+                        m_hasLastCharacterCursor = false;
+                        m_lastCharacterCursor = 0;
+                        m_characterCursorStallCount = 0;
+                        m_loggedCharacterCursorSaturation = false;
+                        m_characterListSelectIssued = false;
+                        m_returnToConfirmIssued = false;
+                        m_exitConfirmIssued = false;
+                        m_characterSelectionPass = 0;
+                        m_verifiedRankedProgressRow24 = false;
+                        m_verifiedRankedProgressRow21 = false;
+                        Settings::settingsIni.showRankedProgress = m_savedShowRankedProgress;
                 }
 
                 void Abort(const char* reason)
@@ -764,9 +1134,24 @@ namespace
                                 StepName(nextStep),
                                 reason ? reason : "(none)");
 
-                        if (nextStep == HarnessStep::FindSetEntry)
+                        if (nextStep == HarnessStep::NavigateToCharacterSelectRow)
                         {
-                                m_rankedMenuEntryMoveIssued = false;
+                                m_hiddenMenuMoveIssued = false;
+                                m_hiddenMenuMoveCount = 0;
+                        }
+
+                        if (nextStep == HarnessStep::WaitForCharacterSelectMenu)
+                        {
+                                m_characterMenuMoveIssued = false;
+                                m_characterMenuConfirmIssued = false;
+                                m_characterListMoveCount = 0;
+                                m_hasLastCharacterCursor = false;
+                                m_lastCharacterCursor = 0;
+                                m_characterCursorStallCount = 0;
+                                m_loggedCharacterCursorSaturation = false;
+                                m_characterListSelectIssued = false;
+                                m_returnToConfirmIssued = false;
+                                m_exitConfirmIssued = false;
                         }
 
                         m_step = nextStep;
@@ -1093,7 +1478,7 @@ namespace
                 {
                         if (IsRankedMenuVisible())
                         {
-                                SetStep(HarnessStep::FindSearchResults, "ranked menu already visible");
+                                SetStep(HarnessStep::NavigateToCharacterSelectRow, "ranked menu already visible");
                                 return;
                         }
 
@@ -1138,7 +1523,7 @@ namespace
 
                         if (IsRankedMenuVisible())
                         {
-                                SetStep(HarnessStep::FindSearchResults, "ranked menu visible");
+                                SetStep(HarnessStep::NavigateToCharacterSelectRow, "ranked menu visible");
                                 return;
                         }
 
@@ -1162,7 +1547,7 @@ namespace
                 {
                         if (IsRankedMenuVisible())
                         {
-                                SetStep(HarnessStep::FindSearchResults, "ranked menu already visible");
+                                SetStep(HarnessStep::NavigateToCharacterSelectRow, "ranked menu already visible");
                                 return;
                         }
 
@@ -1189,285 +1574,403 @@ namespace
                 {
                         if (IsRankedMenuVisible())
                         {
-                                SetStep(HarnessStep::FindSearchResults, "ranked menu opened");
+                                SetStep(HarnessStep::NavigateToCharacterSelectRow, "ranked menu opened");
                                 return;
                         }
 
                         NetworkSnapshot networkSnapshot;
                         if (CaptureNetworkSnapshot(&networkSnapshot) && IsRankedSearchEntryMenuState(networkSnapshot))
                         {
-                                SetStep(HarnessStep::FindSearchResults, "ranked network menu opened");
+                                SetStep(HarnessStep::NavigateToCharacterSelectRow, "ranked network menu opened");
                         }
                 }
 
-                void HandleFindSearchResults()
+                void LogAllMenuItems(const MenuSnapshot& snapshot, const char* reason)
                 {
-                        MenuSnapshot snapshot;
-                        if (CaptureMenuSnapshot(&snapshot) && IsRankedMenuVisible())
+                        for (int i = 0; i < snapshot.itemCount; ++i)
                         {
-                                const uint32_t requestBaseline = m_requestLobbyListCount;
-                                const uint32_t dataBaseline = m_rankedLobbyDataCount;
-                                if (SelectItem(&snapshot, { "SEARCH" }, {}, "open ranked search results",
-                                               HarnessStep::WaitForLobbyListRequest, "ranked search opened"))
+                                LOG(1, "[RankedAuto] menu item[%d/%d] reason=%s title='%s'\n",
+                                        i,
+                                        snapshot.itemCount,
+                                        reason ? reason : "(none)",
+                                        snapshot.itemTitles[static_cast<size_t>(i)].c_str());
+                        }
+                }
+
+                void HandleNavigateToCharacterSelectRow()
+                {
+                        NetworkSnapshot networkSnapshot;
+                        if (!CaptureNetworkSnapshot(&networkSnapshot) || !IsRankedSearchEntryMenuState(networkSnapshot))
+                        {
+                                return;
+                        }
+
+                        if (m_stepAgeFrames == 1)
+                        {
+                                LogAllSubMenus("ranked_menu_probe_entry");
+                                LogRankedSubMenuRawState("ranked_menu_probe_entry");
+                                LogNetworkStructDiff(*reinterpret_cast<NetworkStructLite*>(reinterpret_cast<uintptr_t>(GetBbcfBaseAdress()) + kNetworkStructRva),
+                                        &m_lastRankedNetworkWords,
+                                        &m_hasLastRankedNetworkWords,
+                                        "ranked_menu_probe_entry");
+                                LogMainMenuDiff(*reinterpret_cast<MainMenuLite*>(reinterpret_cast<uintptr_t>(GetBbcfBaseAdress()) + kMainMenuRva),
+                                        &m_lastRankedMainMenuWords,
+                                        &m_hasLastRankedMainMenuWords,
+                                        "ranked_menu_probe_entry");
+                                LogRawObjectDiff(reinterpret_cast<uintptr_t>(GetBbcfBaseAdress()) + kRankMatchTopStaticRva,
+                                        kRankMatchTopStaticSize,
+                                        &m_lastRankMatchTopWords,
+                                        &m_hasLastRankMatchTopWords,
+                                        "ranktop",
+                                        "ranked_menu_probe_entry");
+                        }
+
+                        if (m_stepAgeFrames >= kRankedHiddenMenuSettleFrames)
+                        {
+                                LogNetworkStructDiff(*reinterpret_cast<NetworkStructLite*>(reinterpret_cast<uintptr_t>(GetBbcfBaseAdress()) + kNetworkStructRva),
+                                        &m_lastRankedNetworkWords,
+                                        &m_hasLastRankedNetworkWords,
+                                        "ranked_menu_idle");
+                                LogMainMenuDiff(*reinterpret_cast<MainMenuLite*>(reinterpret_cast<uintptr_t>(GetBbcfBaseAdress()) + kMainMenuRva),
+                                        &m_lastRankedMainMenuWords,
+                                        &m_hasLastRankedMainMenuWords,
+                                        "ranked_menu_idle");
+                                LogRawObjectDiff(reinterpret_cast<uintptr_t>(GetBbcfBaseAdress()) + kRankMatchTopStaticRva,
+                                        kRankMatchTopStaticSize,
+                                        &m_lastRankMatchTopWords,
+                                        &m_hasLastRankMatchTopWords,
+                                        "ranktop",
+                                        "ranked_menu_idle");
+                        }
+
+                        if (m_stepAgeFrames < kRankedHiddenMenuSettleFrames)
+                        {
+                                return;
+                        }
+
+                        if (m_hiddenMenuMoveCount < 3)
+                        {
+                                if (QueuePulseCustom(UiButton::Down,
+                                                     kRankedHiddenMenuMovePressFrames,
+                                                     kRankedHiddenMenuMoveReleaseFrames,
+                                                     "move ranked menu selection toward Character Select"))
                                 {
-                                        m_requestLobbyListBaseline = requestBaseline;
-                                        m_rankedLobbyDataBaseline = dataBaseline;
+                                        ++m_hiddenMenuMoveCount;
+                                        m_hiddenMenuMoveIssued = true;
+                                        LogAllSubMenus("after_ranked_hidden_down");
+                                        LogRankedSubMenuRawState("after_ranked_hidden_down");
+                                        LogNetworkStructDiff(*reinterpret_cast<NetworkStructLite*>(reinterpret_cast<uintptr_t>(GetBbcfBaseAdress()) + kNetworkStructRva),
+                                                &m_lastRankedNetworkWords,
+                                                &m_hasLastRankedNetworkWords,
+                                                "after_ranked_hidden_down");
                                 }
                                 return;
                         }
 
-                        NetworkSnapshot networkSnapshot;
-                        if (CaptureNetworkSnapshot(&networkSnapshot) && IsRankedSearchEntryMenuState(networkSnapshot))
-                        {
-                                const uint32_t requestBaseline = m_requestLobbyListCount;
-                                const uint32_t dataBaseline = m_rankedLobbyDataCount;
-                                if (QueuePulse(UiButton::Confirm, "open ranked search results"))
-                                {
-                                        m_requestLobbyListBaseline = requestBaseline;
-                                        m_rankedLobbyDataBaseline = dataBaseline;
-                                        SetStep(HarnessStep::WaitForLobbyListRequest, "ranked search opened");
-                                }
-                        }
+                        SetStep(HarnessStep::OpenCharacterSelectMenu, "blind-moved to Character Select row");
                 }
 
-                void HandleWaitForLobbyListRequest()
+                void HandleOpenCharacterSelectMenu()
                 {
-                        if (m_requestLobbyListCount > m_requestLobbyListBaseline)
+                        NetworkSnapshot networkSnapshot;
+                        if (!CaptureNetworkSnapshot(&networkSnapshot) || !IsRankedSearchEntryMenuState(networkSnapshot))
                         {
-                                SetStep(HarnessStep::WaitForSearchResults, "RequestLobbyList observed");
                                 return;
                         }
 
-                        NetworkSnapshot networkSnapshot;
-                        if (CaptureNetworkSnapshot(&networkSnapshot) &&
-                            IsRankedSearchEntryMenuState(networkSnapshot) &&
-                            (m_stepAgeFrames % kRankedSearchRetryFrames) == 0)
+                        if (!m_hiddenMenuMoveIssued)
                         {
-                                QueuePulse(UiButton::Confirm, "retry ranked search confirm");
-                        }
-                }
-
-                void HandleWaitForSearchResults()
-                {
-                        if (m_rankedLobbyDataCount > m_rankedLobbyDataBaseline)
-                        {
-                                SetStep(HarnessStep::BackOutOfSearchResults, "ranked search results observed");
-                        }
-                }
-
-                void HandleWaitForRankedMenuAfterBack()
-                {
-                        if (IsRankedMenuVisible())
-                        {
-                                SetStep(HarnessStep::FindSetEntry, "returned to ranked menu");
                                 return;
                         }
 
-                        NetworkSnapshot networkSnapshot;
-                        if (CaptureNetworkSnapshot(&networkSnapshot) && IsRankedSearchEntryMenuState(networkSnapshot))
+                        if (m_stepAgeFrames < kRankedHiddenMenuMoveDelayFrames)
                         {
-                                SetStep(HarnessStep::FindSetEntry, "returned to ranked network menu");
-                                return;
-                        }
-
-                        if (CaptureNetworkSnapshot(&networkSnapshot) &&
-                            (IsRankedSearchResultsState(networkSnapshot) || IsRankedPostSearchBackState(networkSnapshot)) &&
-                            (m_stepAgeFrames % kRankedBackRetryFrames) == 0)
-                        {
-                                QueuePulse(UiButton::ReturnAction, "retry backing out of ranked search results");
-                        }
-                }
-
-                void HandleFindSetEntry()
-                {
-                        if (IsRankedEntryActive())
-                        {
-                                SetStep(HarnessStep::FindWithdrawEntry, "ranked entry already active");
                                 return;
                         }
 
                         MenuSnapshot snapshot;
-                        if (CaptureMenuSnapshot(&snapshot) && IsRankedMenuVisible())
+                        if (CaptureMenuSnapshot(&snapshot))
                         {
-                                SelectItem(&snapshot, { "ENTRY" }, { "WITHDRAW" }, "set ranked entry",
-                                           HarnessStep::WaitForSetEntryConfirmation, "set ranked entry selected");
-                                return;
+                                LogAllMenuItems(snapshot, "before_character_select_confirm");
+                        }
+                        LogAllSubMenus("before_character_select_confirm");
+                        LogRankedSubMenuRawState("before_character_select_confirm");
+
+                        if (QueuePulse(UiButton::Confirm, "open Character Select submenu"))
+                        {
+                                SetStep(HarnessStep::WaitForCharacterSelectMenu, "character select confirm sent");
+                        }
+                }
+
+                void HandleWaitForCharacterSelectMenu()
+                {
+                        MenuSnapshot snapshot;
+                        NetworkSnapshot networkSnapshot;
+                        RankCharSeleSnapshot charSeleSnapshot;
+                        const bool hasMenu = CaptureMenuSnapshot(&snapshot);
+                        const bool hasNetwork = CaptureNetworkSnapshot(&networkSnapshot);
+                        const bool hasCharSele = CaptureRankCharSeleSnapshot(&charSeleSnapshot);
+
+                        if (hasMenu && snapshot.valid)
+                        {
+                                LogAllMenuItems(snapshot, "character_select_wait");
                         }
 
-                        NetworkSnapshot networkSnapshot;
-                        if (CaptureNetworkSnapshot(&networkSnapshot) && IsRankedSearchEntryMenuState(networkSnapshot))
+                        if (m_stepAgeFrames == 1 || m_stepAgeFrames == 30)
                         {
-                                if (!m_rankedMenuEntryMoveIssued)
+                                LogAllSubMenus("character_select_wait");
+                                LogRankedSubMenuRawState("character_select_wait");
+                                LogRawObjectDiff(reinterpret_cast<uintptr_t>(GetBbcfBaseAdress()) + kRankMatchCharSeleStaticRva,
+                                        kRankMatchCharSeleStaticSize,
+                                        &m_lastRankMatchCharSeleWords,
+                                        &m_hasLastRankMatchCharSeleWords,
+                                        "rankcharsele",
+                                        "character_select_wait");
+                        }
+
+                        if (m_stepAgeFrames >= 12)
+                        {
+                                LogRawObjectDiff(reinterpret_cast<uintptr_t>(GetBbcfBaseAdress()) + kRankMatchCharSeleStaticRva,
+                                        kRankMatchCharSeleStaticSize,
+                                        &m_lastRankMatchCharSeleWords,
+                                        &m_hasLastRankMatchCharSeleWords,
+                                        "rankcharsele",
+                                        "character_select_idle");
+                        }
+
+                        const bool fieldOpen = hasCharSele &&
+                                (charSeleSnapshot.field048 != 0 || charSeleSnapshot.field1734 != 0);
+                        int logTargetCharacterIndex = -1;
+                        if (hasCharSele)
+                        {
+                                int passIndex = m_characterSelectionPass;
+                                if (passIndex < 0)
                                 {
-                                        if (m_stepAgeFrames < kRankedHiddenMenuSettleFrames)
+                                        passIndex = 0;
+                                }
+                                const int maxPassIndex = static_cast<int>(kCharacterSweepTargets.size()) - 1;
+                                if (passIndex > maxPassIndex)
+                                {
+                                        passIndex = maxPassIndex;
+                                }
+                                logTargetCharacterIndex = kCharacterSweepTargets[static_cast<size_t>(passIndex)];
+                        }
+
+                        if (hasNetwork)
+                        {
+                                LOG(1, "[RankedAuto] character-select wait netState=%d/%d queue=%d->%d nextAction=0x%X age=%d pass=%d target=%d hasCharSele=%d fieldOpen=%d cursor=%u field048=0x%X field1734=0x%X field1750=0x%X moves=%d stall=%d\n",
+                                        networkSnapshot.state,
+                                        networkSnapshot.state1,
+                                        networkSnapshot.queueStart,
+                                        networkSnapshot.queueEnd,
+                                        static_cast<unsigned int>(networkSnapshot.nextAction),
+                                        m_stepAgeFrames,
+                                        m_characterSelectionPass,
+                                        logTargetCharacterIndex,
+                                        hasCharSele ? 1 : 0,
+                                        fieldOpen ? 1 : 0,
+                                        hasCharSele ? static_cast<unsigned int>(charSeleSnapshot.cursor1960) : 0U,
+                                        hasCharSele ? static_cast<unsigned int>(charSeleSnapshot.field048) : 0U,
+                                        hasCharSele ? static_cast<unsigned int>(charSeleSnapshot.field1734) : 0U,
+                                        hasCharSele ? static_cast<unsigned int>(charSeleSnapshot.field1750) : 0U,
+                                        m_characterListMoveCount,
+                                        m_characterCursorStallCount);
+                        }
+
+                        if (hasNetwork &&
+                            networkSnapshot.state == 4 &&
+                            (networkSnapshot.state1 == 34 || networkSnapshot.state1 == 31))
+                        {
+                                if (logTargetCharacterIndex >= 0 && VerifyRankedProgressOverlayForTarget(logTargetCharacterIndex, "character_select_wait"))
+                                {
+                                        if (logTargetCharacterIndex == 24)
                                         {
+                                                m_verifiedRankedProgressRow24 = true;
+                                        }
+                                        else if (logTargetCharacterIndex == 21)
+                                        {
+                                                m_verifiedRankedProgressRow21 = true;
+                                        }
+                                }
+                                if (!m_characterMenuMoveIssued && m_stepAgeFrames >= 18)
+                                {
+                                        if (QueuePulse(UiButton::Down, "move Character Select menu from Confirm to Characters"))
+                                        {
+                                                m_characterMenuMoveIssued = true;
+                                                LogRawObjectDiff(reinterpret_cast<uintptr_t>(GetBbcfBaseAdress()) + kRankMatchCharSeleStaticRva,
+                                                        kRankMatchCharSeleStaticSize,
+                                                        &m_lastRankMatchCharSeleWords,
+                                                        &m_hasLastRankMatchCharSeleWords,
+                                                        "rankcharsele",
+                                                        "after_character_select_down");
+                                        }
+                                        return;
+                                }
+
+                                if (m_characterMenuMoveIssued && !m_characterMenuConfirmIssued && m_stepAgeFrames >= 48)
+                                {
+                                        if (QueuePulse(UiButton::Confirm, "open Character Select Characters field"))
+                                        {
+                                                m_characterMenuConfirmIssued = true;
+                                                LogRawObjectDiff(reinterpret_cast<uintptr_t>(GetBbcfBaseAdress()) + kRankMatchCharSeleStaticRva,
+                                                        kRankMatchCharSeleStaticSize,
+                                                        &m_lastRankMatchCharSeleWords,
+                                                        &m_hasLastRankMatchCharSeleWords,
+                                                        "rankcharsele",
+                                                        "after_character_select_confirm");
+                                        }
+                                        return;
+                                }
+
+                                int passIndex = m_characterSelectionPass;
+                                if (passIndex < 0)
+                                {
+                                        passIndex = 0;
+                                }
+                                const int maxPassIndex = static_cast<int>(kCharacterSweepTargets.size()) - 1;
+                                if (passIndex > maxPassIndex)
+                                {
+                                        passIndex = maxPassIndex;
+                                }
+                                const int targetCharacterIndex = kCharacterSweepTargets[static_cast<size_t>(passIndex)];
+                                const int currentCharacterIndex = hasCharSele ? static_cast<int>(charSeleSnapshot.cursor1960) : -1;
+                                const bool trackingCharacterCursor = m_characterMenuConfirmIssued && fieldOpen && hasCharSele;
+                                if (trackingCharacterCursor)
+                                {
+                                        if (m_hasLastCharacterCursor &&
+                                            m_lastCharacterCursor == charSeleSnapshot.cursor1960)
+                                        {
+                                                ++m_characterCursorStallCount;
+                                        }
+                                        else
+                                        {
+                                                m_hasLastCharacterCursor = true;
+                                                m_lastCharacterCursor = charSeleSnapshot.cursor1960;
+                                                m_characterCursorStallCount = 0;
+                                                m_loggedCharacterCursorSaturation = false;
+                                        }
+                                }
+                                const bool cursorSaturatedAtBoundary =
+                                        trackingCharacterCursor &&
+                                        currentCharacterIndex < targetCharacterIndex &&
+                                        m_characterCursorStallCount >= 24 &&
+                                        m_characterListMoveCount >= 8;
+                                if (cursorSaturatedAtBoundary && !m_loggedCharacterCursorSaturation)
+                                {
+                                        LOG(1, "[RankedAuto] character cursor saturated before target pass=%d target=%d current=%d moves=%d stall=%d\n",
+                                                m_characterSelectionPass,
+                                                targetCharacterIndex,
+                                                currentCharacterIndex,
+                                                m_characterListMoveCount,
+                                                m_characterCursorStallCount);
+                                        m_loggedCharacterCursorSaturation = true;
+                                }
+
+                                if (m_characterMenuMoveIssued &&
+                                    !m_characterMenuConfirmIssued &&
+                                    m_stepAgeFrames >= 48)
+                                {
+                                        if (QueuePulse(UiButton::Confirm, "open Character Select Characters field"))
+                                        {
+                                                m_characterMenuConfirmIssued = true;
+                                                LogRawObjectDiff(reinterpret_cast<uintptr_t>(GetBbcfBaseAdress()) + kRankMatchCharSeleStaticRva,
+                                                        kRankMatchCharSeleStaticSize,
+                                                        &m_lastRankMatchCharSeleWords,
+                                                        &m_hasLastRankMatchCharSeleWords,
+                                                        "rankcharsele",
+                                                        "after_character_select_confirm");
+                                        }
+                                        return;
+                                }
+
+                                if (m_characterMenuConfirmIssued &&
+                                    fieldOpen &&
+                                    hasCharSele &&
+                                    currentCharacterIndex != targetCharacterIndex &&
+                                    !cursorSaturatedAtBoundary &&
+                                    m_stepAgeFrames >= 72)
+                                {
+                                        const UiButton moveButton =
+                                                currentCharacterIndex > targetCharacterIndex
+                                                ? UiButton::Up
+                                                : UiButton::Down;
+                                        if (QueuePulse(moveButton, "move Character list cursor toward target"))
+                                        {
+                                                ++m_characterListMoveCount;
+                                        }
+                                        return;
+                                }
+
+                                if (m_characterMenuConfirmIssued &&
+                                    fieldOpen &&
+                                    hasCharSele &&
+                                    (currentCharacterIndex == targetCharacterIndex || cursorSaturatedAtBoundary) &&
+                                    !m_characterListSelectIssued &&
+                                    m_stepAgeFrames >= 72)
+                                {
+                                        if (QueuePulse(UiButton::Confirm, "select current Character list entry"))
+                                        {
+                                                m_characterListSelectIssued = true;
+                                                LogRawObjectDiff(reinterpret_cast<uintptr_t>(GetBbcfBaseAdress()) + kRankMatchCharSeleStaticRva,
+                                                        kRankMatchCharSeleStaticSize,
+                                                        &m_lastRankMatchCharSeleWords,
+                                                        &m_hasLastRankMatchCharSeleWords,
+                                                        "rankcharsele",
+                                                        "after_character_list_entry_confirm");
+                                        }
+                                        return;
+                                }
+
+                                if (m_characterListSelectIssued &&
+                                    !fieldOpen &&
+                                    !m_returnToConfirmIssued &&
+                                    m_stepAgeFrames >= 96)
+                                {
+                                        if (QueuePulse(UiButton::Up, "move Character Select focus back to Confirm"))
+                                        {
+                                                m_returnToConfirmIssued = true;
+                                        }
+                                        return;
+                                }
+
+                                if (m_returnToConfirmIssued &&
+                                    !m_exitConfirmIssued &&
+                                    m_stepAgeFrames >= 120)
+                                {
+                                        if (QueuePulse(UiButton::Confirm, "confirm Character Select and return to ranked menu"))
+                                        {
+                                                m_exitConfirmIssued = true;
+                                        }
+                                        return;
+                                }
+                        }
+
+                        if (hasNetwork &&
+                            networkSnapshot.state == 4 &&
+                            networkSnapshot.state1 == 30 &&
+                            m_exitConfirmIssued)
+                        {
+                                if ((m_characterSelectionPass + 1) < static_cast<int>(kCharacterSweepTargets.size()))
+                                {
+                                        ++m_characterSelectionPass;
+                                        m_hiddenMenuMoveIssued = true;
+                                        SetStep(HarnessStep::OpenCharacterSelectMenu, "returned to ranked menu after target selection");
+                                }
+                                else
+                                {
+                                        if (!m_verifiedRankedProgressRow24 || !m_verifiedRankedProgressRow21)
+                                        {
+                                                Fail("ranked progress overlay verification incomplete");
                                                 return;
                                         }
-
-                                        if (QueuePulseCustom(UiButton::Down,
-                                                             kRankedHiddenMenuMovePressFrames,
-                                                             kRankedHiddenMenuMoveReleaseFrames,
-                                                             "move ranked menu selection from Search to Entry"))
-                                        {
-                                                m_rankedMenuEntryMoveIssued = true;
-                                        }
-                                        return;
+                                        SetStep(HarnessStep::Completed, "returned to ranked menu after final target selection");
                                 }
-
-                                if (m_stepAgeFrames < (kRankedHiddenMenuSettleFrames + kRankedHiddenMenuMoveDelayFrames))
-                                {
-                                        return;
-                                }
-
-                                if (QueuePulse(UiButton::Confirm, "set ranked entry"))
-                                {
-                                        m_requestLobbyListBaseline = m_requestLobbyListCount;
-                                        m_rankedLobbyDataBaseline = m_rankedLobbyDataCount;
-                                        SetStep(HarnessStep::WaitForSetEntryConfirmation, "set ranked entry selected");
-                                }
-                        }
-                }
-
-                void HandleWaitForSetEntryConfirmation()
-                {
-                        if (IsRankedEntryActive())
-                        {
-                                SetStep(HarnessStep::FindWithdrawEntry, "ranked entry flag enabled");
                                 return;
                         }
 
-                        MenuSnapshot snapshot;
-                        if (CaptureMenuSnapshot(&snapshot) &&
-                            FindItemIndex(snapshot, { "WITHDRAW" }, {}) >= 0)
+                        if (m_stepAgeFrames >= 180)
                         {
-                                SetStep(HarnessStep::FindWithdrawEntry, "withdraw entry item visible");
-                                return;
-                        }
-
-                        NetworkSnapshot networkSnapshot;
-                        if (CaptureNetworkSnapshot(&networkSnapshot) &&
-                            (IsRankedSearchResultsState(networkSnapshot) ||
-                             m_requestLobbyListCount > m_requestLobbyListBaseline))
-                        {
-                                SetStep(HarnessStep::BackOutOfSearchResults, "search reopened while setting entry");
-                                return;
-                        }
-
-                        if (CaptureNetworkSnapshot(&networkSnapshot) &&
-                            IsRankedSearchEntryMenuState(networkSnapshot) &&
-                            m_stepAgeFrames >= kRankedPopupConfirmFallbackFrames)
-                        {
-                                SetStep(HarnessStep::FindWithdrawEntry, "returned to ranked network menu after entry confirm");
-                                return;
-                        }
-
-                        MenuSnapshot popupSnapshot;
-                        const bool popupVisible = CaptureMenuSnapshot(&popupSnapshot) &&
-                                IsRankedConfirmationPopupState(popupSnapshot);
-                        if ((popupVisible || m_stepAgeFrames >= kRankedPopupConfirmFallbackFrames) &&
-                            (m_stepAgeFrames % kPopupConfirmRetryFrames) == 0)
-                        {
-                                QueuePulse(UiButton::Confirm, popupVisible
-                                        ? "confirm ranked entry popup"
-                                        : "retry ranked entry popup confirm");
-                        }
-                }
-
-                void HandleWaitForWithdrawEntry()
-                {
-                        MenuSnapshot snapshot;
-                        if (CaptureMenuSnapshot(&snapshot) &&
-                            FindItemIndex(snapshot, { "WITHDRAW" }, {}) >= 0)
-                        {
-                                SetStep(HarnessStep::FindWithdrawEntry, "withdraw entry item visible");
-                                return;
-                        }
-
-                        if (IsRankedEntryActive())
-                        {
-                                SetStep(HarnessStep::FindWithdrawEntry, "ranked entry flag enabled");
-                                return;
-                        }
-
-                        NetworkSnapshot networkSnapshot;
-                        if (CaptureNetworkSnapshot(&networkSnapshot) && IsRankedSearchEntryMenuState(networkSnapshot))
-                        {
-                                SetStep(HarnessStep::FindWithdrawEntry, "returned to ranked network menu");
-                        }
-                }
-
-                void HandleFindWithdrawEntry()
-                {
-                        MenuSnapshot snapshot;
-                        if (CaptureMenuSnapshot(&snapshot) && IsRankedMenuVisible())
-                        {
-                                SelectItem(&snapshot, { "WITHDRAW" }, {}, "withdraw ranked entry",
-                                           HarnessStep::WaitForWithdrawConfirmation, "withdraw ranked entry selected");
-                                return;
-                        }
-
-                        NetworkSnapshot networkSnapshot;
-                        if (CaptureNetworkSnapshot(&networkSnapshot) && IsRankedSearchEntryMenuState(networkSnapshot))
-                        {
-                                if (QueuePulse(UiButton::Confirm, "withdraw ranked entry"))
-                                {
-                                        SetStep(HarnessStep::WaitForWithdrawConfirmation, "withdraw ranked entry selected");
-                                }
-                        }
-                }
-
-                void HandleWaitForWithdrawConfirmation()
-                {
-                        if (!IsRankedEntryActive())
-                        {
-                                SetStep(HarnessStep::WaitForEntryReset, "ranked entry flag cleared");
-                                return;
-                        }
-
-                        NetworkSnapshot networkSnapshot;
-                        if (CaptureNetworkSnapshot(&networkSnapshot) &&
-                            IsRankedSearchEntryMenuState(networkSnapshot) &&
-                            m_stepAgeFrames >= kRankedPopupConfirmFallbackFrames)
-                        {
-                                SetStep(HarnessStep::WaitForEntryReset, "returned to ranked network menu after withdraw confirm");
-                                return;
-                        }
-
-                        MenuSnapshot popupSnapshot;
-                        const bool popupVisible = CaptureMenuSnapshot(&popupSnapshot) &&
-                                IsRankedConfirmationPopupState(popupSnapshot);
-                        if ((popupVisible || m_stepAgeFrames >= kRankedPopupConfirmFallbackFrames) &&
-                            (m_stepAgeFrames % kPopupConfirmRetryFrames) == 0)
-                        {
-                                QueuePulse(UiButton::Confirm, popupVisible
-                                        ? "confirm withdraw entry popup"
-                                        : "retry withdraw entry popup confirm");
-                        }
-                }
-
-                void HandleWaitForEntryReset()
-                {
-                        if (IsRankedEntryActive())
-                        {
-                                return;
-                        }
-
-                        MenuSnapshot snapshot;
-                        if (!CaptureMenuSnapshot(&snapshot))
-                        {
-                                return;
-                        }
-
-                        if (FindItemIndex(snapshot, { "ENTRY" }, { "WITHDRAW" }) >= 0)
-                        {
-                                SetStep(HarnessStep::Completed, "ranked entry returned to unset state");
-                                return;
-                        }
-
-                        NetworkSnapshot networkSnapshot;
-                        if (CaptureNetworkSnapshot(&networkSnapshot) && IsRankedSearchEntryMenuState(networkSnapshot))
-                        {
-                                SetStep(HarnessStep::Completed, "ranked entry returned to unset state");
+                                SetStep(HarnessStep::Completed, "captured character select submenu diagnostics");
                         }
                 }
 
@@ -1481,7 +1984,30 @@ namespace
                 uint32_t m_rankedLobbyDataBaseline = 0;
                 std::string m_lastMenuSignature;
                 bool m_autorunConsumed = false;
-                bool m_rankedMenuEntryMoveIssued = false;
+                bool m_hiddenMenuMoveIssued = false;
+                int m_hiddenMenuMoveCount = 0;
+                std::array<uint32_t, sizeof(NetworkStructLite) / sizeof(uint32_t)> m_lastRankedNetworkWords{};
+                bool m_hasLastRankedNetworkWords = false;
+                std::array<uint32_t, sizeof(MainMenuLite) / sizeof(uint32_t)> m_lastRankedMainMenuWords{};
+                bool m_hasLastRankedMainMenuWords = false;
+                std::array<uint32_t, kRankMatchTopStaticSize / sizeof(uint32_t)> m_lastRankMatchTopWords{};
+                bool m_hasLastRankMatchTopWords = false;
+                std::array<uint32_t, kRankMatchCharSeleStaticSize / sizeof(uint32_t)> m_lastRankMatchCharSeleWords{};
+                bool m_hasLastRankMatchCharSeleWords = false;
+                bool m_characterMenuMoveIssued = false;
+                bool m_characterMenuConfirmIssued = false;
+                int m_characterListMoveCount = 0;
+                bool m_hasLastCharacterCursor = false;
+                uint32_t m_lastCharacterCursor = 0;
+                int m_characterCursorStallCount = 0;
+                bool m_loggedCharacterCursorSaturation = false;
+                bool m_characterListSelectIssued = false;
+                bool m_returnToConfirmIssued = false;
+                bool m_exitConfirmIssued = false;
+                int m_characterSelectionPass = 0;
+                bool m_verifiedRankedProgressRow24 = false;
+                bool m_verifiedRankedProgressRow21 = false;
+                bool m_savedShowRankedProgress = false;
         };
 
         HarnessState& GetHarness()

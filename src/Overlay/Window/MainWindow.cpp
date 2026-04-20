@@ -1,4 +1,4 @@
-﻿#include "MainWindow.h"
+#include "MainWindow.h"
 
 #include "FrameAdvantage/FrameAdvantage.h"
 #include "HitboxOverlay.h"
@@ -23,10 +23,192 @@
 
 #include "imgui_internal.h"
 
+#include <algorithm>
 #include <array>
+#include <cstdio>
 #include <sstream>
 #include <utility>
 #include <cstring>
+
+
+namespace
+{
+	constexpr uintptr_t kRankedNetworkStructRva = 0x008F7958;
+	constexpr uintptr_t kRankedCharSeleStaticRva = 0x00DAC9D8;
+	constexpr size_t kRankedCharSeleStaticSize = 0x1BC0;
+	constexpr uintptr_t kRankedTableBaseFnRva = 0x0009D5C0;
+
+	RankedProgressOverlaySnapshot g_rankedProgressOverlaySnapshot{};
+
+	bool IsRankedProgressMenuState(int state, int state1)
+	{
+		return state == 4 && (state1 == 30 || state1 == 31 || state1 == 34);
+	}
+
+	uint32_t SumRankedWordPairs(const uint8_t* rowObject, size_t startOffset)
+	{
+		if (!rowObject)
+		{
+			return 0;
+		}
+
+		uint32_t total = 0;
+		for (size_t pairIndex = 0; pairIndex < 0x20; ++pairIndex)
+		{
+			const size_t pairOffset = startOffset + pairIndex * 4;
+			total += *reinterpret_cast<const uint16_t*>(rowObject + pairOffset - 2);
+			total += *reinterpret_cast<const uint16_t*>(rowObject + pairOffset);
+		}
+		return total;
+	}
+
+	bool CaptureRankedProgressSnapshotInternal(RankedProgressOverlaySnapshot* outSnapshot)
+	{
+		if (!outSnapshot)
+		{
+			return false;
+		}
+
+		*outSnapshot = {};
+		outSnapshot->rowIndex = 0xFFFFFFFFu;
+		outSnapshot->selectorValue = 0xFFFFFFFFu;
+		outSnapshot->cursorValue = 0xFFFFFFFFu;
+		outSnapshot->networkState = -1;
+		outSnapshot->networkState1 = -1;
+		outSnapshot->isUnranked = true;
+
+		const uintptr_t moduleBase = reinterpret_cast<uintptr_t>(GetBbcfBaseAdress());
+		if (moduleBase == 0)
+		{
+			return false;
+		}
+
+		const uint8_t* const network = reinterpret_cast<const uint8_t*>(moduleBase + kRankedNetworkStructRva);
+		if (IsBadReadPtr(network, 8))
+		{
+			return false;
+		}
+
+		const int networkState = *reinterpret_cast<const int*>(network + 0x0);
+		const int networkState1 = *reinterpret_cast<const int*>(network + 0x4);
+		outSnapshot->networkState = networkState;
+		outSnapshot->networkState1 = networkState1;
+		if (!IsRankedProgressMenuState(networkState, networkState1))
+		{
+			return false;
+		}
+
+		const uint8_t* const charSele = reinterpret_cast<const uint8_t*>(moduleBase + kRankedCharSeleStaticRva);
+		if (IsBadReadPtr(charSele, kRankedCharSeleStaticSize))
+		{
+			return false;
+		}
+
+		const uint32_t cursorValue = *reinterpret_cast<const uint32_t*>(charSele + 0x1960);
+		if (cursorValue >= 0x40 || IsBadReadPtr(charSele + 0x1760 + cursorValue * 8, sizeof(uint32_t)))
+		{
+			return false;
+		}
+
+		const uint32_t selectorValue = *reinterpret_cast<const uint32_t*>(charSele + 0x1760 + cursorValue * 8);
+		typedef uintptr_t(__cdecl* RankedTableBaseFn)();
+		const RankedTableBaseFn rankedTableBaseFn = reinterpret_cast<RankedTableBaseFn>(moduleBase + kRankedTableBaseFnRva);
+		const uintptr_t rankedTableBase = rankedTableBaseFn ? rankedTableBaseFn() : 0;
+		if (rankedTableBase == 0)
+		{
+			return false;
+		}
+
+		const uint8_t* const rowObject = reinterpret_cast<const uint8_t*>(rankedTableBase + 0xD4 + selectorValue * 0x180);
+		if (IsBadReadPtr(rowObject, 0x126))
+		{
+			return false;
+		}
+
+		outSnapshot->active = true;
+		outSnapshot->rowIndex = selectorValue;
+		outSnapshot->selectorValue = selectorValue;
+		outSnapshot->cursorValue = cursorValue;
+		outSnapshot->currentRank = *reinterpret_cast<const uint16_t*>(rowObject);
+		outSnapshot->previousRank = outSnapshot->currentRank > 0 ? (outSnapshot->currentRank - 1u) : 0u;
+		outSnapshot->nextRank = outSnapshot->currentRank > 0 ? (outSnapshot->currentRank + 1u) : 1u;
+		outSnapshot->totalPoints = SumRankedWordPairs(rowObject, 0x26);
+		outSnapshot->earnedPoints = SumRankedWordPairs(rowObject, 0xA6);
+		outSnapshot->remainingPoints = outSnapshot->totalPoints > outSnapshot->earnedPoints
+			? (outSnapshot->totalPoints - outSnapshot->earnedPoints)
+			: 0u;
+		outSnapshot->metadataNextRank = (*reinterpret_cast<const uint32_t*>(rowObject + 0xD4) >> 16) & 0xFFFFu;
+		outSnapshot->debugFieldF4 = *reinterpret_cast<const uint32_t*>(rowObject + 0xF4);
+		outSnapshot->progress = outSnapshot->totalPoints > 0
+			? static_cast<float>(outSnapshot->earnedPoints) / static_cast<float>(outSnapshot->totalPoints)
+			: 0.0f;
+		outSnapshot->isUnranked = outSnapshot->currentRank == 0 || outSnapshot->totalPoints == 0;
+		return true;
+	}
+
+	void PublishRankedProgressOverlaySnapshot(const RankedProgressOverlaySnapshot& snapshot)
+	{
+		static bool s_hasLast = false;
+		static RankedProgressOverlaySnapshot s_last = {};
+		const bool changed = !s_hasLast ||
+			s_last.active != snapshot.active ||
+			s_last.rowIndex != snapshot.rowIndex ||
+			s_last.currentRank != snapshot.currentRank ||
+			s_last.earnedPoints != snapshot.earnedPoints ||
+			s_last.totalPoints != snapshot.totalPoints ||
+			s_last.networkState != snapshot.networkState ||
+			s_last.networkState1 != snapshot.networkState1;
+		g_rankedProgressOverlaySnapshot = snapshot;
+		if (changed)
+		{
+			LOG(1, "[RANK][OverlayProgress] active=%d row=%u selector=%u cursor=%u rank=%u prev=%u next=%u earned=%u total=%u remaining=%u percent=%.4f state=%d/%d unranked=%d metadataNext=%u f4=0x%08X\n",
+				snapshot.active ? 1 : 0,
+				static_cast<unsigned int>(snapshot.rowIndex),
+				static_cast<unsigned int>(snapshot.selectorValue),
+				static_cast<unsigned int>(snapshot.cursorValue),
+				static_cast<unsigned int>(snapshot.currentRank),
+				static_cast<unsigned int>(snapshot.previousRank),
+				static_cast<unsigned int>(snapshot.nextRank),
+				static_cast<unsigned int>(snapshot.earnedPoints),
+				static_cast<unsigned int>(snapshot.totalPoints),
+				static_cast<unsigned int>(snapshot.remainingPoints),
+				snapshot.progress,
+				snapshot.networkState,
+				snapshot.networkState1,
+				snapshot.isUnranked ? 1 : 0,
+				static_cast<unsigned int>(snapshot.metadataNextRank),
+				static_cast<unsigned int>(snapshot.debugFieldF4));
+		}
+		s_last = snapshot;
+		s_hasLast = true;
+	}
+
+	void ClearRankedProgressOverlaySnapshot(const char* reason)
+	{
+		if (g_rankedProgressOverlaySnapshot.active)
+		{
+			LOG(1, "[RANK][OverlayProgress] active=0 reason=%s\n", reason ? reason : "(none)");
+		}
+		g_rankedProgressOverlaySnapshot = {};
+		g_rankedProgressOverlaySnapshot.rowIndex = 0xFFFFFFFFu;
+		g_rankedProgressOverlaySnapshot.selectorValue = 0xFFFFFFFFu;
+		g_rankedProgressOverlaySnapshot.cursorValue = 0xFFFFFFFFu;
+		g_rankedProgressOverlaySnapshot.networkState = -1;
+		g_rankedProgressOverlaySnapshot.networkState1 = -1;
+		g_rankedProgressOverlaySnapshot.isUnranked = true;
+	}
+}
+
+bool CaptureRankedProgressOverlaySnapshot(RankedProgressOverlaySnapshot* outSnapshot)
+{
+	if (!outSnapshot)
+	{
+		return false;
+	}
+
+	*outSnapshot = g_rankedProgressOverlaySnapshot;
+	return outSnapshot->active;
+}
 
 MainWindow::MainWindow(const std::string& windowTitle, bool windowClosable, WindowContainer& windowContainer, ImGuiWindowFlags windowFlags)
 	: IWindow(windowTitle, windowClosable, windowFlags), m_pWindowContainer(&windowContainer)
@@ -82,7 +264,17 @@ void MainWindow::Draw()
 		SetLoggingEnabled(generateDebugLogs);
 	}
 	ImGui::SameLine();
-ImGui::ShowHelpMarker(Messages.Debug_log_details());
+	ImGui::ShowHelpMarker(Messages.Debug_log_details());
+
+	ImGui::HorizontalSpacing();
+	bool showRankedProgress = Settings::settingsIni.showRankedProgress;
+	if (ImGui::Checkbox(L("Show ranked progress").c_str(), &showRankedProgress))
+	{
+		Settings::settingsIni.showRankedProgress = showRankedProgress;
+		Settings::changeSetting("ShowRankedProgress", showRankedProgress ? "1" : "0");
+	}
+	ImGui::SameLine();
+	ImGui::ShowHelpMarker(L("Shows a movable ranked progress debug window while the mod menu is open in ranked character select or ranked menu states.").c_str());
 
 	ImGui::AlignTextToFramePadding();
 	ImGui::TextUnformatted("P$"); ImGui::SameLine();
@@ -114,6 +306,7 @@ ImGui::ShowHelpMarker(Messages.Debug_log_details());
 
 	DrawCurrentPlayersCount();
 	DrawLinkButtons();
+	DrawRankedProgressOverlay();
 }
 
 void MainWindow::DrawLanguageSelector()
@@ -575,3 +768,69 @@ void MainWindow::DrawLoadedSettingsValuesSection() const
 
 	ImGui::EndChild();
 }
+
+
+void MainWindow::DrawRankedProgressOverlay() const
+{
+	if (!Settings::settingsIni.showRankedProgress)
+	{
+		ClearRankedProgressOverlaySnapshot("setting_disabled");
+		return;
+	}
+
+	RankedProgressOverlaySnapshot snapshot;
+	if (!CaptureRankedProgressSnapshotInternal(&snapshot))
+	{
+		ClearRankedProgressOverlaySnapshot("inactive_context");
+		return;
+	}
+
+	PublishRankedProgressOverlaySnapshot(snapshot);
+
+	ImGui::SetNextWindowPos(ImVec2(360.0f, 20.0f), ImGuiCond_FirstUseEver);
+	ImGui::SetNextWindowSizeConstraints(ImVec2(320.0f, 220.0f), ImVec2(640.0f, 720.0f));
+	if (!ImGui::Begin(L("Ranked Progress###RankedProgressOverlay").c_str(), nullptr,
+		ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse))
+	{
+		ImGui::End();
+		return;
+	}
+
+	float clampedProgress = snapshot.progress;
+	if (clampedProgress < 0.0f)
+	{
+		clampedProgress = 0.0f;
+	}
+	else if (clampedProgress > 1.0f)
+	{
+		clampedProgress = 1.0f;
+	}
+	char progressText[64] = {};
+	std::snprintf(progressText, sizeof(progressText), "%u / %u (%.2f%%)",
+		snapshot.earnedPoints,
+		snapshot.totalPoints,
+		static_cast<double>(clampedProgress * 100.0f));
+
+	if (snapshot.isUnranked)
+	{
+		ImGui::TextDisabled("%s", L("Current character is unranked (AUTH).").c_str());
+	}
+	else
+	{
+		ImGui::Text("%s %u", L("Current Rank:").c_str(), snapshot.currentRank);
+	}
+
+	ImGui::Text("%s %u", L("Previous Rank:").c_str(), snapshot.previousRank);
+	ImGui::SameLine();
+	ImGui::Text("%s %u", L("Next Rank:").c_str(), snapshot.nextRank);
+	ImGui::ProgressBar(clampedProgress, ImVec2(300.0f, 0.0f), progressText);
+	ImGui::Text("%s %u", L("Remaining to Next:").c_str(), snapshot.remainingPoints);
+	ImGui::Separator();
+	ImGui::Text("%s %u", L("Row / Character ID:").c_str(), snapshot.rowIndex);
+	ImGui::Text("%s %u / %u", L("Selector / Cursor:").c_str(), snapshot.selectorValue, snapshot.cursorValue);
+	ImGui::Text("%s %d / %d", L("Network State:").c_str(), snapshot.networkState, snapshot.networkState1);
+	ImGui::Text("%s 0x%08X", L("Debug F4:").c_str(), snapshot.debugFieldF4);
+	ImGui::Text("%s %u", L("Metadata Next Rank:").c_str(), snapshot.metadataNextRank);
+	ImGui::End();
+}
+
