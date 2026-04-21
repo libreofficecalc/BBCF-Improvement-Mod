@@ -259,6 +259,107 @@ Current stable `DEBUG.txt` proves these points:
    - `ecx_local` / `local_m1C` changed like pointers/handles, not like packed score values
    - `local_m24` changed in small integers and occasionally matched detail-like values (`24`, `12`, `6`), but did not behave like the packed `0x00228664`
    - conclusion: `BBCF+0x1D1A2` is still propagation/setup, not the score-composition point
+
+## 2026-04-21 Kokonoe Live Ranked Follow-Up
+
+Operator test:
+
+- full character sweep before ranked
+- three real ranked matches as Kokonoe
+- full character sweep after ranked
+
+What latest `DEBUG.txt` proved:
+
+1. Current row-object LP fields are still not the real ranked LP source.
+2. Kokonoe row `24` stayed frozen before/after the three matches:
+   - `rank=34`
+   - `lp=1926`
+   - `nextLp=5237`
+   - `raw0C=0x1475`
+   - `raw10=0x0786`
+   - `rawE0=0x00120032`
+   - `rawE4=0x000C0035`
+   - `rawE8=0x00060008`
+   - `rawEC=0x00000000`
+3. Only match-count style stats changed in the row snapshot:
+   - `wins 764 -> 765`
+   - `matches 1738 -> 1741`
+   - `remainingMatches 974 -> 976`
+4. Real `RANK_ALL` uploads for Kokonoe changed during the same session:
+   - `packedScore=2198943`, `visibleRank=34`, `subscore=36255`
+   - `packedScore=2199967`, `visibleRank=34`, `subscore=37279`
+   - `packedScore=2199455`, `visibleRank=34`, `subscore=36767`
+5. Therefore the uploaded packed-score low word (`subscore`) is the strongest current candidate for the real displayed LP value after ranked matches.
+6. Current row snapshot values (`raw10/raw0C`) should no longer be treated as trustworthy live ranked LP / threshold for post-match UI.
+7. Threshold mapping for the uploaded subscore scale is still unsolved.
+8. `OverlayObserve` still triggers from the `RANK_ALL` upload path with leaderboard name currently logging as `<unknown>` in this runtime path, so that naming cleanup is still pending.
+
+Current implementation direction:
+
+- keep the ranked progress card visible through ranked search / ranked menu flow even when the live char-select row snapshot temporarily disappears
+- when a real `RANK_ALL` upload result exists for the active character, prefer uploaded `subscore` as displayed current LP
+- until threshold mapping is proven, show threshold as unknown rather than pretending row `raw0C` is the right scale
+
+Next validation target:
+
+- verify one more real ranked session after the UI patch
+- confirm the card stays visible during ranked search
+- confirm Kokonoe post-match card shows uploaded subscore-scale LP instead of stale row `1926`
+- confirm `DEBUG.txt` still logs the same `OverlayObserve` / `OverlayUpload` values with no regressions in the card lifecycle
+
+## 2026-04-21 Offline Threshold Hunt Status: dead end for now
+
+Operator request for this pass:
+
+- continue threshold LP hunting through the offline autorun path until it either:
+  - finds a real hidden threshold source
+  - proves the offline path is dead for that question
+  - or reaches the point where a real ranked match is required again
+
+What agent ran:
+
+- `bash tools/run_ranked_harness_autorun.sh --no-build --timeout=240`
+
+What the newest offline attempt actually did:
+
+- `DEBUG.txt` was updated at `2026-04-21 16:30:31`
+- but the autorun harness did **not** consume the launch token or reach the normal ranked-menu sweep
+- there were no new:
+  - `[RankedAuto] autorun token consumed ...`
+  - `[RankedAuto] finished: ...`
+  - `[RankedAuto] COMPLETED ...`
+  - `[RankedAuto] FAILED ...`
+- instead the new log region repeatedly spammed:
+  - `[RankedAuto] autorun token path='D:\SteamLibrary\steamapps\common\BlazBlue Centralfiction\BBCF_IM\ranked_harness_autorun.token' exists=0`
+
+What still fired despite autorun failing:
+
+- old rank-upload trace hooks continued to fire near shutdown
+- latest tail still only showed the already-known packed upload chain for Kokonoe:
+  - `slot=[0x00218F9F,0x00000000]`
+  - packed split remains internal rank `0x0021`, subscore `0x8F9F = 36767`
+- latest verdict summary remained:
+  - `builder=0`
+  - `compose=0`
+  - `cheapPathTrusted=0`
+  - `interpretation=no_trusted_rank_chain_before_first_inmatch_transition`
+
+Conclusion from this pass:
+
+- offline autorun did **not** reach a usable ranked-search instrumentation state on this run
+- even the traces that still fired offline were only the already-known packed upload boundary chain, not a hidden threshold producer
+- therefore the current offline path is a dead end for threshold LP hunting **unless** the autorun startup/token path is repaired first
+- threshold RE should not keep looping on offline menu data right now; it is no longer producing new threshold evidence
+
+Best next step:
+
+- go back to manual ranked validation for the threshold hunt
+- the most useful next proof remains:
+  - one real ranked match
+  - return to ranked menu
+  - capture the upload subscore plus any post-match local memory / UI state that changes with it
+- treat offline autorun as a separate harness-health issue, not the main threshold RE path
+
 11. Disassembly of the next callee chain points to a tighter composition candidate inside `BBCF+0x249B0`:
    - function `BBCF+0x249B0` obtains/initializes an entry object in `esi`
    - then calls a virtual method at `BBCF+0x24AD0` with:
@@ -5637,6 +5738,96 @@ Best next RE target after this correction:
     - especially fields that differ while current-rank word is already explained
 - if more instrumentation is needed, target should be row-object consumers after `0x000A1410`, not `0x000BDF20`
 
+## 129. 2026-04-21 harness false-fail / stall fix: final verification was still demanding unreachable row `35`, so autorun ended in `FAILED` and left BBCF open until wrapper timeout
+
+What was wrong:
+
+- the latest offline char-select sweep can only saturate at visible cursor row `34` (`Mai`) even though `getCharactersCount()` still reports `36` total rows (`Jubei` index `35`)
+- harness logs already proved this exact shape:
+  - `[RankedAuto] character cursor saturated before target pass=1 target=35 current=34 ...`
+  - then both temp animation probes completed
+  - then final verification still failed with:
+    - `[RankedAuto] FAILED reason=ranked progress overlay verification incomplete`
+- root cause in `src/Hooks/RankedAutomationHarness.cpp`:
+  - final `allMenuRowsVerified` check used `GetCharacterSweepCount()` and required every row `0..35`
+  - sticky verification also still treated pass 1 target as hardcoded last character index instead of the actual selected/reachable row
+  - `Fail(...)` did not honor `RankedAutomationHarnessQuitOnFinish`, so the autorun wrapper had to wait for timeout / cleanup instead of getting a clean close request from the game
+
+What was changed:
+
+- harness now records the highest visible character row actually observed during the sweep
+- harness now records the actual row selected for each sweep pass, including the saturated boundary case
+- final verification now checks:
+  - contiguous rows only through the highest reachable row actually seen
+  - sticky endpoints using the real completed pass targets, not the theoretical `count - 1`
+- `Fail(...)` now routes through the same quit-on-finish close request path as `Complete(...)`
+- extra harness log lines were added so the next live run will say exactly:
+  - which actual row was selected when saturation happens
+  - how many rows final verification considered reachable
+
+Current status:
+
+- code fix is in place and built successfully
+- deployed DLL also contains the new log strings, confirming the patched binary reached the game folder
+- I could not finish a fresh live rerun after that because BBCF stopped launching from this environment before producing any new `DEBUG.txt` lines, so the next real confirmation still needs one successful post-patch autorun launch
+
+## 130. 2026-04-21 current blocker on hidden ranked LP: offline row LP and real uploaded subscore are now clearly different scales, so one real ranked match is the next required proof
+
+What the newest offline sweep now proves:
+
+- current overlay values from row object `+0x10/+0x0C` are:
+  - Bullet row `21`: `lp=1006`, `nextLp=2425`, visible rank `27`
+  - Kokonoe row `24`: `lp=1926`, `nextLp=5237`, visible rank `34`
+- those values are stable across the whole offline ranked char-select sweep and therefore are real row fields, not noise
+
+What the already-proven real ranked uploads still show:
+
+- last confirmed real character-board upload for Bullet on `2026-04-20`:
+  - `RANK_BL score=1738333`
+  - packed split:
+    - internal rank `26`
+    - visible rank `27`
+    - subscore `0x865D = 34397`
+- last confirmed real overall-board upload for Kokonoe on `2026-04-20`:
+  - `RANK_ALL score=2199487`
+  - packed split:
+    - internal rank `33`
+    - visible rank `34`
+    - subscore `0x8FBF = 36799`
+
+Important conclusion:
+
+- offline row LP (`1006/2425`, `1926/5237`) is **not** the same value as the packed Steam upload subscore (`34397`, `36799`)
+- therefore the current UI is still mixing two different progression scales:
+  - row-object LP slice from the menu
+  - hidden packed leaderboard subscore from Steam uploads
+- static RE has not yet yielded the hidden next-rank threshold for the packed subscore scale
+- offline char-select alone is no longer enough to finish this last mapping confidently
+
+Why one real ranked match is now the next required step:
+
+- we need one session where the same character produces both:
+  - a real rank-board upload line with packed `subscore`
+  - a before/after row update line with `lp` / `nextLp`
+- that is the missing same-time bridge needed to determine whether packed threshold is:
+  - some transform of the row LP slice
+  - or a separate hidden threshold table keyed by rank
+
+Exact proof lines needed from the next real ranked match:
+
+- upload trigger:
+  - `[RANK][OverlayObserve] trigger leaderboard='RANK_..' char=.. visibleRank=.. subscore=.. packedScore=..`
+- row change:
+  - `[RANK][OverlayProgress] active=1 row=.. ... lp=.. nextLp=.. ... raw0C=.. raw10=..`
+- observer success if it fires:
+  - `[RANK][OverlayObserve] animate serial=.. char=.. fromLp=.. toLp=.. fromRank=.. toRank=.. delta=..`
+
+Practical next step:
+
+- play exactly one real ranked match with the character whose board is expected to move
+- then return to the ranked menu so the row snapshot logs fire
+- once those three lines exist in the same session, the hidden subscore-vs-threshold mapping can be solved and the UI can be switched to the correct scale
+
 ## 128. 2026-04-20 offline follow-up: `+C8/+D0` helper guess was wrong; real char-select progress path is `0x000A1310 / 0x000A11F0`, gated by row byte `+0x0A`
 
 What agent did in this pass:
@@ -6267,3 +6458,57 @@ Fix applied:
 New debug marker:
 
 - `[RANK][OverlayObserve] cached-baseline serial=... count=N attemptedChar=...`
+
+## 140. 2026-04-21 autorun startup crash root cause and wrapper fix
+
+What was tested:
+
+- reran `bash tools/run_ranked_harness_autorun.sh --no-build --timeout=...` against the live game folder
+- inspected fresh crash bundles under `BBCF_IM/CrashReports/Crash_20260421_*`
+- added temporary per-setting startup logs inside `Settings::loadSettingsFile()`
+
+What `DEBUG.txt` / crash logs proved:
+
+- the current autorun failure was not the old token-cleanup problem anymore
+- the mod was crashing during startup inside `Settings::loadSettingsFile()`
+- temporary logs consistently stopped at:
+  - `[Init][Settings] reading PrimaryKeyboardDeviceId`
+- this was a symptom, not the true root cause
+
+Actual root cause:
+
+- the X-macro loader in `src/Core/Settings.cpp` wrote both `bool` and `int` settings through `*(int*)iniPtr`
+- `bool` members in `settingsIni_t` are 1 byte, so every bool read wrote 4 bytes and corrupted later fields in the struct
+- after enough bool writes, the next `std::string` field (`primaryKeyboardDeviceId`) was already corrupted, and startup crashed when assigning into it
+
+Fix applied:
+
+- `Settings::loadSettingsFile()` now handles `bool` separately:
+  - `bool` -> `*(bool*)iniPtr = readSettingsFilePropertyInt(...) != 0`
+  - `int`  -> `*(int*)iniPtr = ...`
+- kept the temporary startup `ForceLog` probes in place for now because they are still useful for harness/runtime validation
+
+Secondary harness-wrapper bug found and fixed:
+
+- `tools/run_ranked_harness_autorun.sh` assumed `BBCF_IM/DEBUG.txt` only ever appended
+- on a successful fresh startup, `openLogger()` recreates `DEBUG.txt`, so the wrapper's `tail -n +$((baseline_lines + 1))` logic read nothing from the new file
+- that made good runs falsely report:
+  - `BBCF.exe exited before ranked automation sentinel.`
+- wrapper now detects log truncation/recreation using both line count and file size and reads the whole new file when rollover happened
+
+Current verified result:
+
+- startup crash is fixed
+- autorun now launches, consumes the token, drives menus, and returns the real harness terminal status
+- latest verified wrapper result:
+  - `[RankedAuto] FAILED reason=ranked progress overlay verification incomplete`
+
+Meaning:
+
+- the shell harness is working again as a truthful offline runner
+- remaining failure is back in ranked-progress automation/research logic, not startup or wrapper plumbing
+
+Next offline step:
+
+- continue the threshold/subscore hunt from the now-working autorun path
+- use the truthful `[RankedAuto] FAILED` / `[RankedAuto] COMPLETED` statuses from the wrapper instead of the previous fake exit-3 path

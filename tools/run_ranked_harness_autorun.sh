@@ -42,7 +42,7 @@ DEPLOY_TMP="$(mktemp "${ROOT_DIR}/tools/deploy_debugdeploy_to_bbcf.XXXXXX.sh")"
 cleanup() {
   local exit_code=$?
   rm -f "${DEPLOY_TMP}"
-  if [[ -n "${AUTORUN_TOKEN_PATH:-}" ]]; then
+  if [[ -n "${AUTORUN_TOKEN_PATH:-}" && "${PRESERVE_GAME_ON_EXIT}" -eq 0 ]]; then
     rm -f "${AUTORUN_TOKEN_PATH}"
   fi
   if [[ "${PRESERVE_GAME_ON_EXIT}" -eq 0 ]]; then
@@ -83,6 +83,14 @@ read_new_log() {
   if [[ ! -f "${LOG_PATH}" ]]; then
     return 0
   fi
+  local current_lines=0
+  local current_size=0
+  current_lines="$(wc -l < "${LOG_PATH}")"
+  current_size="$(stat -c %s "${LOG_PATH}")"
+  if [[ "${current_lines}" -lt "${baseline_lines}" || "${current_size}" -lt "${baseline_size}" ]]; then
+    cat "${LOG_PATH}"
+    return 0
+  fi
   tail -n +"$((baseline_lines + 1))" "${LOG_PATH}"
 }
 
@@ -90,13 +98,13 @@ read_full_post_baseline_log() {
   if [[ ! -f "${LOG_PATH}" ]]; then
     return 0
   fi
-  tail -n +"$((baseline_lines + 1))" "${LOG_PATH}"
+  read_new_log
 }
 
 print_last_ranked_log_lines() {
   local source_log=""
   if [[ -f "${LOG_PATH}" ]]; then
-    source_log="$(tail -n +"$((baseline_lines + 1))" "${LOG_PATH}")"
+    source_log="$(read_full_post_baseline_log)"
   fi
 
   if [[ -n "${source_log}" ]] && grep -Fq "[RankedAuto]" <<<"${source_log}"; then
@@ -115,8 +123,10 @@ mkdir -p "$(dirname "${LOG_PATH}")"
 printf "autorun\n" > "${AUTORUN_TOKEN_PATH}"
 
 baseline_lines=0
+baseline_size=0
 if [[ -f "${LOG_PATH}" ]]; then
   baseline_lines="$(wc -l < "${LOG_PATH}")"
+  baseline_size="$(stat -c %s "${LOG_PATH}")"
 fi
 
 echo "Launching BBCF with ranked automation autorun enabled..."

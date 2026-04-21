@@ -119,29 +119,41 @@ std::string Settings::readSettingsFilePropertyString(LPCWSTR key, LPCWSTR defaul
 bool Settings::loadSettingsFile()
 {
 	CString strINIPath;
+	ForceLog("[Init][Settings] loadSettingsFile enter\n");
 
 	_wfullpath((wchar_t*)strINIPath.GetBuffer(MAX_PATH), L"settings.ini", MAX_PATH);
 	strINIPath.ReleaseBuffer();
+	{
+		CT2CA iniPathAnsi(strINIPath);
+		ForceLog("[Init][Settings] resolved path='%s'\n", iniPathAnsi.m_psz ? iniPathAnsi.m_psz : "<null>");
+	}
 
         if (GetFileAttributes(strINIPath) == 0xFFFFFFFF)
         {
+                ForceLog("[Init][Settings] settings.ini missing\n");
                 MessageBoxA(NULL, "Settings INI File Was Not Found!", "Error", MB_OK);
                 return false;
         }
+	ForceLog("[Init][Settings] settings.ini exists\n");
 
         void* iniPtr = 0;
 
         debugLoggingSettingMissing = IsSettingMissingInIni(L"GenerateDebugLogs", strINIPath);
+	ForceLog("[Init][Settings] debug logging missing=%d\n", debugLoggingSettingMissing ? 1 : 0);
 
         //X-Macro
 #define SETTING(_type, _var, _inistring, _defaultval) \
+        ForceLog("[Init][Settings] reading " _inistring "\n"); \
         iniPtr = &settingsIni.##_var; \
-        if(strcmp(#_type, "bool") == 0 || strcmp(#_type, "int") == 0) { \
+        if(strcmp(#_type, "bool") == 0) { \
+		*(bool*)iniPtr = readSettingsFilePropertyInt(L##_inistring, L##_defaultval, strINIPath) != 0; } \
+	else if(strcmp(#_type, "int") == 0) { \
 		*(int*)iniPtr = readSettingsFilePropertyInt(L##_inistring, L##_defaultval, strINIPath); } \
 	else if(strcmp(#_type, "float") == 0) { \
 		*(float*)iniPtr = readSettingsFilePropertyFloat(L##_inistring, L##_defaultval, strINIPath); } \
 	else if (strcmp(#_type, "std::string") == 0) { \
-		*(std::string*)iniPtr = readSettingsFilePropertyString(L##_inistring, L##_defaultval, strINIPath); }
+		*(std::string*)iniPtr = readSettingsFilePropertyString(L##_inistring, L##_defaultval, strINIPath); } \
+        ForceLog("[Init][Settings] finished " _inistring "\n");
 #include "settings.def"
 #undef SETTING
 
@@ -149,6 +161,7 @@ bool Settings::loadSettingsFile()
         {
                 settingsIni.generateDebugLogs = true;
         }
+	ForceLog("[Init][Settings] raw settings read complete\n");
 
 	// Set buttons back to default if their values are incorrect
 	if (settingsIni.togglebutton.length() != 2 || settingsIni.togglebutton[0] != 'F')
@@ -169,6 +182,7 @@ bool Settings::loadSettingsFile()
                 LOG(1, "Settings::loadSettingsFile - SwapControllerPos forced off due to a known startup crash issue.\n");
         }
         settingsIni.swapControllerPos = false;
+	ForceLog("[Init][Settings] loadSettingsFile success\n");
 
         return true;
 }

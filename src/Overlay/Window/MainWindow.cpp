@@ -102,6 +102,8 @@ namespace
 	{
 		bool valid = false;
 		bool isUnranked = true;
+		bool thresholdKnown = false;
+		bool lpFromUpload = false;
 		uint32_t characterId = kInvalidRankedCharacterId;
 		uint32_t visibleRank = 0;
 		uint32_t currentLp = 0;
@@ -188,7 +190,32 @@ namespace
 	{
 		return before.visibleRank != after.visibleRank ||
 			before.currentLp != after.currentLp ||
-			before.nextThreshold != after.nextThreshold;
+			before.nextThreshold != after.nextThreshold ||
+			before.thresholdKnown != after.thresholdKnown;
+	}
+
+	void ApplyUploadedLpToDisplayState(const RankedUploadOverlayState& uploadState, RankedProgressDisplayState* state)
+	{
+		if (!state)
+		{
+			return;
+		}
+
+		state->visibleRank = uploadState.visibleRank;
+		state->isUnranked = uploadState.visibleRank == 0u;
+		state->currentLp = uploadState.subscore;
+		state->lpFromUpload = true;
+		if (!state->thresholdKnown || state->nextThreshold <= state->currentLp)
+		{
+			state->thresholdKnown = false;
+			state->nextThreshold = 0u;
+			state->progress = 0.0f;
+			return;
+		}
+
+		state->progress = state->nextThreshold > 0
+			? static_cast<float>(state->currentLp) / static_cast<float>(state->nextThreshold)
+			: 0.0f;
 	}
 
 	uint32_t InternalRankToVisibleRank(uint32_t internalRank, bool isUnranked)
@@ -407,8 +434,17 @@ namespace
 		outSnapshot->networkState = networkState;
 		outSnapshot->networkState1 = networkState1;
 		outSnapshot->currentRank = *reinterpret_cast<const uint16_t*>(rowObject);
-		outSnapshot->nextThreshold = *reinterpret_cast<const uint32_t*>(rowObject + 0x0C);
-		outSnapshot->currentLp = *reinterpret_cast<const uint32_t*>(rowObject + 0x10);
+		outSnapshot->rawField0C = *reinterpret_cast<const uint32_t*>(rowObject + 0x0C);
+		outSnapshot->rawField10 = *reinterpret_cast<const uint32_t*>(rowObject + 0x10);
+		outSnapshot->rawField14 = *reinterpret_cast<const uint32_t*>(rowObject + 0x14);
+		outSnapshot->rawField18 = *reinterpret_cast<const uint32_t*>(rowObject + 0x18);
+		outSnapshot->rawField20 = *reinterpret_cast<const uint32_t*>(rowObject + 0x20);
+		outSnapshot->rawFieldE0 = *reinterpret_cast<const uint32_t*>(rowObject + 0xE0);
+		outSnapshot->rawFieldE4 = *reinterpret_cast<const uint32_t*>(rowObject + 0xE4);
+		outSnapshot->rawFieldE8 = *reinterpret_cast<const uint32_t*>(rowObject + 0xE8);
+		outSnapshot->rawFieldEC = *reinterpret_cast<const uint32_t*>(rowObject + 0xEC);
+		outSnapshot->nextThreshold = outSnapshot->rawField0C;
+		outSnapshot->currentLp = outSnapshot->rawField10;
 		outSnapshot->remainingLp = outSnapshot->nextThreshold > outSnapshot->currentLp
 			? (outSnapshot->nextThreshold - outSnapshot->currentLp)
 			: 0u;
@@ -435,6 +471,7 @@ namespace
 		RankedProgressDisplayState state{};
 		state.valid = snapshot.active;
 		state.isUnranked = snapshot.isUnranked;
+		state.thresholdKnown = snapshot.nextThreshold > 0u;
 		state.characterId = snapshot.rowIndex;
 		state.visibleRank = snapshot.currentRank;
 		state.currentLp = snapshot.currentLp;
@@ -484,6 +521,10 @@ namespace
 		if (FillRankedProgressSnapshotForRow(characterId, characterId, characterId, -1, -1, &snapshot))
 		{
 			*outState = MakeDisplayStateFromSnapshot(snapshot);
+			if (uploadState)
+			{
+				ApplyUploadedLpToDisplayState(*uploadState, outState);
+			}
 			return true;
 		}
 
@@ -491,11 +532,7 @@ namespace
 		{
 			if (uploadState)
 			{
-				outState->visibleRank = uploadState->visibleRank;
-				outState->isUnranked = uploadState->visibleRank == 0u;
-				outState->progress = outState->nextThreshold > 0
-					? static_cast<float>(outState->currentLp) / static_cast<float>(outState->nextThreshold)
-					: 0.0f;
+				ApplyUploadedLpToDisplayState(*uploadState, outState);
 			}
 			return true;
 		}
@@ -504,9 +541,11 @@ namespace
 		{
 			outState->valid = true;
 			outState->isUnranked = uploadState->visibleRank == 0u;
+			outState->thresholdKnown = false;
+			outState->lpFromUpload = true;
 			outState->characterId = characterId;
 			outState->visibleRank = uploadState->visibleRank;
-			outState->currentLp = 0u;
+			outState->currentLp = uploadState->subscore;
 			outState->nextThreshold = 0u;
 			outState->progress = 0.0f;
 			return true;
@@ -1058,7 +1097,7 @@ namespace
 		g_rankedProgressOverlaySnapshot = snapshot;
 		if (changed)
 		{
-			LOG(1, "[RANK][OverlayProgress] active=%d row=%u selector=%u cursor=%u rank=%u prev=%u next=%u lp=%u nextLp=%u remainingLp=%u wins=%u matches=%u remainingMatches=%u percent=%.4f state=%d/%d unranked=%d metadataNext=%u f4=0x%08X\n",
+			LOG(1, "[RANK][OverlayProgress] active=%d row=%u selector=%u cursor=%u rank=%u prev=%u next=%u lp=%u nextLp=%u remainingLp=%u wins=%u matches=%u remainingMatches=%u percent=%.4f state=%d/%d unranked=%d metadataNext=%u f4=0x%08X raw0C=0x%08X raw10=0x%08X raw14=0x%08X raw18=0x%08X raw20=0x%08X rawE0=0x%08X rawE4=0x%08X rawE8=0x%08X rawEC=0x%08X\n",
 				snapshot.active ? 1 : 0,
 				static_cast<unsigned int>(snapshot.rowIndex),
 				static_cast<unsigned int>(snapshot.selectorValue),
@@ -1077,7 +1116,16 @@ namespace
 				snapshot.networkState1,
 				snapshot.isUnranked ? 1 : 0,
 				static_cast<unsigned int>(snapshot.metadataNextRank),
-				static_cast<unsigned int>(snapshot.debugFieldF4));
+				static_cast<unsigned int>(snapshot.debugFieldF4),
+				static_cast<unsigned int>(snapshot.rawField0C),
+				static_cast<unsigned int>(snapshot.rawField10),
+				static_cast<unsigned int>(snapshot.rawField14),
+				static_cast<unsigned int>(snapshot.rawField18),
+				static_cast<unsigned int>(snapshot.rawField20),
+				static_cast<unsigned int>(snapshot.rawFieldE0),
+				static_cast<unsigned int>(snapshot.rawFieldE4),
+				static_cast<unsigned int>(snapshot.rawFieldE8),
+				static_cast<unsigned int>(snapshot.rawFieldEC));
 		}
 		s_last = snapshot;
 		s_hasLast = true;
@@ -1847,7 +1895,6 @@ void DrawRankedProgressOverlayStandalone()
 	RankedNetworkLite networkState;
 	const bool hasNetworkState = CaptureRankedNetworkLite(&networkState);
 	const int currentGameState = g_gameVals.pGameState ? *g_gameVals.pGameState : -1;
-	const int currentGameMode = g_gameVals.pGameMode ? *g_gameVals.pGameMode : -1;
 	const bool inMatch = currentGameState == GameState_InMatch;
 	const bool rankedEntryActive = ReadRankedEntryFlag() != 0u;
 	if (hasLiveSnapshot)
@@ -1856,12 +1903,10 @@ void DrawRankedProgressOverlayStandalone()
 	}
 	else if (g_rankedOverlayVisibility.stickyRankedSessionVisible)
 	{
-		const bool rankedNetworkStillActive =
-			currentGameMode == GameMode_Online &&
+		const bool rankedSessionStillActive =
 			!inMatch &&
-			hasNetworkState &&
-			networkState.state == 4;
-		if (inMatch || (!rankedEntryActive && !rankedNetworkStillActive))
+			(rankedEntryActive || (hasNetworkState && networkState.state == 4));
+		if (!rankedSessionStillActive)
 		{
 			g_rankedOverlayVisibility.stickyRankedSessionVisible = false;
 		}
@@ -2004,7 +2049,14 @@ void DrawRankedProgressOverlayStandalone()
 	char leftBuffer[64] = {};
 	char rightBuffer[64] = {};
 	std::snprintf(leftBuffer, sizeof(leftBuffer), "%u LP", static_cast<unsigned int>(renderedDisplay.currentLp));
-	std::snprintf(rightBuffer, sizeof(rightBuffer), "%u LP", static_cast<unsigned int>(renderedDisplay.nextThreshold));
+	if (renderedDisplay.thresholdKnown)
+	{
+		std::snprintf(rightBuffer, sizeof(rightBuffer), "%u LP", static_cast<unsigned int>(renderedDisplay.nextThreshold));
+	}
+	else
+	{
+		std::snprintf(rightBuffer, sizeof(rightBuffer), "Threshold ?");
+	}
 	ImGui::TextUnformatted(leftBuffer);
 	if (std::abs(renderedDelta) > 0 && deltaAlpha > 0.0f)
 	{

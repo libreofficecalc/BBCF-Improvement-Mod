@@ -25,8 +25,13 @@ if [[ "$DO_BUILD" -eq 1 ]]; then
   )
 fi
 
-SRC_DLL="${ROOT_DIR}/bin/DebugDeploy/dinput8.dll"
-SRC_SETTINGS="${ROOT_DIR}/bin/DebugDeploy/settings.ini"
+if [[ "$DO_BUILD" -eq 1 ]]; then
+  SRC_DLL="${ROOT_DIR}/bin/DebugDeploy/dinput8.dll"
+  SRC_SETTINGS="${ROOT_DIR}/bin/DebugDeploy/settings.ini"
+else
+  SRC_DLL="${ROOT_DIR}/bin/Debug/dinput8.dll"
+  SRC_SETTINGS="${ROOT_DIR}/bin/Debug/settings.ini"
+fi
 DEST_DLL="${GAME_DIR}/dinput8.dll"
 DEST_SETTINGS="${GAME_DIR}/settings.ini"
 BACKUP_DIR="${GAME_DIR}/BBCF_IM/SettingsBackups"

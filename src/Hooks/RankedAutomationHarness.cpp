@@ -4,6 +4,7 @@
 #include "Core/interfaces.h"
 #include "Core/logger.h"
 #include "Core/utils.h"
+#include "Game/characters.h"
 #include "Game/gamestates.h"
 #include "Overlay/Window/MainWindow.h"
 #include "Overlay/WindowManager.h"
@@ -42,9 +43,34 @@ namespace
         constexpr int kRankedHiddenMenuMoveReleaseFrames = 18;
         constexpr int kPopupConfirmRetryFrames = 30;
         constexpr DWORD kWorkerSleepMs = 16;
-        constexpr std::array<int, 3> kCharacterSweepTargets = { 24, 21, 24 };
         std::mutex g_harnessMutex;
         LONG g_workerStarted = 0;
+
+        int GetCharacterSweepCount()
+        {
+                return getCharactersCount();
+        }
+
+        int GetCharacterSweepPassCount()
+        {
+                return GetCharacterSweepCount() > 0 ? 2 : 0;
+        }
+
+        int GetCharacterSweepTargetForPass(int passIndex)
+        {
+                const int count = GetCharacterSweepCount();
+                if (count <= 0)
+                {
+                        return -1;
+                }
+
+                if (passIndex <= 0)
+                {
+                        return 0;
+                }
+
+                return count - 1;
+        }
 
         struct MenuItemLite
         {
@@ -777,7 +803,7 @@ namespace
                         LOG(1, "[RankedAuto] opened main window reason=%s\n", reason ? reason : "(none)");
         }
 
-        bool VerifyRankedProgressOverlayForTarget(int expectedRowIndex, const char* reason)
+        bool VerifyRankedProgressOverlayForTarget(int expectedRowIndex, const char* reason, bool sticky)
         {
                         RankedProgressOverlaySnapshot snapshot;
                         if (!CaptureRankedProgressOverlaySnapshot(&snapshot) || !snapshot.active)
@@ -791,44 +817,33 @@ namespace
                                 return false;
                         }
 
-                        if (snapshot.totalPoints == 0 || snapshot.earnedPoints > snapshot.totalPoints)
-                        {
-                                return false;
-                        }
-
-                        if (expectedRowIndex == 24 || expectedRowIndex == 21)
-                        {
-                                if (snapshot.nextThreshold == 0 || snapshot.currentLp > snapshot.nextThreshold)
-                                {
-                                        return false;
-                                }
-                        }
-
-                        if (expectedRowIndex == 24)
-                        {
-                                if (snapshot.currentRank != 34)
-                                {
-                                        return false;
-                                }
-                        }
-                        else if (expectedRowIndex == 21)
-                        {
-                                if (snapshot.currentRank != 27)
-                                {
-                                        return false;
-                                }
-                        }
-
-                        LOG(1, "[RankedAuto] ranked-progress overlay verified reason=%s row=%u rank=%u lp=%u nextLp=%u wins=%u matches=%u remaining=%u percent=%.4f\n",
+                        const bool pointsSane =
+                                snapshot.totalPoints == 0 ||
+                                snapshot.earnedPoints <= snapshot.totalPoints;
+                        const char* const characterName = getCharacterNameByIndexA(expectedRowIndex).c_str();
+                        LOG(1, "[RankedAuto] ranked-progress sweep reason=%s sticky=%d row=%u char=%s rank=%u lp=%u nextLp=%u wins=%u matches=%u remaining=%u percent=%.4f sane=%d raw0C=0x%08X raw10=0x%08X raw14=0x%08X raw18=0x%08X raw20=0x%08X rawE0=0x%08X rawE4=0x%08X rawE8=0x%08X rawEC=0x%08X f4=0x%08X\n",
                                 reason ? reason : "(none)",
+                                sticky ? 1 : 0,
                                 static_cast<unsigned int>(snapshot.rowIndex),
+                                characterName,
                                 static_cast<unsigned int>(snapshot.currentRank),
                                 static_cast<unsigned int>(snapshot.currentLp),
                                 static_cast<unsigned int>(snapshot.nextThreshold),
                                 static_cast<unsigned int>(snapshot.earnedPoints),
                                 static_cast<unsigned int>(snapshot.totalPoints),
                                 static_cast<unsigned int>(snapshot.remainingPoints),
-                                snapshot.progress);
+                                snapshot.progress,
+                                pointsSane ? 1 : 0,
+                                static_cast<unsigned int>(snapshot.rawField0C),
+                                static_cast<unsigned int>(snapshot.rawField10),
+                                static_cast<unsigned int>(snapshot.rawField14),
+                                static_cast<unsigned int>(snapshot.rawField18),
+                                static_cast<unsigned int>(snapshot.rawField20),
+                                static_cast<unsigned int>(snapshot.rawFieldE0),
+                                static_cast<unsigned int>(snapshot.rawFieldE4),
+                                static_cast<unsigned int>(snapshot.rawFieldE8),
+                                static_cast<unsigned int>(snapshot.rawFieldEC),
+                                static_cast<unsigned int>(snapshot.debugFieldF4));
                         return true;
         }
 
@@ -875,6 +890,17 @@ namespace
 
                         LOG(1, "[RankedAuto] requesting game close hwnd=0x%p\n", g_gameProc.hWndGameWindow);
                         PostMessage(g_gameProc.hWndGameWindow, WM_CLOSE, 0, 0);
+        }
+
+        void RequestGameCloseIfConfigured(const char* reason)
+        {
+                        if (!Settings::settingsIni.rankedAutomationHarnessQuitOnFinish)
+                        {
+                                return;
+                        }
+
+                        LOG(1, "[RankedAuto] quit-on-finish requested reason=%s\n", reason ? reason : "(none)");
+                        RequestGameClose();
         }
 
         class HarnessState
@@ -1104,10 +1130,11 @@ namespace
                         m_returnToConfirmIssued = false;
                         m_exitConfirmIssued = false;
                         m_characterSelectionPass = 0;
-                        m_verifiedRankedProgressRow24 = false;
-                        m_verifiedRankedProgressRow21 = false;
-                        m_verifiedStickyRankedProgressRow24 = false;
-                        m_verifiedStickyRankedProgressRow21 = false;
+                        m_highestObservedCharacterIndex = -1;
+                        m_pendingSelectedCharacterIndex = -1;
+                        m_completedSweepTargets.fill(-1);
+                        m_verifiedRankedProgressRows.fill(0);
+                        m_verifiedStickyRankedProgressRows.fill(0);
                         m_startedTempAnimGainProbe = false;
                         m_verifiedTempAnimGainProbe = false;
                         m_startedTempAnimLossProbe = false;
@@ -1148,10 +1175,11 @@ namespace
                         m_returnToConfirmIssued = false;
                         m_exitConfirmIssued = false;
                         m_characterSelectionPass = 0;
-                        m_verifiedRankedProgressRow24 = false;
-                        m_verifiedRankedProgressRow21 = false;
-                        m_verifiedStickyRankedProgressRow24 = false;
-                        m_verifiedStickyRankedProgressRow21 = false;
+                        m_highestObservedCharacterIndex = -1;
+                        m_pendingSelectedCharacterIndex = -1;
+                        m_completedSweepTargets.fill(-1);
+                        m_verifiedRankedProgressRows.fill(0);
+                        m_verifiedStickyRankedProgressRows.fill(0);
                         m_startedTempAnimGainProbe = false;
                         m_verifiedTempAnimGainProbe = false;
                         m_startedTempAnimLossProbe = false;
@@ -1169,16 +1197,14 @@ namespace
                 {
                         m_step = HarnessStep::Failed;
                         LOG(0, "[RankedAuto] FAILED reason=%s\n", reason ? reason : "(none)");
+                        RequestGameCloseIfConfigured(reason);
                         Finish(reason);
                 }
 
                 void Complete(const char* reason)
                 {
                         LOG(1, "[RankedAuto] COMPLETED reason=%s\n", reason ? reason : "(none)");
-                        if (Settings::settingsIni.rankedAutomationHarnessQuitOnFinish)
-                        {
-                                RequestGameClose();
-                        }
+                        RequestGameCloseIfConfigured(reason);
                         Finish(reason);
                 }
 
@@ -1803,12 +1829,7 @@ namespace
                                 {
                                         passIndex = 0;
                                 }
-                                const int maxPassIndex = static_cast<int>(kCharacterSweepTargets.size()) - 1;
-                                if (passIndex > maxPassIndex)
-                                {
-                                        passIndex = maxPassIndex;
-                                }
-                                logTargetCharacterIndex = kCharacterSweepTargets[static_cast<size_t>(passIndex)];
+                                logTargetCharacterIndex = GetCharacterSweepTargetForPass(passIndex);
                         }
 
                         if (hasNetwork)
@@ -1836,16 +1857,17 @@ namespace
                             networkSnapshot.state == 4 &&
                             (networkSnapshot.state1 == 34 || networkSnapshot.state1 == 31))
                         {
-                                if (logTargetCharacterIndex >= 0 && VerifyRankedProgressOverlayForTarget(logTargetCharacterIndex, "character_select_wait"))
+                                const int currentCharacterIndex = hasCharSele ? static_cast<int>(charSeleSnapshot.cursor1960) : -1;
+                                if (currentCharacterIndex >= 0)
                                 {
-                                        if (logTargetCharacterIndex == 24)
-                                        {
-                                                m_verifiedRankedProgressRow24 = true;
-                                        }
-                                        else if (logTargetCharacterIndex == 21)
-                                        {
-                                                m_verifiedRankedProgressRow21 = true;
-                                        }
+                                        m_highestObservedCharacterIndex = (std::max)(m_highestObservedCharacterIndex, currentCharacterIndex);
+                                }
+                                if (m_characterMenuConfirmIssued &&
+                                    fieldOpen &&
+                                    currentCharacterIndex >= 0 &&
+                                    VerifyRankedProgressOverlayForTarget(currentCharacterIndex, "character_list_cursor", false))
+                                {
+                                        m_verifiedRankedProgressRows[static_cast<size_t>(currentCharacterIndex)] = 1;
                                 }
                                 if (!m_characterMenuMoveIssued && m_stepAgeFrames >= 18)
                                 {
@@ -1882,13 +1904,7 @@ namespace
                                 {
                                         passIndex = 0;
                                 }
-                                const int maxPassIndex = static_cast<int>(kCharacterSweepTargets.size()) - 1;
-                                if (passIndex > maxPassIndex)
-                                {
-                                        passIndex = maxPassIndex;
-                                }
-                                const int targetCharacterIndex = kCharacterSweepTargets[static_cast<size_t>(passIndex)];
-                                const int currentCharacterIndex = hasCharSele ? static_cast<int>(charSeleSnapshot.cursor1960) : -1;
+                                const int targetCharacterIndex = GetCharacterSweepTargetForPass(passIndex);
                                 const bool trackingCharacterCursor = m_characterMenuConfirmIssued && fieldOpen && hasCharSele;
                                 if (trackingCharacterCursor)
                                 {
@@ -1963,9 +1979,15 @@ namespace
                                     !m_characterListSelectIssued &&
                                     m_stepAgeFrames >= 72)
                                 {
+                                        m_pendingSelectedCharacterIndex = currentCharacterIndex;
                                         if (QueuePulse(UiButton::Confirm, "select current Character list entry"))
                                         {
                                                 m_characterListSelectIssued = true;
+                                                LOG(1, "[RankedAuto] selecting character entry pass=%d target=%d actual=%d saturated=%d\n",
+                                                        m_characterSelectionPass,
+                                                        targetCharacterIndex,
+                                                        currentCharacterIndex,
+                                                        cursorSaturatedAtBoundary ? 1 : 0);
                                                 LogRawObjectDiff(reinterpret_cast<uintptr_t>(GetBbcfBaseAdress()) + kRankMatchCharSeleStaticRva,
                                                         kRankMatchCharSeleStaticSize,
                                                         &m_lastRankMatchCharSeleWords,
@@ -2006,24 +2028,25 @@ namespace
                             m_exitConfirmIssued)
                         {
                                 const int completedCharacterIndex =
-                                        m_characterSelectionPass >= 0 &&
-                                        m_characterSelectionPass < static_cast<int>(kCharacterSweepTargets.size())
-                                        ? kCharacterSweepTargets[static_cast<size_t>(m_characterSelectionPass)]
-                                        : -1;
+                                        m_pendingSelectedCharacterIndex >= 0
+                                        ? m_pendingSelectedCharacterIndex
+                                        : (m_characterSelectionPass >= 0 &&
+                                           m_characterSelectionPass < GetCharacterSweepPassCount()
+                                           ? GetCharacterSweepTargetForPass(m_characterSelectionPass)
+                                           : -1);
                                 if (completedCharacterIndex >= 0 &&
-                                    VerifyRankedProgressOverlayForTarget(completedCharacterIndex, "ranked_search_entry_menu"))
+                                    VerifyRankedProgressOverlayForTarget(completedCharacterIndex, "ranked_search_entry_menu", true))
                                 {
-                                        if (completedCharacterIndex == 24)
-                                        {
-                                                m_verifiedStickyRankedProgressRow24 = true;
-                                        }
-                                        else if (completedCharacterIndex == 21)
-                                        {
-                                                m_verifiedStickyRankedProgressRow21 = true;
-                                        }
+                                        m_verifiedStickyRankedProgressRows[static_cast<size_t>(completedCharacterIndex)] = 1;
                                 }
+                                if (m_characterSelectionPass >= 0 &&
+                                    m_characterSelectionPass < static_cast<int>(m_completedSweepTargets.size()))
+                                {
+                                        m_completedSweepTargets[static_cast<size_t>(m_characterSelectionPass)] = completedCharacterIndex;
+                                }
+                                m_pendingSelectedCharacterIndex = -1;
 
-                                if ((m_characterSelectionPass + 1) < static_cast<int>(kCharacterSweepTargets.size()))
+                                if ((m_characterSelectionPass + 1) < GetCharacterSweepPassCount())
                                 {
                                         ++m_characterSelectionPass;
                                         m_hiddenMenuMoveIssued = true;
@@ -2089,10 +2112,32 @@ namespace
                                                 return;
                                         }
 
-                                        if (!m_verifiedRankedProgressRow24 ||
-                                            !m_verifiedRankedProgressRow21 ||
-                                            !m_verifiedStickyRankedProgressRow24 ||
-                                            !m_verifiedStickyRankedProgressRow21 ||
+                                        const size_t sweepCount = static_cast<size_t>((std::max)(m_highestObservedCharacterIndex + 1, 0));
+                                        const bool allMenuRowsVerified = std::all_of(
+                                                m_verifiedRankedProgressRows.begin(),
+                                                m_verifiedRankedProgressRows.begin() + sweepCount,
+                                                [](uint8_t value) { return value != 0; });
+                                        const int lastCharacterIndex =
+                                                !m_completedSweepTargets.empty()
+                                                ? m_completedSweepTargets[static_cast<size_t>(GetCharacterSweepPassCount() - 1)]
+                                                : -1;
+                                        const bool stickyEndpointsVerified =
+                                                !m_verifiedStickyRankedProgressRows.empty() &&
+                                                m_verifiedStickyRankedProgressRows[0] != 0 &&
+                                                lastCharacterIndex >= 0 &&
+                                                static_cast<size_t>(lastCharacterIndex) < m_verifiedStickyRankedProgressRows.size() &&
+                                                m_verifiedStickyRankedProgressRows[static_cast<size_t>(lastCharacterIndex)] != 0;
+                                        LOG(1, "[RankedAuto] final verification reachableRows=%u firstSticky=%d lastStickyIndex=%d lastSticky=%d tempGain=%d tempLoss=%d\n",
+                                                static_cast<unsigned int>(sweepCount),
+                                                m_verifiedStickyRankedProgressRows[0] != 0 ? 1 : 0,
+                                                lastCharacterIndex,
+                                                lastCharacterIndex >= 0 &&
+                                                static_cast<size_t>(lastCharacterIndex) < m_verifiedStickyRankedProgressRows.size() &&
+                                                m_verifiedStickyRankedProgressRows[static_cast<size_t>(lastCharacterIndex)] != 0 ? 1 : 0,
+                                                m_verifiedTempAnimGainProbe ? 1 : 0,
+                                                m_verifiedTempAnimLossProbe ? 1 : 0);
+                                        if (!allMenuRowsVerified ||
+                                            !stickyEndpointsVerified ||
                                             !m_verifiedTempAnimGainProbe ||
                                             !m_verifiedTempAnimLossProbe)
                                         {
@@ -2141,10 +2186,11 @@ namespace
                 bool m_returnToConfirmIssued = false;
                 bool m_exitConfirmIssued = false;
                 int m_characterSelectionPass = 0;
-                bool m_verifiedRankedProgressRow24 = false;
-                bool m_verifiedRankedProgressRow21 = false;
-                bool m_verifiedStickyRankedProgressRow24 = false;
-                bool m_verifiedStickyRankedProgressRow21 = false;
+                int m_highestObservedCharacterIndex = -1;
+                int m_pendingSelectedCharacterIndex = -1;
+                std::array<int, 2> m_completedSweepTargets{{ -1, -1 }};
+                std::array<uint8_t, 64> m_verifiedRankedProgressRows{};
+                std::array<uint8_t, 64> m_verifiedStickyRankedProgressRows{};
                 bool m_startedTempAnimGainProbe = false;
                 bool m_verifiedTempAnimGainProbe = false;
                 bool m_startedTempAnimLossProbe = false;
