@@ -407,6 +407,11 @@ namespace
 		outSnapshot->networkState = networkState;
 		outSnapshot->networkState1 = networkState1;
 		outSnapshot->currentRank = *reinterpret_cast<const uint16_t*>(rowObject);
+		outSnapshot->nextThreshold = *reinterpret_cast<const uint32_t*>(rowObject + 0x0C);
+		outSnapshot->currentLp = *reinterpret_cast<const uint32_t*>(rowObject + 0x10);
+		outSnapshot->remainingLp = outSnapshot->nextThreshold > outSnapshot->currentLp
+			? (outSnapshot->nextThreshold - outSnapshot->currentLp)
+			: 0u;
 		outSnapshot->totalPoints = SumRankedWordPairs(rowObject, 0x26);
 		outSnapshot->earnedPoints = SumRankedWordPairs(rowObject, 0xA6);
 		outSnapshot->remainingPoints = outSnapshot->totalPoints > outSnapshot->earnedPoints
@@ -414,10 +419,10 @@ namespace
 			: 0u;
 		outSnapshot->metadataNextRank = (*reinterpret_cast<const uint32_t*>(rowObject + 0xD4) >> 16) & 0xFFFFu;
 		outSnapshot->debugFieldF4 = *reinterpret_cast<const uint32_t*>(rowObject + 0xF4);
-		outSnapshot->progress = outSnapshot->totalPoints > 0
-			? static_cast<float>(outSnapshot->earnedPoints) / static_cast<float>(outSnapshot->totalPoints)
+		outSnapshot->progress = outSnapshot->nextThreshold > 0
+			? static_cast<float>(outSnapshot->currentLp) / static_cast<float>(outSnapshot->nextThreshold)
 			: 0.0f;
-		outSnapshot->isUnranked = outSnapshot->currentRank == 0 || outSnapshot->totalPoints == 0;
+		outSnapshot->isUnranked = outSnapshot->currentRank == 0 || outSnapshot->nextThreshold == 0;
 		const uint32_t visibleRank = InternalRankToVisibleRank(outSnapshot->currentRank, outSnapshot->isUnranked);
 		outSnapshot->currentRank = visibleRank;
 		outSnapshot->previousRank = visibleRank > 1u ? (visibleRank - 1u) : 0u;
@@ -432,8 +437,8 @@ namespace
 		state.isUnranked = snapshot.isUnranked;
 		state.characterId = snapshot.rowIndex;
 		state.visibleRank = snapshot.currentRank;
-		state.currentLp = snapshot.earnedPoints;
-		state.nextThreshold = snapshot.totalPoints;
+		state.currentLp = snapshot.currentLp;
+		state.nextThreshold = snapshot.nextThreshold;
 		state.progress = snapshot.progress;
 		if (state.progress < 0.0f)
 		{
@@ -488,14 +493,6 @@ namespace
 			{
 				outState->visibleRank = uploadState->visibleRank;
 				outState->isUnranked = uploadState->visibleRank == 0u;
-				outState->currentLp = uploadState->subscore;
-				if (outState->visibleRank != g_lastKnownRankDisplayByCharacter[characterId].visibleRank)
-				{
-					if (outState->nextThreshold <= outState->currentLp)
-					{
-						outState->nextThreshold = outState->currentLp + 100u;
-					}
-				}
 				outState->progress = outState->nextThreshold > 0
 					? static_cast<float>(outState->currentLp) / static_cast<float>(outState->nextThreshold)
 					: 0.0f;
@@ -509,11 +506,9 @@ namespace
 			outState->isUnranked = uploadState->visibleRank == 0u;
 			outState->characterId = characterId;
 			outState->visibleRank = uploadState->visibleRank;
-			outState->currentLp = uploadState->subscore;
-			outState->nextThreshold = std::max<uint32_t>(uploadState->subscore, 1u);
-			outState->progress = outState->nextThreshold > 0
-				? static_cast<float>(outState->currentLp) / static_cast<float>(outState->nextThreshold)
-				: 0.0f;
+			outState->currentLp = 0u;
+			outState->nextThreshold = 0u;
+			outState->progress = 0.0f;
 			return true;
 		}
 
@@ -928,21 +923,9 @@ namespace
 			return;
 		}
 
-		targetState.currentLp = uploadState.subscore;
 		if (targetState.nextThreshold == 0u)
 		{
-			targetState.nextThreshold = std::max<uint32_t>(targetState.currentLp, 1u);
-		}
-		targetState.progress = targetState.nextThreshold > 0
-			? static_cast<float>(targetState.currentLp) / static_cast<float>(targetState.nextThreshold)
-			: 0.0f;
-		if (targetState.progress < 0.0f)
-		{
-			targetState.progress = 0.0f;
-		}
-		else if (targetState.progress > 1.0f)
-		{
-			targetState.progress = 1.0f;
+			return;
 		}
 
 		const int32_t lpDelta = static_cast<int32_t>(targetState.currentLp) - static_cast<int32_t>(sourceState.currentLp);
@@ -1066,6 +1049,8 @@ namespace
 			s_last.active != snapshot.active ||
 			s_last.rowIndex != snapshot.rowIndex ||
 			s_last.currentRank != snapshot.currentRank ||
+			s_last.currentLp != snapshot.currentLp ||
+			s_last.nextThreshold != snapshot.nextThreshold ||
 			s_last.earnedPoints != snapshot.earnedPoints ||
 			s_last.totalPoints != snapshot.totalPoints ||
 			s_last.networkState != snapshot.networkState ||
@@ -1073,7 +1058,7 @@ namespace
 		g_rankedProgressOverlaySnapshot = snapshot;
 		if (changed)
 		{
-			LOG(1, "[RANK][OverlayProgress] active=%d row=%u selector=%u cursor=%u rank=%u prev=%u next=%u earned=%u total=%u remaining=%u percent=%.4f state=%d/%d unranked=%d metadataNext=%u f4=0x%08X\n",
+			LOG(1, "[RANK][OverlayProgress] active=%d row=%u selector=%u cursor=%u rank=%u prev=%u next=%u lp=%u nextLp=%u remainingLp=%u wins=%u matches=%u remainingMatches=%u percent=%.4f state=%d/%d unranked=%d metadataNext=%u f4=0x%08X\n",
 				snapshot.active ? 1 : 0,
 				static_cast<unsigned int>(snapshot.rowIndex),
 				static_cast<unsigned int>(snapshot.selectorValue),
@@ -1081,6 +1066,9 @@ namespace
 				static_cast<unsigned int>(snapshot.currentRank),
 				static_cast<unsigned int>(snapshot.previousRank),
 				static_cast<unsigned int>(snapshot.nextRank),
+				static_cast<unsigned int>(snapshot.currentLp),
+				static_cast<unsigned int>(snapshot.nextThreshold),
+				static_cast<unsigned int>(snapshot.remainingLp),
 				static_cast<unsigned int>(snapshot.earnedPoints),
 				static_cast<unsigned int>(snapshot.totalPoints),
 				static_cast<unsigned int>(snapshot.remainingPoints),
@@ -1929,9 +1917,13 @@ void DrawRankedProgressOverlayStandalone()
 	ImGui::SetWindowSize(ImVec2(g_rankedOverlayTuning.overlayWidth, 118.0f), ImGuiCond_FirstUseEver);
 
 	RankedProgressDisplayState baseDisplay{};
+	RankedProgressOverlaySnapshot statsSnapshot{};
+	bool hasStatsSnapshot = false;
 	if (hasLiveSnapshot)
 	{
 		baseDisplay = MakeDisplayStateFromSnapshot(snapshot);
+		statsSnapshot = snapshot;
+		hasStatsSnapshot = true;
 		RememberRankedDisplayState(baseDisplay);
 	}
 	else if (g_lastRankedOverlayCharacterId != kInvalidRankedCharacterId &&
@@ -1966,6 +1958,11 @@ void DrawRankedProgressOverlayStandalone()
 	const ImU32 rankColorU32 = ImGui::ColorConvertFloat4ToU32(rankColor);
 	const ImVec2 startPos = ImGui::GetCursorScreenPos();
 	ImDrawList* const drawList = ImGui::GetWindowDrawList();
+	const uint32_t matches = hasStatsSnapshot ? statsSnapshot.totalPoints : 0u;
+	const uint32_t wins = hasStatsSnapshot ? statsSnapshot.earnedPoints : 0u;
+	const double winRatePercent = matches > 0
+		? (static_cast<double>(wins) * 100.0 / static_cast<double>(matches))
+		: 0.0;
 
 	std::string prefixText = characterName;
 	prefixText += " (";
@@ -1976,7 +1973,15 @@ void DrawRankedProgressOverlayStandalone()
 	DrawBoldText(drawList, ImVec2(startPos.x + prefixSize.x, startPos.y), rankColorU32, rankLabel.c_str());
 	drawList->AddText(ImVec2(startPos.x + prefixSize.x + rankSize.x + 1.0f, startPos.y),
 		ImGui::GetColorU32(ImGuiCol_Text), ")");
-	ImGui::Dummy(ImVec2(prefixSize.x + rankSize.x + suffixSize.x + 4.0f, ImGui::GetTextLineHeight()));
+	char statsBuffer[128] = {};
+	std::snprintf(statsBuffer, sizeof(statsBuffer), " - %u Matches %u Wins (%.2f%%)",
+		static_cast<unsigned int>(matches),
+		static_cast<unsigned int>(wins),
+		winRatePercent);
+	const ImVec2 statsSize = ImGui::CalcTextSize(statsBuffer);
+	drawList->AddText(ImVec2(startPos.x + prefixSize.x + rankSize.x + suffixSize.x + 4.0f, startPos.y),
+		ImGui::GetColorU32(ImGuiCol_Text), statsBuffer);
+	ImGui::Dummy(ImVec2(prefixSize.x + rankSize.x + suffixSize.x + statsSize.x + 8.0f, ImGui::GetTextLineHeight()));
 
 	const float availableBarWidth = ImGui::GetContentRegionAvail().x;
 	const float barWidth = availableBarWidth > 320.0f ? availableBarWidth : 320.0f;

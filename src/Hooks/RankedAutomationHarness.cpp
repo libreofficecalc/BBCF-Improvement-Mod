@@ -796,6 +796,14 @@ namespace
                                 return false;
                         }
 
+                        if (expectedRowIndex == 24 || expectedRowIndex == 21)
+                        {
+                                if (snapshot.nextThreshold == 0 || snapshot.currentLp > snapshot.nextThreshold)
+                                {
+                                        return false;
+                                }
+                        }
+
                         if (expectedRowIndex == 24)
                         {
                                 if (snapshot.currentRank != 34)
@@ -811,10 +819,12 @@ namespace
                                 }
                         }
 
-                        LOG(1, "[RankedAuto] ranked-progress overlay verified reason=%s row=%u rank=%u earned=%u total=%u remaining=%u percent=%.4f\n",
+                        LOG(1, "[RankedAuto] ranked-progress overlay verified reason=%s row=%u rank=%u lp=%u nextLp=%u wins=%u matches=%u remaining=%u percent=%.4f\n",
                                 reason ? reason : "(none)",
                                 static_cast<unsigned int>(snapshot.rowIndex),
                                 static_cast<unsigned int>(snapshot.currentRank),
+                                static_cast<unsigned int>(snapshot.currentLp),
+                                static_cast<unsigned int>(snapshot.nextThreshold),
                                 static_cast<unsigned int>(snapshot.earnedPoints),
                                 static_cast<unsigned int>(snapshot.totalPoints),
                                 static_cast<unsigned int>(snapshot.remainingPoints),
