@@ -27,6 +27,8 @@ struct RankedProgressOverlaySnapshot
 };
 
 bool CaptureRankedProgressOverlaySnapshot(RankedProgressOverlaySnapshot* outSnapshot);
+void DrawRankedProgressOverlayStandalone();
+bool TriggerRankedProgressAutomationAnimation(uint32_t characterId, int32_t lpDelta);
 
 class MainWindow : public IWindow
 {
@@ -53,8 +55,6 @@ private:
         void DrawFrameHistorySection() const;
         void DrawControllerSettingSection() const;
         void DrawLanguageSelector();
-	void DrawRankedProgressOverlay() const;
-
 	const ImVec2 BTN_SIZE = ImVec2(60, 20);
 	WindowContainer* m_pWindowContainer = nullptr;
 };

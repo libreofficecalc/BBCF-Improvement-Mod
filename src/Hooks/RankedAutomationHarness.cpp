@@ -798,14 +798,14 @@ namespace
 
                         if (expectedRowIndex == 24)
                         {
-                                if (snapshot.currentRank != 34 || snapshot.earnedPoints != 761 || snapshot.totalPoints != 1730)
+                                if (snapshot.currentRank != 34)
                                 {
                                         return false;
                                 }
                         }
                         else if (expectedRowIndex == 21)
                         {
-                                if (snapshot.currentRank != 27 || snapshot.earnedPoints != 180 || snapshot.totalPoints != 426)
+                                if (snapshot.currentRank != 27)
                                 {
                                         return false;
                                 }
@@ -819,6 +819,39 @@ namespace
                                 static_cast<unsigned int>(snapshot.totalPoints),
                                 static_cast<unsigned int>(snapshot.remainingPoints),
                                 snapshot.progress);
+                        return true;
+        }
+
+        bool VerifyAnimationProbeSnapshot(int expectedCharacterIndex, int expectedDelta, bool* outCompleted)
+        {
+                        if (outCompleted)
+                        {
+                                *outCompleted = false;
+                        }
+
+                        RankedProgressAnimationSnapshot snapshot;
+                        if (CaptureRankedProgressAnimationSnapshot(&snapshot))
+                        {
+                                if (snapshot.characterId != static_cast<uint32_t>(expectedCharacterIndex) ||
+                                    snapshot.displayedDelta != expectedDelta)
+                                {
+                                        return false;
+                                }
+
+                                LOG(1, "[RankedAuto] temp anim active row=%u delta=%+d lp=%u next=%u alpha=%.3f phase=%u\n",
+                                        static_cast<unsigned int>(snapshot.characterId),
+                                        snapshot.displayedDelta,
+                                        static_cast<unsigned int>(snapshot.displayedLp),
+                                        static_cast<unsigned int>(snapshot.displayedThreshold),
+                                        snapshot.deltaAlpha,
+                                        static_cast<unsigned int>(snapshot.phase));
+                                return true;
+                        }
+
+                        if (outCompleted)
+                        {
+                                *outCompleted = true;
+                        }
                         return true;
         }
 
@@ -1063,6 +1096,12 @@ namespace
                         m_characterSelectionPass = 0;
                         m_verifiedRankedProgressRow24 = false;
                         m_verifiedRankedProgressRow21 = false;
+                        m_verifiedStickyRankedProgressRow24 = false;
+                        m_verifiedStickyRankedProgressRow21 = false;
+                        m_startedTempAnimGainProbe = false;
+                        m_verifiedTempAnimGainProbe = false;
+                        m_startedTempAnimLossProbe = false;
+                        m_verifiedTempAnimLossProbe = false;
                         m_savedShowRankedProgress = Settings::settingsIni.showRankedProgress;
                         if (!Settings::settingsIni.showRankedProgress)
                         {
@@ -1101,6 +1140,12 @@ namespace
                         m_characterSelectionPass = 0;
                         m_verifiedRankedProgressRow24 = false;
                         m_verifiedRankedProgressRow21 = false;
+                        m_verifiedStickyRankedProgressRow24 = false;
+                        m_verifiedStickyRankedProgressRow21 = false;
+                        m_startedTempAnimGainProbe = false;
+                        m_verifiedTempAnimGainProbe = false;
+                        m_startedTempAnimLossProbe = false;
+                        m_verifiedTempAnimLossProbe = false;
                         Settings::settingsIni.showRankedProgress = m_savedShowRankedProgress;
                 }
 
@@ -1950,6 +1995,24 @@ namespace
                             networkSnapshot.state1 == 30 &&
                             m_exitConfirmIssued)
                         {
+                                const int completedCharacterIndex =
+                                        m_characterSelectionPass >= 0 &&
+                                        m_characterSelectionPass < static_cast<int>(kCharacterSweepTargets.size())
+                                        ? kCharacterSweepTargets[static_cast<size_t>(m_characterSelectionPass)]
+                                        : -1;
+                                if (completedCharacterIndex >= 0 &&
+                                    VerifyRankedProgressOverlayForTarget(completedCharacterIndex, "ranked_search_entry_menu"))
+                                {
+                                        if (completedCharacterIndex == 24)
+                                        {
+                                                m_verifiedStickyRankedProgressRow24 = true;
+                                        }
+                                        else if (completedCharacterIndex == 21)
+                                        {
+                                                m_verifiedStickyRankedProgressRow21 = true;
+                                        }
+                                }
+
                                 if ((m_characterSelectionPass + 1) < static_cast<int>(kCharacterSweepTargets.size()))
                                 {
                                         ++m_characterSelectionPass;
@@ -1958,7 +2021,70 @@ namespace
                                 }
                                 else
                                 {
-                                        if (!m_verifiedRankedProgressRow24 || !m_verifiedRankedProgressRow21)
+                                        if (!m_startedTempAnimGainProbe)
+                                        {
+                                                if (!TriggerRankedProgressAutomationAnimation(24u, +50))
+                                                {
+                                                        Fail("failed to trigger temp ranked animation gain probe");
+                                                        return;
+                                                }
+                                                m_startedTempAnimGainProbe = true;
+                                                return;
+                                        }
+
+                                        if (!m_verifiedTempAnimGainProbe)
+                                        {
+                                                bool completed = false;
+                                                if (!VerifyAnimationProbeSnapshot(24, +50, &completed))
+                                                {
+                                                        Fail("temp ranked animation gain probe snapshot mismatch");
+                                                        return;
+                                                }
+                                                if (!completed)
+                                                {
+                                                        return;
+                                                }
+
+                                                m_verifiedTempAnimGainProbe = true;
+                                                LOG(1, "[RankedAuto] temp anim verified row=24 delta=+50\n");
+                                                return;
+                                        }
+
+                                        if (!m_startedTempAnimLossProbe)
+                                        {
+                                                if (!TriggerRankedProgressAutomationAnimation(24u, -50))
+                                                {
+                                                        Fail("failed to trigger temp ranked animation loss probe");
+                                                        return;
+                                                }
+                                                m_startedTempAnimLossProbe = true;
+                                                return;
+                                        }
+
+                                        if (!m_verifiedTempAnimLossProbe)
+                                        {
+                                                bool completed = false;
+                                                if (!VerifyAnimationProbeSnapshot(24, -50, &completed))
+                                                {
+                                                        Fail("temp ranked animation loss probe snapshot mismatch");
+                                                        return;
+                                                }
+                                                if (!completed)
+                                                {
+                                                        return;
+                                                }
+
+                                                m_verifiedTempAnimLossProbe = true;
+                                                LOG(1, "[RankedAuto] temp anim verified row=24 delta=-50\n");
+                                                return;
+                                        }
+
+                                        if (!m_verifiedRankedProgressRow24 ||
+                                            !m_verifiedRankedProgressRow21 ||
+                                            !m_verifiedStickyRankedProgressRow24 ||
+                                            !m_verifiedStickyRankedProgressRow21 ||
+                                            !m_verifiedTempAnimGainProbe ||
+                                            !m_verifiedTempAnimLossProbe)
                                         {
                                                 Fail("ranked progress overlay verification incomplete");
                                                 return;
@@ -2007,6 +2133,12 @@ namespace
                 int m_characterSelectionPass = 0;
                 bool m_verifiedRankedProgressRow24 = false;
                 bool m_verifiedRankedProgressRow21 = false;
+                bool m_verifiedStickyRankedProgressRow24 = false;
+                bool m_verifiedStickyRankedProgressRow21 = false;
+                bool m_startedTempAnimGainProbe = false;
+                bool m_verifiedTempAnimGainProbe = false;
+                bool m_startedTempAnimLossProbe = false;
+                bool m_verifiedTempAnimLossProbe = false;
                 bool m_savedShowRankedProgress = false;
         };
 

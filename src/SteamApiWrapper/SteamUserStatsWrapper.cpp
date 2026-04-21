@@ -82,6 +82,65 @@ namespace
 		return handle == kRankAllLeaderboardHandle || IsRankLikeLeaderboardName(GetLeaderboardHandleName(handle));
 	}
 
+	int32_t ResolveCharacterIdFromRankLeaderboardName(const std::string& leaderboardName)
+	{
+		if (leaderboardName.empty())
+		{
+			return -1;
+		}
+
+		const std::string lowered = ToLowerCopy(leaderboardName.c_str());
+		if (lowered == "rank_all")
+		{
+			return -1;
+		}
+
+		struct RankBoardCharacterCode
+		{
+			const char* suffix;
+			int32_t characterId;
+		};
+
+		static const RankBoardCharacterCode kCodes[] =
+		{
+			{"rg", 0},  {"jn", 1},  {"nl", 2},  {"rc", 3},  {"tk", 4},  {"tg", 5},
+			{"li", 6},  {"ar", 7},  {"bg", 8},  {"ca", 9},  {"hk", 10}, {"nu", 11},
+			{"tb", 12}, {"hz", 13}, {"mu", 14}, {"mk", 15}, {"vn", 16}, {"pl", 17},
+			{"rl", 18}, {"iy", 19}, {"am", 20}, {"bl", 21}, {"az", 22}, {"kg", 23},
+			{"kk", 24}, {"tm", 25}, {"ce", 26}, {"la", 27}, {"hb", 28}, {"ni", 29},
+			{"nt", 30}, {"iz", 31}, {"su", 32}, {"es", 33}, {"ma", 34}, {"jb", 35},
+		};
+
+		for (const RankBoardCharacterCode& entry : kCodes)
+		{
+			std::string expected = "rank_";
+			expected += entry.suffix;
+			if (lowered == expected)
+			{
+				return entry.characterId;
+			}
+		}
+
+		return -1;
+	}
+
+	int32_t ResolveCharacterIdForRankUpload(SteamLeaderboard_t handle, const int32* pScoreDetails, int cScoreDetailsCount)
+	{
+		const std::string leaderboardName = GetLeaderboardHandleName(handle);
+		const int32_t characterIdFromName = ResolveCharacterIdFromRankLeaderboardName(leaderboardName);
+		if (characterIdFromName >= 0)
+		{
+			return characterIdFromName;
+		}
+
+		if (pScoreDetails && cScoreDetailsCount > 0 && pScoreDetails[0] >= 0 && pScoreDetails[0] < 64)
+		{
+			return pScoreDetails[0];
+		}
+
+		return -1;
+	}
+
 	std::string GetRankUploadReason(SteamLeaderboard_t handle)
 	{
 		const std::string knownName = GetLeaderboardHandleName(handle);
@@ -542,8 +601,21 @@ SteamAPICall_t SteamUserStatsWrapper::UploadLeaderboardScore(SteamLeaderboard_t 
 	{
 		RankedProbeNoteUpload();
 		RankedProbeDumpSummary("UploadLeaderboardScore:RANK_ALL");
-		const int32_t characterId = (pScoreDetails && cScoreDetailsCount > 0) ? pScoreDetails[0] : -1;
-		NoteRankedUploadAttempt(characterId, nScore);
+	}
+
+	if (isRankLike)
+	{
+		const std::string leaderboardName = GetLeaderboardHandleName(hSteamLeaderboard);
+		const int32_t characterId = ResolveCharacterIdForRankUpload(hSteamLeaderboard, pScoreDetails, cScoreDetailsCount);
+		if (characterId < 0)
+		{
+			LOG(1, "[RANK][OverlayObserve] unresolved leaderboard='%s' handle=%llu score=%d details=%s\n",
+				leaderboardName.empty() ? "<unknown>" : leaderboardName.c_str(),
+				static_cast<unsigned long long>(hSteamLeaderboard),
+				nScore,
+				FormatDetails(pScoreDetails, cScoreDetailsCount).c_str());
+		}
+		NoteRankedUploadAttempt(characterId, nScore, leaderboardName.empty() ? nullptr : leaderboardName.c_str());
 	}
 
 	const SteamAPICall_t call = m_SteamUserStats->UploadLeaderboardScore(hSteamLeaderboard, eLeaderboardUploadScoreMethod, nScore, pScoreDetails, cScoreDetailsCount);

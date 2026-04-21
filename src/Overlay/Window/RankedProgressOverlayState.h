@@ -8,6 +8,7 @@ struct RankedUploadOverlayState
 	bool hasLastUploadResult = false;
 	bool lastUploadSucceeded = false;
 	bool lastUploadScoreChanged = false;
+	uint64_t completionSerial = 0;
 	uint32_t characterId = 0xFFFFFFFFu;
 	int32_t score = 0;
 	uint32_t internalRank = 0;
@@ -20,6 +21,20 @@ struct RankedUploadOverlayState
 	int previousGlobalRank = -1;
 };
 
-void NoteRankedUploadAttempt(int32_t characterId, int32_t score);
+struct RankedProgressAnimationSnapshot
+{
+	bool active = false;
+	uint32_t characterId = 0xFFFFFFFFu;
+	uint32_t displayedRank = 0;
+	uint32_t displayedLp = 0;
+	uint32_t displayedThreshold = 0;
+	float displayedProgress = 0.0f;
+	int32_t displayedDelta = 0;
+	float deltaAlpha = 0.0f;
+	uint32_t phase = 0;
+};
+
+void NoteRankedUploadAttempt(int32_t characterId, int32_t score, const char* leaderboardName);
 void NoteRankedUploadCompletion(const char* origin, bool success, bool scoreChanged, int32_t score, int newGlobalRank, int previousGlobalRank);
 bool GetRankedUploadOverlayState(RankedUploadOverlayState* outState);
+bool CaptureRankedProgressAnimationSnapshot(RankedProgressAnimationSnapshot* outSnapshot);

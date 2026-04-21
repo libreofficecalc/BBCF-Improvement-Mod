@@ -4,6 +4,7 @@
 #include "NotificationBar/NotificationBar.h"
 #include "WindowContainer/WindowContainer.h"
 #include "Window/LogWindow.h"
+#include "Window/MainWindow.h"
 #include "Window/WinePopupWindow.h"
 
 #include "Core/info.h"
@@ -275,6 +276,7 @@ void WindowManager::Render()
 	}
 
 	DrawAllWindows();
+	DrawRankedProgressOverlayStandalone();
 
 	g_notificationBar->DrawNotifications();
 

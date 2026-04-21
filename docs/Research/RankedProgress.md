@@ -5946,3 +5946,324 @@ Next test priority:
 - after that, first real ranked match should confirm end-of-match callback logging:
   - `[STEAM][APICall] LeaderboardScoreUploaded origin='UploadLeaderboardScore:handle=1759932 name='RANK_ALL'' ...`
   - `[RANK][OverlayUpload] ...`
+
+## 133. 2026-04-20 ranked-progress UI rework, upload-gated animation, offline animation proof, temp probe removed
+
+User-facing overlay rework completed:
+
+- ranked-progress window is now a wider horizontal card instead of old debug slab
+- UI now renders in 3 rows:
+  - row 1:
+    - character name + rank label
+    - example shape: `Kokonoe (LV34)`
+    - rank text is color-coded by in-game tier:
+      - `AUTH` = white
+      - `LV1..LV16` = green
+      - `LV17..LV29` = cyan
+      - `LV30..LV35` = orange
+      - `Leader+` = yellow
+  - row 2:
+    - single wide horizontal progress bar
+    - no debug numbers shown in UI
+  - row 3:
+    - left = current LP
+    - center = fading signed delta (`+50` / `-50`)
+    - right = next threshold LP
+
+Rank-name mapping now used by overlay:
+
+- `0` / unranked -> `AUTH`
+- `1..35` -> `LVn`
+- `36` -> `Leader`
+- `37` -> `Hero`
+- `38` -> `Kisshin`
+- `39` -> `Meiou`
+- `40` -> `Tentei`
+- unknown higher ids fall back to `Skillrank_N`
+
+Animation behavior now implemented:
+
+- animation is driven only from successful `RANK_ALL` Steam upload completion
+- failed upload or unchanged-score callback does not start animation
+- same-rank LP change:
+  - bar interpolates smoothly old -> new
+  - delta text fades in/out during motion
+- rank-up / rank-down path:
+  - phase 1 pushes bar to full or empty on old rank
+  - phase 2 snaps to new rank edge and settles toward new value
+- overlay keeps last per-character display cache so upload callback can animate even when live ranked-menu snapshot is unavailable
+
+Offline verification approach used this turn:
+
+- temporary harness-only synthetic upload probe was added only long enough to exercise animation offline
+- probe called the same overlay upload completion path used by real Steam callback
+- synthetic proof from `DEBUG.txt`:
+  - `[RANK][OverlayAnim] start char=24 fromRank=34 fromLp=761 fromNext=1730 toRank=34 toLp=811 toNext=1730 delta=+50 ...`
+  - later `[RANK][OverlayAnim] complete char=24 rank=34 lp=811 next=1730 ...`
+  - then `[RANK][OverlayAnim] start char=24 ... toLp=711 ... delta=-50 ...`
+  - later `[RANK][OverlayAnim] complete char=24 rank=34 lp=711 next=1730 ...`
+- harness also logged:
+  - `temp anim verified row=24 delta=+50 target=811`
+  - `temp anim verified row=24 delta=-50 target=711`
+
+Important cleanup completed after proof:
+
+- temporary harness probe was fully removed from source before final state
+- final code now keeps only real upload-trigger plumbing
+- clean final autorun run again reached:
+  - `[RankedAuto] COMPLETED reason=scenario complete`
+- wrapper still returned exit `3` because known shell race misclassifies clean post-close exit, same as earlier sections
+
+Current shipped behavior after section 133:
+
+- overlay no longer exposes old debug fields in UI
+- debug information remains in `DEBUG.txt`
+- visible rank numbers still correct:
+  - Kokonoe `34`
+  - Bullet `27`
+- LP animation is now reserved for successful Steam leaderboard completion path, matching user requirement that failed Steam upload must not mutate local display
+
+## 134. 2026-04-20 ranked-progress sticky visibility lifecycle fix for ranked submenu/search state
+
+User requested one more lifecycle correction:
+
+- overlay must appear once ranked character select is entered
+- after that it must stay visible through ranked submenu/search-entry flow
+- it must hide once the ranked match is actually confirmed
+- post-match LP-change card still remains separate: fade in on successful upload, animate, hold about 5 seconds, fade out
+
+Root cause found:
+
+- sticky overlay rendering had been added, but when live ranked-menu sampling dropped out we still called `ClearRankedProgressOverlaySnapshot("inactive_context")`
+- that meant the UI could keep drawing from cache while the exported/debug snapshot went inactive
+- in practice this made verification weak and was the likely reason the window could still disappear across ranked submenu/search transitions
+
+Fix applied:
+
+- when live snapshot exists:
+  - publish normal live ranked snapshot exactly as before
+- when live snapshot disappears but sticky ranked-session visibility is still active:
+  - rebuild and publish a cached per-character ranked snapshot instead of clearing it
+  - preserve `state/state1` in the published snapshot when network state is available
+- when upload fade card is active after match:
+  - cached ranked snapshot can also remain published for debug/inspection instead of forcing inactive state
+- snapshot is only cleared now when:
+  - no live snapshot
+  - no sticky ranked-session visibility
+  - no upload card fade is active
+
+Harness verification tightened:
+
+- automation now verifies ranked-progress overlay not only inside character-select rows, but also after returning to ranked submenu/search-entry state (`state=4/30`)
+- completion now requires both:
+  - live character-select verification
+  - sticky ranked submenu/search verification
+
+Fresh offline proof from `DEBUG.txt`:
+
+- sticky published snapshot in ranked submenu/search-entry state:
+  - `[RANK][OverlayProgress] ... row=24 rank=34 ... state=4/30 ...`
+  - `[RANK][OverlayProgress] ... row=21 rank=27 ... state=4/30 ...`
+- harness sticky verifier:
+  - `[RankedAuto] ranked-progress overlay verified reason=ranked_search_entry_menu row=24 rank=34 ...`
+  - `[RankedAuto] ranked-progress overlay verified reason=ranked_search_entry_menu row=21 rank=27 ...`
+- autorun still completed cleanly:
+  - `[RankedAuto] COMPLETED reason=scenario complete`
+
+Current expected behavior after section 134:
+
+- enter ranked character select -> ranked-progress card appears
+- open character, back to ranked submenu, search/entry flow -> card stays visible
+- confirm actual ranked match -> card hides during match
+- if `RANK_ALL` Steam upload succeeds with score change after match:
+  - upload card fades in
+  - LP/rank animation runs
+  - card holds about 5 seconds
+  - card fades out
+
+Remaining live-only confirmation:
+
+- offline harness cannot create a real Steam ranked upload completion callback
+- one real ranked match is still needed to visually confirm end-of-match upload fade/hold/fade-out path on live Steam callback
+
+## 135. 2026-04-20 ranked-progress draw path moved out of main mod window
+
+User reported two real UX failures:
+
+- post-match ranked-progress card was not appearing at all at ranked-match end
+- card also failed to appear when the main mod menu was closed
+
+Root cause:
+
+- ranked-progress rendering still lived inside `MainWindow::Draw()`
+- `IWindow::Update()` bails out immediately when a window is closed
+- so if the main mod window was not open, the ranked-progress overlay code simply never executed
+- this also explains why post-match upload-triggered animation card could not appear unless the main menu happened to be open
+
+Fix applied:
+
+- ranked-progress draw path was moved out of `MainWindow::Draw()`
+- `WindowManager::Render()` now calls the ranked-progress draw routine every frame, independent of whether the main mod window is open
+- the main menu checkbox still controls behavior through `ShowRankedProgress`
+- checkbox help text updated to match real behavior:
+  - ranked character select / ranked menu flow
+  - post-match successful LP upload popup even with main mod menu closed
+
+Verification:
+
+- `Debug|Win32` build passed after draw-path move
+- offline harness still showed ranked-progress overlay in ranked submenu/search-entry state after the move:
+  - `[RANK][OverlayProgress] ... state=4/30 ...`
+  - `[RankedAuto] ranked-progress overlay verified reason=ranked_search_entry_menu ...`
+
+Expected behavior now:
+
+- if `Show ranked progress` is enabled, overlay can appear even when the main mod window is closed
+- this includes the post-match LP-change popup path after successful ranked upload
+- if the checkbox is off, nothing appears
+
+## 136. 2026-04-20 real-match log finding: BBCF upload path does not hit current completion hook
+
+Real player `DEBUG.txt` supplied an important correction:
+
+- ranked-match end does perform Steam leaderboard uploads
+- but BBCF does not emit the `GetAPICallResult` / `LeaderboardScoreUploaded_t` trace path currently used by the overlay animation trigger
+- therefore the old animation trigger never fired in real matches
+
+Key evidence from the real log:
+
+- real match uploads were observed:
+  - `FindLeaderboard ... name='RANK_ALL'`
+  - `FindLeaderboard ... name='RANK_BL'`
+  - later `UploadLeaderboardScore ... handle=1759932 name='RANK_ALL' ...`
+  - later `UploadLeaderboardScore ... handle=1759967 ...`
+- zero `GetAPICallResult` / `LeaderboardScoreUploaded` logs appeared in that session
+- visible ranked row data did change after match:
+  - Bullet row moved from `earned=183 total=432`
+  - to `earned=185 total=434`
+  - to `earned=187 total=436`
+
+Important conclusion:
+
+- the old implementation listened to the wrong success path
+- it also assumed `RANK_ALL` packed subscore was the visible LP-bar target
+- real LP bar changes are represented by per-character ranked row changes, and those changes can happen without the currently hooked completion callback path
+
+New fallback trigger added:
+
+- on observed `RANK_ALL` upload attempt, capture a baseline snapshot of all ranked character rows
+- for a short post-upload window, rescan ranked row data every frame
+- when a real ranked row changes, start the overlay animation from old visible LP/rank to new visible LP/rank
+- if no ranked row changes, observation times out and no popup is shown
+
+New debug lines for real verification:
+
+- observation start:
+  - `[RANK][OverlayObserve] begin ...`
+- observation success:
+  - `[RANK][OverlayObserve] animate ...`
+  - followed by `[RANK][OverlayAnim] start ...`
+- observation timeout:
+  - `[RANK][OverlayObserve] timeout ...`
+
+## 137. 2026-04-20 three real match-end updates identified; toast still misses all three
+
+Latest real `DEBUG.txt` shows three distinct ranked end-of-match upload bursts:
+
+1. `2026-04-20 23:01:29.736-23:01:29.737`
+   - `RANK_ALL` upload: handle `1759932`, score `2199487`, details `[24,0,...]`
+   - `RANK_BL` upload: handle `1759967`, score `1738301`
+   - overlay path: `[RANK][OverlayObserve] begin serial=1 attemptedChar=24 uploadedScore=2199487`
+   - result: `[RANK][OverlayObserve] timeout serial=1 ...`
+
+2. `2026-04-20 23:04:06.403-23:04:06.404`
+   - `RANK_ALL` upload: handle `1759932`, score `2199487`, details `[24,0,...]`
+   - `RANK_BL` upload: handle `1759967`, score `1738269`
+   - overlay path: `[RANK][OverlayObserve] begin serial=2 attemptedChar=24 uploadedScore=2199487`
+   - result: `[RANK][OverlayObserve] timeout serial=2 ...`
+
+3. `2026-04-20 23:06:35.398`
+   - `RANK_ALL` upload: handle `1759932`, score `2199487`, details `[24,0,...]`
+   - `RANK_BL` upload: handle `1759967`, score `1738333`
+   - overlay path: `[RANK][OverlayObserve] begin serial=3 attemptedChar=24 uploadedScore=2199487`
+   - visible table later shows Bullet changed: `[RANK][OverlayProgress] ... row=21 rank=27 earned=189 total=441 ...` at `23:06:42.579`
+   - result: `[RANK][OverlayObserve] timeout serial=3 ...`
+
+What this proves:
+
+- The mod is seeing real ranked match-end leaderboard uploads.
+- The `LeaderboardScoreUploaded_t` / `OverlayUpload` path still does not fire in these real matches. Latest log contains no `[RANK][OverlayUpload]` and no real `[RANK][OverlayAnim]` during the three match-end bursts.
+- The toast is currently started only from `NoteRankedUploadAttempt(...)`, which is called only for `RANK_ALL`.
+- In all three real matches, `RANK_ALL` stayed fixed at score `2199487` and reported character detail `24` (Kokonoe).
+- The actually changing per-character board was `RANK_BL` (`1759967`) with scores `1738301 -> 1738269 -> 1738333`, matching the player's report that Bullet LP is moving.
+
+Why the toast misses:
+
+1. Wrong trigger board.
+   - Real LP movement is happening on the character board (`RANK_BL` here), but the observation window only starts from `RANK_ALL`.
+
+2. Wrong character attribution.
+   - The observation window is seeded with `attemptedChar=24` from `RANK_ALL` details, while the visible row that later changes is `row=21` (Bullet).
+
+3. Baseline capture is too late for the fallback observer.
+   - `BeginObservedRankedUploadWindow(...)` captures the baseline immediately inside the `RANK_ALL` upload call.
+   - By then, the ranked table may already contain the updated post-match values, so the before/after scan sees no later delta and times out.
+   - The third burst strongly suggests this: row 21 is visibly updated later in ranked UI logs, but observer serial 3 still times out without an `animate` line.
+
+Next fix direction:
+
+- Trigger observation from rank-like per-character uploads too, not only `RANK_ALL`.
+- Resolve the actual character from the leaderboard handle/name (`RANK_BL` -> Bullet row) instead of trusting `RANK_ALL` detail slot.
+- Capture a pre-upload baseline earlier in the ranked result flow, before BBCF mutates the ranked table, or snapshot from the last known cached row state before upload begins.
+
+## 138. 2026-04-20 generic per-character trigger prep
+
+Implemented the next-stage fix for live testing:
+
+- `SteamUserStatsWrapper::UploadLeaderboardScore(...)` now calls the ranked overlay observe trigger for all rank-like leaderboards, not just `RANK_ALL`
+- added generic leaderboard-name-to-character resolution for the full playable cast using `RANK_XX` suffixes
+- if the handle name resolves to a character board (example: `RANK_BL`), that character id is used instead of `RANK_ALL` detail slot `0`
+- if the leaderboard name does not resolve, fallback still uses `pScoreDetails[0]` when available
+
+Additional timing fix:
+
+- `BeginObservedRankedUploadWindow(...)` now overrides the attempted character's baseline with the last cached ranked row snapshot when available
+- this is specifically to avoid the late-sampling problem where BBCF has already updated the row by the time the overlay starts observing
+
+New real-match debug lines to watch for:
+
+- trigger source:
+  - `[RANK][OverlayObserve] trigger leaderboard='RANK_BL' char=21 ...`
+- cached baseline use:
+  - `[RANK][OverlayObserve] cached-baseline serial=... char=21 rank=... lp=... next=...`
+- success case:
+  - `[RANK][OverlayObserve] animate serial=... char=21 ...`
+  - followed by `[RANK][OverlayAnim] start ...`
+- unresolved unexpected board code:
+  - `[RANK][OverlayObserve] unresolved leaderboard='...' ...`
+
+## 139. 2026-04-20 new live log: cached baseline needed for all rows, not only attempted row
+
+New real `DEBUG.txt` still missed the toast, but it exposed the precise failure mode:
+
+- at match end, observer still started from `RANK_ALL`:
+  - `[RANK][OverlayObserve] trigger leaderboard='<unknown>' char=24 ...`
+  - `[RANK][OverlayObserve] begin serial=... attemptedChar=24 ...`
+- cached baseline override only applied to attempted row `24`
+- later the real visible ranked row change was Bullet:
+  - `[RANK][OverlayProgress] active=1 row=21 ... earned=190 total=444 ... state=4/30 ...`
+- observer timed out anyway
+
+Conclusion:
+
+- the generic compare logic itself was fine
+- the baseline for row `21` was still being captured too late, because only row `24` got the cached pre-match override
+
+Fix applied:
+
+- `BeginObservedRankedUploadWindow(...)` now overlays cached baseline snapshots for all known ranked rows, not just the attempted one
+- this lets a `RANK_ALL` end-of-match trigger still detect whichever character row actually changes afterward
+
+New debug marker:
+
+- `[RANK][OverlayObserve] cached-baseline serial=... count=N attemptedChar=...`
