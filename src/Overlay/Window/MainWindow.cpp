@@ -218,6 +218,19 @@ namespace
 			: 0.0f;
 	}
 
+	bool ShouldUsePackedRowSubscore(uint32_t internalRank, uint32_t packedSubscore, uint32_t metadataNextRank)
+	{
+		if (internalRank == 0u || metadataNextRank == 0u)
+		{
+			return false;
+		}
+
+		// Offline sweeps showed rows without trustworthy ranked data using sentinel-like packed
+		// subscores such as 0x7FFD / 0x7FFF. Real ranked rows (for example Bullet/Kokonoe)
+		// instead mirrored the packed Steam upload subscore here.
+		return packedSubscore != 0x7FFDu && packedSubscore != 0x7FFFu;
+	}
+
 	uint32_t InternalRankToVisibleRank(uint32_t internalRank, bool isUnranked)
 	{
 		if (isUnranked)
@@ -382,6 +395,86 @@ namespace
 		return total;
 	}
 
+	uint32_t HashRankedRowObject(const uint8_t* rowObject, size_t size)
+	{
+		if (!rowObject || size == 0)
+		{
+			return 0u;
+		}
+
+		uint32_t hash = 2166136261u;
+		for (size_t i = 0; i < size; ++i)
+		{
+			hash ^= rowObject[i];
+			hash *= 16777619u;
+		}
+		return hash;
+	}
+
+	void MaybeLogRankedRowDump(uint32_t rowIndex, const uint8_t* rowObject, const RankedProgressOverlaySnapshot& snapshot)
+	{
+		if (!rowObject || rowIndex >= 0x40)
+		{
+			return;
+		}
+
+		const bool hasMeaningfulData =
+			snapshot.currentRank != 0u ||
+			snapshot.rawField0C != 0u ||
+			snapshot.rawField10 != 0u ||
+			snapshot.totalPoints != 0u ||
+			snapshot.earnedPoints != 0u ||
+			snapshot.metadataNextRank != 0u;
+		if (!hasMeaningfulData)
+		{
+			return;
+		}
+
+		static std::array<uint32_t, 64> s_lastRowHashes{};
+		constexpr size_t kRowObjectSize = 0x180;
+		constexpr size_t kDumpStride = 0x20;
+
+		const uint32_t rowHash = HashRankedRowObject(rowObject, kRowObjectSize);
+		if (s_lastRowHashes[rowIndex] == rowHash)
+		{
+			return;
+		}
+		s_lastRowHashes[rowIndex] = rowHash;
+
+		LOG(1, "[RANK][OverlayRowDump] row=%u rank=%u lp=%u nextLp=%u wins=%u matches=%u metadataNext=%u hash=0x%08X\n",
+			static_cast<unsigned int>(rowIndex),
+			static_cast<unsigned int>(snapshot.currentRank),
+			static_cast<unsigned int>(snapshot.currentLp),
+			static_cast<unsigned int>(snapshot.nextThreshold),
+			static_cast<unsigned int>(snapshot.earnedPoints),
+			static_cast<unsigned int>(snapshot.totalPoints),
+			static_cast<unsigned int>(snapshot.metadataNextRank),
+			static_cast<unsigned int>(rowHash));
+
+		for (size_t offset = 0; offset < kRowObjectSize; offset += kDumpStride)
+		{
+			const uint32_t d0 = *reinterpret_cast<const uint32_t*>(rowObject + offset + 0x00);
+			const uint32_t d4 = *reinterpret_cast<const uint32_t*>(rowObject + offset + 0x04);
+			const uint32_t d8 = *reinterpret_cast<const uint32_t*>(rowObject + offset + 0x08);
+			const uint32_t dC = *reinterpret_cast<const uint32_t*>(rowObject + offset + 0x0C);
+			const uint32_t d10 = *reinterpret_cast<const uint32_t*>(rowObject + offset + 0x10);
+			const uint32_t d14 = *reinterpret_cast<const uint32_t*>(rowObject + offset + 0x14);
+			const uint32_t d18 = *reinterpret_cast<const uint32_t*>(rowObject + offset + 0x18);
+			const uint32_t d1C = *reinterpret_cast<const uint32_t*>(rowObject + offset + 0x1C);
+			LOG(1, "[RANK][OverlayRowDump] row=%u off=0x%03X data=%08X %08X %08X %08X %08X %08X %08X %08X\n",
+				static_cast<unsigned int>(rowIndex),
+				static_cast<unsigned int>(offset),
+				static_cast<unsigned int>(d0),
+				static_cast<unsigned int>(d4),
+				static_cast<unsigned int>(d8),
+				static_cast<unsigned int>(dC),
+				static_cast<unsigned int>(d10),
+				static_cast<unsigned int>(d14),
+				static_cast<unsigned int>(d18),
+				static_cast<unsigned int>(d1C));
+		}
+	}
+
 	bool TryGetRankedTableBase(uintptr_t* outBase)
 	{
 		if (!outBase)
@@ -433,7 +526,10 @@ namespace
 		outSnapshot->cursorValue = cursorValue;
 		outSnapshot->networkState = networkState;
 		outSnapshot->networkState1 = networkState1;
-		outSnapshot->currentRank = *reinterpret_cast<const uint16_t*>(rowObject);
+		const uint32_t packedField00 = *reinterpret_cast<const uint32_t*>(rowObject + 0x00);
+		outSnapshot->rawPackedField00 = packedField00;
+		outSnapshot->currentRank = packedField00 & 0xFFFFu;
+		outSnapshot->packedSubscore = (packedField00 >> 16) & 0xFFFFu;
 		outSnapshot->rawField0C = *reinterpret_cast<const uint32_t*>(rowObject + 0x0C);
 		outSnapshot->rawField10 = *reinterpret_cast<const uint32_t*>(rowObject + 0x10);
 		outSnapshot->rawField14 = *reinterpret_cast<const uint32_t*>(rowObject + 0x14);
@@ -454,11 +550,23 @@ namespace
 			? (outSnapshot->totalPoints - outSnapshot->earnedPoints)
 			: 0u;
 		outSnapshot->metadataNextRank = (*reinterpret_cast<const uint32_t*>(rowObject + 0xD4) >> 16) & 0xFFFFu;
+		if (ShouldUsePackedRowSubscore(outSnapshot->currentRank, outSnapshot->packedSubscore, outSnapshot->metadataNextRank))
+		{
+			outSnapshot->currentLp = outSnapshot->packedSubscore;
+			if (outSnapshot->nextThreshold <= outSnapshot->currentLp)
+			{
+				outSnapshot->nextThreshold = 0u;
+			}
+		}
+		outSnapshot->remainingLp = outSnapshot->nextThreshold > outSnapshot->currentLp
+			? (outSnapshot->nextThreshold - outSnapshot->currentLp)
+			: 0u;
 		outSnapshot->debugFieldF4 = *reinterpret_cast<const uint32_t*>(rowObject + 0xF4);
 		outSnapshot->progress = outSnapshot->nextThreshold > 0
 			? static_cast<float>(outSnapshot->currentLp) / static_cast<float>(outSnapshot->nextThreshold)
 			: 0.0f;
-		outSnapshot->isUnranked = outSnapshot->currentRank == 0 || outSnapshot->nextThreshold == 0;
+		outSnapshot->isUnranked = outSnapshot->currentRank == 0;
+		MaybeLogRankedRowDump(rowIndex, rowObject, *outSnapshot);
 		const uint32_t visibleRank = InternalRankToVisibleRank(outSnapshot->currentRank, outSnapshot->isUnranked);
 		outSnapshot->currentRank = visibleRank;
 		outSnapshot->previousRank = visibleRank > 1u ? (visibleRank - 1u) : 0u;
@@ -1097,7 +1205,7 @@ namespace
 		g_rankedProgressOverlaySnapshot = snapshot;
 		if (changed)
 		{
-			LOG(1, "[RANK][OverlayProgress] active=%d row=%u selector=%u cursor=%u rank=%u prev=%u next=%u lp=%u nextLp=%u remainingLp=%u wins=%u matches=%u remainingMatches=%u percent=%.4f state=%d/%d unranked=%d metadataNext=%u f4=0x%08X raw0C=0x%08X raw10=0x%08X raw14=0x%08X raw18=0x%08X raw20=0x%08X rawE0=0x%08X rawE4=0x%08X rawE8=0x%08X rawEC=0x%08X\n",
+			LOG(1, "[RANK][OverlayProgress] active=%d row=%u selector=%u cursor=%u rank=%u prev=%u next=%u lp=%u nextLp=%u remainingLp=%u wins=%u matches=%u remainingMatches=%u percent=%.4f state=%d/%d unranked=%d metadataNext=%u packed00=0x%08X packedSub=%u f4=0x%08X raw0C=0x%08X raw10=0x%08X raw14=0x%08X raw18=0x%08X raw20=0x%08X rawE0=0x%08X rawE4=0x%08X rawE8=0x%08X rawEC=0x%08X\n",
 				snapshot.active ? 1 : 0,
 				static_cast<unsigned int>(snapshot.rowIndex),
 				static_cast<unsigned int>(snapshot.selectorValue),
@@ -1116,6 +1224,8 @@ namespace
 				snapshot.networkState1,
 				snapshot.isUnranked ? 1 : 0,
 				static_cast<unsigned int>(snapshot.metadataNextRank),
+				static_cast<unsigned int>(snapshot.rawPackedField00),
+				static_cast<unsigned int>(snapshot.packedSubscore),
 				static_cast<unsigned int>(snapshot.debugFieldF4),
 				static_cast<unsigned int>(snapshot.rawField0C),
 				static_cast<unsigned int>(snapshot.rawField10),
@@ -1975,10 +2085,22 @@ void DrawRankedProgressOverlayStandalone()
 		TryGetCachedRankedDisplayState(g_lastRankedOverlayCharacterId, &baseDisplay))
 	{
 		baseDisplay.valid = true;
+		if (g_rankedProgressOverlaySnapshot.active &&
+			g_rankedProgressOverlaySnapshot.rowIndex == g_lastRankedOverlayCharacterId)
+		{
+			statsSnapshot = g_rankedProgressOverlaySnapshot;
+			hasStatsSnapshot = true;
+		}
 	}
 	else if (hasUploadState && uploadState.characterId != kInvalidRankedCharacterId)
 	{
 		TryBuildDisplayStateForCharacter(uploadState.characterId, &uploadState, &baseDisplay);
+		if (g_rankedProgressOverlaySnapshot.active &&
+			g_rankedProgressOverlaySnapshot.rowIndex == uploadState.characterId)
+		{
+			statsSnapshot = g_rankedProgressOverlaySnapshot;
+			hasStatsSnapshot = true;
+		}
 	}
 
 	if (!baseDisplay.valid)

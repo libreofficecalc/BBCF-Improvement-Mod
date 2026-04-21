@@ -360,6 +360,62 @@ Best next step:
   - capture the upload subscore plus any post-match local memory / UI state that changes with it
 - treat offline autorun as a separate harness-health issue, not the main threshold RE path
 
+## 2026-04-21 Offline Row-Object Breakthrough
+
+Operator request for this pass:
+
+- keep pushing the offline autorun path until it either finds the current LP / threshold source or proves the path is exhausted
+
+What agent changed:
+
+- added bounded per-row raw dumps for ranked-table entries during the offline character sweep
+- then patched the ranked progress snapshot/UI path to understand the row's packed hidden subscore when it is present locally
+
+What the newest offline autorun proved:
+
+1. The ranked row object itself already contains the real hidden current LP locally; Steam upload is not required to read it.
+2. For the real ranked rows that matter right now:
+   - Bullet row `21` first dword was `0x922F001A`
+     - low word `0x001A` = internal rank `26` -> visible rank `27`
+     - high word `0x922F` = hidden subscore `37423`
+     - this exactly matches the previously observed packed upload `0x001A922F`
+   - Kokonoe row `24` first dword was `0x8F9F0021`
+     - low word `0x0021` = internal rank `33` -> visible rank `34`
+     - high word `0x8F9F` = hidden subscore `36767`
+     - this exactly matches the previously observed packed upload `0x00218F9F`
+3. Therefore the row-object first dword is effectively the packed `(internal_rank, hidden_subscore)` pair in little-endian layout.
+4. Offline sweeps also showed many non-real / low-data rows using sentinel-style high words like `0x7FFD` / `0x7FFF`, so not every row's packed high word should be treated as trustworthy ranked LP.
+5. The old row LP pair still exists separately:
+   - `+0x0C = nextLp`
+   - `+0x10 = lp`
+   - but for Bullet/Kokonoe this remains the old wrong scale (`2425/1006`, `5237/1926`)
+6. No equally convincing offline threshold field was found in the rest of the dumped `0x180` row object.
+   - current LP is now solved locally
+   - next-threshold LP on the hidden subscore scale is still unsolved
+
+Current implementation direction after this proof:
+
+- ranked progress snapshot now records:
+  - packed first dword
+  - packed hidden subscore
+- when the row looks like a real ranked row rather than a sentinel row, UI can use the local packed hidden subscore as current LP even before any upload callback
+- if the old `nextLp` is obviously on the wrong scale (`nextLp <= currentLp` after the packed override), the threshold is treated as unknown instead of shown as fake data
+
+Current conclusion:
+
+- offline path is no longer a dead end for **current LP**
+- offline path still has not produced a trustworthy **threshold LP**
+- the threshold hunt now needs one more real ranked validation unless a new code-level producer hook is found upstream of the row object
+
+Next validation target:
+
+- play exactly one real ranked match on Bullet or Kokonoe
+- return to ranked menu afterward
+- confirm:
+  - local row packed field changes to the new hidden subscore
+  - UI current LP follows that local packed value even without relying on upload-only fallback
+  - threshold still shows unknown unless a real hidden threshold source is found
+
 11. Disassembly of the next callee chain points to a tighter composition candidate inside `BBCF+0x249B0`:
    - function `BBCF+0x249B0` obtains/initializes an entry object in `esi`
    - then calls a virtual method at `BBCF+0x24AD0` with:
@@ -6512,3 +6568,635 @@ Next offline step:
 
 - continue the threshold/subscore hunt from the now-working autorun path
 - use the truthful `[RankedAuto] FAILED` / `[RankedAuto] COMPLETED` statuses from the wrapper instead of the previous fake exit-3 path
+
+## 141. 2026-04-21 live follow-up: packed row / Steam upload still match, UI regressions identified
+
+Operator report for this pass:
+
+- new `DEBUG.txt` included one Bullet set, then one Kokonoe set
+- user observed two UI regressions after the packed-subscore UI patch:
+  - top label rank changed from e.g. `LV34` to `AUTH`
+  - during ranked search, matches / wins dropped to `0`
+- user also called out that Bullet gained `+32` LP per match while Kokonoe gained `+1` LP per match in this session
+
+What the latest `DEBUG.txt` proved:
+
+1. The local packed row value still matches the Steam-uploaded ranked score exactly for Kokonoe.
+2. Concrete Kokonoe proofs from the same run:
+   - before:
+     - row `24` packed first dword `0x8F9F0021`
+     - hidden subscore `36767`
+     - `RANK_ALL` upload `0x00218F9F`
+   - after match 1:
+     - row `24` packed first dword `0x8FA00021`
+     - hidden subscore `36768`
+     - `RANK_ALL` upload `0x00218FA0`
+   - after match 2:
+     - row `24` packed first dword `0x8FA10021`
+     - hidden subscore `36769`
+     - `RANK_ALL` upload `0x00218FA1`
+3. Therefore the row-object packed field and the real uploaded ranked value are still aligned in the newest live session.
+4. Bullet also showed the same local packed progression on its row in the same session:
+   - `0x922F001A` -> `0x924F001A` -> `0x926F001A`
+   - hidden subscore `37423` -> `37455` -> `37487`
+5. Bullet's character-board upload in the same run also matched that local packed progression:
+   - `0x001A924F`
+   - `0x001A926F`
+6. So the strange `+32` Bullet vs `+1` Kokonoe deltas are currently real game/runtime behavior from the logs, not a row-vs-upload mismatch introduced by the overlay.
+
+Root cause of the new UI regressions:
+
+- `MainWindow.cpp` was treating `nextThreshold == 0` as `isUnranked`
+- once packed hidden LP replaced the old row LP, the old threshold field often became invalid and was intentionally zeroed
+- that accidentally collapsed valid ranked rows into `AUTH`
+- the sticky ranked-search path was also only preserving `statsSnapshot` on the live row path
+- when the overlay fell back to a cached published snapshot during ranked search, display rank/LP survived but matches and wins defaulted to `0`
+
+Fix applied:
+
+- `isUnranked` is now driven only by a genuinely missing internal rank (`currentRank == 0`), not by unknown threshold
+- cached published snapshots now repopulate the stats source during ranked search / sticky visibility mode, so matches and wins no longer zero out just because the live row disappeared temporarily
+
+Current conclusion after this pass:
+
+- packed current LP source is still validated
+- threshold LP on that same scale is still unsolved
+- per-match LP gain is not globally intuitive across characters / boards, so hidden threshold mapping still cannot be inferred from rank ordering alone
+
+## 142. 2026-04-21 newest `DEBUG.txt` adds no new LP-threshold proof; static RE clears `0x000A1450` as non-threshold helper
+
+What newest `DEBUG.txt` at `2026-04-21 18:03` actually contains:
+
+- latest tail is not a new real ranked-match upload session
+- it is a harness/offline startup regression only:
+  - repeated
+    - `[RankedAuto] autorun token path='D:\SteamLibrary\steamapps\common\BlazBlue Centralfiction\BBCF_IM\ranked_harness_autorun.token' exists=0`
+  - then shutdown
+    - `BBCF_IM_Shutdown`
+    - `[RANK][VerdictSummary] interpretation=no_trusted_rank_chain_before_first_inmatch_transition`
+- there were no new:
+  - `[RankedAuto] autorun token consumed ...`
+  - `[RankedAuto] COMPLETED ...`
+  - `[RankedAuto] FAILED ...`
+  - real `UploadLeaderboardScore` / `OverlayObserve` / `OverlayUpload` match-end lines
+
+What newest live menu lines in that same file still confirm:
+
+- Kokonoe row `24` remains:
+  - `rank=34`
+  - `lp=36769`
+  - `packed00=0x8FA10021`
+  - `packedSub=36769`
+  - `nextLp=0`
+- Bullet row `21` remains:
+  - `rank=27`
+  - `lp=37487`
+  - `packed00=0x926F001A`
+  - `packedSub=37487`
+  - `nextLp=0`
+- therefore newest file adds no contradiction to section 141:
+  - packed row current LP still matches hidden Steam-upload scale
+  - threshold LP is still unknown / zeroed on the overlay path
+
+Static RE performed after reading this log:
+
+- local disassembly around `004A11F0`, `004A1310`, `004A1450`, and render block `00544323..00544830`
+- concrete helper meanings now locked down:
+  - `004A11F0(index)`:
+    - sums 32 word-pairs from row region rooted at `ecx + 0xFA + index * 0x180`
+  - `004A1310(index)`:
+    - sums 32 word-pairs from row region rooted at `ecx + 0x17A + index * 0x180`
+  - `004A1450(index)`:
+    - returns `dword ptr [ecx + index * 0x180 + 0xF4]`
+  - `004A1470()`:
+    - returns `dword ptr [ecx + 0xD0]`
+  - `004A1490()`:
+    - returns `dword ptr [ecx + 0xC8]`
+
+Most important new interpretation:
+
+- `0x000A1450` is **not** hidden threshold logic
+- it is only a direct row-field getter for `rowObj + 0xF4`
+- this aligns with current overlay logging:
+  - `debugFieldF4`
+- render path at `0054482B` simply fetches this `F4` value as another numeric/display input after the `0x1310 / 0x11F0` ratio work
+- so current known char-select helper family is now:
+  - current visible rank/index -> first word of row object
+  - menu progress ratio -> `sumA6 / sum26`
+  - extra display value -> `rowObj + 0xF4`
+  - **not** hidden packed LP threshold
+
+What this means for the main ranked-LP hunt:
+
+- actual current ranked LP producer is still best modeled as the row-object packed first dword / uploaded packed score low word
+- char-select progress helpers (`0x11F0`, `0x1310`, `0x1450`) are menu-display helpers on a different scale
+- they do not explain:
+  - hidden subscore production
+  - hidden next-threshold LP
+  - rank-up transition condition
+
+Current blocker state:
+
+- offline autorun path is currently non-contributory again until the token regression is fixed
+- latest run never consumed the autorun token, never reached the normal sweep, and never produced new threshold evidence
+- static RE cleared one more false lead (`0x1450`), but did not surface the real threshold/rank-change producer
+
+Best next step from here:
+
+- either:
+  - repair autorun token startup so offline path can execute real sweeps again,
+- or:
+  - capture one more real ranked match with:
+    - packed upload/subscore lines
+    - immediate post-match ranked-menu row snapshot
+    - any new row-field or rank-change deltas in same session
+- absent one of those, threshold / rank-change logic remains blocked
+
+## 143. 2026-04-21 real Kokonoe rank-down run: huge `-33307` delta is real upstream producer output, not overlay/Steam corruption
+
+Operator report for this pass:
+
+- several real Kokonoe sets were played
+- before rank-down:
+  - LP loss behavior looked like repeated `-512`
+- on the actual rank-down match:
+  - in-game behavior effectively looked like `-33307`
+
+What newest `DEBUG.txt` proves from the two critical uploads:
+
+1. Same-rank loss case at `2026-04-21 18:24:39`:
+   - final packed upload:
+     - `RANK_ALL = 0x002189A1`
+     - rank id `0x0021` -> visible rank `34`
+     - subscore `0x89A1 = 35233`
+   - overlay baseline/target:
+     - `fromLp=35745`
+     - `toLp=35233`
+     - `delta=-512`
+   - local row dump at same moment:
+     - row `24`
+     - first dword `89A10021`
+     - packed hidden LP still active and trusted
+
+2. Rank-down case at `2026-04-21 18:28:11`:
+   - final packed upload:
+     - `RANK_ALL = 0x00207FFF`
+     - rank id `0x0020` -> visible rank `33`
+     - subscore `0x7FFF = 32767`
+   - overlay baseline/target:
+     - `fromLp=35233`
+     - `toLp=1926`
+     - `fromRank=34`
+     - `toRank=33`
+     - `delta=-33307`
+   - immediate row dump at same moment:
+     - row `24`
+     - first dword `7FFF0020`
+     - old row LP pair still present:
+       - `raw10 = 1926`
+       - `raw0C = 5237`
+
+Most important conclusion from this run:
+
+- the huge rank-down delta is **not** being invented by overlay math
+- it comes from the game/runtime producer itself:
+  - previous real packed value was `0x002189A1`
+  - new rank-down packed value is `0x00207FFF`
+- so rank-down path is currently emitting a special sentinel-style packed score:
+  - internal rank drops from `0x21` to `0x20`
+  - low word becomes `0x7FFF`
+
+Upstream-chain proof from the same timestamps:
+
+- normal same-rank case:
+  - at `18:24:39.015-18:24:39.167`
+  - `Phase3After41E980`, `Bit4Skip`, `PackSelect`, `Stage8Copy`, and `WritePacked`
+    all stay on the same path:
+    - slot / final packed = `0x002189A1`
+    - table `entry1_src10 = 0x00218BA1`
+  - so late chain still behaves like:
+    - earlier table `src10`
+    - then slot/final packed `0x002189A1`
+    - then Steam upload
+
+- rank-down case:
+  - at `18:28:10.843-18:28:11.032`
+  - before late copy/write stages:
+    - `1E980Delta state1/state2/phase3` already show:
+      - `pre_slot=[0x00207FFF,0x00000000]`
+      - `post_src10=[0x002189A1,0x00000000]`
+    - `Phase3After41E980` confirms:
+      - slot `cur=[0x00207FFF,0x00000000]`
+      - but table `entry1_src10=[0x002189A1,0x00000000]`
+    - `Bit4Skip` still confirms same split:
+      - slot current = `0x00207FFF`
+      - `src10 = 0x002189A1`
+  - then `Stage8Copy` / `WritePacked` use the already-final sentinel:
+    - `src10=[0x00207FFF,0x00000000]`
+    - `written=0x00207FFF`
+
+What this means structurally:
+
+- rank-down producer is upstream of `Stage8Copy` / `WritePacked`
+- more importantly, it is upstream even of the `PackSelect` copy point
+- by `state1/state2/phase3` instrumentation time, the active slot `slot118` already holds final rank-down sentinel `0x00207FFF`
+- therefore current best upstream target is no longer:
+  - `0x2027F`
+  - `0x2044D`
+  - `0x205A7`
+- current best target is:
+  - earlier mutation of the persistent ranked state-machine slot `state + 0x118`
+  - specifically the moment it flips from prior same-rank packed value to rank-down sentinel
+
+Important semantic implication:
+
+- `0x7FFF` is now strongly indicated to be a special rank-down / boundary sentinel on the packed score path, not ordinary hidden LP
+- after this sentinel lands, local menu row falls back to old per-rank row LP pair:
+  - `1926 / 5237`
+- this explains why user-observed LP behavior feels discontinuous across the rank-down boundary
+
+What is now blocked vs solved:
+
+- solved:
+  - real huge rank-down delta originates in game producer
+  - Steam/upload layer is faithfully forwarding it
+  - overlay is only reflecting producer output
+- not solved:
+  - where exactly `slot118` gets rewritten to `0x00207FFF`
+  - whether `0x7FFF` means:
+    - rank-down boundary sentinel,
+    - max-subscore sentinel,
+    - or "switch to old-scale row LP for new lower rank"
+
+Best next RE direction after this run:
+
+- stop treating `src10` table path as the only meaningful predecessor
+- instrument the earliest write/mutation to persistent state slot `state + 0x118`
+  - especially across the state-machine stages immediately before `state1/state2`
+- goal is to catch the exact instruction/function that changes:
+  - `0x002189A1 -> 0x00207FFF`
+- if that mutation can be exercised from offline ranked-menu state without a full Steam-ranked match, that becomes the correct offline foothold for continued RE
+
+## 144. 2026-04-21 offline autorun re-check: harness works again, but still does not enter ranked upload producer chain
+
+What I changed first:
+
+- patched `TryLogRankUploadStateMachineCandidate(...)` in `src/Hooks/hooks_bbcf.cpp`
+- new behavior:
+  - when a plausible packed-like state-machine slot is first seen in a cycle at states `<= 3`,
+    arm `BeginRankedSlotWriteTrace(self + 0x118, "state_machine_first_seen_window")`
+- purpose:
+  - make sure offline autorun was not simply missing the early slot mutation because tracing started too late at `state3`
+
+Build / run:
+
+- built `Debug|Win32` successfully
+- reran:
+  - `bash tools/run_ranked_harness_autorun.sh --no-build --timeout=90`
+
+Offline autorun result:
+
+- harness now launches and completes its menu sweep again
+- final status still:
+  - `[RankedAuto] FAILED reason=ranked progress overlay verification incomplete`
+- but more importantly for RE:
+  - the run never enters the trusted ranked upload chain at all
+
+Hard proof from `DEBUG.txt` (`2026-04-21 18:38:26` to `18:39:33`):
+
+- there are **no** new hits for:
+  - `state3`
+  - `packSelect`
+  - `phase3`
+  - `bit4skip`
+  - `sourceTotal`
+  - `sourcePair`
+  - `writePacked`
+  - `gameCall`
+  - `upload`
+- verdict summary at shutdown says exactly that:
+  - `state3=0 packSelect=0 phase3=0 bit4skip=0 sourceTotal=0 sourcePair=0 writePacked=0 gameCall=0 upload=0`
+  - interpretation:
+    - `no_trusted_rank_chain_before_first_inmatch_transition`
+- there are also **no** `DataFlow` / `DataFlowWriter` hits from the earlier-armed slot trace
+
+What the offline path *does* hit:
+
+- only menu / ranking overlay path
+- repeated `CallCluster post_1FEA0` table-like object:
+  - `self=0x16910F70`
+  - `object=table_like`
+  - `slot118=[0x16911348,0x00000003]`
+  - this is pointer-like junk for producer tracing, not packed ranked score state
+- overlay probe / temp animation path still works:
+  - `OverlayAnim start char=24 fromLp=1926 -> 1976 delta=+50`
+  - then `OverlayAnim start char=24 fromLp=1926 -> 1876 delta=-50`
+- final harness verification still reports:
+  - `reachableRows=35`
+  - `firstSticky=1`
+  - `lastStickyIndex=35`
+  - `lastSticky=0`
+  - `tempGain=1`
+  - `tempLoss=1`
+
+Conclusion from this iteration:
+
+- offline autorun path is **alive again**
+- but for the actual LP producer hunt, it is currently **not enough**
+- even after arming slot tracing earlier, offline autorun still never reaches the ranked upload producer/state-machine path that generated:
+  - `0x002189A1`
+  - `0x00207FFF`
+- so the current offline harness only validates:
+  - row/menu display path
+  - sticky overlay behavior
+  - temp ranked progress animation probes
+- it does **not** currently exercise the real packed-score producer or Steam-upload precursor path
+
+Current blocker / next required input:
+
+- to continue upstream on the real LP producer, we need one of:
+  - another real ranked match / rank change log that hits the producer chain
+  - or a new offline trigger that actually reaches the trusted upload/state-machine path before shutdown
+
+Operational verdict:
+
+- this iteration satisfies the "validate whether offline path still serves this goal" test
+- present answer:
+  - offline path no longer serves the real ranked-LP producer hunt in its current form
+  - real-match instrumentation is still required unless a new offline trigger is discovered
+
+## 145. 2026-04-21 offline pivot succeeded: char-select visible LP pair is produced offline before upload chain
+
+New pivot:
+
+- stopped chasing only the late upload chain
+- traced the selected ranked-menu row object directly from char select
+- target field pair:
+  - `row + 0x0C` = next threshold LP
+  - `row + 0x10` = current LP
+- concrete row object formula confirmed from overlay path:
+  - `row = rankedTableBase + 0xD4 + selector * 0x180`
+
+Instrumentation change:
+
+- in `hooks_bbcf.cpp`, `LogRankMenuProbe(...)` now:
+  - resolves current char-select selector from `self + 0x1760 + cursor*8`
+  - logs selected row core fields
+  - arms `BeginRankedSlotWriteTrace(row + 0x0C, "menuprobe_selected_row_lp_pair")`
+  - allows 2 value changes on that pair so both threshold and current-LP writes can be seen
+
+Offline autorun proof:
+
+- on fresh autorun run at `18:52:50`, before row 0 settles:
+  - `CharSeleInit_pre`
+  - selected row 0 had:
+    - `packed00=0x7FFF0000`
+    - `field0C=0`
+    - `field10=0`
+    - `field20=0`
+    - `fieldD4=0`
+- same offline run later shows two real writes to the tracked visible LP pair:
+
+1. first write:
+   - time:
+     - `18:52:54.955`
+   - slot:
+     - `0x0155D270` (`row0 + 0x0C`)
+   - value:
+     - `[0, 0] -> [0x1A, 0]`
+   - meaning:
+     - threshold LP `0 -> 26`
+
+2. second write:
+   - time:
+     - `18:52:54.956`
+   - same slot:
+     - `0x0155D270`
+   - value:
+     - `[0x1A, 0] -> [0x1A, 0x13]`
+   - meaning:
+     - current LP `0 -> 19`
+
+This is the most important result of the entire offline pivot:
+
+- the visible ranked char-select LP pair is **not** just stale display data
+- it is being **produced live offline** during ranked char-select setup
+- so offline path is now genuinely useful again for the LP/rank logic hunt
+
+Writer foothold captured:
+
+- both writes came from the same writer address:
+  - `writer=0x0104ECEA`
+  - logged `writer_rva=0x0039ECEA`
+- stack/nearby-call footholds inside BBCF from the same write event:
+  - `bt_5 = BBCF+0x00028C29`
+  - `bt_6 = BBCF+0x0002827B`
+  - nearby call at:
+    - `BBCF+0x00028C24`
+    - `call target = 0x01051BDF` (`target_rva=0x003A1BDF`)
+
+What this now means structurally:
+
+- offline path still does **not** reach the late trusted upload chain
+- but it **does** reach an earlier producer that decides the visible char-select pair:
+  - next-threshold LP
+  - current LP
+- this is exactly the right upstream family to continue following for:
+  - rank thresholds
+  - rank-up/rank-down conditions
+  - relation between visible current LP and packed/uploaded score
+
+Best current interpretation:
+
+- packed score path and char-select visible LP path are related but not identical
+- for row 0 offline setup, game seeds:
+  - packed field first (`0x7FFF0000` already present)
+  - then threshold/current visible pair later (`26`, `19`)
+- for real ranked results, packed upload path still carries its own special sentinel behavior (`0x7FFF`)
+- therefore the correct hunt is now:
+  - keep walking backward from this newly-caught offline row-pair producer
+  - then compare where/if it merges with the packed score path used for Steam upload
+
+Current next target:
+
+- static RE / more instrumentation around:
+  - `BBCF+0x00028C24`
+  - `BBCF+0x0002827B`
+- goal:
+  - identify the concrete routine that fills `row + 0x0C/+0x10`
+  - determine where it gets:
+    - threshold LP
+    - current LP
+    - rank id / rank boundary metadata
+
+## 146. 2026-04-21 current best full model for char-select current LP / threshold / rank
+
+After the new offline row-pair trace plus static RE around the write site, the current char-select model is now:
+
+### 1. The selected ranked row object layout is real and live
+
+Per row:
+
+- base:
+  - `rankedTableBase + 0xD4 + rowIndex * 0x180`
+- important fields:
+  - `+0x00` packed score/rank field
+  - `+0x0C` next threshold LP
+  - `+0x10` current LP
+  - `+0x20` total/remaining match-related counter bucket
+  - `+0xD4` metadata next-rank-related field
+
+### 2. Visible rank is taken from packed field low word, not from `row+0x10`
+
+Overlay code confirms:
+
+- internal rank:
+  - `packed00 & 0xFFFF`
+- visible rank:
+  - `internal rank + 1`
+
+Examples:
+
+- Kokonoe row 24:
+  - `packed00 = 0x7FFF0020`
+  - internal rank = `0x20 = 32`
+  - visible rank = `33`
+- Bullet row 21:
+  - `packed00 = 0x926F001A`
+  - internal rank = `0x1A = 26`
+  - visible rank = `27`
+
+### 3. Visible current LP has two modes
+
+Overlay logic currently does:
+
+- default:
+  - `currentLp = row + 0x10`
+- special override:
+  - use packed subscore from `packed00 >> 16` **only if**
+    - internal rank != 0
+    - metadata next-rank field != 0
+    - packed subscore is not sentinel `0x7FFD`
+    - packed subscore is not sentinel `0x7FFF`
+
+That rule is implemented in `ShouldUsePackedRowSubscore(...)`.
+
+Meaning:
+
+- normal real ranked rows with trustworthy packed subscore:
+  - visible current LP comes from packed subscore
+- sentinel rows (`0x7FFD`, `0x7FFF`):
+  - visible current LP falls back to `row+0x10`
+
+This exactly matches observed weirdness:
+
+- Bullet normal row:
+  - packed subscore and visible LP agree
+- Kokonoe rank-down row:
+  - packed subscore = sentinel `0x7FFF`
+  - visible LP falls back to `row+0x10 = 1926`
+
+### 4. Visible next threshold LP comes from `row+0x0C`
+
+No packed override currently exists for threshold in overlay path.
+
+Examples:
+
+- Kokonoe row 24:
+  - `row+0x0C = 5237`
+- Bullet row 21:
+  - `row+0x0C = 2425`
+- low row examples also match:
+  - row 0:
+    - threshold `26`
+    - current LP `19`
+
+### 5. Offline path really produces the visible pair `(threshold,currentLp)` live
+
+Fresh autorun proof for row 0:
+
+- before char-select init:
+  - `field0C = 0`
+  - `field10 = 0`
+- later in same run:
+  - first write:
+    - `0 -> 26` at `row+0x0C`
+  - second write:
+    - `0 -> 19` at `row+0x10`
+
+So offline path is sufficient for the visible LP pair producer chain.
+
+### 6. The exact write instruction caught is only memcpy/memmove, not the deciding math
+
+Captured writer:
+
+- `writer_rva = 0x0039ECEA`
+- static VA:
+  - `0079ECEA`
+- disasm:
+  - `rep movs byte ptr es:[edi], byte ptr [esi]`
+
+So the traced writer is just the copy primitive inside:
+
+- `0079ECC0`
+
+This means:
+
+- `0079ECEA` is **not** the logic deciding LP or threshold
+- it is only the byte-copy that writes the already-produced pair into the row object
+
+### 7. Best upstream local caller so far is `BBCF+0x28C24`
+
+Stack trace from the row-pair write repeatedly hits:
+
+- `BBCF+0x00028C29`
+- and just before it:
+  - `BBCF+0x00028C24: call 007A1BDF`
+
+Static RE around that site shows:
+
+- caller pushes 4 args and then advances local state:
+  - `mov [esi+4], 7`
+- `007A1BDF` itself is not LP math either:
+  - it is another helper / guarded copy-like routine
+
+So the actual LP/threshold deciding math is still upstream of:
+
+- `007A1BDF`
+- `0079ECC0`
+- `0079ECEA`
+
+### Best current structural conclusion
+
+There are now clearly **two linked but distinct ranked data layers** in char select:
+
+1. packed rank/score layer
+   - `row+0x00`
+   - supplies internal rank directly
+   - may also supply current LP when subscore is trustworthy
+   - uses sentinel packed subscores `0x7FFD/0x7FFF`
+
+2. visible row pair layer
+   - `row+0x0C / row+0x10`
+   - threshold/current LP pair
+   - filled live offline during char-select setup
+   - used as fallback/current display source when packed subscore is sentinel
+
+What is solved now:
+
+- visible rank source
+- visible current LP source rule
+- visible threshold source
+- offline producer foothold for visible LP pair
+- proof that `0x7FFD/0x7FFF` force fallback away from packed subscore
+
+What is still not fully solved:
+
+- exact upstream function that *decides*:
+  - `row+0x0C`
+  - `row+0x10`
+  - when packed subscore becomes sentinel
+  - when rank increments/decrements
+- exact merge point between:
+  - visible row pair producer
+  - packed upload score producer

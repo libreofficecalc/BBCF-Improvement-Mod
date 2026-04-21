@@ -82,6 +82,7 @@ DWORD RankUploadWriterCaller22AD86TargetAddr = 0;
 DWORD RankUploadWriterCaller22B25ETargetAddr = 0;
 DWORD RankUploadWriterCaller4EDB6TargetAddr = 0;
 DWORD RankUploadWriterCaller3A5670TargetAddr = 0;
+constexpr uintptr_t kRankedTableBaseFnRva = 0x0009D5C0;
 
 void RankedProbeTickFrameState();
 void RankedProbeNoteLobbyCaller();
@@ -133,6 +134,8 @@ enum RankedWriterCallerStageId : uint32_t
 void NormalizeMenuExitModeIfNeeded();
 void EndRankedSlotWriteTrace(const char* reason);
 void BeginRankedSlotWriteTrace(uint32_t slotAddr, const char* reason);
+void BumpRankedTraceMaxChangesIfCurrent(uint32_t slotAddr, unsigned int maxChanges);
+bool TryGetRankedTableBaseLocal(uintptr_t* outBase);
 uint32_t GetCachedRankUploadClusterTable(uint32_t stateValue);
 void LogRankUploadCallClusterState(const char* stage, uint32_t stateValue, uint32_t tableBase, uint32_t returnValue);
 void LogRankedReturnAddressProbe(const char* label, uintptr_t returnAddr, uintptr_t moduleBase);
@@ -494,6 +497,11 @@ void LogRankMenuProbe(const char* tag, void* selfValue)
 	const uint32_t sel1A68Subscore = selected1A68 & 0xFFFFu;
 	const uint32_t raw1BB0RankId = (raw1BB0 >> 16) & 0xFFFFu;
 	const uint32_t raw1BB0Subscore = raw1BB0 & 0xFFFFu;
+	uint32_t selectedSelector = 0xFFFFFFFFu;
+	if (raw1960 < 0x40 && !IsBadReadPtr(self + 0x1760 + raw1960 * 8, sizeof(uint32_t)))
+	{
+		selectedSelector = *reinterpret_cast<uint32_t*>(self + 0x1760 + raw1960 * 8);
+	}
 
 	LOG(2, "[RANK][MenuProbe] tag=%s self=0x%p off1730=0x%08X off1734=0x%08X off1738=0x%08X off173C=%.3f(0x%08X) off1744=%.3f(0x%08X) idx1760=%u idx1960=%u sel1964=0x%08X parts1964 rank_id=0x%04X subscore=0x%04X idx1BAC=%u sel1A68=0x%08X parts1A68 rank_id=0x%04X subscore=0x%04X raw1BB0=0x%08X parts1BB0 rank_id=0x%04X subscore=0x%04X\n",
 		tag ? tag : "(null)",
@@ -517,6 +525,65 @@ void LogRankMenuProbe(const char* tag, void* selfValue)
 		static_cast<unsigned int>(raw1BB0),
 		static_cast<unsigned int>(raw1BB0RankId),
 		static_cast<unsigned int>(raw1BB0Subscore));
+
+	if (selectedSelector < 0x40)
+	{
+		uintptr_t rankedTableBase = 0;
+		if (TryGetRankedTableBaseLocal(&rankedTableBase))
+		{
+			const uint8_t* const rowObject = reinterpret_cast<const uint8_t*>(rankedTableBase + 0xD4 + selectedSelector * 0x180);
+			if (!IsBadReadPtr(rowObject, 0xF8))
+			{
+				static uint32_t s_lastRowSelector = 0xFFFFFFFFu;
+				static uint32_t s_lastRowPacked00 = 0xFFFFFFFFu;
+				static uint32_t s_lastRowField0C = 0xFFFFFFFFu;
+				static uint32_t s_lastRowField10 = 0xFFFFFFFFu;
+				static uint32_t s_lastRowField20 = 0xFFFFFFFFu;
+				static uint32_t s_lastRowFieldD4 = 0xFFFFFFFFu;
+
+				const uint32_t rowPacked00 = *reinterpret_cast<const uint32_t*>(rowObject + 0x00);
+				const uint32_t rowField0C = *reinterpret_cast<const uint32_t*>(rowObject + 0x0C);
+				const uint32_t rowField10 = *reinterpret_cast<const uint32_t*>(rowObject + 0x10);
+				const uint32_t rowField20 = *reinterpret_cast<const uint32_t*>(rowObject + 0x20);
+				const uint32_t rowFieldD4 = *reinterpret_cast<const uint32_t*>(rowObject + 0xD4);
+
+				if (s_lastRowSelector != selectedSelector ||
+					s_lastRowPacked00 != rowPacked00 ||
+					s_lastRowField0C != rowField0C ||
+					s_lastRowField10 != rowField10 ||
+					s_lastRowField20 != rowField20 ||
+					s_lastRowFieldD4 != rowFieldD4)
+				{
+					s_lastRowSelector = selectedSelector;
+					s_lastRowPacked00 = rowPacked00;
+					s_lastRowField0C = rowField0C;
+					s_lastRowField10 = rowField10;
+					s_lastRowField20 = rowField20;
+					s_lastRowFieldD4 = rowFieldD4;
+
+					LOG(1, "[RANK][MenuProbeRow] tag=%s cursor=%u selector=%u row=0x%p packed00=0x%08X packed_rank=0x%04X packed_sub=0x%04X field0C=0x%08X (%u) field10=0x%08X (%u) field20=0x%08X fieldD4=0x%08X nextRankMeta=0x%04X\n",
+						tag ? tag : "(null)",
+						static_cast<unsigned int>(raw1960),
+						static_cast<unsigned int>(selectedSelector),
+						rowObject,
+						static_cast<unsigned int>(rowPacked00),
+						static_cast<unsigned int>(rowPacked00 & 0xFFFFu),
+						static_cast<unsigned int>((rowPacked00 >> 16) & 0xFFFFu),
+						static_cast<unsigned int>(rowField0C),
+						static_cast<unsigned int>(rowField0C),
+						static_cast<unsigned int>(rowField10),
+						static_cast<unsigned int>(rowField10),
+						static_cast<unsigned int>(rowField20),
+						static_cast<unsigned int>(rowFieldD4),
+						static_cast<unsigned int>((rowFieldD4 >> 16) & 0xFFFFu));
+				}
+
+				const uint32_t traceAddr = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(rowObject) + 0x0Cu);
+				BeginRankedSlotWriteTrace(traceAddr, "menuprobe_selected_row_lp_pair");
+				BumpRankedTraceMaxChangesIfCurrent(traceAddr, 2u);
+			}
+		}
+	}
 
 	if (s_budget == 48)
 	{
@@ -1219,6 +1286,150 @@ bool ReadRankedTrackedSlotPair(uint32_t slotAddr, uint32_t* outLo, uint32_t* out
 	return true;
 }
 
+bool TryGetRankedTableBaseLocal(uintptr_t* outBase)
+{
+	if (!outBase)
+	{
+		return false;
+	}
+
+	const uintptr_t moduleBase = reinterpret_cast<uintptr_t>(GetBbcfBaseAdress());
+	if (moduleBase == 0)
+	{
+		return false;
+	}
+
+	typedef uintptr_t(__cdecl* RankedTableBaseFn)();
+	const RankedTableBaseFn rankedTableBaseFn = reinterpret_cast<RankedTableBaseFn>(moduleBase + kRankedTableBaseFnRva);
+	const uintptr_t rankedTableBase = rankedTableBaseFn ? rankedTableBaseFn() : 0;
+	if (rankedTableBase == 0)
+	{
+		return false;
+	}
+
+	*outBase = rankedTableBase;
+	return true;
+}
+
+void LogRankMenuSelectedRowSource(const char* tag, void* selfValue)
+{
+	static uint32_t s_lastSelector = 0xFFFFFFFFu;
+	static uint32_t s_lastCursor = 0xFFFFFFFFu;
+	static uint32_t s_lastPacked00 = 0xFFFFFFFFu;
+	static uint32_t s_lastField0C = 0xFFFFFFFFu;
+	static uint32_t s_lastField10 = 0xFFFFFFFFu;
+	static uint32_t s_lastField20 = 0xFFFFFFFFu;
+	static uint32_t s_lastFieldD4 = 0xFFFFFFFFu;
+	static uint32_t s_lastFieldF4 = 0xFFFFFFFFu;
+
+	uint8_t* const self = reinterpret_cast<uint8_t*>(selfValue);
+	if (!self || IsBadReadPtr(self, 0x1760 + 0x40 * 8))
+	{
+		return;
+	}
+
+	const uint32_t cursorValue = *reinterpret_cast<uint32_t*>(self + 0x1960);
+	if (cursorValue >= 0x40 || IsBadReadPtr(self + 0x1760 + cursorValue * 8, sizeof(uint32_t)))
+	{
+		return;
+	}
+
+	const uint32_t selectorValue = *reinterpret_cast<uint32_t*>(self + 0x1760 + cursorValue * 8);
+	if (selectorValue >= 0x40)
+	{
+		return;
+	}
+
+	uintptr_t rankedTableBase = 0;
+	if (!TryGetRankedTableBaseLocal(&rankedTableBase))
+	{
+		return;
+	}
+
+	const uint8_t* const rowObject = reinterpret_cast<const uint8_t*>(rankedTableBase + 0xD4 + selectorValue * 0x180);
+	if (IsBadReadPtr(rowObject, 0xF8))
+	{
+		return;
+	}
+
+	const uint32_t packed00 = *reinterpret_cast<const uint32_t*>(rowObject + 0x00);
+	const uint32_t field0C = *reinterpret_cast<const uint32_t*>(rowObject + 0x0C);
+	const uint32_t field10 = *reinterpret_cast<const uint32_t*>(rowObject + 0x10);
+	const uint32_t field20 = *reinterpret_cast<const uint32_t*>(rowObject + 0x20);
+	const uint32_t fieldD4 = *reinterpret_cast<const uint32_t*>(rowObject + 0xD4);
+	const uint32_t fieldF4 = *reinterpret_cast<const uint32_t*>(rowObject + 0xF4);
+
+	if (s_lastSelector == selectorValue &&
+		s_lastCursor == cursorValue &&
+		s_lastPacked00 == packed00 &&
+		s_lastField0C == field0C &&
+		s_lastField10 == field10 &&
+		s_lastField20 == field20 &&
+		s_lastFieldD4 == fieldD4 &&
+		s_lastFieldF4 == fieldF4)
+	{
+		return;
+	}
+
+	s_lastSelector = selectorValue;
+	s_lastCursor = cursorValue;
+	s_lastPacked00 = packed00;
+	s_lastField0C = field0C;
+	s_lastField10 = field10;
+	s_lastField20 = field20;
+	s_lastFieldD4 = fieldD4;
+	s_lastFieldF4 = fieldF4;
+
+	LOG(1, "[RANK][MenuRowSource] tag=%s cursor=%u selector=%u row=0x%p packed00=0x%08X packed_rank=0x%04X packed_sub=0x%04X field0C=0x%08X (%u) field10=0x%08X (%u) field20=0x%08X fieldD4=0x%08X nextRankMeta=0x%04X fieldF4=0x%08X f4_rank=0x%04X f4_sub=0x%04X\n",
+		tag ? tag : "(null)",
+		static_cast<unsigned int>(cursorValue),
+		static_cast<unsigned int>(selectorValue),
+		rowObject,
+		static_cast<unsigned int>(packed00),
+		static_cast<unsigned int>(packed00 & 0xFFFFu),
+		static_cast<unsigned int>((packed00 >> 16) & 0xFFFFu),
+		static_cast<unsigned int>(field0C),
+		static_cast<unsigned int>(field0C),
+		static_cast<unsigned int>(field10),
+		static_cast<unsigned int>(field10),
+		static_cast<unsigned int>(field20),
+		static_cast<unsigned int>(fieldD4),
+		static_cast<unsigned int>((fieldD4 >> 16) & 0xFFFFu),
+		static_cast<unsigned int>(fieldF4),
+		static_cast<unsigned int>((fieldF4 >> 16) & 0xFFFFu),
+		static_cast<unsigned int>(fieldF4 & 0xFFFFu));
+}
+
+void TryBeginRankMenuRowLpTrace(const char* reason, void* selfValue)
+{
+	uint8_t* const self = reinterpret_cast<uint8_t*>(selfValue);
+	if (!self || IsBadReadPtr(self, 0x1760 + 0x40 * 8))
+	{
+		return;
+	}
+
+	const uint32_t cursorValue = *reinterpret_cast<uint32_t*>(self + 0x1960);
+	if (cursorValue >= 0x40 || IsBadReadPtr(self + 0x1760 + cursorValue * 8, sizeof(uint32_t)))
+	{
+		return;
+	}
+
+	const uint32_t selectorValue = *reinterpret_cast<uint32_t*>(self + 0x1760 + cursorValue * 8);
+	if (selectorValue >= 0x40)
+	{
+		return;
+	}
+
+	uintptr_t rankedTableBase = 0;
+	if (!TryGetRankedTableBaseLocal(&rankedTableBase))
+	{
+		return;
+	}
+
+	const uint32_t traceAddr = static_cast<uint32_t>(rankedTableBase + 0xD4 + selectorValue * 0x180 + 0x0Cu);
+	BeginRankedSlotWriteTrace(traceAddr, reason ? reason : "menu_row_lp_pair");
+}
+
 void BeginRankedSlotWriteTrace(uint32_t slotAddr, const char* reason)
 {
 	uint32_t slotLo = 0;
@@ -1311,6 +1522,19 @@ LOG(2, "[RANK][DataFlow] begin reason=%s cycle=%u slot=0x%p page=0x%08X pageSize
 		g_rankedSlotWriteTrace.zeroWindowOnly ? 1 : 0,
 		g_rankedSlotWriteTrace.stopAfterFirstChange ? 1 : 0,
 		g_rankedSlotWriteTrace.maxValueChanges);
+}
+
+void BumpRankedTraceMaxChangesIfCurrent(uint32_t slotAddr, unsigned int maxChanges)
+{
+	if (!g_rankedSlotWriteTrace.active || g_rankedSlotWriteTrace.slotAddr != slotAddr)
+	{
+		return;
+	}
+
+	if (maxChanges > g_rankedSlotWriteTrace.maxValueChanges)
+	{
+		g_rankedSlotWriteTrace.maxValueChanges = maxChanges;
+	}
 }
 
 void EndRankedSlotWriteTrace(const char* reason)
@@ -1807,6 +2031,22 @@ bool TryLogRankUploadStateMachineCandidate(const char* callsite, const char* lab
 	const bool firstSeenThisCycle = (!slot->used || slot->lastLoggedCycle != g_rankedProbeStats.matchCycleCount);
 	const bool periodicHeartbeat = slot->used && ((slot->seenCalls % 256u) == 0u);
 	const bool state3Entered = (!slot->used || slot->state != 3) && state == 3;
+	const bool traceAlreadyCoversThisSlot =
+		g_rankedSlotWriteTrace.active &&
+		g_rankedSlotWriteTrace.slotAddr == (selfValue + 0x118u) &&
+		g_rankedSlotWriteTrace.cycle == g_rankedProbeStats.matchCycleCount;
+	const bool shouldStartEarlyTrace =
+		plausibleRankedState &&
+		slot118Readable &&
+		state <= 3u &&
+		std::strcmp(slotShape, "packed_like") == 0 &&
+		firstSeenThisCycle &&
+		!traceAlreadyCoversThisSlot;
+
+	if (shouldStartEarlyTrace)
+	{
+		BeginRankedSlotWriteTrace(selfValue + 0x118u, "state_machine_first_seen_window");
+	}
 
 	if (state3Entered)
 	{
@@ -3029,16 +3269,24 @@ uint32_t __fastcall HookedRankUploadStateMachineDirect(void* self, void* edx, vo
 uint32_t __fastcall HookedRankMenuTopUpdate(void* self, void* edx)
 {
 	LogRankMenuProbe("TopUpdate_pre", self);
+	LogRankMenuSelectedRowSource("TopUpdate_pre", self);
+	TryBeginRankMenuRowLpTrace("menu_topupdate_row_lp_pair", self);
 	const uint32_t result = orig_RankMenuTopUpdate ? orig_RankMenuTopUpdate(self, edx) : 0;
 	LogRankMenuProbe("TopUpdate_post", self);
+	LogRankMenuSelectedRowSource("TopUpdate_post", self);
+	TryBeginRankMenuRowLpTrace("menu_topupdate_row_lp_pair", self);
 	return result;
 }
 
 uint32_t __fastcall HookedRankMenuCharSeleInit(void* self, void* edx)
 {
 	LogRankMenuProbe("CharSeleInit_pre", self);
+	LogRankMenuSelectedRowSource("CharSeleInit_pre", self);
+	TryBeginRankMenuRowLpTrace("charseleinit_row_lp_pair", self);
 	const uint32_t result = orig_RankMenuCharSeleInit ? orig_RankMenuCharSeleInit(self, edx) : 0;
 	LogRankMenuProbe("CharSeleInit_post", self);
+	LogRankMenuSelectedRowSource("CharSeleInit_post", self);
+	TryBeginRankMenuRowLpTrace("charseleinit_row_lp_pair", self);
 	return result;
 }
 
