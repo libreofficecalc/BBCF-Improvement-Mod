@@ -42,13 +42,54 @@ namespace
 	constexpr size_t kRankedCharSeleStaticSize = 0x1BC0;
 	constexpr uintptr_t kRankedTableBaseFnRva = 0x0009D5C0;
 	constexpr uint32_t kInvalidRankedCharacterId = 0xFFFFFFFFu;
-	constexpr float kRankedOverlayWidth = 500.0f;
-	constexpr float kRankedOverlayBarHeight = 20.0f;
-	constexpr float kRankedOverlayGainDuration = 0.85f;
-	constexpr float kRankedOverlayRankPhaseDuration = 0.45f;
-	constexpr float kRankedOverlayRankSettleDuration = 0.55f;
-	constexpr float kRankedOverlayUploadFadeDuration = 0.35f;
-	constexpr float kRankedOverlayUploadHoldDuration = 5.0f;
+
+	struct RankedOverlayTuning
+	{
+		// Overall ranked progress window width in pixels.
+		float overlayWidth = 500.0f;
+		// Height of the horizontal LP progress bar in pixels.
+		float barHeight = 20.0f;
+
+		// Duration for same-rank LP animations where the bar only moves within one rank.
+		float gainDuration = 0.85f;
+		// First half of a rank-up / rank-down animation: fill to full or drain to zero.
+		float rankPhaseDuration = 0.45f;
+		// Second half of a rank-up / rank-down animation: move inside the new rank.
+		float rankSettleDuration = 0.55f;
+
+		// Fade-in / fade-out duration for the post-match ranked progress popup.
+		float uploadFadeDuration = 0.35f;
+		// How long the popup stays fully visible after the animation is done.
+		float uploadHoldDuration = 5.0f;
+
+		// How long the center `+LP` / `-LP` label takes to fade in.
+		float deltaFadeInDuration = 0.15f;
+		// Absolute time from animation start when the center `+LP` / `-LP` label starts fading out.
+		// Raise this if you want the label to stay on screen longer overall.
+		float deltaFadeOutStart = 4.0f;
+		// How long the center `+LP` / `-LP` label takes to fade out once fade-out begins.
+		float deltaFadeOutDuration = 0.15f;
+
+		// Rank text color for AUTH / unranked.
+		ImVec4 authColor = ImVec4(0.96f, 0.96f, 0.96f, 1.0f);
+		// Rank text color for LV1-LV16.
+		ImVec4 lowRankColor = ImVec4(0.514f, 0.839f, 0.012f, 1.0f);
+		// Rank text color for LV17-LV29.
+		ImVec4 midRankColor = ImVec4(0.0f, 1.0f, 0.992f, 1.0f);
+		// Rank text color for LV30-LV35.
+		ImVec4 highRankColor = ImVec4(0.973f, 0.271f, 0.0f, 1.0f);
+		// Rank text color for Leader / Hero / Kisshin / Meiou / Tentei.
+		ImVec4 leaderRankColor = ImVec4(0.996f, 0.933f, 0.0f, 1.0f);
+
+		// Color used for positive LP change text such as `+20`.
+		ImVec4 lpGainColor = ImVec4(0.31f, 0.92f, 0.41f, 1.0f);
+		// Color used for negative LP change text such as `-20`.
+		ImVec4 lpLossColor = ImVec4(0.97f, 0.32f, 0.32f, 1.0f);
+	};
+
+	// Ranked progress visual tuning lives here.
+	// Edit these values directly when you want to tweak colors or popup timing.
+	RankedOverlayTuning g_rankedOverlayTuning{};
 
 	RankedProgressOverlaySnapshot g_rankedProgressOverlaySnapshot{};
 	RankedUploadOverlayState g_rankedUploadOverlayState{};
@@ -78,7 +119,17 @@ namespace
 		double startTime = 0.0;
 	};
 
+	struct RankedDeltaToastState
+	{
+		bool active = false;
+		uint64_t uploadSerial = 0;
+		uint32_t characterId = kInvalidRankedCharacterId;
+		int32_t delta = 0;
+		double startTime = 0.0;
+	};
+
 	RankedProgressAnimationState g_rankedProgressAnimation{};
+	RankedDeltaToastState g_rankedDeltaToast{};
 	std::array<RankedProgressDisplayState, 64> g_lastKnownRankDisplayByCharacter{};
 	std::array<uint8_t, 64> g_hasLastKnownRankDisplayByCharacter{};
 	uint32_t g_lastRankedOverlayCharacterId = kInvalidRankedCharacterId;
@@ -200,25 +251,25 @@ namespace
 	{
 		if (isUnranked || visibleRank == 0u)
 		{
-			return ImVec4(0.96f, 0.96f, 0.96f, 1.0f);
+			return g_rankedOverlayTuning.authColor;
 		}
 
 		if (visibleRank <= 16u)
 		{
-			return ImVec4(0.38f, 0.90f, 0.45f, 1.0f);
+			return g_rankedOverlayTuning.lowRankColor;
 		}
 
 		if (visibleRank <= 29u)
 		{
-			return ImVec4(0.33f, 0.88f, 1.0f, 1.0f);
+			return g_rankedOverlayTuning.midRankColor;
 		}
 
 		if (visibleRank <= 35u)
 		{
-			return ImVec4(1.0f, 0.67f, 0.24f, 1.0f);
+			return g_rankedOverlayTuning.highRankColor;
 		}
 
-		return ImVec4(0.98f, 0.86f, 0.24f, 1.0f);
+		return g_rankedOverlayTuning.leaderRankColor;
 	}
 
 	bool IsRankAllOrigin(const char* origin)
@@ -494,6 +545,11 @@ namespace
 		g_rankedProgressAnimation.source = source;
 		g_rankedProgressAnimation.target = target;
 		g_rankedProgressAnimation.startTime = ImGui::GetTime();
+		g_rankedDeltaToast.active = delta != 0;
+		g_rankedDeltaToast.uploadSerial = uploadSerial;
+		g_rankedDeltaToast.characterId = target.characterId;
+		g_rankedDeltaToast.delta = delta;
+		g_rankedDeltaToast.startTime = g_rankedProgressAnimation.startTime;
 		LOG(1, "[RANK][OverlayAnim] start char=%u fromRank=%u fromLp=%u fromNext=%u toRank=%u toLp=%u toNext=%u delta=%+d uploadSerial=%llu\n",
 			static_cast<unsigned int>(target.characterId),
 			static_cast<unsigned int>(source.visibleRank),
@@ -504,6 +560,65 @@ namespace
 			static_cast<unsigned int>(target.nextThreshold),
 			delta,
 			static_cast<unsigned long long>(uploadSerial));
+	}
+
+	float ComputeDeltaToastAlpha(const RankedProgressDisplayState& displayState, int32_t* outDelta)
+	{
+		if (outDelta)
+		{
+			*outDelta = 0;
+		}
+
+		if (!g_rankedDeltaToast.active || g_rankedDeltaToast.characterId == kInvalidRankedCharacterId)
+		{
+			return 0.0f;
+		}
+
+		if (displayState.characterId != g_rankedDeltaToast.characterId)
+		{
+			return 0.0f;
+		}
+
+		const double elapsed = ImGui::GetTime() - g_rankedDeltaToast.startTime;
+		if (elapsed < 0.0)
+		{
+			return 0.0f;
+		}
+
+		const double fadeInDuration = std::max<double>(g_rankedOverlayTuning.deltaFadeInDuration, 0.0001);
+		const double fadeOutStart = std::max<double>(g_rankedOverlayTuning.deltaFadeOutStart, 0.0);
+		const double fadeOutDuration = std::max<double>(g_rankedOverlayTuning.deltaFadeOutDuration, 0.0001);
+
+		float alpha = 1.0f;
+		if (elapsed < fadeInDuration)
+		{
+			alpha = static_cast<float>(elapsed / fadeInDuration);
+		}
+		else if (elapsed >= fadeOutStart)
+		{
+			const double fadeOutElapsed = elapsed - fadeOutStart;
+			if (fadeOutElapsed >= fadeOutDuration)
+			{
+				g_rankedDeltaToast.active = false;
+				return 0.0f;
+			}
+			alpha = 1.0f - static_cast<float>(fadeOutElapsed / fadeOutDuration);
+		}
+
+		if (alpha < 0.0f)
+		{
+			alpha = 0.0f;
+		}
+		else if (alpha > 1.0f)
+		{
+			alpha = 1.0f;
+		}
+
+		if (outDelta)
+		{
+			*outDelta = g_rankedDeltaToast.delta;
+		}
+		return alpha;
 	}
 
 	void BeginObservedRankedUploadWindow(uint32_t attemptedCharacterId, int32_t uploadedScore)
@@ -679,14 +794,21 @@ namespace
 
 		if (!g_rankedProgressAnimation.active || !g_rankedProgressAnimation.target.valid || fallbackState.characterId != g_rankedProgressAnimation.target.characterId)
 		{
+			const float deltaAlpha = ComputeDeltaToastAlpha(fallbackState, outDelta);
+			if (outDeltaAlpha)
+			{
+				*outDeltaAlpha = deltaAlpha;
+			}
+			g_rankedProgressAnimationSnapshot.displayedDelta = outDelta ? *outDelta : 0;
+			g_rankedProgressAnimationSnapshot.deltaAlpha = deltaAlpha;
 			return;
 		}
 
 		const double elapsed = ImGui::GetTime() - g_rankedProgressAnimation.startTime;
 		const bool rankChanged = g_rankedProgressAnimation.source.visibleRank != g_rankedProgressAnimation.target.visibleRank;
 		const double totalDuration = rankChanged
-			? static_cast<double>(kRankedOverlayRankPhaseDuration + kRankedOverlayRankSettleDuration)
-			: static_cast<double>(kRankedOverlayGainDuration);
+			? static_cast<double>(g_rankedOverlayTuning.rankPhaseDuration + g_rankedOverlayTuning.rankSettleDuration)
+			: static_cast<double>(g_rankedOverlayTuning.gainDuration);
 		if (elapsed >= totalDuration)
 		{
 			*outState = g_rankedProgressAnimation.target;
@@ -712,9 +834,9 @@ namespace
 		else
 		{
 			const bool rankUp = g_rankedProgressAnimation.target.visibleRank > g_rankedProgressAnimation.source.visibleRank;
-			if (elapsed < kRankedOverlayRankPhaseDuration)
+			if (elapsed < g_rankedOverlayTuning.rankPhaseDuration)
 			{
-				const float t = static_cast<float>(elapsed / static_cast<double>(kRankedOverlayRankPhaseDuration));
+				const float t = static_cast<float>(elapsed / static_cast<double>(g_rankedOverlayTuning.rankPhaseDuration));
 				outState->valid = true;
 				outState->isUnranked = g_rankedProgressAnimation.source.isUnranked;
 				outState->characterId = g_rankedProgressAnimation.source.characterId;
@@ -730,8 +852,8 @@ namespace
 			}
 			else
 			{
-				const double phaseElapsed = elapsed - static_cast<double>(kRankedOverlayRankPhaseDuration);
-				const float t = static_cast<float>(phaseElapsed / static_cast<double>(kRankedOverlayRankSettleDuration));
+				const double phaseElapsed = elapsed - static_cast<double>(g_rankedOverlayTuning.rankPhaseDuration);
+				const float t = static_cast<float>(phaseElapsed / static_cast<double>(g_rankedOverlayTuning.rankSettleDuration));
 				outState->valid = true;
 				outState->isUnranked = g_rankedProgressAnimation.target.isUnranked;
 				outState->characterId = g_rankedProgressAnimation.target.characterId;
@@ -756,46 +878,23 @@ namespace
 			outState->progress = 1.0f;
 		}
 
-		const float fadeInEnd = 0.18f;
-		const float fadeOutStart = 0.72f;
-		const float normalizedTime = totalDuration > 0.0
-			? static_cast<float>(elapsed / totalDuration)
-			: 1.0f;
-		float alpha = 1.0f;
-		if (normalizedTime < fadeInEnd)
-		{
-			alpha = normalizedTime / fadeInEnd;
-		}
-		else if (normalizedTime > fadeOutStart)
-		{
-			alpha = 1.0f - ((normalizedTime - fadeOutStart) / (1.0f - fadeOutStart));
-		}
-		if (alpha < 0.0f)
-		{
-			alpha = 0.0f;
-		}
-		else if (alpha > 1.0f)
-		{
-			alpha = 1.0f;
-		}
-		if (outDelta)
-		{
-			*outDelta = g_rankedProgressAnimation.delta;
-		}
-		if (outDeltaAlpha)
-		{
-			*outDeltaAlpha = alpha;
-		}
-
 		g_rankedProgressAnimationSnapshot.active = g_rankedProgressAnimation.active;
 		g_rankedProgressAnimationSnapshot.characterId = outState->characterId;
 		g_rankedProgressAnimationSnapshot.displayedRank = outState->visibleRank;
 		g_rankedProgressAnimationSnapshot.displayedLp = outState->currentLp;
 		g_rankedProgressAnimationSnapshot.displayedThreshold = outState->nextThreshold;
 		g_rankedProgressAnimationSnapshot.displayedProgress = outState->progress;
-		g_rankedProgressAnimationSnapshot.displayedDelta = g_rankedProgressAnimation.delta;
-		g_rankedProgressAnimationSnapshot.deltaAlpha = alpha;
+		g_rankedProgressAnimationSnapshot.displayedDelta = 0;
+		g_rankedProgressAnimationSnapshot.deltaAlpha = 0.0f;
 		g_rankedProgressAnimationSnapshot.phase = outPhase ? *outPhase : 0u;
+
+		const float deltaAlpha = ComputeDeltaToastAlpha(*outState, outDelta);
+		if (outDeltaAlpha)
+		{
+			*outDeltaAlpha = deltaAlpha;
+		}
+		g_rankedProgressAnimationSnapshot.displayedDelta = outDelta ? *outDelta : 0;
+		g_rankedProgressAnimationSnapshot.deltaAlpha = deltaAlpha;
 	}
 
 	void HandleRankedUploadAnimationEvent(const RankedUploadOverlayState& uploadState)
@@ -866,7 +965,7 @@ namespace
 		const double now = ImGui::GetTime();
 		if (g_rankedProgressAnimation.active)
 		{
-			const float fadeInT = static_cast<float>((now - g_rankedOverlayVisibility.uploadFadeInStart) / kRankedOverlayUploadFadeDuration);
+			const float fadeInT = static_cast<float>((now - g_rankedOverlayVisibility.uploadFadeInStart) / g_rankedOverlayTuning.uploadFadeDuration);
 			if (fadeInT <= 0.0f)
 			{
 				return 0.0f;
@@ -876,7 +975,7 @@ namespace
 
 		if (g_rankedOverlayVisibility.uploadFadeOutStart <= 0.0)
 		{
-			g_rankedOverlayVisibility.uploadFadeOutStart = now + kRankedOverlayUploadHoldDuration;
+			g_rankedOverlayVisibility.uploadFadeOutStart = now + g_rankedOverlayTuning.uploadHoldDuration;
 			return 1.0f;
 		}
 
@@ -885,7 +984,7 @@ namespace
 			return 1.0f;
 		}
 
-		const float fadeOutT = static_cast<float>((now - g_rankedOverlayVisibility.uploadFadeOutStart) / kRankedOverlayUploadFadeDuration);
+		const float fadeOutT = static_cast<float>((now - g_rankedOverlayVisibility.uploadFadeOutStart) / g_rankedOverlayTuning.uploadFadeDuration);
 		if (fadeOutT >= 1.0f)
 		{
 			g_rankedOverlayVisibility.uploadCardVisible = false;
@@ -1827,7 +1926,7 @@ void DrawRankedProgressOverlayStandalone()
 		return;
 	}
 
-	ImGui::SetWindowSize(ImVec2(kRankedOverlayWidth, 118.0f), ImGuiCond_FirstUseEver);
+	ImGui::SetWindowSize(ImVec2(g_rankedOverlayTuning.overlayWidth, 118.0f), ImGuiCond_FirstUseEver);
 
 	RankedProgressDisplayState baseDisplay{};
 	if (hasLiveSnapshot)
@@ -1882,7 +1981,7 @@ void DrawRankedProgressOverlayStandalone()
 	const float availableBarWidth = ImGui::GetContentRegionAvail().x;
 	const float barWidth = availableBarWidth > 320.0f ? availableBarWidth : 320.0f;
 	const ImVec2 barPos = ImGui::GetCursorScreenPos();
-	const ImVec2 barSize(barWidth, kRankedOverlayBarHeight);
+	const ImVec2 barSize(barWidth, g_rankedOverlayTuning.barHeight);
 	const ImU32 bgColor = ImGui::ColorConvertFloat4ToU32(ImVec4(0.16f, 0.17f, 0.19f, 0.96f));
 	const ImU32 borderColor = ImGui::ColorConvertFloat4ToU32(ImVec4(0.36f, 0.37f, 0.41f, 1.0f));
 	drawList->AddRectFilled(barPos, ImVec2(barPos.x + barSize.x, barPos.y + barSize.y), bgColor, 5.0f);
@@ -1907,8 +2006,8 @@ void DrawRankedProgressOverlayStandalone()
 		char deltaBuffer[32] = {};
 		std::snprintf(deltaBuffer, sizeof(deltaBuffer), "%+d", renderedDelta);
 		ImVec4 deltaColor = renderedDelta >= 0
-			? ImVec4(0.31f, 0.92f, 0.41f, deltaAlpha)
-			: ImVec4(0.97f, 0.32f, 0.32f, deltaAlpha);
+			? ImVec4(g_rankedOverlayTuning.lpGainColor.x, g_rankedOverlayTuning.lpGainColor.y, g_rankedOverlayTuning.lpGainColor.z, deltaAlpha)
+			: ImVec4(g_rankedOverlayTuning.lpLossColor.x, g_rankedOverlayTuning.lpLossColor.y, g_rankedOverlayTuning.lpLossColor.z, deltaAlpha);
 		const float deltaWidth = ImGui::CalcTextSize(deltaBuffer).x;
 		const float centeredDeltaOffset = (fullWidth - deltaWidth) * 0.5f;
 		ImGui::SameLine(centeredDeltaOffset > thirdWidth ? centeredDeltaOffset : thirdWidth);
