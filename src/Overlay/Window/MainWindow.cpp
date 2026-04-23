@@ -428,6 +428,8 @@ namespace
 		}
 
 		static std::array<uint32_t, 64> s_lastRowHashes{};
+		static std::array<std::array<uint8_t, 0x180>, 64> s_lastRowBytes{};
+		static std::array<uint8_t, 64> s_hasLastRowBytes{};
 		constexpr size_t kRowObjectSize = 0x180;
 		constexpr size_t kDumpStride = 0x20;
 
@@ -436,7 +438,58 @@ namespace
 		{
 			return;
 		}
+
+		if (s_hasLastRowBytes[rowIndex] != 0)
+		{
+			unsigned int changedWords = 0;
+			for (size_t offset = 0; offset < kRowObjectSize; offset += sizeof(uint32_t))
+			{
+				const uint32_t before = *reinterpret_cast<const uint32_t*>(s_lastRowBytes[rowIndex].data() + offset);
+				const uint32_t after = *reinterpret_cast<const uint32_t*>(rowObject + offset);
+				if (before == after)
+				{
+					continue;
+				}
+
+				++changedWords;
+				const uint16_t beforeLo = static_cast<uint16_t>(before & 0xFFFFu);
+				const uint16_t beforeHi = static_cast<uint16_t>((before >> 16) & 0xFFFFu);
+				const uint16_t afterLo = static_cast<uint16_t>(after & 0xFFFFu);
+				const uint16_t afterHi = static_cast<uint16_t>((after >> 16) & 0xFFFFu);
+				const char* region = "other";
+				if (offset >= 0x24 && offset < 0xA4)
+				{
+					region = "total_region";
+				}
+				else if (offset >= 0xA4 && offset < 0x124)
+				{
+					region = "earned_region";
+				}
+
+				LOG(1, "[RANK][OverlayRowDiff] row=%u off=0x%03X region=%s before=0x%08X after=0x%08X before16=[0x%04X,0x%04X] after16=[0x%04X,0x%04X]\n",
+					static_cast<unsigned int>(rowIndex),
+					static_cast<unsigned int>(offset),
+					region,
+					static_cast<unsigned int>(before),
+					static_cast<unsigned int>(after),
+					static_cast<unsigned int>(beforeLo),
+					static_cast<unsigned int>(beforeHi),
+					static_cast<unsigned int>(afterLo),
+					static_cast<unsigned int>(afterHi));
+			}
+
+			if (changedWords > 0u)
+			{
+				LOG(1, "[RANK][OverlayRowDiff] row=%u changedWords=%u newHash=0x%08X\n",
+					static_cast<unsigned int>(rowIndex),
+					changedWords,
+					static_cast<unsigned int>(rowHash));
+			}
+		}
+
 		s_lastRowHashes[rowIndex] = rowHash;
+		std::memcpy(s_lastRowBytes[rowIndex].data(), rowObject, kRowObjectSize);
+		s_hasLastRowBytes[rowIndex] = 1;
 
 		LOG(1, "[RANK][OverlayRowDump] row=%u rank=%u lp=%u nextLp=%u wins=%u matches=%u metadataNext=%u hash=0x%08X\n",
 			static_cast<unsigned int>(rowIndex),

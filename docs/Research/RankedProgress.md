@@ -9795,3 +9795,534 @@ Current interpretation:
 - accept-path stability improved enough to survive the offline ranked automation path
 - strongest next question is now whether the live ranked accept crash is gone on operator hardware too
 - if live accept no longer crashes, resume observing Bullet LP changes and toast behavior with the current UI assumption unchanged
+
+## Section 182 - 2026-04-23 successful live ranked run proves exact packed score formula; next unknown is threshold / next-LP formula
+
+What this successful live `DEBUG.txt` proved exactly:
+
+- ranked accept-path and post-match toast both worked correctly in live play
+- for character row `24`, the packed row value, observed overlay LP, and uploaded Steam leaderboard score matched exactly under one reversible formula
+
+Proven exact formulas:
+
+- authoritative row packed field:
+  - `packed00 = (packedSubscore << 16) | internalRank`
+- uploaded leaderboard score:
+  - `uploadScore = (internalRank << 16) | packedSubscore`
+- therefore:
+  - `uploadScore == swap16(packed00)`
+- visible/displayed rank:
+  - `visibleRank = internalRank + 1`
+- current LP for our overlay:
+  - `currentLp = packedSubscore`
+
+Direct proof from the live run:
+
+- before first upload:
+  - row `24` authoritative / overlay:
+    - `packed00=0x817F001F`
+    - `internalRank=0x001F = 31`
+    - `visibleRank=32`
+    - `packedSubscore=0x817F = 33151`
+  - Steam upload:
+    - `score=2065791 = 0x001F857F`
+- before second upload:
+  - row `24` authoritative / overlay:
+    - `packed00=0x897F001F`
+    - `internalRank=0x001F = 31`
+    - `visibleRank=32`
+    - `packedSubscore=0x897F = 35199`
+  - Steam upload:
+    - `score=2066815 = 0x001F897F`
+
+What this means:
+
+- current LP is no longer a hypothesis
+- current LP is exactly the packed subscore halfword
+- displayed rank is no longer a hypothesis
+- displayed rank is exactly the packed internal rank plus one
+- Steam `RANK_ALL` upload is the same two values with the 16-bit halves swapped
+- `details[0]` on the live `RANK_ALL` upload matched the character row:
+  - `details[0] = 24`
+
+What is still not solved:
+
+- threshold / next-LP formula is still unknown
+- this run showed rank/LP changing while the old menu-style fields stayed fixed:
+  - `raw0C` stayed `0x14BD` (`5309`)
+  - `raw10` stayed `0x0794` (`1940`)
+  - `raw20` stayed `0x0000000C`
+  - `metadataNextRank` stayed `34`
+- meanwhile packed LP changed twice:
+  - `33151 -> 34175 -> 35199`
+- so `raw0C/raw10` are not the live packed current-LP formula
+
+Important live delta from this run:
+
+- both wins increased packed LP by exactly `+1024`
+  - `33151 -> 34175`
+  - `34175 -> 35199`
+- visible rank stayed `32`
+- overlay toast fired correctly both times
+
+What extra instrumentation was added after analyzing this run:
+
+- `src/Overlay/Window/MainWindow.cpp`
+  - `MaybeLogRankedRowDump(...)` now also emits compact `[RANK][OverlayRowDiff]` lines
+  - it compares the current 0x180-byte ranked row object against the last version of the same row
+  - only changed 32-bit offsets are logged
+- purpose:
+  - isolate exactly which row words move per win/loss so the threshold / next-LP formula can be recovered without dumping unrelated noise
+
+Build result:
+
+- `Debug|Win32` build passed after the row-diff logging patch
+
+Current interpretation:
+
+- exact formula for rank and current LP is now established:
+  - `visible rank = (packed00 & 0xFFFF) + 1`
+  - `current LP = packed00 >> 16`
+  - `uploaded RANK_ALL score = ((packed00 & 0xFFFF) << 16) | (packed00 >> 16)`
+- remaining RE target is only:
+  - threshold / next-LP / rank-up boundary formula
+
+Exact next test:
+
+- deploy this build
+- play another live ranked match on the same character if possible
+- provide the next `DEBUG.txt`
+
+Exact next lines wanted:
+
+- `[RANK][OverlayRowDiff] row=24 ...`
+- especially any changed offsets other than:
+  - `off=0x000` (`packed00`)
+- if a stable threshold counter exists, the new compact row diff should reveal which exact word tracks it
+
+## Section 183 - 2026-04-23 Kokonoe live run shows LP gain amount varies by match; compact row diffs isolate four moving words
+
+What this live Kokonoe run proved:
+
+- the exact packed/upload formula from Section 182 held again
+- same character row `24` was used again (`RANK_KK` lookup happened, `RANK_ALL` upload carried `details[0]=24`)
+- this run produced two uploads with only `+1` packed LP each, not `+1024`
+
+Direct proof:
+
+- first upload:
+  - authoritative row:
+    - `packed00=0x8980001F`
+    - `packedSub=35200`
+  - Steam upload:
+    - `score=0x001F8980 (2066816)`
+  - overlay:
+    - `lp=35199 -> 35200`
+    - toast delta `+1`
+- second upload:
+  - authoritative row:
+    - `packed00=0x8981001F`
+    - `packedSub=35201`
+  - Steam upload:
+    - `score=0x001F8981 (2066817)`
+  - overlay:
+    - `lp=35200 -> 35201`
+    - toast delta `+1`
+
+Why this matters:
+
+- packed LP gain is not a fixed per-win constant
+- previous run gave Kokonoe `+1024` twice
+- this run gave Kokonoe `+1` twice
+- therefore the game is using at least two different LP-gain situations / paths, while still preserving the same packed upload encoding
+
+What the new compact row diff revealed:
+
+- on each `+1` Kokonoe win, exactly 4 row words changed:
+  - `off=0x000`
+    - packed row / current LP:
+      - `0x897F001F -> 0x8980001F`
+      - `0x8980001F -> 0x8981001F`
+  - `off=0x01C`
+    - `0x00000002 -> 0x00000003 -> 0x00000004`
+  - `off=0x064`
+    - `0x00220076 -> 0x00230076 -> 0x00240076`
+  - `off=0x0E4`
+    - `0x000D0035 -> 0x000E0035 -> 0x000F0035`
+
+What did *not* move during either upload:
+
+- `raw0C = 0x14BD (5309)`
+- `raw10 = 0x0794 (1940)`
+- `raw20 = 0x0000000C`
+- `metadataNextRank = 34`
+- rank stayed `32`
+
+Interpretation:
+
+- the old threshold-looking fields still did not move at all
+- so the true threshold / next-LP formula is still not coming from a simple live counter in:
+  - `field0C`
+  - `field10`
+  - `field20`
+  - `fieldD4.high16`
+- the new diff strongly suggests:
+  - `off=0x000` is packed current LP
+  - `off=0x01C`, `off=0x064`, and `off=0x0E4` are auxiliary stat counters or mirrors that advance with these wins
+- notably:
+  - `off=0x064` is inside the `totalPoints` sum region
+  - `off=0x0E4` is inside the `earnedPoints` sum region
+  - `off=0x01C` is outside both summed regions
+
+What agent changed after this analysis:
+
+- `src/Overlay/Window/MainWindow.cpp`
+  - `[RANK][OverlayRowDiff]` now logs:
+    - 32-bit before/after
+    - both 16-bit halves before/after
+    - whether the changed word is in:
+      - `total_region`
+      - `earned_region`
+      - `other`
+
+Build result:
+
+- `Debug|Win32` build passed after the halfword-aware row-diff patch
+
+Current interpretation:
+
+- exact packed/upload encoding remains solved
+- next unknown is narrower now:
+  - determine whether threshold is a static function of visible rank / metadata-next-rank rather than a live mutable row field
+- row-diff evidence currently points away from any simple mutable threshold counter in the row
+
+Exact next test:
+
+- deploy this build
+- play another live ranked match on Kokonoe if possible, or any other ranked character with a different visible rank
+- provide the next `DEBUG.txt`
+
+Exact next lines wanted:
+
+- `[RANK][OverlayRowDiff] row=24 ... region=... before16=... after16=...`
+- and, if using another character:
+  - the corresponding `[RANK][OverlayProgress]` plus `[RANK][OverlayRowDiff]` lines for that row
+
+## Section 184 - 2026-04-23 Bullet live run confirms the same four moving words, but this win path gives `+16` packed LP per win
+
+What this Bullet run proved:
+
+- the exact packed/upload formula from Section 182 still held
+- the same compact row-diff instrumentation from Section 183 isolated exactly 4 moving words again
+- this time the packed LP gain was `+16` per win, not `+1` and not `+1024`
+
+Baseline Bullet row before the wins:
+
+- authoritative/menu row:
+  - `packed00=0x8CF2001A`
+  - `packed_rank=0x001A`
+  - `packed_sub=0x8CF2`
+  - `field0C=0x00000979 (2425)`
+  - `field10=0x000003EE (1006)`
+  - `field20=0x0000000C`
+  - `fieldD4=0x000F0000`
+  - `nextRankMeta=0x000F`
+- overlay:
+  - `rank=27`
+  - `lp=36082`
+  - `wins=212`
+  - `matches=477`
+  - `metadataNext=15`
+
+First observed Bullet win:
+
+- row diff:
+  - `off=0x000`
+    - `0x8CF2001A -> 0x8D02001A`
+    - high 16-bit half: `0x8CF2 -> 0x8D02`
+    - packed LP: `36082 -> 36098`
+    - delta: `+16`
+  - `off=0x01C`
+    - `0x00000000 -> 0x00000001`
+  - `off=0x024` (`total_region`)
+    - `0x00100037 -> 0x00110037`
+    - high half: `0x0010 -> 0x0011`
+  - `off=0x0A4` (`earned_region`)
+    - `0x000A0021 -> 0x000B0021`
+    - high half: `0x000A -> 0x000B`
+- overlay animation:
+  - `fromLp=36082 -> toLp=36098`
+  - `delta=+16`
+
+Second observed Bullet win:
+
+- row diff:
+  - `off=0x000`
+    - `0x8D02001A -> 0x8D12001A`
+    - high 16-bit half: `0x8D02 -> 0x8D12`
+    - packed LP: `36098 -> 36114`
+    - delta: `+16`
+  - `off=0x01C`
+    - `0x00000001 -> 0x00000002`
+  - `off=0x024` (`total_region`)
+    - `0x00110037 -> 0x00120037`
+    - high half: `0x0011 -> 0x0012`
+  - `off=0x0A4` (`earned_region`)
+    - `0x000B0021 -> 0x000C0021`
+    - high half: `0x000B -> 0x000C`
+- overlay animation:
+  - `fromLp=36098 -> toLp=36114`
+  - `delta=+16`
+
+What did not move in either Bullet win:
+
+- `raw0C = 2425`
+- `raw10 = 1006`
+- `raw20 = 12`
+- `metadataNext = 15`
+- visible rank stayed `27`
+
+What this means now:
+
+- the game definitely has multiple packed-LP gain paths:
+  - Kokonoe run observed `+1024`
+  - Kokonoe run observed `+1`
+  - Bullet run observed `+16`
+- but the same auxiliary row pattern stayed stable across characters/runs:
+  - `off=0x01C` low half increments by 1 per win
+  - `off=0x024` high half increments by 1 per win and sits in the total/matches region
+  - `off=0x0A4` high half increments by 1 per win and sits in the earned/wins region
+- this strongly supports:
+  - `off=0x024.high16` is a match-count style counter
+  - `off=0x0A4.high16` is a win-count style counter
+- and it further weakens the idea that threshold/next-LP is a mutable live row field, because:
+  - `field0C`
+  - `field10`
+  - `field20`
+  - `fieldD4.high16`
+  all stayed fixed while real LP changed and toast animation fired correctly
+
+Current best interpretation:
+
+- solved:
+  - `packed00 = (packedSubscore << 16) | internalRank`
+  - `visible rank = internalRank + 1`
+  - `current LP = packedSubscore`
+  - `uploadScore = swap16(packed00)`
+- likely solved:
+  - one row region mirrors total matches
+  - one row region mirrors wins
+- still unsolved:
+  - exact threshold / next-rank LP formula
+  - exact rule deciding whether a given win gives `+1`, `+16`, or `+1024`
+
+Exact next target:
+
+- stop searching for threshold in simple per-win mutable row words
+- instead test whether threshold is:
+  - a static lookup by visible rank / metadata-next-rank, or
+  - derived from some other global table or formula outside the per-character row
+
+## Section 185 - 2026-04-23 code/log cross-check kills two more false leads: `sum26/sumA6` are wins/matches mirrors, and `field0C` is not a simple rank-only threshold table
+
+Follow-up performed after sections 183 and 184:
+
+- re-read the current overlay code path in `src/Overlay/Window/MainWindow.cpp`
+- cross-checked newest live Bullet/Kokonoe logs against older static notes
+- compared many `phase2_copy_src` rows from the newest `DEBUG.txt`
+
+### 1. Old section-130 "progress ratio" finding is not the packed-LP threshold formula
+
+Current code now makes the real meaning explicit:
+
+- `SumRankedWordPairs(rowObject, 0x26)` is exposed as:
+  - `snapshot.totalPoints`
+  - logged/shown as `matches`
+- `SumRankedWordPairs(rowObject, 0xA6)` is exposed as:
+  - `snapshot.earnedPoints`
+  - logged/shown as `wins`
+
+Newest live rows line up exactly:
+
+- Bullet row `21`:
+  - `wins=212`
+  - `matches=477`
+  - row diffs on wins:
+    - `off=0x024.high16`: `0x0010 -> 0x0011 -> 0x0012`
+    - `off=0x0A4.high16`: `0x000A -> 0x000B -> 0x000C`
+- Kokonoe row `24`:
+  - `wins=776`
+  - `matches=1766`
+  - row diffs on wins:
+    - `off=0x064.high16`: `0x0022 -> 0x0023 -> 0x0024`
+    - `off=0x0E4.high16`: `0x000D -> 0x000E -> 0x000F`
+
+So the old `sumA6 / sum26` menu ratio is best understood as:
+
+- a wins/matches style menu progress helper
+- not the hidden packed-LP threshold for rank-up
+
+That means section 130 remains useful only as:
+
+- proof that those helper sums are real menu-side counters
+- not proof of the packed LP threshold formula
+
+### 2. `field0C` is not a simple static threshold lookup by visible rank
+
+Newest `phase2_copy_src` sample set shows the same visible rank with very different `field0C` values:
+
+- visible rank `26`:
+  - selector `24`: `threshold=291`
+  - selector `25`: `threshold=865`
+  - selector `32`: `threshold=681`
+- visible rank `27`:
+  - selector `18`: `threshold=576`
+  - selector `21`: `threshold=2425`
+- visible rank `19`:
+  - selector `10`: `threshold=331`
+  - selector `32` in another table: `threshold=9`
+  - selector `1` in another table: `threshold=1646`
+
+So:
+
+- `field0C` is definitely not a simple `visibleRank -> threshold` table
+- and since it also stayed fixed while real packed LP changed in sections 183 and 184, it is not the live packed-LP threshold either
+
+### 3. `metadataNextRank` is also not a simple "next visible rank" field
+
+Newest sample set also shows large disagreement for rows with the same current visible rank:
+
+- visible rank `26` rows had:
+  - `nextRankMeta=31`
+  - `nextRankMeta=46`
+  - `nextRankMeta=10`
+- visible rank `27` rows had:
+  - `nextRankMeta=13`
+  - `nextRankMeta=15`
+
+So:
+
+- `fieldD4.high16` / `metadataNextRank` cannot be treated as a simple universal next-rank id
+- it may still be class/board metadata, but not a direct solved threshold source
+
+### 4. Current best narrowed model
+
+Solved:
+
+- `packed00 = (packedSubscore << 16) | internalRank`
+- `visible rank = internalRank + 1`
+- `current LP = packedSubscore`
+- `uploadScore = swap16(packed00)`
+- the `sum26` / `sumA6` helper family tracks match/win style counters, not packed-LP thresholds
+
+Ruled out:
+
+- mutable per-win row words as packed threshold source
+- `field0C` as a simple rank-only threshold table
+- `metadataNextRank` as a simple "next visible rank" id
+
+Best current hypothesis:
+
+- the true packed-LP rank threshold depends on more than current visible rank alone
+- likely inputs are some combination of:
+  - current internal rank
+  - another hidden progression class / board type
+  - and possibly metadata outside the directly rendered row fields
+
+Best next RE target:
+
+- stop treating menu helper sums and `field0C` as threshold candidates
+- move upstream to the packed-rank mutation pipeline around:
+  - `BBCF+0x0001FEA0`
+  - `BBCF+0x00020291`
+  - `BBCF+0x000202AB`
+  - `BBCF+0x000205A7`
+- goal there:
+  - identify where the game decides the next packed subscore / rank pair
+  - and whether any compare-to-threshold branch exists before the packed pair is written/uploaded
+
+## Section 186 - 2026-04-23 next-step instrumentation prepared: widen upstream candidate capture so one live run can expose both `RANK_ALL` and real character-board rank logic
+
+User requested faster convergence:
+
+- do not peel one layer at a time if avoidable
+- prepare the next `DEBUG.txt` so one live run can reveal the real rank logic path sooner
+
+What agent changed:
+
+- updated `src/Hooks/hooks_bbcf.cpp`
+- widened upstream packed-score probes so they no longer focus only on `entryId == 1`
+- kept the same upstream hook cluster:
+  - `0x0001FEA0`
+  - `0x00020291`
+  - `0x000202AB`
+  - `0x000205A7`
+
+Exact logging changes:
+
+1. `WritePacked` now logs the resolved leaderboard name for every known handle, not just `RANK_ALL`
+
+- this matters because the real LP movement has repeatedly happened on character boards like:
+  - `RANK_BL`
+  - not only `RANK_ALL`
+
+2. `SourceTotal` no longer hard-rejects everything except `entryId == 1`
+
+- it now logs any source entry that looks like a plausible packed rank-score candidate
+- interest conditions now include:
+  - `entryId == 1`
+  - source entry matches the old `entry1` path
+  - `src10` looks like a plausible packed rank-score word
+  - `new` looks like a plausible packed rank-score word
+
+3. `SourcePair` no longer hard-rejects everything except `entryId == 1`
+
+- it now logs any plausible packed rank-score candidate too
+- interest conditions now include:
+  - `entryId == 1`
+  - old local `0x120` match
+  - `src18` looks like a plausible packed rank-score word
+  - `src10` looks like a plausible packed rank-score word
+  - `new` looks like a plausible packed rank-score word
+
+4. Added a shared plausibility filter for packed score words
+
+- intended to catch real rank-score-shaped values:
+  - rank id `< 0x40`
+  - subscore in normal live range / sentinel range
+- intended to skip obvious garbage and keep the next log usable
+
+Why this is the right next probe:
+
+- existing hooks already proved the game builds packed rank-score words upstream
+- but the old `entryId == 1` focus biased logs toward the `RANK_ALL` path
+- that is exactly the wrong bias if the true live rank movement is decided on per-character boards first
+- widening the same cluster is cheaper than adding another layer of new hooks and gives a better chance that one next live run exposes:
+  - the real per-character packed score source
+  - the surrounding source pair / source total inputs
+  - the board handle name that finally receives the write
+
+Build result:
+
+- `Debug|Win32` build passed after this instrumentation change
+
+What the next live `DEBUG.txt` should ideally contain now:
+
+- `WritePacked` lines that include real leaderboard names for all handled writes
+- `SourceTotal` / `SourcePair` lines for plausible non-`entryId==1` packed candidates
+- enough same-run correlation to answer:
+  - which upstream source entry produced the character-board packed score
+  - whether `RANK_ALL` is derived from that character-board path or built separately
+  - whether the deciding mutation happens in:
+    - `SourceTotal`
+    - `SourcePair`
+    - or only later at `WritePacked`
+
+Best next test:
+
+- deploy this build
+- play one ranked match on a character with known live movement
+- Bullet is still a good target because:
+  - row `21` is already well-characterized
+  - live LP movement and overlay row diffs are already proven there
+- then provide the next `DEBUG.txt`

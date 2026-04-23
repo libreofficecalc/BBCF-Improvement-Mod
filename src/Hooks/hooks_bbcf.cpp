@@ -151,6 +151,8 @@ std::array<uint8_t, 0x6800> g_lastPhase2CopySourceSnapshot{};
 bool g_haveLastPhase2CopySourceSnapshot = false;
 uint32_t g_deferredSourcePairFollowAddr = 0;
 uint32_t g_deferredSourcePairFollowWriterRva = 0;
+static uint32_t s_4edb6PreSlotLo = 0;
+static uint32_t s_4edb6PreSlotHi = 0;
 void LogRankedCachedSourceRowForChar(const char* tag, uint32_t charId);
 void LogRankedAuthoritativeRowForChar(const char* tag, uint32_t charId);
 
@@ -165,6 +167,7 @@ enum RankedWriterCallerStageId : uint32_t
 void NormalizeMenuExitModeIfNeeded();
 void EndRankedSlotWriteTrace(const char* reason);
 void BeginRankedSlotWriteTrace(uint32_t slotAddr, const char* reason);
+uint32_t GetRankedWriteTraceSlotAddr();
 void BumpRankedTraceMaxChangesIfCurrent(uint32_t slotAddr, unsigned int maxChanges);
 bool TryGetRankedTableBaseLocal(uintptr_t* outBase);
 void DumpRankedTableSummary(const char* tag, uintptr_t rankedTableBase);
@@ -275,6 +278,22 @@ void MaybeArmDeferredSourcePairTraceForStage(uint32_t stageId)
 	}
 }
 
+static const char* ClassifyRankedTransition(uint32_t beforeLo, uint32_t afterLo)
+{
+	const uint32_t afterSub = afterLo & 0xFFFF;
+	if (afterSub == 0x7FFF || afterSub == 0x7FFD)
+		return "sentinel_wrap";
+	const uint32_t beforeRank = (beforeLo >> 16) & 0xFFFF;
+	const uint32_t afterRank  = (afterLo  >> 16) & 0xFFFF;
+	if (beforeRank != afterRank)
+		return "rank_change";
+	const uint32_t beforeSub = beforeLo & 0xFFFF;
+	const int32_t delta = static_cast<int32_t>(afterSub) - static_cast<int32_t>(beforeSub);
+	if (delta < -500 || delta > 30000)
+		return "subscore_jump";
+	return "none";
+}
+
 void LogRankUploadWriterCallerPre(uint32_t stageId, uint32_t ecxValue)
 {
 	const char* stage = "writer_parent_unknown_pre";
@@ -285,6 +304,9 @@ void LogRankUploadWriterCallerPre(uint32_t stageId, uint32_t ecxValue)
 		break;
 	case RankedWriterCallerStage_22B25E:
 		stage = "writer_parent_22B25E_pre";
+		break;
+	case RankedWriterCallerStage_4EDB6:
+		stage = "writer_parent_4EDB6_pre";
 		break;
 	default:
 		break;
@@ -341,6 +363,24 @@ void LogRankUploadWriterCallerPre(uint32_t stageId, uint32_t ecxValue)
 		deferredReadable ? 1 : 0,
 		static_cast<unsigned int>(deferredLo),
 		static_cast<unsigned int>(deferredHi));
+
+	if (stageId == RankedWriterCallerStage_4EDB6)
+	{
+		s_4edb6PreSlotLo = 0;
+		s_4edb6PreSlotHi = 0;
+		const uint32_t slotAddr = GetRankedWriteTraceSlotAddr();
+		if (slotAddr && !IsBadReadPtr(reinterpret_cast<void*>(static_cast<uintptr_t>(slotAddr)), 8u))
+		{
+			s_4edb6PreSlotLo = *reinterpret_cast<uint32_t*>(slotAddr + 0x00u);
+			s_4edb6PreSlotHi = *reinterpret_cast<uint32_t*>(slotAddr + 0x04u);
+		}
+		LOG(2, "[RANK][WriterParent4EDB6Pre] slot=0x%08X packed_before=0x%08X rank_id_before=0x%04X subscore_before=0x%04X deferred_before=0x%08X\n",
+			static_cast<unsigned int>(slotAddr),
+			static_cast<unsigned int>(s_4edb6PreSlotLo),
+			static_cast<unsigned int>((s_4edb6PreSlotLo >> 16) & 0xFFFF),
+			static_cast<unsigned int>(s_4edb6PreSlotLo & 0xFFFF),
+			static_cast<unsigned int>(deferredLo));
+	}
 }
 
 void RankedProbeLogStageFirst(const char* stage, unsigned int seq, bool trusted)
@@ -1369,6 +1409,11 @@ RankedSlotWriteTraceState g_rankedSlotWriteTrace;
 uint32_t g_lastRankedStateMachineSelf = 0;
 uint32_t g_lastPlausibleRankedStateMachineSelf = 0;
 
+uint32_t GetRankedWriteTraceSlotAddr()
+{
+	return g_rankedSlotWriteTrace.slotAddr;
+}
+
 void MaybeArmDeferredSourcePairTrace(const char* trigger)
 {
 	if (g_deferredSourcePairFollowAddr == 0u)
@@ -1583,6 +1628,23 @@ bool LooksLikeRankedTable(const uint8_t* table)
 	}
 
 	return false;
+}
+
+bool LooksLikePackedRankScoreWord(uint32_t lo, uint32_t hi)
+{
+	if (hi != 0u)
+	{
+		return false;
+	}
+
+	const uint32_t rankId = (lo >> 16) & 0xFFFFu;
+	const uint32_t subscore = lo & 0xFFFFu;
+	return
+		rankId < 0x40u &&
+		(subscore == 0u ||
+		 subscore == 0x7FFDu ||
+		 subscore == 0x7FFFu ||
+		 (subscore >= 0x7000u && subscore <= 0xA000u));
 }
 
 void LogRankedTableRowDeltaSummary(const char* tag, uintptr_t beforeBase, uintptr_t afterBase)
@@ -2885,6 +2947,29 @@ void LogRankUploadWriterCallerPost(uint32_t stageId, uint32_t returnValue)
 	if (stateValue != 0u)
 	{
 		LogRankUploadCallClusterState(stage, stateValue, tableBase, returnValue);
+	}
+
+	if (stageId == RankedWriterCallerStage_4EDB6)
+	{
+		uint32_t postDeferredLo = 0;
+		const uint32_t deferredAddr = g_deferredSourcePairFollowAddr;
+		if (deferredAddr && !IsBadReadPtr(reinterpret_cast<void*>(static_cast<uintptr_t>(deferredAddr)), 8u))
+		{
+			postDeferredLo = *reinterpret_cast<uint32_t*>(deferredAddr + 0x00u);
+		}
+		const char* slotTransition = ClassifyRankedTransition(s_4edb6PreSlotLo, slotLo);
+		const char* deferredTransition = ClassifyRankedTransition(0u, postDeferredLo);
+		LOG(2, "[RANK][WriterParent4EDB6Post] slot=0x%08X packed_before=0x%08X packed_after=0x%08X rank_id_before=0x%04X rank_id_after=0x%04X subscore_before=0x%04X subscore_after=0x%04X slot_transition=%s deferred_after=0x%08X deferred_transition=%s\n",
+			static_cast<unsigned int>(slotAddr),
+			static_cast<unsigned int>(s_4edb6PreSlotLo),
+			static_cast<unsigned int>(slotLo),
+			static_cast<unsigned int>((s_4edb6PreSlotLo >> 16) & 0xFFFF),
+			static_cast<unsigned int>((slotLo >> 16) & 0xFFFF),
+			static_cast<unsigned int>(s_4edb6PreSlotLo & 0xFFFF),
+			static_cast<unsigned int>(slotLo & 0xFFFF),
+			slotTransition,
+			static_cast<unsigned int>(postDeferredLo),
+			deferredTransition);
 	}
 }
 
@@ -5229,6 +5314,7 @@ void LogRankUploadPackedWrite(uint32_t objectValue, uint32_t tailValue, uint32_t
 	const uint32_t scoreRankId = (field2610 >> 16) & 0xFFFF;
 	const uint32_t scoreSub = field2610 & 0xFFFF;
 	const bool isRankAll = (handle == 1759932);
+	const std::string leaderboardName = GetLeaderboardHandleName(handle);
 	uint32_t slotPrevLo = 0;
 	uint32_t slotPrevHi = 0;
 	uint32_t slotCurLo = 0;
@@ -5259,12 +5345,15 @@ void LogRankUploadPackedWrite(uint32_t objectValue, uint32_t tailValue, uint32_t
 		localM38 = *reinterpret_cast<uint32_t*>(frame - 0x38);
 	}
 
-	LOG(2, "[RANK][WritePacked] site=BBCF+0x000205A7 self=0x%p tail=0x%p handle=0x%08X (%u)%s field1C=0x%08X (%u) written=0x%08X (%u) live2610=0x%08X (%u) parts rank_id=0x%04X subscore=0x%04X field2614=0x%08X detail0=%u detail1=%u srcSlot=0x%p prev=[0x%08X,0x%08X] cur=[0x%08X,0x%08X] next=[0x%08X,0x%08X] locals=[0x%08X,0x%08X,0x%08X,0x%08X]\n",
+	LOG(2, "[RANK][WritePacked] site=BBCF+0x000205A7 self=0x%p tail=0x%p handle=0x%08X (%u)%s%s%s field1C=0x%08X (%u) written=0x%08X (%u) live2610=0x%08X (%u) parts rank_id=0x%04X subscore=0x%04X field2614=0x%08X detail0=%u detail1=%u srcSlot=0x%p prev=[0x%08X,0x%08X] cur=[0x%08X,0x%08X] next=[0x%08X,0x%08X] locals=[0x%08X,0x%08X,0x%08X,0x%08X]\n",
 		self,
 		tail,
 		static_cast<unsigned int>(handle),
 		static_cast<unsigned int>(handle),
 		isRankAll ? " RANK_ALL" : "",
+		leaderboardName.empty() ? "" : " name='",
+		leaderboardName.empty() ? "" : leaderboardName.c_str(),
+		leaderboardName.empty() ? "" : "'",
 		static_cast<unsigned int>(field1c),
 		static_cast<unsigned int>(field1c),
 		static_cast<unsigned int>(sourceValue),
@@ -5324,25 +5413,6 @@ void LogRankUploadSourcePair(uint32_t sourceSlotValue, uint32_t stateValue, uint
 		entryId = *reinterpret_cast<uint32_t*>(idListPtr);
 	}
 
-	if (entryId != 1u)
-	{
-		if (s_rejectBudget > 0)
-		{
-			const ptrdiff_t slotDelta = sourceSlot && state ? (sourceSlot - state) : 0;
-			const bool matchesRank1Local = (slotDelta == 0x120);
-			LOG(2, "[RANK][SourcePairReject] site=BBCF+0x000202AB slot=0x%p state=0x%p delta=0x%X matchLocal120=%u table=0x%08X idListPtr=0x%08X rawId=%u\n",
-				sourceSlot,
-				state,
-				static_cast<unsigned int>(slotDelta),
-				matchesRank1Local ? 1u : 0u,
-				static_cast<unsigned int>(tableBase),
-				static_cast<unsigned int>(idListPtr),
-				static_cast<unsigned int>(entryId));
-			--s_rejectBudget;
-		}
-		return;
-	}
-
 	uint8_t* sourceEntry = nullptr;
 	if (tableBase && entryId != 0xFFFFFFFF)
 	{
@@ -5375,14 +5445,45 @@ void LogRankUploadSourcePair(uint32_t sourceSlotValue, uint32_t stateValue, uint
 	const uint32_t newPairHi = static_cast<uint32_t>(newPair >> 32);
 	const uint32_t rankId = (newPairLo >> 16) & 0xFFFF;
 	const uint32_t subscore = newPairLo & 0xFFFF;
+	const ptrdiff_t slotDelta = sourceSlot && state ? (sourceSlot - state) : 0;
+	const bool matchesRank1Local = (slotDelta == 0x120);
+	const bool plausibleSrc18 = LooksLikePackedRankScoreWord(srcPairLo, srcPairHi);
+	const bool plausibleSrc10 = LooksLikePackedRankScoreWord(srcTotalLo, srcTotalHi);
+	const bool plausibleNew = LooksLikePackedRankScoreWord(newPairLo, newPairHi);
+	const bool interesting = entryId == 1u || matchesRank1Local || plausibleSrc18 || plausibleSrc10 || plausibleNew;
 
-	LOG(2, "[RANK][SourcePair] site=BBCF+0x000202AB slot=0x%p state=0x%p id=%u table=0x%08X srcEntry=0x%p mode=%s old=[0x%08X,0x%08X] src18=[0x%08X,0x%08X] src20=[0x%08X,0x%08X] src10=[0x%08X,0x%08X] new=[0x%08X,0x%08X] parts rank_id=0x%04X subscore=0x%04X\n",
+	if (!interesting)
+	{
+		if (s_rejectBudget > 0)
+		{
+			LOG(2, "[RANK][SourcePairReject] site=BBCF+0x000202AB slot=0x%p state=0x%p delta=0x%X matchLocal120=%u table=0x%08X idListPtr=0x%08X rawId=%u plausibleSrc18=%u plausibleSrc10=%u plausibleNew=%u\n",
+				sourceSlot,
+				state,
+				static_cast<unsigned int>(slotDelta),
+				matchesRank1Local ? 1u : 0u,
+				static_cast<unsigned int>(tableBase),
+				static_cast<unsigned int>(idListPtr),
+				static_cast<unsigned int>(entryId),
+				plausibleSrc18 ? 1u : 0u,
+				plausibleSrc10 ? 1u : 0u,
+				plausibleNew ? 1u : 0u);
+			--s_rejectBudget;
+		}
+		return;
+	}
+
+	const char* pairTransition = ClassifyRankedTransition(oldPairLo, newPairLo);
+	LOG(2, "[RANK][SourcePair] site=BBCF+0x000202AB slot=0x%p state=0x%p id=%u table=0x%08X srcEntry=0x%p mode=%s matchLocal120=%u plausibleSrc18=%u plausibleSrc10=%u plausibleNew=%u old=[0x%08X,0x%08X] src18=[0x%08X,0x%08X] src20=[0x%08X,0x%08X] src10=[0x%08X,0x%08X] new=[0x%08X,0x%08X] parts rank_id=0x%04X subscore=0x%04X\n",
 		sourceSlot,
 		state,
 		static_cast<unsigned int>(entryId),
 		static_cast<unsigned int>(tableBase),
 		sourceEntry,
 		mode,
+		matchesRank1Local ? 1u : 0u,
+		plausibleSrc18 ? 1u : 0u,
+		plausibleSrc10 ? 1u : 0u,
+		plausibleNew ? 1u : 0u,
 		static_cast<unsigned int>(oldPairLo),
 		static_cast<unsigned int>(oldPairHi),
 		static_cast<unsigned int>(srcPairLo),
@@ -5395,6 +5496,16 @@ void LogRankUploadSourcePair(uint32_t sourceSlotValue, uint32_t stateValue, uint
 		static_cast<unsigned int>(newPairHi),
 		static_cast<unsigned int>(rankId),
 		static_cast<unsigned int>(subscore));
+	LOG(2, "[RANK][SourcePairDelta] site=BBCF+0x000202AB id=%u mode=%s packed_before=0x%08X packed_after=0x%08X rank_id_before=0x%04X rank_id_after=0x%04X subscore_before=0x%04X subscore_after=0x%04X transition=%s\n",
+		static_cast<unsigned int>(entryId),
+		mode,
+		static_cast<unsigned int>(oldPairLo),
+		static_cast<unsigned int>(newPairLo),
+		static_cast<unsigned int>((oldPairLo >> 16) & 0xFFFF),
+		static_cast<unsigned int>(rankId),
+		static_cast<unsigned int>(oldPairLo & 0xFFFF),
+		static_cast<unsigned int>(subscore),
+		pairTransition);
 	if (newPairLo != 0u || newPairHi != 0u)
 	{
 		LogRankedStageBacktrace("state7_pair_id1", tableBase, sourceSlotValue, newPairLo, newPairHi);
@@ -5433,25 +5544,8 @@ void LogRankUploadSourceTotal(uint32_t destSlotValue, uint32_t sourceEntryValue,
 	{
 		entryId = *reinterpret_cast<uint32_t*>(idListPtr);
 	}
-
-	if (entryId != 1u)
-	{
-		if (s_rejectBudget > 0)
-		{
-			uint8_t* const expectedEntry1 = tableBase ? reinterpret_cast<uint8_t*>(tableBase + 0x48) : nullptr;
-			LOG(2, "[RANK][SourceTotalReject] site=BBCF+0x00020291 slot=0x%p srcEntry=0x%p table=0x%08X expectedEntry1=0x%p matchEntry1=%u idListPtr=0x%08X rawId=%u\n",
-				destSlot,
-				sourceEntry,
-				static_cast<unsigned int>(tableBase),
-				expectedEntry1,
-				(sourceEntry == expectedEntry1) ? 1u : 0u,
-				static_cast<unsigned int>(idListPtr),
-				static_cast<unsigned int>(entryId));
-			--s_rejectBudget;
-		}
-		return;
-	}
-
+	uint8_t* const expectedEntry1 = tableBase ? reinterpret_cast<uint8_t*>(tableBase + 0x48) : nullptr;
+	const bool matchEntry1 = (sourceEntry == expectedEntry1);
 	const uint32_t oldLo = *reinterpret_cast<uint32_t*>(destSlot + 0x00);
 	const uint32_t oldHi = *reinterpret_cast<uint32_t*>(destSlot + 0x04);
 	const uint32_t nextLo = *reinterpret_cast<uint32_t*>(destSlot + 0x08);
@@ -5466,12 +5560,37 @@ void LogRankUploadSourceTotal(uint32_t destSlotValue, uint32_t sourceEntryValue,
 	const uint32_t newHi = static_cast<uint32_t>(newPair >> 32);
 	const uint32_t rankId = (newLo >> 16) & 0xFFFF;
 	const uint32_t subscore = newLo & 0xFFFF;
+	const bool plausibleSrc10 = LooksLikePackedRankScoreWord(src10Lo, src10Hi);
+	const bool plausibleNew = LooksLikePackedRankScoreWord(newLo, newHi);
+	const bool interesting = entryId == 1u || matchEntry1 || plausibleSrc10 || plausibleNew;
 
-	LOG(2, "[RANK][SourceTotal] site=BBCF+0x00020291 slot=0x%p id=%u table=0x%08X srcEntry=0x%p old=[0x%08X,0x%08X] src10=[0x%08X,0x%08X] src18=[0x%08X,0x%08X] new=[0x%08X,0x%08X] next=[0x%08X,0x%08X] parts rank_id=0x%04X subscore=0x%04X\n",
+	if (!interesting)
+	{
+		if (s_rejectBudget > 0)
+		{
+			LOG(2, "[RANK][SourceTotalReject] site=BBCF+0x00020291 slot=0x%p srcEntry=0x%p table=0x%08X expectedEntry1=0x%p matchEntry1=%u idListPtr=0x%08X rawId=%u plausibleSrc10=%u plausibleNew=%u\n",
+				destSlot,
+				sourceEntry,
+				static_cast<unsigned int>(tableBase),
+				expectedEntry1,
+				matchEntry1 ? 1u : 0u,
+				static_cast<unsigned int>(idListPtr),
+				static_cast<unsigned int>(entryId),
+				plausibleSrc10 ? 1u : 0u,
+				plausibleNew ? 1u : 0u);
+			--s_rejectBudget;
+		}
+		return;
+	}
+
+	LOG(2, "[RANK][SourceTotal] site=BBCF+0x00020291 slot=0x%p id=%u table=0x%08X srcEntry=0x%p matchEntry1=%u plausibleSrc10=%u plausibleNew=%u old=[0x%08X,0x%08X] src10=[0x%08X,0x%08X] src18=[0x%08X,0x%08X] new=[0x%08X,0x%08X] next=[0x%08X,0x%08X] parts rank_id=0x%04X subscore=0x%04X\n",
 		destSlot,
 		static_cast<unsigned int>(entryId),
 		static_cast<unsigned int>(tableBase),
 		sourceEntry,
+		matchEntry1 ? 1u : 0u,
+		plausibleSrc10 ? 1u : 0u,
+		plausibleNew ? 1u : 0u,
 		static_cast<unsigned int>(oldLo),
 		static_cast<unsigned int>(oldHi),
 		static_cast<unsigned int>(src10Lo),
@@ -5484,6 +5603,18 @@ void LogRankUploadSourceTotal(uint32_t destSlotValue, uint32_t sourceEntryValue,
 		static_cast<unsigned int>(nextHi),
 		static_cast<unsigned int>(rankId),
 		static_cast<unsigned int>(subscore));
+	{
+		const char* totalTransition = ClassifyRankedTransition(oldLo, newLo);
+		LOG(2, "[RANK][SourceTotalDelta] site=BBCF+0x00020291 id=%u packed_before=0x%08X packed_after=0x%08X rank_id_before=0x%04X rank_id_after=0x%04X subscore_before=0x%04X subscore_after=0x%04X transition=%s\n",
+			static_cast<unsigned int>(entryId),
+			static_cast<unsigned int>(oldLo),
+			static_cast<unsigned int>(newLo),
+			static_cast<unsigned int>((oldLo >> 16) & 0xFFFF),
+			static_cast<unsigned int>(rankId),
+			static_cast<unsigned int>(oldLo & 0xFFFF),
+			static_cast<unsigned int>(subscore),
+			totalTransition);
+	}
 	if (newLo != 0u || newHi != 0u)
 	{
 		LogRankedStageBacktrace("state7_total_id1", tableBase, destSlotValue, newLo, newHi);
@@ -6348,6 +6479,15 @@ void __declspec(naked) RankUploadWriterCaller4EDB6Trace()
 
 	__asm
 	{
+		pushfd
+		pushad
+		push ecx
+		push RankedWriterCallerStage_4EDB6
+		call LogRankUploadWriterCallerPre
+		add esp, 8
+		popad
+		popfd
+
 		call [RankUploadWriterCaller4EDB6TargetAddr]
 
 		pushfd

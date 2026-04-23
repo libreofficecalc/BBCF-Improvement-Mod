@@ -4,7 +4,13 @@
       "Bash(\"/mnt/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe\" BBCF_IM.sln /m /p:Configuration=DebugDeploy /p:Platform=Win32 /p:PlatformToolset=v143)",
       "Read(//mnt/d/SteamLibrary/steamapps/common/BlazBlue Centralfiction/BBCF_IM/**)",
       "Read(//mnt/c/Users/Usuario/AppData/Roaming/**)",
-      "Read(//mnt/**)"
+      "Read(//mnt/**)",
+      "Bash(\"/mnt/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe\" /mnt/c/Users/Usuario/source/repos/HaiKamDesu/BBCF-Improvement-Mod/BBCF_IM.sln /m /p:Configuration=Debug /p:Platform=Win32 /p:PlatformToolset=v143)",
+      "Bash(\"/mnt/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe\" BBCF_IM.sln /m /p:Configuration=Debug /p:Platform=Win32 /p:PlatformToolset=v143)",
+      "Bash(grep -v \"^$\")",
+      "Bash(awk -F: '{print $1}')",
+      "Bash(awk '{for\\(i=1;i<=NF;i++\\) if\\($i~/writePacked=/\\) print NR\": \"$i}')",
+      "Bash(awk '{print $1, $2}')"
     ]
   }
 }
