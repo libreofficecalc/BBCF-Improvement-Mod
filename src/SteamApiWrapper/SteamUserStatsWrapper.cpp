@@ -581,8 +581,16 @@ CALL_RESULT(LeaderboardScoreUploaded_t)
 SteamAPICall_t SteamUserStatsWrapper::UploadLeaderboardScore(SteamLeaderboard_t hSteamLeaderboard, ELeaderboardUploadScoreMethod eLeaderboardUploadScoreMethod, int32 nScore, const int32 *pScoreDetails, int cScoreDetailsCount)
 {
 	const bool isRankAll = (hSteamLeaderboard == kRankAllLeaderboardHandle);
-	const bool isRankLike = IsRankLikeLeaderboardHandle(hSteamLeaderboard);
+	const bool handleLooksRankLike = IsRankLikeLeaderboardHandle(hSteamLeaderboard);
 	const std::string rankUploadReason = GetRankUploadReason(hSteamLeaderboard);
+	const std::string leaderboardName = GetLeaderboardHandleName(hSteamLeaderboard);
+	const int32_t characterId = ResolveCharacterIdForRankUpload(hSteamLeaderboard, pScoreDetails, cScoreDetailsCount);
+	uint32_t packedRowCharacterId = 0xFFFFFFFFu;
+	const bool inferredRankLikeUpload =
+		!handleLooksRankLike &&
+		characterId < 0 &&
+		TryResolveCharacterIdFromPackedUploadScore(nScore, &packedRowCharacterId);
+	const bool isRankLike = handleLooksRankLike || inferredRankLikeUpload;
 
 	if (isRankLike)
 	{
@@ -605,14 +613,13 @@ SteamAPICall_t SteamUserStatsWrapper::UploadLeaderboardScore(SteamLeaderboard_t 
 
 	if (isRankLike)
 	{
-		const std::string leaderboardName = GetLeaderboardHandleName(hSteamLeaderboard);
-		const int32_t characterId = ResolveCharacterIdForRankUpload(hSteamLeaderboard, pScoreDetails, cScoreDetailsCount);
 		if (characterId < 0)
 		{
-			LOG(1, "[RANK][OverlayObserve] unresolved leaderboard='%s' handle=%llu score=%d details=%s\n",
+			LOG(1, "[RANK][OverlayObserve] unresolved leaderboard='%s' handle=%llu score=%d inferredRankLike=%d details=%s\n",
 				leaderboardName.empty() ? "<unknown>" : leaderboardName.c_str(),
 				static_cast<unsigned long long>(hSteamLeaderboard),
 				nScore,
+				inferredRankLikeUpload ? 1 : 0,
 				FormatDetails(pScoreDetails, cScoreDetailsCount).c_str());
 		}
 		NoteRankedUploadAttempt(characterId, nScore, leaderboardName.empty() ? nullptr : leaderboardName.c_str());

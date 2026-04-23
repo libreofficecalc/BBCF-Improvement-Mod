@@ -36,5 +36,6 @@ struct RankedProgressAnimationSnapshot
 
 void NoteRankedUploadAttempt(int32_t characterId, int32_t score, const char* leaderboardName);
 void NoteRankedUploadCompletion(const char* origin, bool success, bool scoreChanged, int32_t score, int newGlobalRank, int previousGlobalRank);
+bool TryResolveCharacterIdFromPackedUploadScore(int32_t score, uint32_t* outCharacterId);
 bool GetRankedUploadOverlayState(RankedUploadOverlayState* outState);
 bool CaptureRankedProgressAnimationSnapshot(RankedProgressAnimationSnapshot* outSnapshot);

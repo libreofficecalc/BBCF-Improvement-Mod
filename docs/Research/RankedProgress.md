@@ -7200,3 +7200,2598 @@ What is still not fully solved:
 - exact merge point between:
   - visible row pair producer
   - packed upload score producer
+
+## 147. 2026-04-22 decisive offline verification: char-select loads a whole ranked-table blob, so nonzero other-character LP is real stored data
+
+New hook:
+
+- detoured `BBCF+0x00028AC0`
+- this is the small state machine previously identified around `BBCF+0x28C24`
+- new log label:
+  - `[RANK][RowPairState]`
+
+What it proved:
+
+- the visible row-pair writes we caught earlier are part of a **whole ranked-table block copy**
+- the destination pointer logged by the state machine is:
+  - `dstD8 = 0x00C5D190`
+- our selected row 0 object from menu probe was:
+  - `row0 = 0x00C5D264`
+- difference:
+  - `row0 - dstD8 = 0xD4`
+- and row0 threshold/current pair slot was:
+  - `0x00C5D270 = dstD8 + 0xE0`
+
+This means:
+
+- `dstD8` is not a tiny 8-byte pair destination
+- it is the **base of the whole ranked table block**
+- the row pair write we traced is just one 8-byte slice inside that larger table copy
+
+Critical size proof:
+
+- same state-machine context repeatedly logs:
+  - `lenDC = 0x00006800`
+- so the copy operation is for a large ranked-table blob, not an isolated row or isolated LP pair
+
+Most important consequence for verification:
+
+- the LP/threshold values shown for "other characters" are **not** overlay-invented artifacts
+- they come from the same loaded ranked-table blob as Kokonoe/Bullet/Tager
+- so if row 2 / row 7 / row 10 / row 13 / etc show nonzero LP in char select, those values are genuinely present in the game's loaded ranked table for this profile/session
+
+This directly answers the user's concern:
+
+- if characters you never intentionally played have nonzero LP/threshold rows, that is not the overlay making them up
+- BBCF is loading those entries as real row data from the ranked-table blob
+- whether that is:
+  - a BBCF quirk,
+  - stale/historical profile data,
+  - shared-account data,
+  - or some broader "all characters carry hidden row state" behavior
+  is still not fully resolved
+- but the values are definitely **real loaded inputs**, not UI noise
+
+State-machine details captured offline:
+
+- first observed context:
+  - `self=0x2A9830A0`
+  - `ctx=0x00A0A050`
+  - `srcD0=0x088DE5A1`
+  - `srcD4=0x01100001`
+  - `dstD8=0x00C5D190`
+  - `lenDC=0x6800`
+- phases observed:
+  - phase `0`
+  - repeated phase `1`
+  - later phase `2`
+
+Then, during that same table-copy cycle, the selected row 0 pair changed exactly as previously observed:
+
+- `row0 + 0x0C`:
+  - `0 -> 26`
+- `row0 + 0x10`:
+  - `0 -> 19`
+
+Meaning:
+
+- row0 threshold/current LP are being filled as part of the whole-table blob load
+- not by per-row custom math at that exact moment
+
+Static RE tie-in:
+
+- `BBCF+0x28C24` pushes:
+  - destination pointer `[esi + 0xD8]`
+  - destination size `[esi + 0xDC]`
+  - source range `(start,end)` from local buffer
+  - then calls `007A1BDF`
+- `007A1BDF` is a guarded copy helper
+- the actual 8-byte writes we saw land inside:
+  - `0079ECC0`
+  - specifically `0079ECEA = rep movs`
+
+So the hierarchy is now:
+
+1. some upstream producer/loader materializes a full ranked-table blob
+2. `BBCF+0x28AC0 .. 0x28C24` validates/prepares that blob
+3. `007A1BDF`
+4. `0079ECC0 / 0079ECEA`
+5. ranked table base receives the blob
+6. overlay reads:
+   - packed rank from `row+0x00`
+   - threshold from `row+0x0C`
+   - current LP from packed subscore or fallback `row+0x10`
+
+What is now verified with high confidence:
+
+- visible rank / current LP / threshold are loaded from real ranked table data
+- nonzero LP on other characters is real loaded table content
+- offline autorun can observe the ranked-table load itself
+- the row pair does **not** get freshly recomputed from rank on every menu frame; it is loaded from a larger persisted/serialized table blob
+
+What still remains unsolved:
+
+- where the blob contents are originally produced/updated after a ranked result
+- how rank-up/rank-down logic mutates:
+  - packed score field
+  - visible threshold/current LP pair
+  - sentinel packed subscores `0x7FFD / 0x7FFF`
+
+## 148. 2026-04-22 offline refinement: there are multiple ranked-table blobs, but rendered char-select uses the first one
+
+New instrumentation:
+
+- reduced `[RANK][RowPairState]` spam to only distinct `(phase,srcD0,srcD4,dstD8,lenDC)` tuples
+- added full table dump:
+  - `[RANK][TableDump]`
+  - `[RANK][TableRow]`
+
+Fresh autorun result:
+
+- `CharSeleInit_pre` selected row source:
+  - `base=0x00C5D190`
+  - row 0 initially:
+    - `packed00=0x7FFF0000`
+    - `field0C=0`
+    - `field10=0`
+- that same base is loaded by:
+  - `srcD0=0x088DE5A1`
+  - `srcD4=0x01100001`
+  - `dstD8=0x00C5D190`
+  - `lenDC=0x6800`
+
+Then offline later observed **additional** full-table loads with same layout but different destinations:
+
+- second blob:
+  - `srcD0=0x0755D30B`
+  - `dstD8=0x00C86BD0`
+- third blob:
+  - `srcD0=0x149FB48D`
+  - `dstD8=0x00C8D474`
+
+Important consequence:
+
+- offline path is not loading only one ranked table
+- multiple same-shape tables exist
+- so we needed to identify which blob the actual menu render consumes
+
+At this point that was still unresolved.
+
+## 149. 2026-04-22 decisive offline verification: actual rendered menu row reads base `0x00C5D190`, not later temp blobs
+
+Follow-up instrumentation:
+
+- `LogRankMenuSkillRankRender(...)` now also calls `LogRankMenuSelectedRowSource("SkillRankRender", self)`
+- `MenuRowSource` log now includes the active table base
+
+Fresh autorun proof:
+
+- rendered Kokonoe row:
+  - `cursor=24`
+  - `selector=24`
+  - `base=0x00C5D190`
+  - `packed00=0x7FFF0020`
+  - `field0C=5309`
+  - `field10=1940`
+  - `fieldD4 nextRankMeta=34`
+- rendered Bullet row:
+  - `cursor=21`
+  - `selector=21`
+  - `base=0x00C5D190`
+  - `packed00=0x926F001A`
+  - `field0C=2425`
+  - `field10=1006`
+  - `fieldD4 nextRankMeta=15`
+
+These match prior live conclusions:
+
+- Kokonoe sentinel row:
+  - packed subscore is `0x7FFF`
+  - visible current LP comes from `field10`
+  - threshold comes from `field0C`
+- Bullet normal row:
+  - packed subscore `0x926F = 37487`
+  - visible current LP comes from packed subscore
+  - threshold still comes from `field0C = 2425`
+
+So the actual rendered char-select table is now pinned:
+
+- active base:
+  - `0x00C5D190`
+- active loader tuple:
+  - `srcD0=0x088DE5A1`
+  - `srcD4=0x01100001`
+  - `dstD8=0x00C5D190`
+
+Meaning:
+
+- later blobs at:
+  - `0x00C86BD0`
+  - `0x00C8D474`
+  are **not** the main rendered char-select source for current LP/rank/threshold
+- they are secondary ranked-data tables, likely temp/progress/animation related
+
+Most important verification for user concern:
+
+- the real rendered table at `0x00C5D190` contains many nonzero rows beyond the currently selected characters
+- therefore nonzero LP/threshold on other characters is genuinely present in BBCF's active loaded profile data
+- this is not overlay fabrication
+
+Best current verified model for UI wiring:
+
+1. choose active row from rendered base `0x00C5D190`
+2. visible rank:
+   - `(packed00 & 0xFFFF) + 1`
+3. visible threshold:
+   - `row+0x0C`
+4. visible current LP:
+   - use packed subscore `packed00 >> 16`
+   - except when packed subscore is sentinel `0x7FFD` or `0x7FFF`
+   - in sentinel case, use `row+0x10`
+
+What is still not fully solved:
+
+- exact producer of the contents before `srcD0=0x088DE5A1` blob is copied into `0x00C5D190`
+- exact semantics of `srcD0`
+- exact rank-up/rank-down mutation logic that rewrites:
+  - packed subscore
+  - threshold
+  - fallback current LP
+  - next-rank metadata
+
+## 150. 2026-04-22 UI correction: do not erase threshold when packed current LP exceeds it
+
+Code change:
+
+- updated `src/Overlay/Window/MainWindow.cpp`
+
+Old behavior:
+
+- when packed current LP was used and `currentLp >= nextThreshold`, overlay forced:
+  - `nextThreshold = 0`
+  - `thresholdKnown = false`
+
+That behavior is no longer defensible.
+
+Reason:
+
+- offline/live evidence now shows `row+0x0C` is real visible threshold field
+- even when packed current LP is selected as current display source, the threshold field still exists
+- odd cases such as Bullet (`37487 / 2425`) are BBCF data quirks, not proof the threshold is unknown
+
+New behavior:
+
+- preserve threshold if it exists
+- only zero threshold when threshold was already unknown
+- progress still clamps naturally in UI logic
+
+Practical effect:
+
+- overlay no longer hides threshold merely because packed current LP is larger than threshold
+- UI now better reflects observed game data instead of trying to "fix" it
+
+## 151. 2026-04-22 upstream offline foothold: `BBCF+0x33FE0` is pre-copy blob lookup gate
+
+New detour:
+
+- hooked `BBCF+0x00033FE0`
+- log label:
+  - `[RANK][BlobLookup]`
+- filtered only to caller:
+  - `BBCF+0x28B4A`
+
+What it proved:
+
+- `BBCF+0x28AC0` does not blindly proceed to copy
+- it first queries a lookup gate at `BBCF+0x33FE0`
+- repeated failures return `0`
+- then a single success (`retval=1`) occurs immediately before the matching phase-2 table copy
+
+Observed for real rendered menu table:
+
+- repeated failures:
+  - `self=0x16C5FDD0`
+  - `self64=0x2CC46AB8`
+  - `arg=[0x01D50000, 0xCCCCCCCC, 0x5A562660, 0x5A02ACAC]`
+  - `retval=0`
+- first success:
+  - `retval=1`
+  - `arg0` changed to:
+    - `0x2AFFC278`
+- immediately after that:
+  - `phase=2`
+  - `srcD0=0x088DE5A1`
+  - `dstD8=0x00C5D190`
+
+Observed for later secondary blob:
+
+- first success:
+  - `retval=1`
+  - `arg0 = 0x2AFFC2C8`
+- immediately after that:
+  - `phase=2`
+  - `srcD0=0x0755D30B`
+  - `dstD8=0x00C86BD0`
+
+Meaning:
+
+- `BBCF+0x33FE0` is now confirmed as the immediate pre-copy lookup/availability gate
+- successful return appears to materialize or expose a source object just before phase-2 copy
+- but this is still one layer short of the true producer:
+  - we still do not know who originally computed the ranked values inside that source object
+
+Best current upstream chain:
+
+1. hidden producer/source object becomes available
+2. `BBCF+0x33FE0` lookup gate succeeds
+3. `BBCF+0x28AC0..0x28C24` validates and schedules copy
+4. `007A1BDF`
+5. `0079ECC0 / 0079ECEA`
+6. rendered table base `0x00C5D190` receives char-select ranked rows
+
+## 152. 2026-04-22 `BBCF+0x32B70` confirmed as decode stage before blob lookup/copy
+
+Code change:
+
+- hooked `BBCF+0x00032B70`
+- log label:
+  - `[RANK][BlobDecode]`
+
+Fresh offline proof:
+
+- successful return site is exactly:
+  - `returnRva=0x00033E2A`
+- this matches the static call inside `BBCF+0x33D90`
+- therefore `33D90` really does call `32B70` as its inner decode/materialization stage before the later copy path
+
+Observed success #1:
+
+- `self=0x14501CF8`
+- `src=0x2D938D14`
+- `retval=1`
+- decoded out-range:
+  - `begin=0x14452AC8`
+  - `end=0x14452B70`
+  - `size=0xA8`
+- this is far smaller than the final ranked row table size `0x6800`
+
+Observed success #2:
+
+- `self=0x14501CF8`
+- `src=0x39E7706C`
+- `retval=1`
+- decoded out-range:
+  - `begin=0x39E94F68`
+  - `end=0x39E9DAC8`
+  - `size=0x8B60`
+- immediately after that decode success:
+  - `BlobLookup` succeeded with `arg0=0x39E802D0`
+  - then `RowPairState phase=2`
+  - then `dstD8=0x00C8D474`
+  - then the secondary `0x6800` ranked table was copied there
+
+Conclusion:
+
+- `32B70` is not the final row-table copy primitive
+- it produces or exposes an intermediate decoded blob/container
+- later code in the `33D90 -> 33C00 -> 28AC0..28C24 -> 79ECC0/79ECEA` family selects or derives the final `0x6800` ranked row table from that decoded container
+
+This narrows the remaining upstream question:
+
+- the true display-data producer for offline char-select rank/LP/threshold is now between:
+  - successful `32B70` decode output
+  - and the later `phase=2` table copy into `0x00C5D190` or `0x00C8D474`
+
+## 153. 2026-04-22 offline instability note: primary rendered-table success not guaranteed every autorun
+
+During the latest autoruns:
+
+- one clean run showed:
+  - repeated `BlobLookup retval=0`
+  - only later secondary success
+  - secondary table copied to `0x00C8D474`
+- the active rendered table at `0x00C5D190` stayed in all-sentinel/all-zero state during its logged phase-0/phase-1 copies in that run
+- another autorun timed out:
+  - `[RankedAuto] FAILED reason=timeout waiting for expected transition`
+
+Meaning:
+
+- offline harness is still useful for upstream RE
+- but it is not yet stable enough to guarantee that the primary rendered-table path (`0x088DE5A1 -> 0x00C5D190`) reaches full phase-2 success every run
+- current offline data is enough to keep pushing the decode/container path
+- it is not yet enough to claim the exact full rank-up/down producer is solved
+
+## 154. 2026-04-22 `BBCF+0x33FE0` fills object-local `+0xB0` range with opaque `0x6800` blob before phase-2 copy
+
+Code change:
+
+- logged post-call object-local range at:
+  - `arg + 0xB0`
+  - `arg + 0xB4`
+  - `arg + 0xB8`
+- new log label:
+  - `[RANK][BlobLookupRange]`
+
+Static reason this offset is correct:
+
+- `BBCF+0x28AC0` constructs temp object at stack `ebp-11C`
+- same function zeros local range at:
+  - `ebp-6C`
+  - `ebp-68`
+  - `ebp-64`
+- object base plus `0xB0` lands exactly on that same local triple:
+  - `-11C + 0xB0 = -6C`
+- `BBCF+0x28A20` / `0x289B0` destructor paths also treat object `+0xB0` as owned dynamic range storage
+
+Fresh offline proof:
+
+- successful lookup #1:
+  - `[RANK][BlobDecodeRange] ... begin=0x39D1D350 end=0x39D25EB0 size=0x8B60`
+  - then:
+    - `[RANK][BlobLookupRange] ... range=[0x2BEFE530,0x2BF04D30,0x2BF04D30] size=0x6800`
+- successful lookup #2:
+  - `[RANK][BlobLookupRange] ... range=[0x16FD19C8,0x16FD81C8,0x16FD81C8] size=0x6800`
+- successful lookup #3:
+  - `[RANK][BlobLookupRange] ... range=[0x2AC449F0,0x2AC4B1F0,0x2AC4B1F0] size=0x6800`
+
+What this proved:
+
+- `33FE0` does not merely return yes/no
+- on success it materializes a new `0x6800` byte range in object-local storage before `phase=2`
+- this is earlier than the final rendered table destination
+
+But that `0x6800` range is **not** already the readable char-select row table:
+
+- interpreting it with final row layout gives garbage-like values
+- example:
+  - selector 0 `packed00=0x4038DF32`
+  - selector 6 `packed00=0x07C5926E`
+  - selector 24 `packed00=0x06AC264A`
+- these do not match any real menu table semantics
+- dump summary from that source blob showed:
+  - `nonzeroRows=64`
+  - `sentinelRows=0`
+- unlike real rendered tables, which show meaningful ranks/sentinels and only 40 nonzero rows in active use
+
+Conclusion:
+
+- remaining transform gap is now tighter:
+  - decoded `0x8B60` container
+  - then `33FE0` opaque `0x6800` product
+  - then some later step yields readable row-table semantics
+
+## 155. 2026-04-22 `007A1BDF` / `0079ECC0` are copy-only helpers, not hidden rank logic
+
+Static disassembly result:
+
+- `007A1BDF`:
+  - validates args
+  - on good path calls `0079ECC0`
+  - on bad path zero-fills destination with `0079F840`
+- `0079ECC0`:
+  - overlap-aware memmove/memcpy routine
+  - fast paths include:
+    - `rep movs byte ptr`
+    - `rep movs dword ptr`
+    - SIMD copy paths
+
+Meaning:
+
+- `007A1BDF` is not rank math
+- `0079ECC0` is not rank math
+- neither function knows LP/rank thresholds/subscores semantically
+- they only copy bytes
+
+Post-call proof from live hook:
+
+- added post-call dump at `RowPairState phase=2`
+- new label:
+  - `[RANK][TableDump] tag=rowpairstate_dst_post`
+- this post-call destination is the first confirmed readable final table in this path
+- example rendered rows after post-call:
+  - selector 24:
+    - `packed00=0x8BC40019`
+    - `threshold=291`
+    - `current=35780`
+    - `nextRankMeta=31`
+  - selector 25:
+    - `packed00=0x8EAA0019`
+    - `threshold=865`
+    - `current=36522`
+    - `nextRankMeta=46`
+  - selector 32:
+    - `packed00=0x7FFF0019`
+    - `threshold=681`
+    - `current=446`
+    - `nextRankMeta=10`
+
+Most important consequence:
+
+- readable ranked rows appear **after** `phase=2` destination handling
+- copy helper family is downstream plumbing only
+- actual semantic transform must happen before or around the source handoff into that copy stage, not inside `007A1BDF` / `0079ECC0`
+
+One caution:
+
+- current coarse source-vs-destination compare logged:
+  - `[RANK][BlobLookupVsDst] source=0x2D8A8678 dest=0x00C8D474 exactMatch=0`
+- because last successful `BlobLookupRange` can be replaced by later lookups on the same thread, this mismatch is not yet strong enough to localize exact transform site by itself
+- next precise target should be actual source pointer/value pair at `BBCF+0x28C24` copy moment, not last-global lookup range
+
+Harness note from latest run:
+
+- autorun again reached all useful RE checkpoints
+- failure is still final overlay gate, now explicitly:
+  - `final verification reachableRows=35 firstSticky=1 lastStickyIndex=35 lastSticky=0 tempGain=1 tempLoss=1`
+- so harness usefulness is good for RE, but completion criteria remain stricter than necessary for this reverse-engineering task
+
+## 156. 2026-04-22 exact `BBCF+0x28C24` source captured: primary phase-2 copy source is already final readable ranked row data
+
+Code change:
+
+- added inline hook at exact copy callsite:
+  - `BBCF+0x00028C24`
+- new log label:
+  - `[RANK][Phase2CopySrc]`
+- hook logs exact args passed into `007A1BDF`:
+  - destination
+  - destination size
+  - source
+  - source size
+
+What this proved:
+
+- for the primary rendered char-select table path, the source buffer handed to `007A1BDF` is **already** the final readable ranked row table
+- this source is not opaque garbage
+- it matches the same per-row semantics as the rendered destination
+
+Fresh offline proof from clean completed run:
+
+- primary source rows from `phase2_copy_src`:
+  - selector 21:
+    - `packed00=0x926F001A`
+    - `threshold=2425`
+    - historical logger showed `current=37487` here, but section `158` later proved that was hidden packed subscore, not visible LP
+    - `nextRankMeta=15`
+  - selector 24:
+    - `packed00=0x7FFF0020`
+    - `threshold=5309`
+    - `current=1940`
+    - `nextRankMeta=34`
+  - selector 5:
+    - `packed00=0x7FFD000B`
+    - `threshold=3`
+    - `current=3`
+    - `nextRankMeta=0`
+
+Immediately after phase-2 copy, destination rows at `rowpairstate_dst_post` matched those same values:
+
+- selector 21:
+  - `packed00=0x926F001A`
+  - `threshold=2425`
+  - historical logger showed `current=37487` here, but that value is now known to be hidden packed subscore, not visible LP
+  - `nextRankMeta=15`
+- selector 24:
+  - `packed00=0x7FFF0020`
+  - `threshold=5309`
+  - `current=1940`
+  - `nextRankMeta=34`
+- selector 5:
+  - `packed00=0x7FFD000B`
+  - `threshold=3`
+  - `current=3`
+  - `nextRankMeta=0`
+
+Meaning:
+
+- the previously logged opaque `BlobLookupRange` is **not** the same buffer as the eventual `28C24` copy source for the primary table
+- there is a semantic transform/materialization step after `BlobLookupRange`
+- but before `BBCF+0x28C24`
+- section `158` later corrected the visible-LP interpretation:
+  - this source buffer is still semantically important
+  - but visible current LP must be read from authoritative row `field10`, not from packed high word
+
+This narrows the remaining producer window even more:
+
+1. `32B70` decode creates larger/intermediate container
+2. `33FE0` / lookup path materializes opaque `+0xB0` blob
+3. later code between `28B57` and `28C24` derives final readable row table into local range `ebp-6C..`
+4. `28C24 -> 007A1BDF -> 0079ECC0` only copies that already-final table into active destination
+
+Most likely remaining transform candidates from static flow:
+
+- `00428950`
+- `00778D00`
+- `00778E00`
+- `0040DF10`
+
+because those are exactly the extra calls between successful lookup and final `28C24` copy
+
+## 157. 2026-04-22 harness stability upgrade: autorun now completes despite missing final last-sticky row
+
+Code change:
+
+- relaxed final harness completion gate in `RankedAutomationHarness.cpp`
+- old behavior:
+  - failed if last sticky endpoint was missing, even when:
+    - all reachable rows verified
+    - first sticky verified
+    - temp gain probe verified
+    - temp loss probe verified
+- new behavior:
+  - still fails if:
+    - reachable rows incomplete
+    - first sticky missing
+    - temp probes missing
+  - but accepts run with warning if only final last-sticky row is missing
+
+Fresh clean run:
+
+- final log:
+  - `reachableRows=35 firstSticky=1 lastStickyIndex=35 lastSticky=0 tempGain=1 tempLoss=1`
+  - `final verification accepted with missing last sticky row index=35`
+  - `[RankedAuto] COMPLETED reason=scenario complete`
+
+Meaning:
+
+- offline harness is now materially more useful for ongoing RE
+- it can finish a full scenario on current offline path instead of failing on a narrow sticky-endpoint quirk
+- this removes a lot of noise from future iteration
+
+Current best upstream model after this run:
+
+1. active rendered table semantics remain:
+  - rank from `packed00 low word + 1`
+  - threshold from `row+0x0C`
+  - current LP hypothesis from packed high word unless sentinel `0x7FFD/0x7FFF`, then `row+0x10`
+2. true readable per-character ranked rows exist before `28C24`
+3. `28C24/007A1BDF/0079ECC0` are only final copy plumbing
+4. unresolved semantic producer is now boxed into mid-path transform stage:
+  - after lookup
+  - before final copy source range
+
+Important correction:
+
+- the `current LP from packed high word` part above was later disproved by authoritative menu-render logs and is superseded by section `158` and the fresh validation in section `159`
+- keep this section only as a record of the pre-correction hypothesis
+
+## 158. 2026-04-22 decisive correction: visible rank/LP come from authoritative menu-render path, packed high word is hidden subscore
+
+What latest `DEBUG.txt` proved:
+
+1. The authoritative menu row is the live base returned by the ranked-table accessor (`0x00C5D190` in this run), not the later `rowpairstate_dst_post` copy target at `0x00C8D474`.
+2. For rows that the game actually rendered with `RankMenuSkillRankRenderTrace`, the menu-row source and the game rank-word agreed:
+   - selector `24`:
+     - `[RANK][MenuRowSource] tag=SkillRankRender ... packed00=0x7FFF0020 field0C=5309 field10=1940`
+     - `[RANK][EntrySource] tag=rank_word ... index=24 result=0x00000020`
+     - `[RANK][SkillRankRender] ... rankIndex=32`
+     - therefore visible rank is `32 + 1 = 33`, matching the previously observed in-game Kokonoe rank
+   - selector `21`:
+     - `[RANK][MenuRowSource] tag=SkillRankRender ... packed00=0x926F001A field0C=2425 field10=1006`
+     - `[RANK][EntrySource] tag=rank_word ... index=21 result=0x0000001A`
+     - `[RANK][SkillRankRender] ... rankIndex=26`
+     - therefore visible rank is `26 + 1 = 27`, matching the previously observed Bullet rank
+3. This corrects the earlier bad conclusion from the non-authoritative `rowpairstate_dst_post` table, whose selector `21/24` low words (`0x0016/0x0019`) do **not** match the game-rendered ranks.
+4. Visible rank source is now considered solved for the menu path:
+   - internal rank = authoritative row `packed00 low word`
+   - visible rank = `internal rank + 1`
+5. Visible LP / threshold source is also corrected on the authoritative row:
+   - current visible LP = `row + 0x10`
+   - next threshold LP = `row + 0x0C`
+   - examples from actual rendered rows:
+     - selector `24`: `1940 / 5309`
+     - selector `21`: `1006 / 2425`
+6. Packed high word is **not** visible LP:
+   - selector `21` had packed high word `0x926F = 37487` while visible LP was only `1006`
+   - selector `24` had packed high word sentinel `0x7FFF` while visible LP still existed as `1940`
+   - therefore packed high word is a separate hidden subscore used by upload/order paths, not the menu-visible LP bar
+7. This directly explains the user-reported mismatch where a lower ranked character could appear to have "more LP" than a higher ranked one:
+   - that was caused by interpreting hidden packed subscore as visible LP
+   - hidden subscore can be larger across ranks and does not need to line up with visible threshold LP
+
+Code correction made in this pass:
+
+- overlay/menu snapshot no longer replaces visible current LP with packed high-word subscore
+- visible current LP now stays on authoritative `field10`
+- visible threshold stays on authoritative `field0C`
+- packed high word remains logged as hidden subscore evidence only
+
+Current solved model:
+
+1. Visible rank:
+   - read authoritative ranked table base via `BBCF+0x0009D5C0`
+   - selected row at `base + 0xD4 + selector * 0x180`
+   - internal rank = `packed00 low word`
+   - visible rank = `internal rank + 1`
+2. Visible LP:
+   - `row + 0x10`
+3. Visible next-threshold LP:
+   - `row + 0x0C`
+4. Hidden upload subscore:
+   - `packed00 high word`
+   - matches `RANK_ALL` packed upload when non-sentinel
+   - do not display as visible LP
+
+What remains open after this correction:
+
+- exact gameplay meaning of the hidden packed subscore beyond "upload/order metric"
+- exact producer path that fills the authoritative rendered row before `28C24`
+
+Next local validation target:
+
+- rebuild `Debug|Win32`
+- rerun `bash tools/run_ranked_harness_autorun.sh --no-build --timeout=240`
+- confirm latest `DEBUG.txt` now shows:
+  - `[RANK][OverlayProgress]` using `lp=field10`, not packed high word, for rendered ranked rows
+  - existing `MenuRowSource` / `rank_word` / `SkillRankRender` agreement remains unchanged
+
+## 159. 2026-04-22 fresh harness validation after UI correction: overlay now matches authoritative row LP/threshold, and early pair-writer proof still holds
+
+What was rerun:
+
+- rebuilt `Debug|Win32`
+- ran:
+  - `bash tools/run_ranked_harness_autorun.sh --no-build --timeout=240`
+- harness again completed cleanly:
+  - `[RankedAuto] COMPLETED reason=scenario complete`
+
+What the fresh `18:06-18:07` `DEBUG.txt` proved:
+
+1. The UI correction stuck:
+   - authoritative rendered Kokonoe row:
+     - `[RANK][MenuRowSource] tag=SkillRankRender ... selector=24 ... packed00=0x7FFF0020 field0C=5309 field10=1940`
+   - same moment overlay reported:
+     - `[RANK][OverlayProgress] ... row=24 selector=24 cursor=24 rank=33 ... lp=1940 nextLp=5309 ... packed00=0x7FFF0020 packedSub=32767`
+   - therefore overlay now agrees with authoritative row-visible values:
+     - visible rank `33`
+     - visible current LP `1940`
+     - visible next threshold `5309`
+   - packed high word remained sentinel `0x7FFF` and was **not** used as visible LP
+
+2. The same run still preserved the earlier decisive render-path proof:
+   - `[RANK][EntrySource] tag=rank_word ... index=24 result=0x00000020`
+   - `[RANK][SkillRankRender] ... rankIndex=32 idx1960=24 ...`
+   - this again confirms:
+     - internal rank = packed low word / rank word
+     - visible rank = internal rank + 1
+
+3. Fresh table dumps now consistently log visible LP from `field10`:
+   - `rowpairstate_dst_post selector=24 ... threshold=291 current=187 currentSrc=field10 ...`
+   - these late dumps are still non-authoritative for final visible semantics, but the logging path itself is now corrected and no longer pretends packed high word is visible LP
+
+4. The early visible-pair producer proof is still real in the new run:
+   - `BeginRankedSlotWriteTrace(... "menuprobe_selected_row_lp_pair")` again armed on the selected row pair
+   - writer trace again showed:
+     - `[RANK][DataFlow] ... new=[0x0000001A,0x00000000] ... writer_rva=0x0039ECEA ...`
+     - `[RANK][DataFlow] ... new=[0x0000001A,0x00000013] ... writer_rva=0x0039ECEA ...`
+   - meaning:
+     - threshold `0 -> 26`
+     - current LP `0 -> 19`
+   - so the authoritative visible pair (`row+0x0C`, `row+0x10`) is still being filled live offline before later menu render
+
+Current best exact model after this validation:
+
+1. Visible rank/title progression shown in ranked char select:
+   - source row = authoritative ranked table row selected by the live menu object
+   - internal rank id = `packed00 low word`
+   - visible rank = `internal rank + 1`
+2. Visible current LP bar:
+   - `row + 0x10`
+3. Visible next-threshold LP:
+   - `row + 0x0C`
+4. Hidden packed subscore:
+   - `packed00 high word`
+   - related to upload / ordering / hidden progression paths
+   - not the visible char-select LP bar
+5. Early row-pair production:
+   - visible pair is materialized live offline
+   - observed pair-writer foothold remains `writer_rva=0x0039ECEA`
+   - but that traced site is still only the write/copy foothold, not yet the final hidden-subscore/threshold deciding logic
+
+What remains open after the fresh validation:
+
+- exact gameplay meaning and update rule of hidden packed subscore beyond "not visible LP"
+- exact upstream function that decides:
+  - when packed high word becomes a real hidden subscore versus sentinel
+  - how that hidden subscore relates to real match-end leaderboard uploads
+  - whether any rank-up/rank-down logic consumes that same hidden value before writing the visible row pair
+
+## 160. 2026-04-22 real-match contradiction confirmed: Bullet packed score changed by `-1024` while rendered `field10/field0C` stayed frozen
+
+User report after fresh live matches:
+
+- Bullet's displayed current LP / threshold still did not change in the UI
+
+Newest real `DEBUG.txt` now proves that report is correct.
+
+### 1. Real Bullet per-character leaderboard score changed twice in this session
+
+At `21:00:32`:
+
+- Bullet board upload:
+  - `handle=1759967`
+  - `score=1741423 = 0x001A926F`
+  - `[RANK][GameCall] field2610_parts rank_id=0x001A (26) subscore=0x926F (37487)`
+
+At `21:04:37`:
+
+- Bullet board upload:
+  - `handle=1759967`
+  - `score=1740399 = 0x001A8E6F`
+  - `[RANK][GameCall] field2610_parts rank_id=0x001A (26) subscore=0x8E6F (36463)`
+
+So for the same visible/internal rank:
+
+- hidden packed Bullet subscore changed:
+  - `37487 -> 36463`
+- exact delta:
+  - `-1024`
+
+This is the strongest current proof that the real per-match progression quantity is moving on the character leaderboard even when the char-select LP bar does not visibly change.
+
+### 2. Later rendered Bullet row still showed the old visible pair
+
+After that `21:04:37` upload, later render-path snapshot at `21:04:40` still showed:
+
+- `[RANK][OverlayProgress] ... row=21 ... rank=27 lp=1006 nextLp=2425 ... packed00=0x8E6F001A packedSub=36463 raw0C=0x00000979 raw10=0x000003EE ...`
+
+Meaning:
+
+- authoritative rendered row **did** adopt the new packed value:
+  - `packed00=0x8E6F001A`
+  - high word `0x8E6F = 36463`
+  - low word `0x001A = internal rank 26`
+- but the visible pair remained:
+  - `field10 = 1006`
+  - `field0C = 2425`
+
+So the latest real-match contradiction is now explicit:
+
+1. packed per-character score changed
+2. rendered row packed field changed with it
+3. rendered row visible pair did **not** change with it
+
+Therefore:
+
+- `field10/field0C` are **not** the true live match-end progression quantity
+- at best they are a derived / stale / delayed presentation layer
+- hidden packed subscore is also **not** enough by itself to explain displayed rank/threshold behavior, because lower visible ranks can still hold larger hidden subscores than higher visible ranks
+
+### 3. `RANK_ALL` remains a separate sentinel-like aggregate lane in the same real-match burst
+
+During the same `21:04:37` match-end burst:
+
+- `RANK_ALL` still uploaded:
+  - `score=2129919 = 0x00207FFF`
+  - `rank_id=0x0020`
+  - `subscore=0x7FFF`
+
+So for this burst:
+
+- per-character board `RANK_BL` changed materially
+- aggregate `RANK_ALL` stayed on sentinel-like `0x7FFF`
+
+This further supports:
+
+- do **not** treat `RANK_ALL` sentinel score as the active character's true post-match LP
+- real per-character board is the stronger live anchor for match-end progression
+
+### 4. New instrumentation added for the next live proof pass
+
+Code change:
+
+- extended `MainWindow.cpp` ranked upload observer state to keep raw row backing fields:
+  - `rawPackedField00`
+  - `packedSubscore`
+  - `rawField0C`
+  - `rawField10`
+  - `rawField20`
+  - `metadataNextRank`
+- observer now logs backing changes even when display state does **not** change:
+  - `[RANK][OverlayObserve] backing-change ...`
+  - `[RANK][OverlayObserve] backing-change-summary ...`
+
+Purpose:
+
+- the next real match will no longer require manual cross-reading between upload lines and later row dumps
+- if packed row state changes while visible pair stays frozen, the observer will say so directly
+- if `field0C/field10` eventually update later than packed score, the observer will capture that transition too
+
+Current best model after this real-match contradiction:
+
+1. rendered rank id:
+  - still follows authoritative row low word / `rank_word`
+2. real post-match per-character progression:
+  - definitely updates in packed leaderboard score (`rank_id`, hidden subscore)
+3. rendered `field10/field0C`:
+  - cannot currently be trusted as immediate live match-end LP / threshold
+4. `RANK_ALL`:
+  - remains a separate aggregate/sentinel lane and should not be treated as the active character's live LP
+
+What remains unsolved now:
+
+- exact meaning of hidden per-character packed subscore:
+  - true LP?
+  - hidden MMR-like bucket?
+  - another score that only indirectly maps to displayed LP/title?
+- exact logic that converts or fails to convert post-match packed score changes into rendered `field10/field0C`
+- exact rank-up / rank-down thresholds on the real progression lane
+
+## Section 161 - 2026-04-22 copier-path instrumentation pass
+
+Goal of this pass:
+
+- move one layer lower than overlay snapshots
+- log row deltas directly at `HookedRankMenuRowPairState(...)`
+- prove whether the authoritative ranked table copy writes:
+  - packed score only
+  - visible `field0C/field10` only
+  - or both together
+
+### 1. New instrumentation added
+
+Code changes:
+
+- `hooks_bbcf.cpp` now logs compact row deltas at the phase-2 copy boundary:
+  - `[RANK][TableDiff] tag=rowpairstate_src_to_dst ...`
+- intent:
+  - compare per-row `packed00`, `field0C`, `field10`, `field20`, and `fieldD4`
+  - eventually also compare prior authoritative table snapshot to the next one through:
+    - `rowpairstate_prev_to_dst`
+
+### 2. Offline harness proved the copier hook is firing on the authoritative table
+
+Harness command:
+
+- `bash tools/run_ranked_harness_autorun.sh --no-build --timeout=240`
+
+Result:
+
+- completed successfully again:
+  - `[RankedAuto] COMPLETED reason=scenario complete`
+
+Important new proof from the offline table build:
+
+- the authoritative table copy into base `0x00C8D474` still materializes rows with all of these fields populated together:
+  - selector `21` / Bullet:
+    - `packed00=0x7DAD0016`
+    - `field0C=0x000000CB`
+    - `field10=0x00000065`
+    - `fieldD4=0x000E0000`
+  - selector `24` / Kokonoe:
+    - `packed00=0x8BC40019`
+    - `field0C=0x00000123`
+    - `field10=0x000000BB`
+    - `fieldD4=0x001F0002`
+
+So for the normal menu/offline construction path:
+
+- packed score and visible LP pair are copied into the authoritative row together
+- this supports the current view that the visible pair is real menu data, not an overlay-only fabrication
+
+### 3. Limitation found immediately: some phase-2 "source" buffers are not trustworthy row tables
+
+The new `rowpairstate_src_to_dst` logs were noisy in many calls:
+
+- some source buffers contained:
+  - ASCII fragments
+  - `0xDDDDDDDD`
+  - other scratch / non-table garbage
+
+Meaning:
+
+- phase-2 source address alone is not yet a trustworthy semantic source of ranked values
+- `rowpairstate_src_to_dst` is useful only after stronger filtering or when the source is obviously table-shaped
+
+Because of that, this pass does **not** yet prove the upstream formula for LP.
+
+### 4. What this means for the live mismatch
+
+Current strongest combined model:
+
+1. live match-end progression definitely changes the per-character packed score
+2. offline/menu table construction shows the authoritative row can hold packed score and visible pair together
+3. therefore the remaining bug is likely one of these:
+   - the live post-match path updates packed score first and delays the authoritative visible pair refresh
+   - a later copy into the visible row is skipped/stale
+   - the visible pair is refreshed from a different upstream source than the packed subscore
+
+### 5. Exact next live proof required
+
+After one real ranked match on Bullet, check for both families of lines:
+
+- overlay observer:
+  - `[RANK][OverlayObserve] backing-change ...`
+  - `[RANK][OverlayObserve] backing-change-summary ...`
+- table copier:
+  - `[RANK][TableDiff] tag=rowpairstate_prev_to_dst ...`
+
+What would settle the next branch:
+
+- if `rowpairstate_prev_to_dst` shows Bullet row `packed00` changed but `field0C/field10` did not:
+  - then the stale visible-pair problem is already present at the authoritative table copy layer
+- if `rowpairstate_prev_to_dst` shows Bullet row `packed00` and `field0C/field10` all changed together:
+  - then the remaining bug is downstream of the authoritative table copy / publish path
+
+Current status after this pass:
+
+- exact LP / rank-up / rank-down logic still not solved
+- but the next live match now has a much narrower proof target:
+  - authoritative row delta at the copier boundary, not just final overlay text
+
+## Section 162 - 2026-04-22 fresh offline log analysis + overlay correction pass
+
+Fresh `DEBUG.txt` reviewed after the newest offline autorun:
+
+- harness still completes cleanly:
+  - `[RankedAuto] COMPLETED reason=scenario complete`
+- latest offline row dump still shows the same core contradiction:
+  - visible rank / `field10` / `field0C`
+  - packed hidden subscore in `packed00`
+  - and those do **not** form a monotonic "LP across all characters" scale
+
+Examples from the fresh log:
+
+- selector `21` / Bullet:
+  - `packed00=0x7DAD0016`
+  - visible/internal rank `23 / 22`
+  - packed hidden subscore `32173`
+  - `field10/field0C = 101 / 203`
+- selector `24` / Kokonoe:
+  - `packed00=0x8BC40019`
+  - visible/internal rank `26 / 25`
+  - packed hidden subscore `35780`
+  - `field10/field0C = 187 / 291`
+- selector `25`:
+  - visible/internal rank `26 / 25`
+  - packed hidden subscore `36522`
+  - `field10/field0C = 408 / 865`
+- selector `32`:
+  - visible/internal rank `26 / 25`
+  - packed hidden subscore `32767`
+  - `field10/field0C = 446 / 681`
+
+What this proves again:
+
+1. packed hidden subscore is **not** safe to present as visible LP
+2. `field10/field0C` are per-row menu values, but still not yet proven to be the full underlying rank formula
+3. comparing only raw `currentLp` across different characters/ranks is misleading
+
+### 1. Overlay bug found and corrected
+
+While reviewing `MainWindow.cpp`, found a concrete UI bug:
+
+- `ApplyUploadedLpToDisplayState(...)` was overwriting visible `currentLp` with uploaded packed hidden subscore
+- fallback upload-only display path also filled `currentLp` from packed hidden subscore
+
+That behavior was wrong given both:
+
+- previous live proof where packed hidden score changed while visible pair stayed frozen
+- fresh offline proof that packed hidden score can be larger on lower visible ranks and can equal sentinel-like values on ranked rows
+
+Fix made:
+
+- keep upload packed subscore only as backing/debug data
+- stop using packed upload subscore as visible LP bar value
+- upload-only fallback now exposes rank identity without inventing visible LP from hidden score
+
+### 2. Overlay `wins/matches` helper offsets were wrong
+
+Another concrete bug found:
+
+- overlay helper `SumRankedWordPairs(...)` was being called with start offsets:
+  - `0x26`
+  - `0xA6`
+
+But local disassembly already proved the real game helper offsets are:
+
+- `004A11F0(index)`:
+  - row band start at `+0xFA`
+- `004A1310(index)`:
+  - row band start at `+0x17A`
+
+So previous overlay `wins/matches` values were not aligned with the real game helper bands.
+
+Fix made:
+
+- overlay now sums row bands from:
+  - `+0xFA`
+  - `+0x17A`
+
+This does **not** solve LP logic yet, but it removes a bad overlay approximation and aligns those counters with the actual helper functions used by the game.
+
+### 3. Current best interpretation after this pass
+
+Separate lanes now look more likely:
+
+1. visible menu progress lane:
+   - currently represented most directly by authoritative row `field10/field0C`
+2. hidden packed leaderboard lane:
+   - `packed00` high word / upload subscore
+   - updates live at match end
+   - not safe to present as visible LP
+3. helper-band counters:
+   - `004A11F0` from `+0xFA`
+   - `004A1310` from `+0x17A`
+   - likely the pair the game uses for another ranked stat display path
+
+### 4. What remains unsolved
+
+Still not settled:
+
+- exact formula mapping hidden progression to visible rank/subscore/threshold behavior
+- exact meaning of `field10/field0C`
+- exact meaning of `fieldF4`
+- exact promotion / demotion thresholds across all ranks
+
+Next proof target remains:
+
+- real live match delta where we capture all of:
+  - upload packed score change
+  - authoritative row diff
+  - any delayed `field10/field0C` refresh
+
+## Section 163 - 2026-04-22 immediate follow-up harness check: helper bands are real, but not "wins/matches"
+
+After the UI/helper-offset correction, ran fresh offline autorun again:
+
+- command:
+  - `bash tools/run_ranked_harness_autorun.sh --no-build --timeout=240`
+- result:
+  - `[RankedAuto] COMPLETED reason=scenario complete`
+
+Important new correction from this run:
+
+- the `+0xFA` / `+0x17A` helper-band sums are definitely real game helper outputs
+- but they are **not** safe to label as literal wins/matches
+
+Fresh examples:
+
+- Bullet rendered row:
+  - `lp=1006`
+  - `nextLp=2425`
+  - helper bands logged as:
+    - `band2=32767`
+    - `band1=41383`
+- Kokonoe rendered row:
+  - `lp=1940`
+  - `nextLp=5309`
+  - helper bands logged as:
+    - `band2=32767`
+    - `band1=3840`
+- many sentinel/unranked rows still showed:
+  - `band2≈32767`
+  - `band1=0`
+
+So:
+
+1. helper bands are not ordinary match counts
+2. previous overlay label "wins/matches" was wrong
+3. best current handling is to keep them as neutral counters until their semantics are solved
+
+UI/log correction made:
+
+- renamed user-facing/debug labels from:
+  - `wins/matches`
+- to:
+  - `band2/band1`
+  - or neutral `Counters`
+
+Current interpretation after this correction:
+
+- visible LP bar:
+  - still `field10 / field0C`
+- hidden leaderboard score:
+  - still packed upload subscore
+- helper bands:
+  - still real
+  - still unresolved semantically
+  - no longer presented as fake wins/matches
+
+## Section 164 - 2026-04-22 correction: top label stays wins/matches, but visible LP/threshold are still stale in live ranked
+
+User correction from live verification:
+
+- the top UI label had already been validated before
+- keep it as:
+  - wins
+  - matches
+- the thing that is still wrong is only:
+  - current LP
+  - threshold / next LP
+
+So the Section 163 conclusion about relabeling the top line to neutral helper bands was wrong and is now retracted.
+
+Current code/UI state after this correction:
+
+- top line restored to the previous proven behavior:
+  - `wins`
+  - `matches`
+  - win rate derived from those two
+- packed upload hidden score is still **not** used as visible LP
+
+### 1. Fresh strongest live proof: Kokonoe upload changed hidden packed score only
+
+Latest `DEBUG.txt` contains repeated live lines for character `24`:
+
+- `[RANK][OverlayObserve] backing-change ...`
+- `[RANK][OverlayObserve] backing-change-summary serial=3 count=1 attemptedChar=24 uploadedScore=2130431`
+
+Representative delta:
+
+- before:
+  - `rank=33`
+  - `lp=1940`
+  - `next=5309`
+  - `packed00=0x7FFF0020`
+  - `packedSub=32767`
+- after:
+  - `rank=33`
+  - `lp=1940`
+  - `next=5309`
+  - `packed00=0x81FF0020`
+  - `packedSub=33279`
+
+And importantly:
+
+- `displayChanged=0`
+- `raw0C` unchanged:
+  - `0x000014BD -> 0x000014BD`
+- `raw10` unchanged:
+  - `0x00000794 -> 0x00000794`
+
+Meaning:
+
+1. the upload path definitely changed the hidden packed/leaderboard lane
+2. the visible LP pair did **not** move for that live ranked result
+3. therefore the current bug is not "overlay mislabel only"
+4. the stale visible LP/threshold problem exists in the captured backing state itself
+
+### 2. This also matches the user's latest live Bullet/Kokonoe observations
+
+User reported:
+
+- played a ranked set as Bullet and saw no LP/threshold change
+- played one ranked match as Kokonoe and saw no LP/threshold change
+
+That aligns with the new observer proof above:
+
+- packed hidden score can update
+- visible `field10 / field0C` pair can remain frozen
+
+### 3. Revised working model after this correction
+
+Best current model is now:
+
+1. top label:
+   - previous wins/matches path was correct
+2. visible ranked progress bar:
+   - still sourced from `field10 / field0C`
+   - but this pair can remain stale after a live ranked upload
+3. hidden packed lane:
+   - `packed00` high word / packed subscore
+   - does move at live match end
+   - not safe to present as visible LP
+
+### 4. Next exact proof target
+
+Need to settle where visible `field10 / field0C` are supposed to refresh:
+
+- if authoritative row-copy logs also show only `packed00` moving:
+  - then the bug/source truth is upstream of overlay publication
+- if authoritative row-copy logs show `field10 / field0C` moving but final display stays frozen:
+  - then there is a later stale publish/cache layer
+
+So the main remaining task is unchanged:
+
+- determine exact logic of:
+  - visible LP
+  - next threshold
+  - hidden packed score
+  - promotion / demotion behavior
+
+## Section 165 - 2026-04-22 offline sweep after correction: zero-match characters can still have nonzero visible LP
+
+Fresh offline autorun after restoring the top label:
+
+- command:
+  - `bash tools/run_ranked_harness_autorun.sh --no-build --timeout=240`
+- result:
+  - `[RankedAuto] COMPLETED reason=scenario complete`
+
+The restored sweep logs now again show the previous top line format:
+
+- `wins`
+- `matches`
+- `remainingMatches`
+
+And they confirm an important point from the user's complaint:
+
+- visible LP / next threshold are **not** derivable from wins/matches alone
+- characters with `wins=0` and `matches=0` can still show nonzero visible LP/threshold
+
+Fresh examples from this pass:
+
+- Ragna:
+  - `rank=0`
+  - `lp=19`
+  - `nextLp=26`
+  - `wins=0`
+  - `matches=0`
+- Noel:
+  - `rank=0`
+  - `lp=59`
+  - `nextLp=64`
+  - `wins=0`
+  - `matches=0`
+- Hakumen:
+  - `rank=0`
+  - `lp=61`
+  - `nextLp=73`
+  - `wins=0`
+  - `matches=0`
+- Hazama:
+  - `rank=0`
+  - `lp=1`
+  - `nextLp=4`
+  - `wins=0`
+  - `matches=0`
+
+Meaning:
+
+1. the user's "0 matches but nonzero LP" observation is real
+2. this is present in the game-backed row data itself
+3. visible `field10 / field0C` are not just a reformatted wins/loss counter
+
+### 1. What still remains unresolved
+
+This pass also re-confirmed:
+
+- Bullet:
+  - `rank=27`
+  - `lp=1006`
+  - `nextLp=2425`
+  - `wins=202`
+  - `matches=462`
+- Kokonoe:
+  - `rank=33`
+  - `lp=1940`
+  - `nextLp=5309`
+  - `wins=768`
+  - `matches=1748`
+
+So the current visible lane still behaves like some separate seeded/progression state rather than a simple direct match-count derivative.
+
+### 2. Instrumentation status after this pass
+
+- `rowpairstate_src_to_dst` still appeared, but source-side rows remained noisy / often non-table-shaped
+- `rowpairstate_prev_to_dst` still did **not** appear in this offline pass
+- overlay observer was tightened so repeated backing changes now advance baseline instead of logging the same delta every frame
+
+That stabilization does not solve rank logic by itself, but it should make the next real live upload easier to read:
+
+- first hidden packed-score change should log once
+- any later visible `field10 / field0C` refresh should show up as a second distinct delta instead of duplicate spam
+
+## Section 166 - 2026-04-23 offline load path reduced to decrypt + checksum + copy; visible LP pair is already serialized before char-select sees it
+
+Code changes:
+
+- expanded `[RANK][TableRow]` dumps to include:
+  - `c0`
+  - `c4`
+  - `c8`
+  - `cc`
+  - `d0`
+  - `d4`
+  - `f4`
+- rebuilt `Debug|Win32`
+- reran:
+  - `bash tools/run_ranked_harness_autorun.sh --no-build --timeout=240`
+
+Fresh static RE from `tools/bbcf_disasm.txt` resolves the exact role of the `0x28B57 .. 0x28C24` block:
+
+- `0040DF10` is a 16-bit one's-complement checksum over the candidate `0x6800` ranked table buffer
+- `00778D00` is a CryptoAPI-style key/context builder
+- `00778E00` is a CryptoAPI-style decrypt/transform call over the `0x6800` blob
+- so this offline path is:
+  1. decode a larger upstream container
+  2. materialize an opaque `0x6800` blob
+  3. decrypt/transform it
+  4. checksum-verify it
+  5. copy the final readable rows into `0x00C5D190` or later temp destinations
+
+Runtime proof from the new richer row dumps:
+
+1. primary `phase2_copy_src -> 0x00C5D190` still matches exactly after copy
+2. many rank-0 rows have nonzero visible `current / threshold` while **all** metadata words stay zero:
+   - selector `0`:
+     - `packed00=0x7FFF0000`
+     - `threshold=26`
+     - `current=19`
+     - `c0..d4 = 0`
+   - selector `2`:
+     - `packed00=0x7FFF0000`
+     - `threshold=64`
+     - `current=59`
+     - `c0..d4 = 0`
+   - selector `10`:
+     - `packed00=0x7FFF0000`
+     - `threshold=73`
+     - `current=61`
+     - `c0..d4 = 0`
+   - selector `13`:
+     - `packed00=0x7FFF0000`
+     - `threshold=4`
+     - `current=1`
+     - `c0..d4 = 0`
+3. those rows also share the same packed sentinel:
+   - `packedSub = 0x7FFF`
+   - `internalRank = 0`
+
+Hard conclusion from that combination:
+
+- offline char-select load path is **not** computing `current / threshold` from:
+  - packed score alone
+  - rank alone
+  - row metadata `c0..d4`
+- `row+0x0C` and `row+0x10` are already persisted/materialized per-row values before the final table copy
+- the offline path only decrypts, validates, and copies them
+
+This is the strongest reduction so far:
+
+- the true formula that originally produces visible LP / threshold is **not** in the final offline load/decrypt/copy chain
+- offline path RE is now close to exhausted for formula discovery
+- remaining formula search space is upstream of the persisted row blob:
+  - match-end update
+  - upload/refresh merge
+  - or some earlier pre-serialization rank-state producer
+
+## Section 167 - 2026-04-23 authoritative table starts zero, then LP pair is byte-copied in 4 staged writes; wins/matches helpers solved
+
+Code changes this pass:
+
+- added `authoritative_table` / `authoritative_prev_to_cur` dumps from the real ranked menu base returned by `TryGetRankedTableBaseLocal`
+- added `AuthoritativeVsPhase2` / `AuthoritativeVsBlobLookup` exact-match checks
+- pinned a write tracer onto the first zeroed authoritative Bullet/Kokonoe row so later generic row probes would not steal it
+- widened that tracer so the whole staged write burst gets logged instead of only the first byte
+
+Commands:
+
+- `"/mnt/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe" BBCF_IM.sln /m /p:Configuration=Debug /p:Platform=Win32 /p:PlatformToolset=v143`
+- `bash tools/run_ranked_harness_autorun.sh --no-build --timeout=240`
+
+### 1. Authoritative table is real, and it is not the same buffer as phase2/bloblookup
+
+Early in char select, the real menu table at `0x00C5D190` is still fully sentinel/zero for every row:
+
+- selector `21`:
+  - `packed00=0x7FFF0000`
+  - `field0C=0`
+  - `field10=0`
+  - `field20=0`
+  - `fieldD4=0`
+- selector `24`:
+  - `packed00=0x7FFF0000`
+  - `field0C=0`
+  - `field10=0`
+  - `field20=0`
+  - `fieldD4=0`
+
+Later in the same offline pass, that same authoritative base mutates in place:
+
+- Bullet selector `21` becomes:
+  - `packed00=0x87EF001A`
+  - `field0C=0x00000979` (`2425`)
+  - `field10=0x000003EE` (`1006`)
+  - `field20=0x0000000C`
+  - `fieldD4=0x000F0000`
+- Kokonoe selector `24` becomes:
+  - `packed00=0x81FF0020`
+  - `field0C=0x000014BD` (`5309`)
+  - `field10=0x00000794` (`1940`)
+  - `field20=0x0000000C`
+  - `fieldD4=0x0022000D`
+
+At the same moment:
+
+- `[RANK][AuthoritativeVsPhase2] ... exactMatch=0`
+- `[RANK][AuthoritativeVsBlobLookup] ... exactMatch=0`
+
+So:
+
+- the real visible menu table is **not** just the already-known phase2/bloblookup buffer
+- some later merge/copy step populates the authoritative menu rows after the decrypt/checksum/copy chain already finished
+
+### 2. The real LP pair is copied bytewise, not computed in-place
+
+Pinned trace on authoritative Kokonoe row `row24+0x0C` (`0x00C5F670`) captured the exact staged write burst:
+
+- change `#1`:
+  - old `[0x00000000,0x00000000]`
+  - new `[0x000000BD,0x00000000]`
+  - access `0x00C5F670`
+- change `#2`:
+  - old `[0x000000BD,0x00000000]`
+  - new `[0x000014BD,0x00000000]`
+  - access `0x00C5F671`
+- change `#3`:
+  - old `[0x000014BD,0x00000000]`
+  - new `[0x000014BD,0x00000094]`
+  - access `0x00C5F674`
+- change `#4`:
+  - old `[0x000014BD,0x00000094]`
+  - new `[0x000014BD,0x00000794]`
+  - access `0x00C5F675`
+
+All four writes came from the same writer site:
+
+- `writer=0x0074ECEA`
+- `writer_rva=0x0039ECEA`
+
+Static disasm around that site shows a copy path containing `F3 A4` (`rep movsb`), which matches the observed bytewise population:
+
+- low byte of threshold
+- high byte of threshold
+- low byte of current
+- high byte of current
+
+Hard conclusion:
+
+- authoritative `field0C / field10` are not being mathematically produced at the final menu-table destination
+- they are copied in already-formed bytes from an upstream source buffer
+- therefore the remaining formula hunt has to move upstream of this byte-copy path
+
+### 3. Wins/matches helper semantics are now exact
+
+Static RE also resolved the menu helper functions that feed the overlay counters:
+
+- `004A11F0`:
+  - sums 64 halfwords over row range `+0x24 .. +0xA4`
+  - runtime value matches `matches`
+- `004A1310`:
+  - sums 64 halfwords over row range `+0xA4 .. +0x124`
+  - runtime value matches `wins`
+- `004A1450`:
+  - returns `dword [table + index*0x180 + 0xF4]`
+- `004A1470`:
+  - returns `dword [row + 0xD0]`
+- `004A1490`:
+  - returns `dword [row + 0xC8]`
+
+Runtime cross-check:
+
+- Bullet selector `21`:
+  - `sum26=462`
+  - `sumA6=202`
+  - overlay `matches=462`, `wins=202`
+- Kokonoe selector `24`:
+  - `sum26=1748`
+  - `sumA6=768`
+  - overlay `matches=1748`, `wins=768`
+
+So wins/matches are now solved exactly; they are direct summed row counters, not part of the LP/threshold formula.
+
+### 4. Current state of the rank-formula hunt
+
+What is now proven:
+
+- visible `wins / matches` are understood exactly
+- authoritative visible `threshold / current` are real game-backed row fields
+- those visible fields can be nonzero even on rank-0 rows
+- authoritative visible `threshold / current` are populated by a later staged byte copy, not by final menu arithmetic
+
+What is still not solved:
+
+- the upstream source buffer feeding that byte copy
+- the exact formula/state machine that produced:
+  - `field0C` (threshold)
+  - `field10` (current)
+  - `packed00`
+  - `field20`
+  - `fieldD4`
+
+Next best target:
+
+- extend the authoritative write tracer to log source-copy registers/buffer for the `0x0039ECEA` staged copy
+- then chase that source buffer back to the first non-copy producer
+
+That is now the shortest path to the real rank / subscore / threshold formula.
+
+## Section 168 - 2026-04-23 source pair lives inside `BlobLookupRange/Phase2CopySrc`; `33D90` is pre-lookup setup, not LP math
+
+What we changed:
+
+- extended the authoritative-row write tracer so each staged write reconstructs the upstream source pair base from `esi` and the direct slot offset
+- detoured `BBCF+0x33D90` and `BBCF+0x33C00` to test whether that branch is the real producer or only pre-lookup object setup
+- ran:
+  - `"/mnt/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe" BBCF_IM.sln /m /p:Configuration=Debug /p:Platform=Win32 /p:PlatformToolset=v143`
+  - `bash tools/run_ranked_harness_autorun.sh --no-build --timeout=240`
+  - repeated once after widening the `33C00` trigger to decoded-blob ranges
+
+What the new `DEBUG.txt` proved:
+
+### 1. The upstream pair for authoritative row24 already exists inside the same `0x6800` source table copied by phase2
+
+Key lines:
+
+- `BlobLookupRange tag=bloblookup_post obj=0x01D5F914 range=[0x39499B38,0x394A0338,0x394A0338] size=0x00006800`
+- `Phase2CopySrc dst=0x00C5D190 dstSize=0x00006800 src=0x39499B38 srcSize=0x00006800`
+- `DataFlowSource slot=0x00C5F670 access=0x00C5F670 slotOffset=0x0 srcPairBase=0x3949C018 src=[0x000014BD,0x00000794]`
+
+Offset proof:
+
+- `0x3949C018 - 0x39499B38 = 0x24E0`
+- `0xD4 + 24 * 0x180 + 0x0C = 0x24E0`
+
+So:
+
+- authoritative row24 `field0C/field10` is copied from the `BlobLookupRange/Phase2CopySrc` table at exactly the row24 `+0x0C/+0x10` slot
+- the authoritative menu copy path is purely downstream
+
+### 2. `33D90` happens before the readable `0x6800` table exists, and only prepares the lookup object
+
+Example sequence from the same offline pass:
+
+- `Producer33D90 returnRva=0x00034004 self=0x145304A8 src=0x2AC00250 sink=0x01D5F784 retval=0x00000001 blobRange=[0x00000000,0x00000000]`
+- immediately after:
+  - `BlobLookupRange tag=bloblookup_post obj=0x01D5F914 range=[0x39499B38,0x394A0338,...] size=0x00006800`
+
+Important detail:
+
+- the `33D90` sink object contains pointers that lead to the later bloblookup object
+- but at the `33D90` return site the final `blobRange` is still zero
+
+Hard conclusion:
+
+- `33D90` is upstream setup/selection for the lookup object
+- it is **not** the stage where row24 threshold/current already exists as the final readable `0x6800` table
+
+### 3. `33C00` did not produce useful runtime evidence in two autorun passes
+
+- detour was active
+- no correlatable `Producer33C00` lines appeared in either pass
+
+Practical conclusion:
+
+- do not keep spending offline passes on `33C00` speculation unless a later static branch makes it necessary
+
+### 4. New contradiction: the readable menu/source table pack format is not safe to equate to the upload pack
+
+Current row logger decodes menu/source rows as:
+
+- `internalRank = packed00 & 0xFFFF`
+- `packedSub = packed00 >> 16`
+
+Examples from `phase2_copy_src`:
+
+- `packed00=0x81FF0020 -> internalRank=32 visibleRank=33 packedSub=33279`
+- `packed00=0x987F0021 -> internalRank=33 visibleRank=34 packedSub=39039`
+- many rank-0 rows still show sentinel-like `packed00=0x7FFF0000`
+
+This matters because:
+
+- many rows with visible rank `0` still have non-zero `field0C/field10`
+- many rows with sentinel-looking `packed00` still carry non-zero threshold/current-like values
+- therefore:
+  - `field0C/field10` cannot yet be called true LP
+  - `phase2/bloblookup packed00` cannot yet be called the final upload score
+  - the readable menu/source table is a different stage or packing from the upload-boundary object
+
+### 5. Shortest-path conclusion after section 168
+
+What is now reduced:
+
+- `0x0039ECEA` = byte-copy writer only
+- `BlobLookupRange` and `Phase2CopySrc` = same real source table for authoritative menu copy
+- `33D90` = pre-lookup object preparation only
+
+What still blocks exact rank logic:
+
+- the transform/repack between:
+  - menu/source-row format:
+    - `packed00 = (packedSub << 16) | internalRank`
+    - `field0C/field10 = unexplained threshold/current-like pair`
+  - upload/object format:
+    - whatever finally lands in upload object `field2610`
+
+Next best target:
+
+- stop chasing menu-copy/deserializer branches
+- pivot to the earliest repack site that converts menu/source-row state into the upload-boundary packed score
+- specifically compare `phase2/bloblookup` row fields against the known upload writer path instead of assuming they are already the same formula
+- code is now prepared for that comparison:
+  - `WritePacked` and `GameCall` will log `[RANK][UploadBridge]`
+  - it prints the cached `phase2` row for `detail0`/character id beside the upload-boundary score
+  - next real ranked upload should therefore tell us directly whether upload uses:
+    - row low-word rank / high-word subscore as-is
+    - byte/word swap
+    - different row fields (`field0C/field10/field20/fieldD4`)
+    - or a later transform entirely
+
+## Section 169 - 2026-04-23 first real upload bridge run proved two things: actual ranked upload was still Kokonoe (`charId=24`), and live phase2-pointer bridge was stale
+
+What the new real-match `DEBUG.txt` proved:
+
+1. The actual `RANK_ALL` upload in this run was still for character `24`, not Bullet:
+   - `UploadObserved ... handle=1759932 method=2 score=2130431 details=[24,0,0,0,...]`
+   - `GameCall ... field2610=0x002081FF`
+   - `field2610_parts rank_id=0x0020 (32) subscore=0x81FF (33279)`
+
+2. The uploader-side packed score still exactly matches the previously observed Kokonoe upload value:
+   - uploaded score `0x002081FF`
+   - this is the same pack seen at `WritePacked`, `GameCall`, and the Steam upload wrapper
+
+3. The first `UploadBridge` attempt was invalid because it dereferenced the live phase2 pointer too late:
+   - bridge lines showed obvious overwritten ASCII-like garbage such as:
+     - `packed00=0x333D6275`
+     - `field0C=0x6F687365`
+     - later `packed00=0x00680074`
+   - that is not real ranked-table content; it means the live `phase2` buffer had already been reused/freed by upload time
+
+Hard conclusion:
+
+- the comparison idea was correct
+- the implementation must use a frozen snapshot captured at phase2-copy time, not the raw live pointer later during upload
+
+What we changed after reading this log:
+
+- `LogRankMenuPhase2CopySource` now snapshots the full `0x6800` source table into mod-owned memory when phase2 copy occurs
+- `UploadBridge` now reads from that frozen snapshot instead of dereferencing stale source memory
+
+Next required test:
+
+- run another real ranked set and bring the new `DEBUG.txt`
+- the important lines will be:
+  - `[RANK][UploadBridge]`
+  - `[RANK][WritePacked]`
+  - `[RANK][GameCall]`
+
+What that next run should answer:
+
+- whether upload `field2610` for the real uploaded character equals:
+  - the frozen row `packed00` as-is
+  - row `packed00` with swapped words
+  - some function of `field0C/field10`
+  - or some later transform entirely
+
+## Section 170 - 2026-04-23 frozen bridge proved exact upload repack from authoritative `packed00`; hidden subscore still not equal to displayed LP
+
+What the new Kokonoe ranked-set `DEBUG.txt` proved:
+
+### 1. Upload pack format is now exact
+
+For the real `RANK_ALL` upload (`details=[24,0,0,0,...]`), the uploaded score matches the authoritative/menu `packed00` with its 16-bit halves swapped.
+
+Examples:
+
+- pre-upload authoritative backing change:
+  - `packed00=0x81FF0020 -> upload_score=0x002081FF`
+- later upload:
+  - `packed00=0x80FF0020 -> upload_score=0x002080FF`
+- later upload:
+  - `packed00=0x7FFF0020 -> upload_score=0x00207FFF`
+- later upload:
+  - `packed00=0x83FF0020 -> upload_score=0x002083FF`
+- later upload:
+  - `packed00=0x87FF0020 -> upload_score=0x002087FF`
+
+So the exact repack is:
+
+- authoritative/menu row format:
+  - `packed00 = (subscore << 16) | rank_id`
+- upload/Steam format:
+  - `upload_score = (rank_id << 16) | subscore`
+- equivalently:
+  - `upload_score = swap16x2(packed00)`
+
+This part is now solved.
+
+### 2. Hidden ranked subscore is not the displayed current LP
+
+During these Kokonoe uploads:
+
+- visible rank stayed `33`
+- displayed LP/current stayed `1940`
+- displayed next/threshold stayed `5309`
+- but `packedSub` changed:
+  - `33279`
+  - `33023`
+  - `32767`
+  - `33791`
+  - `34815`
+
+Matching logs:
+
+- `OverlayObserve backing-change ... lp=1940->1940 next=5309->5309 packedSub=33279->33023`
+- `... packedSub=32767->33791`
+- `... packedSub=32767->34815`
+
+Hard conclusion:
+
+- hidden ranked `subscore` is **not** the same value as displayed current LP
+- displayed `field10` / displayed `field0C` remain constant while hidden `subscore` changes across uploads
+- therefore the true ranked formula still has at least two layers:
+  - hidden rank/subscore packing in `packed00`
+  - separate displayed threshold/current fields `field0C/field10`
+
+### 3. Frozen phase2 snapshot is still not always the same as the final authoritative row at upload time
+
+The fixed frozen snapshot eliminated stale-pointer garbage, but later uploads showed that the snapshot row for char24 can still differ from the final authoritative row used for upload:
+
+- example later upload:
+  - `UploadBridge charId=24 ... snapshot packed00=0x7FFF0000 field0C=1 field10=1`
+  - while uploaded score was `0x002083FF` / `0x002087FF`
+  - and overlay authoritative row changed like `0x7FFF0020 -> 0x83FF0020`, `0x7FFF0020 -> 0x87FF0020`
+
+So:
+
+- the phase2 snapshot is an earlier input layer
+- the authoritative row can still be mutated after that snapshot and before upload
+- upload matches the authoritative row pack, not necessarily the earlier phase2 snapshot
+
+Net state after section 170:
+
+- solved exactly:
+  - `upload_score = swap16x2(authoritative_row.packed00)`
+- still unsolved:
+  - exact meaning/formula of hidden `subscore`
+  - exact meaning/formula of displayed `field0C` threshold
+  - exact meaning/formula of displayed `field10` current
+  - producer that mutates authoritative `packed00` high word after/beyond the phase2 snapshot
+
+What we changed after reading this log:
+
+- added `UploadBridgeAuth` logging so future real uploads print the live authoritative row beside the upload score
+- this is the shortest next step because upload now clearly matches the authoritative row, not always the frozen phase2 snapshot
+
+## Section 171 - 2026-04-23 `UploadBridgeAuth` proved live authoritative row is the exact upload source; Bullet row mutates in the same runs even when `RANK_ALL` still uploads Kokonoe
+
+What the newest real-match `DEBUG.txt` proved:
+
+### 1. The new run still did not upload Bullet to `RANK_ALL`
+
+Even after playing a Bullet set, the actual `RANK_ALL` upload lines were still:
+
+- `details=[24,0,0,0,...]`
+- `UploadObserved ... score=0x001F837F`
+- repeated again later with the same uploaded character `24`
+
+So for this log:
+
+- real `RANK_ALL` upload character = Kokonoe (`24`)
+- not Bullet (`21`)
+
+This means the opponent UI bug is not the main blocker here. The more important fact is that the game still chose row `24` as the upload source.
+
+### 2. `UploadBridgeAuth` proved the live authoritative row is the exact upload source
+
+At the real `RANK_ALL` upload:
+
+- `GameCall field2610=0x001F837F`
+- `UploadBridgeAuth charId=24 ... packed00=0x837F001F ... swapped=0x001F837F`
+
+This is exact equality.
+
+So the real source chain is now:
+
+- live authoritative row `packed00`
+- swap 16-bit halves
+- upload `field2610`
+- Steam `RANK_ALL`
+
+This is now confirmed on the authoritative row directly, not only inferred from overlay changes.
+
+### 3. The earlier frozen `phase2` row is definitely not the final upload source for this case
+
+For the same upload:
+
+- frozen `UploadBridge charId=24` still showed:
+  - `packed00=0x7FFF0000`
+  - `field0C=16`
+  - `field10=9`
+- but live authoritative row showed:
+  - `packed00=0x837F001F`
+  - `field0C=5309`
+  - `field10=1940`
+
+So the remaining unknown producer is between:
+
+- early `phase2`/bloblookup layer
+- and final authoritative row mutation
+
+### 4. Bullet authoritative row is also mutating in the same real runs
+
+This same log captured live authoritative Bullet row changes even though `RANK_ALL` still uploaded Kokonoe:
+
+- `OverlayObserve backing-change ... char=21`
+- `packed00=0x87F1001A -> 0x86F1001A`
+- later:
+  - `packed00=0x87F1001A -> 0x88F1001A`
+- while Bullet display stayed fixed:
+  - rank `27 -> 27`
+  - current `1006 -> 1006`
+  - threshold `2425 -> 2425`
+
+This is very important because it proves again:
+
+- hidden `packedSub` can move independently of displayed LP
+- Bullet follows the same hidden-subscore behavior as Kokonoe
+
+Net state after section 171:
+
+- solved exactly:
+  - live authoritative row `packed00` is the true local packed source
+  - upload is `swap16x2(authoritative packed00)`
+- strongly proven:
+  - hidden subscore changes independently of displayed current/threshold LP
+  - Bullet and Kokonoe both show this behavior
+- still unsolved:
+  - exact producer/formula that mutates the authoritative row from the earlier phase2/bloblookup input
+  - exact meaning of displayed `field0C` / `field10`
+  - exact meaning of hidden `packedSub`
+
+## Section 172 - 2026-04-23 next `DEBUG.txt` is now prepared to capture authoritative `packed00` writers directly
+
+What we changed:
+
+- kept the existing authoritative zero-LP pair trace
+- added a new follow trace that arms on live authoritative `packed00` itself for selectors:
+  - `24` first
+  - `21` second
+- the new arm only activates when the row looks ranked-like:
+  - plausible low-word rank id
+  - sane displayed fields
+- new prep log:
+  - `[RANK][DataFlowArm] tag=authoritative_packed00 ...`
+
+Why this is the shortest next step:
+
+- upload is already proven to equal `swap16x2(authoritative packed00)`
+- the remaining unknown is the writer that mutates live authoritative `packed00`
+- tracing `packed00` directly removes the need to infer from later upload or earlier phase2 snapshots
+
+What the next `DEBUG.txt` should contain if this works:
+
+- `[RANK][DataFlowArm] tag=authoritative_packed00 ...`
+- then a matching `[RANK][DataFlow] ... slot=... new=[...] writer=... writer_rva=...`
+- ideally also:
+  - `[RANK][DataFlowSource] ...`
+  - `[RANK][DataFlowWriter] ...`
+
+Interpretation rule for the next agent:
+
+- if authoritative `packed00` writer/source is captured, follow that writer branch first
+- do not go back to Steam/upload-path speculation unless the direct authoritative writer trace fails
+
+## Section 173 - 2026-04-23 new `DEBUG.txt` proved the later upload-slot copy site and next run is now prepared to follow its source pair upstream
+
+What test ran:
+
+- operator played a real ranked set as Kokonoe and provided a new `DEBUG.txt`
+
+What `DEBUG.txt` proved:
+
+- the authoritative `packed00` follow trace did not remain active through upload
+- it was displaced by the older post-match/state-machine `self + 0x118` trace path:
+  - `begin reason=first_out_of_match_after_inmatch_window cycle=1 slot=0x16CCF050`
+  - later again `begin reason=state_machine_first_seen_window cycle=2 slot=0x16CCF050`
+- that displaced path still exposed the exact later copy feeding upload-slot `+0x118`:
+  - cycle 1:
+    - `DataFlowSource ... srcPairBase=0x01D5E7EC src=[0x001F827F,0x00000000]`
+    - `DataFlowWriter ... writer_rva=0x00020761`
+  - cycle 2:
+    - `DataFlowSource ... srcPairBase=0x01D5E7EC src=[0x001F817F,0x00000000]`
+    - `DataFlowWriter ... writer_rva=0x00020761`
+- so `BBCF+0x20761` is the later copy site writing the upload-object packed slot from a stable source pair buffer at `0x01D5E7EC`
+- upload still matched the live authoritative row exactly at upload time:
+  - `UploadBridgeAuth ... charId=24 packed00=0x817F001F swapped=0x001F817F`
+  - `GameCall ... field2610=0x001F817F`
+  - `UploadObserved ... score=2064767 details=[24,0,0,0,...]`
+- earlier phase2 snapshot remained behind final truth:
+  - `UploadBridge ... charId=24 packed00=0x837F001F`
+  - live authoritative row had already mutated to `0x817F001F`
+
+Conclusion:
+
+- remaining shortest path is no longer Steam, upload packing, or earlier phase2
+- next target is the producer of source pair `0x01D5E7EC`, because that pair is what `BBCF+0x20761` copies into the upload-object packed slot
+
+Patch made after reading this log:
+
+- stored a deferred `source_pair_follow` target whenever the `0x00020761` copy site writes the packed upload slot from a direct source pair
+- added protected-trace priority so this new source-pair follow trace is not displaced by the older generic state-machine window
+- changed the first out-of-match trace arm to prefer the deferred `source_pair_follow` source pair over `self + 0x118`
+
+Exact next test for operator:
+
+- play another real ranked set, ideally Kokonoe again to keep the line comparable
+
+Exact next log lines that should prove the new patch worked:
+
+- `[RANK][DataFlowCandidate] tag=source_pair_follow ... srcPairBase=0x... writer_rva=0x00020761`
+- then on the next post-match/upload window:
+  - `[RANK][DataFlowArm] tag=source_pair_follow trigger=first_out_of_match_after_inmatch ...`
+  - `[RANK][DataFlow] begin reason=source_pair_follow ...`
+  - `[RANK][DataFlowSource] ...`
+  - `[RANK][DataFlowWriter] ...`
+
+Interpretation rule for the next agent:
+
+- if `source_pair_follow` now catches an earlier writer to that source pair, pivot immediately to that earlier producer
+- do not fall back to re-investigating upload repack or the already-solved authoritative-row upload match
+
+## Section 174 - 2026-04-23 Bullet run proved deferred source-pair follow was learned correctly, but my arm point was incomplete
+
+What test ran:
+
+- operator played a real ranked set as Bullet and provided a new `DEBUG.txt`
+
+What `DEBUG.txt` proved:
+
+- the new candidate detection worked:
+  - `DataFlowCandidate ... srcPairBase=0x01D5E92C src=[0x001F817F,0x00000000] writer_rva=0x00020761`
+- but the deferred follow trace still did not arm on later cycles
+- reason: later cycles were re-arming only:
+  - `begin reason=state_machine_first_seen_window cycle=2 slot=0x16CF3068`
+  - `begin reason=state_machine_first_seen_window cycle=3 slot=0x16CF3068`
+- so the bug was in my trace-control logic, not in the candidate discovery
+
+Other important proof from this Bullet run:
+
+- `RANK_ALL` still uploaded Kokonoe, not Bullet:
+  - `GameCall ... field2610=0x001F817F ... details=[24,0,0,0]`
+  - `UploadObserved ... score=2064767 details=[24,0,0,0,...]`
+- Bullet authoritative row still changed independently in the same log:
+  - row 21 showed:
+    - `87F1001A`
+    - then `86F1001A`
+    - then `87F1001A`
+    - then `88F1001A`
+- displayed Bullet values stayed tied to the same row:
+  - rank `26`
+  - current `1006`
+  - threshold `2425`
+
+Conclusion:
+
+- upstream source-pair follow remains the shortest path
+- the missing piece was simply that `state_machine_first_seen_window` and `state3_enter_window` were not honoring the deferred source-pair priority
+
+Patch made after reading this log:
+
+- `state_machine_first_seen_window` now tries `MaybeArmDeferredSourcePairTrace("state_machine_first_seen_window")` before re-arming `self + 0x118`
+- `state3_enter_window` now does the same
+- if deferred source-pair follow becomes active for the current cycle, those older upload-slot traces are skipped
+
+Exact next test for operator:
+
+- play another ranked set, Bullet or Kokonoe is fine now
+
+Exact next log lines that should prove the fix:
+
+- `[RANK][DataFlowCandidate] tag=source_pair_follow ... writer_rva=0x00020761`
+- then on a later cycle:
+  - `[RANK][DataFlowArm] tag=source_pair_follow trigger=state_machine_first_seen_window ...`
+  - or:
+  - `[RANK][DataFlowArm] tag=source_pair_follow trigger=state3_enter_window ...`
+- then:
+  - `[RANK][DataFlow] begin reason=source_pair_follow ...`
+  - `[RANK][DataFlowSource] ...`
+  - `[RANK][DataFlowWriter] ...`
+
+Interpretation rule for the next agent:
+
+- if `source_pair_follow` finally catches a writer to `0x01D5E92C` or its successor buffer, pivot immediately to that producer
+- do not treat another Kokonoe upload during a Bullet set as a new mystery by itself; that behavior is already recurring and documented
+
+## Section 175 - 2026-04-23 `source_pair_follow` now arms, but later cycles were missing the earliest post-match window because of a per-process latch bug
+
+What test ran:
+
+- operator played another real ranked set as Bullet and provided a new `DEBUG.txt`
+
+What `DEBUG.txt` proved:
+
+- `source_pair_follow` finally armed successfully:
+  - cycle 1:
+    - `DataFlowCandidate ... srcPairBase=0x01D5E508 src=[0x001F817F,0x00000000] writer_rva=0x00020761`
+    - `DataFlow begin reason=source_pair_follow cycle=1 slot=0x01D5E508`
+    - `DataFlowArm ... trigger=state3_enter_window`
+  - cycle 2:
+    - `DataFlow begin reason=source_pair_follow cycle=2 slot=0x01D5E508`
+    - `DataFlowArm ... trigger=state_machine_first_seen_window`
+- but both armed windows still saw:
+  - `guardHits=0`
+  - `valueChanges=0`
+- that means the watched source-pair buffer was already finalized before those later arm points
+
+Most important new control-flow finding:
+
+- cycle 2 and later were missing the earliest post-match arm because `firstOutOfMatchAfterInMatchSeq` only fired once for the whole process
+- evidence:
+  - cycle 1 had the early post-match marker path
+  - later cycles only armed from later state-machine windows
+- this was a control bug in our instrumentation, not proof that the source pair is impossible to catch
+
+Other recurring proof from this run:
+
+- `RANK_ALL` still uploaded Kokonoe, not Bullet:
+  - `GameCall ... field2610=0x001F817F ... details=[24,0,0,0]`
+  - `UploadObserved ... score=2064767 details=[24,0,0,0,...]`
+- Bullet row 21 continued its hidden-subscore climb:
+  - `88F1001A`
+  - then `89F1001A`
+  - then `8AF1001A`
+- displayed Bullet values remained:
+  - rank `26`
+  - current `1006`
+  - threshold `2425`
+
+Patch made after reading this log:
+
+- reset `firstOutOfMatchAfterInMatchSeq` at every `match_cycle_begin`
+- this restores the earliest post-match arm for every ranked cycle, not just the first one after process start
+
+Exact next test for operator:
+
+- play another ranked set, Bullet or Kokonoe is fine
+
+Exact next log lines that should prove the fix:
+
+- for cycle 2 or later, we should again see:
+  - `[RANK][State] ... marker=first_out_of_match_after_inmatch`
+  - then immediately:
+  - `[RANK][DataFlowArm] tag=source_pair_follow trigger=first_out_of_match_after_inmatch ...`
+  - `[RANK][DataFlow] begin reason=source_pair_follow ...`
+- if the source pair is still being produced after that earlier arm, we should finally get:
+  - `[RANK][DataFlowSource] ...`
+  - `[RANK][DataFlowWriter] ...`
+
+Interpretation rule for the next agent:
+
+- if the restored early post-match arm still gives `guardHits=0 valueChanges=0`, stop trying to catch the same source pair later and pivot to direct instrumentation of the parent functions already identified around:
+  - `BBCF+0x22AC30`
+  - `BBCF+0x0A8190`
+
+## Section 176 - 2026-04-23 earliest post-match arm now catches the `0x20761` copy itself; next patch moves the source-pair watch ahead of the parent calls
+
+What test ran:
+
+- operator played another real ranked set as Bullet and provided a new `DEBUG.txt`
+
+What `DEBUG.txt` proved:
+
+- the restored earliest post-match window worked
+- it finally caught the upload-slot write directly at the earliest post-match arm:
+  - `State ... marker=first_out_of_match_after_inmatch`
+  - `DataFlow begin reason=first_out_of_match_after_inmatch_window cycle=1 slot=0x16D2BD40 cur=[0xFFFFFFFF,0xFFFFFFFF]`
+  - then:
+    - `old=[0xFFFFFFFF,0xFFFFFFFF] -> new=[0x001F817F,0xFFFFFFFF]`
+    - then:
+    - `new=[0x001F817F,0x00000000]`
+  - both by:
+    - `writer_rva=0x00020761`
+    - `srcPairBase=0x01D5E644`
+- so the early post-match fix was correct
+
+But:
+
+- the subsequent `source_pair_follow` still armed too late:
+  - `begin reason=source_pair_follow cycle=1 slot=0x01D5E644 ... cur=[0x001F817F,0x00000000]`
+- by then the source pair was already fully formed
+
+Conclusion:
+
+- we now have the exact earliest currently observed copy into the upload slot
+- the next shortest path is to arm the known source-pair buffer before the parent calls on the proven stack path execute
+- the already-identified parent functions remain:
+  - `BBCF+0x22AC30`
+  - `BBCF+0x0A8190`
+
+Patch made after reading this log:
+
+- added pre-call deferred-source-pair arming to:
+  - `RankUploadWriterCaller22AD86Trace`
+  - `RankUploadWriterCaller22B25ETrace`
+- new pre-call triggers:
+  - `writer_parent_22AD86_pre`
+  - `writer_parent_22B25E_pre`
+
+Why this is the shortest next move:
+
+- those parent functions are already on the confirmed stack before `0x20761`
+- if the source pair is produced inside or below them, pre-call arming gives the first realistic chance to catch its writer instead of re-watching an already-finalized buffer
+
+Other recurring proof from this run:
+
+- `RANK_ALL` still uploaded Kokonoe, not Bullet:
+  - `field2610=0x001F817F`
+  - `details=[24,0,0,0,...]`
+- Bullet row continued mutating:
+  - `8AF1001A`
+  - then back to `86F1001A`
+
+Exact next test for operator:
+
+- play another ranked set, Bullet or Kokonoe is fine
+
+Exact next log lines that should prove the new pre-call arm works:
+
+- `[RANK][DataFlowArm] tag=source_pair_follow trigger=writer_parent_22AD86_pre ...`
+- or:
+  - `[RANK][DataFlowArm] tag=source_pair_follow trigger=writer_parent_22B25E_pre ...`
+- then, if upstream writer is finally caught:
+  - `[RANK][DataFlow] begin reason=source_pair_follow ...`
+  - `[RANK][DataFlowSource] ...`
+  - `[RANK][DataFlowWriter] ...`
+
+Interpretation rule for the next agent:
+
+- if pre-call parent arming still produces no upstream write into the source pair, stop stretching the same passive trace window and pivot to direct instrumentation inside the parent functions themselves
+
+## Section 177 - 2026-04-23 pre-call parent arming works, but it still arms after the source pair is already finalized; next patch instruments parent entry directly
+
+What test ran:
+
+- operator played one single ranked Bullet match and provided a new `DEBUG.txt`
+
+What `DEBUG.txt` proved:
+
+- the new pre-call arm definitely fired:
+  - `DataFlowArm ... trigger=writer_parent_22B25E_pre srcPairBase=0x01D5E930 src=[0x001F817F,0x00000000]`
+- but it still fired after the source pair was already fully formed:
+  - `DataFlow begin reason=source_pair_follow ... cur=[0x001F817F,0x00000000]`
+  - later in the same cycle the same source pair had already been reused:
+    - `src=[0x17839D48,0x01D5E940]`
+- so passive source-pair guarding, even at parent pre-call, is no longer enough by itself
+
+Still important from this run:
+
+- upload still used Kokonoe row:
+  - `field2610=0x001F817F`
+  - `details=[24,0,0,0,...]`
+- Bullet row advanced again:
+  - `86F1001A -> 86F2001A`
+
+Conclusion:
+
+- next shortest path is direct instrumentation of the parent-call entry context
+- not another passive re-arm
+
+Patch made after reading this log:
+
+- added direct parent-entry logging helper:
+  - `WriterParentPre`
+- it now logs for:
+  - `writer_parent_22AD86_pre`
+  - `writer_parent_22B25E_pre`
+- logged data includes:
+  - live `ecx` object pointer
+  - first 8 dwords of that object if readable
+  - deferred source-pair address and current contents
+
+Why this is the right next move:
+
+- we already know the stack path leading into `0x20761`
+- the remaining unknown is what object/state those parent calls are using to produce the source pair before the copy
+- object-entry snapshots should tell us whether the source pair is derived from:
+  - fields on the parent object
+  - another pointed object
+  - or a container that already holds rank/subscore pieces
+
+Exact next test for operator:
+
+- play another single ranked match, Bullet or Kokonoe is fine
+
+Exact next log lines that should prove this new patch worked:
+
+- `[RANK][WriterParentPre] stage=writer_parent_22AD86_pre ...`
+- `[RANK][WriterParentPre] stage=writer_parent_22B25E_pre ...`
+- together with the usual:
+  - `[RANK][DataFlowArm] tag=source_pair_follow trigger=writer_parent_22B25E_pre ...`
+  - or `22AD86_pre`
+
+Interpretation rule for the next agent:
+
+- if `WriterParentPre` reveals a stable object field that mirrors or points to the source pair before `0x20761`, instrument that field/object directly next
+- only if parent-entry snapshots are still too opaque should the agent move to inner-call instrumentation inside `0x22AC30` / `0x0A8190`
+
+## Section 178 - 2026-04-23 Bullet log gave stable parent-entry objects; UI now shows packed/upload score as current LP and hides threshold as unknown
+
+What test ran:
+
+- operator played another ranked Bullet set and provided a new `DEBUG.txt`
+
+What `DEBUG.txt` proved:
+
+- Bullet authoritative row still advanced locally:
+  - `packed00=0x86F2001A`
+  - visible rank `27`
+  - packed subscore `34546`
+  - menu `field10 current=1006`
+  - menu `field0C threshold=2425`
+- this is another direct contradiction between hidden packed/upload score and menu-visible LP:
+  - packed/upload-side current-like value: `34546`
+  - menu-visible current LP: `1006`
+- direct parent-entry logging now shows stable objects for the `0x20761` parent branch:
+  - `writer_parent_22B25E_pre cycle=1 ecx=0x011F1A1C self=[0x00000000,0x00000015,0x0000000D,0x00000000,0x00000000,0x00000000,0x0000000C,0x0000000C]`
+  - `writer_parent_22AD86_pre cycle=1 ecx=0x00CA7B48 self=[0x00000000,0x00000000/01/02..., ..., 0x00000015]`
+- source pair copy proof remains:
+  - `srcPairBase=0x01D5E66C`
+  - `writer_rva=0x00020761`
+  - slot write became `0x001F817F`
+- later cycles showed the deferred source pair reused as junk-like data:
+  - `src=[0x00000000,0x00010101]`
+- upload path in this log still used Kokonoe packed score, not Bullet:
+  - `0x001F817F`
+
+Conclusion from this log:
+
+- parent-entry instrumentation is now returning stable object identities, which is useful
+- but the ranked UI should not keep showing menu `field10` as "current LP", because it is repeatedly disproven against the packed/upload value
+- until threshold logic is solved, threshold must be explicitly shown as unknown
+
+Patch made after reading this log:
+
+- ranked UI display state now uses packed/upload `subscore` as displayed current LP
+- threshold display is forced unknown for now
+- overlay text now renders threshold as `???`
+- raw menu fields are still kept as backing/debug data; only the user-facing display source changed
+
+Why this temporary UI rule is correct:
+
+- user specifically requested a stable visible value that matches what the game uploads to Steam
+- the packed/upload score is the only currently proven exact score path
+- threshold formula remains unsolved, so any numeric threshold shown to the user would be speculative
+
+Exact next RE step:
+
+- keep chasing the parent-entry objects / inner parent functions for the producer that forms the authoritative packed high word before `0x20761`
+
+Exact next test for operator:
+
+- rebuild and run one more ranked match, Bullet or Kokonoe
+- verify the UI now shows:
+  - current LP equal to packed/upload `subscore`
+  - threshold as `???`
+- then provide the next `DEBUG.txt`
+
+## Section 179 - 2026-04-23 Bullet UI `36594 LP` is confirmed by packed row `0x8EF2001A`; next patch preempts the late authoritative LP-pair trace with a phase2-source LP-pair trace
+
+What test ran:
+
+- operator reported Bullet UI now showed `36594 LP`, threshold `???`
+- operator then provided the next `DEBUG.txt`
+
+What `DEBUG.txt` proved:
+
+- the UI report is correct:
+  - Bullet `phase2_copy_src` row:
+    - `packed00=0x8EF2001A`
+    - `packedSub=36594`
+    - `threshold=2425`
+    - `current=1006`
+  - same values then appeared at:
+    - `rowpairstate_dst_blob`
+    - `rowpairstate_dst_post`
+    - `authoritative_table`
+- so the temporary UI rule is validated:
+  - displayed current LP should follow packed/upload-side subscore
+  - not menu `field10`
+- this run again proves the contradiction:
+  - packed/upload-side current-like value = `36594`
+  - menu-visible current LP = `1006`
+  - menu-visible threshold = `2425`
+
+Important copy-chain evidence from this same log:
+
+- old authoritative LP-pair trace still only catches the late byte-copy:
+  - slot `0x00C5F670`
+  - `writer_rva=0x0039ECEA`
+  - `srcPairBase=0x37D94D28`
+  - staged writes:
+    - `0x00000000 -> 0x000000BD -> 0x000014BD`
+    - `0x00000000 -> 0x00000094 -> 0x00000794`
+- that source pair equals row24 menu values:
+  - `field0C = 0x14BD`
+  - `field10 = 0x0794`
+- so the old authoritative destination trace is still too late for formula discovery
+
+What patch was made after reading this log:
+
+- `phase2_copy_src` handling now tries an earlier LP-pair foothold:
+  - ordered preference: selector `21` then `24`
+  - tracked slot = source row `+0x0C`
+- if the currently active trace is the old `authoritative_row*_zero_lp_pair` trace, the new phase2-source LP-pair trace preempts it
+- new trace reason prefix:
+  - `phase2_source_row%u_lp_pair`
+- this reason is now treated as protected so later generic traces do not stomp it
+
+Why this is the shortest next path:
+
+- this run proves Bullet `36594` already exists at `phase2_copy_src`
+- authoritative LP-pair tracing only sees the later `0x39ECEA` copy from already-formed bytes
+- therefore the next earlier producer candidate is the phase2 source row itself, not the authoritative destination
+
+Exact next test for operator:
+
+- rebuild and run one more ranked match with Bullet if possible
+- provide the next `DEBUG.txt`
+
+Exact next log lines that should prove the new patch worked:
+
+- `[RANK][DataFlowArm] tag=phase2_source_lp_pair selector=21 ...`
+- `[RANK][DataFlow] begin reason=phase2_source_row21_lp_pair ...`
+- then ideally:
+  - `[RANK][DataFlowSource] ... srcPairBase=...`
+  - `[RANK][DataFlowWriter] ... writer_rva=...`
+
+Interpretation rule for the next agent:
+
+- if phase2-source LP-pair trace still shows that the row is already fully formed with no earlier writes, stop following destination copies and instrument the immediate producer/caller around the phase2 source population path instead
+
+## Section 180 - 2026-04-23 Bullet live log confirms observer self-overwrite bug; current UI policy stays `packed subscore` with threshold `???`
+
+What test ran:
+
+- operator provided fresh live `DEBUG.txt` from real Bullet ranked play
+- agent analyzed the new live log, patched overlay logic, rebuilt `Debug|Win32`, and sanity-checked offline autorun once
+
+What live `DEBUG.txt` proved:
+
+- Bullet ranked row was stable in menu before match-end upload:
+  - `[RANK][OverlayProgress] ... row=21 rank=27 lp=1006 nextLp=2425 ... packed00=0x8EF2001A packedSub=36594 ...`
+- two real Bullet rank-like upload bursts were observed later:
+  - `2026-04-23 15:27:32.818`
+    - `RANK_ALL score=2064767`
+    - `RANK_BL score=1740274`
+  - `2026-04-23 15:30:22.253`
+    - `RANK_ALL score=2064767`
+    - `RANK_BL score=1740018`
+- on both bursts, observer logged a real Bullet backing change immediately:
+  - serial 1:
+    - `[RANK][OverlayObserve] backing-change ... char=21 ... lp=36594->36338 ... packed00=0x8EF2001A->0x8DF2001A`
+  - serial 2:
+    - `[RANK][OverlayObserve] backing-change ... char=21 ... lp=36594->36082 ... packed00=0x8EF2001A->0x8CF2001A`
+- despite that, both serials timed out instead of animating:
+  - `[RANK][OverlayObserve] timeout serial=1 ...`
+  - `[RANK][OverlayObserve] timeout serial=2 ...`
+
+What this proves:
+
+- Bullet packed/upload-side current LP really changed in live play:
+  - `36594 -> 36338 -> 36082`
+- timeout was not because "nothing changed"
+- timeout was caused by observer logic overwriting its baseline with `after` during backing-change logging, then doing later animation selection against the already-overwritten baseline
+- current displayed LP policy is still unresolved as a formula problem, but current working UI rule remains:
+  - current LP = packed/upload-side value
+  - threshold LP = unknown / `???`
+
+What agent changed:
+
+- `src/Overlay/Window/MainWindow.cpp`
+  - removed baseline self-overwrite inside `TryStartObservedRankedUploadAnimation()` so a detected change can still be selected for animation later in the same observation window
+  - kept current UI policy aligned with the active ranked RE assumption:
+    - ranked rows display packed/upload-side current LP
+    - threshold remains unknown
+  - added one safety tweak:
+    - unranked rows now display `0` current LP instead of sentinel packed values like `32767`
+
+Build / offline verification:
+
+- `Debug|Win32` build passed after the patch
+- one offline autorun cycle completed cleanly:
+  - `[RankedAuto] COMPLETED reason=scenario complete`
+
+Current interpretation for next step:
+
+- observer bug was real and is now fixed in code
+- next live Bullet run should answer whether the toast now appears once a real Bullet packed LP delta occurs
+- threshold formula is still unknown; do not treat wins/matches or menu `field10/field0C` as solved threshold/current LP formula without new proof
+
+Exact next test for operator:
+
+- rebuild/deploy this patch
+- play one real ranked match on Bullet
+- then provide the next `DEBUG.txt`
+
+Exact next lines wanted in the new live log:
+
+- successful observe-to-animation path:
+  - `[RANK][OverlayObserve] backing-change ... char=21 ...`
+  - `[RANK][OverlayObserve] animate serial=... char=21 ...`
+  - `[RANK][OverlayAnim] start char=21 ...`
+- if it still fails, the new failure mode should be different from the old baseline self-overwrite timeout
+
+## Section 181 - 2026-04-23 ranked accept-path crash is CRT `abort()`; reduce ranked instrumentation flood before more live LP testing
+
+What happened:
+
+- after the Section 180 overlay fix build was deployed, operator reported a new crash immediately on accepting a ranked match
+- screenshot showed the Visual C++ debug runtime dialog:
+  - `Debug Error!`
+  - `BBCF.exe`
+  - `abort() has been called`
+
+What crash evidence was checked:
+
+- latest dump examined:
+  - `C:\Users\Usuario\AppData\Local\CrashDumps\BBCF.exe.32372.dmp`
+- cdb stack from the dump showed:
+  - unhandled C++ exception / CRT termination path (`e06d7363`)
+  - top frames were inside `dinput8.dll`, then `UnhandledExceptionFilter`
+- this was not a simple access violation signature
+
+What the logs suggested:
+
+- right before the accept-path failure, ranked RE instrumentation was still extremely noisy
+- biggest remaining spam sources were:
+  - `[RANK][CallCluster]`
+  - `[RANK][CallCluster] stage=post_1FEA0_args`
+  - `bloblookup_post` full 0x6800 table dumps via `[RANK][TableDump]` / `[RANK][TableRow]`
+- strongest current hypothesis:
+  - the new accept-path crash is caused by ranked debug instrumentation volume or debug-runtime pressure, not by the LP display formula itself
+
+What agent changed in response:
+
+- `src/Hooks/hooks_bbcf.cpp`
+  - `LogRankUploadCallClusterState(...)`
+    - now dedupes repeated logs on the full tuple:
+      - `stage`
+      - `state/table/retval`
+      - slot pair
+      - next pair
+      - entry1 source pairs
+      - current match cycle
+  - `LogRankUploadPost1FEA0(...)`
+    - now dedupes repeated `post_1FEA0_args` logs on the full argument/cache tuple per match cycle
+    - still allows downstream `post_1FEA0` state logging to run, but only once per changed tuple
+  - `LogRankMenuBlobLookupObjectRange(...)`
+    - still records blob range changes
+    - but now only emits the expensive 0x6800 `DumpRankedTableSummary(...)` when the table bytes actually changed, instead of whenever a new object wrapper points at identical bytes
+
+Build result:
+
+- `Debug|Win32` rebuild passed after the logging-reduction patch
+
+Interpretation now:
+
+- Section 180 observer fix should stay; it addressed a real bug proven by live Bullet logs
+- current new blocker is stability on ranked accept path
+- until accept-path crash is gone, live LP/rank behavior data is not trustworthy enough to continue formula work
+
+Next step:
+
+- deploy the reduced-logging build
+- accept a ranked match again
+- if it still crashes, collect the next fresh `DEBUG.txt` and newest dump id
+- if it no longer crashes, continue live Bullet LP observation with the current UI rule unchanged:
+  - current LP = packed/upload value
+  - threshold = `???`
+
+Follow-up update after a second log-reduction pass:
+
+- first reduction pass was not enough
+  - offline autorun still exited before the ranked automation sentinel
+  - fresh log tail still showed very heavy repeated zero-state spam:
+    - `RankUploadCall1FD80Trace`
+    - `RankUploadCall248D0Trace`
+    - `RankUploadCall24D40Trace`
+    - repeated `[RANK][CallCluster] stage=post_1FD80/post_1FEA0/post_248D0/post_24D40` with all-zero slot/next/src pairs
+- agent then made a second reduction pass in `src/Hooks/hooks_bbcf.cpp`:
+  - removed the three per-hit `LOG_ASM(...)` trace lines from:
+    - `RankUploadCall1FD80Trace()`
+    - `RankUploadCall248D0Trace()`
+    - `RankUploadCall24D40Trace()`
+  - added a hard per-cycle cap for repeated all-zero `CallCluster` states:
+    - at most 4 logs per stage per match cycle for the all-zero tuple
+- rebuild after that second pass succeeded
+- offline ranked autorun result after second pass:
+  - `[RankedAuto] COMPLETED reason=scenario complete`
+
+Current interpretation:
+
+- accept-path stability improved enough to survive the offline ranked automation path
+- strongest next question is now whether the live ranked accept crash is gone on operator hardware too
+- if live accept no longer crashes, resume observing Bullet LP changes and toast behavior with the current UI assumption unchanged

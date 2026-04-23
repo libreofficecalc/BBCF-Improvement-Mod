@@ -2,8 +2,8 @@
   "exe": "C:\\Program Files (x86)\\Windows Kits\\10\\Debuggers\\x86\\cdb.exe",
   "args": [
     "-z",
-    "\"D:\\SteamLibrary\\steamapps\\common\\BlazBlue Centralfiction\\BBCF_IM\\CrashReports\\Crash_20260419_153303\\crash.dmp\"",
-    "-c",
-    ".ecxr; lm m dinput8; kb 40; u @eip-32 @eip+32; q"
+    "C:\\Users\\Usuario\\AppData\\Local\\CrashDumps\\BBCF.exe.32372.dmp",
+    "-cf",
+    "C:\\Users\\Usuario\\source\\repos\\HaiKamDesu\\BBCF-Improvement-Mod\\tools\\cdb_ranked_crash_cmds.txt"
   ]
 }
