@@ -106,6 +106,7 @@ namespace
     std::wstring NormalizeRawDeviceInstance(const std::wstring& rawName);
     std::wstring TryReadRegistryContainerId(const std::wstring& rawName);
     std::pair<USHORT, USHORT> ExtractVidPid(const std::wstring& rawName);
+    MMRESULT SafeJoyGetPosEx(UINT deviceId, JOYINFOEX* state, DWORD* exceptionCode);
 
     std::vector<std::string> SplitList(const std::string& value)
     {
@@ -1230,6 +1231,31 @@ namespace
             vid = findValue(L"VID_");
             pid = findValue(L"PID_");
             return { vid, pid };
+    }
+
+    MMRESULT SafeJoyGetPosEx(UINT deviceId, JOYINFOEX* state, DWORD* exceptionCode)
+    {
+            if (exceptionCode)
+            {
+                    *exceptionCode = 0;
+            }
+
+            MMRESULT result = JOYERR_UNPLUGGED;
+            DWORD caughtException = 0;
+            __try
+            {
+                    result = joyGetPosEx(deviceId, state);
+            }
+            __except (caughtException = GetExceptionCode(), EXCEPTION_EXECUTE_HANDLER)
+            {
+                    if (exceptionCode)
+                    {
+                            *exceptionCode = caughtException;
+                    }
+                    return MMSYSERR_ERROR;
+            }
+
+            return result;
     }
 
     std::string BuildKeyboardBaseName(const std::wstring& rawName, HANDLE deviceHandle, const RID_DEVICE_INFO_KEYBOARD& info)
@@ -2856,6 +2882,13 @@ bool ControllerOverrideManager::IsSafeToRefreshGameInputsNow() const
                 return false;
         }
 
+        const int gameState = g_gameVals.pGameState ? *g_gameVals.pGameState : -1;
+        if (gameState == GameState_InMatch)
+        {
+                LOG(1, "ControllerOverrideManager::IsSafeToRefreshGameInputsNow - deferring refresh during match (scene=%d gameState=%d)\n", sceneStatus, gameState);
+                return false;
+        }
+
         return true;
 }
 
@@ -3646,7 +3679,13 @@ void ControllerOverrideManager::TryEnumerateWinmmDevices(std::vector<ControllerD
                 state.dwSize = sizeof(state);
                 state.dwFlags = JOY_RETURNALL;
 
-                const MMRESULT posResult = joyGetPosEx(deviceId, &state);
+                DWORD exceptionCode = 0;
+                const MMRESULT posResult = SafeJoyGetPosEx(deviceId, &state, &exceptionCode);
+                if (exceptionCode != 0)
+                {
+                        LOG(1, "  [WINMM] Device id=%u state query faulted exception=0x%08X, skipping device\n", deviceId, exceptionCode);
+                        continue;
+                }
                 if (posResult != JOYERR_NOERROR)
                 {
                         LOG(2, "  [WINMM] Device id=%u state query failed err=0x%08X\n", deviceId, posResult);

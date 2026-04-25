@@ -10,7 +10,9 @@
       "Bash(grep -v \"^$\")",
       "Bash(awk -F: '{print $1}')",
       "Bash(awk '{for\\(i=1;i<=NF;i++\\) if\\($i~/writePacked=/\\) print NR\": \"$i}')",
-      "Bash(awk '{print $1, $2}')"
+      "Bash(awk '{print $1, $2}')",
+      "Bash(npx skills *)",
+      "Read(//home/usuario/.agents/skills/caveman/**)"
     ]
   }
 }

@@ -10326,3 +10326,1704 @@ Best next test:
   - row `21` is already well-characterized
   - live LP movement and overlay row diffs are already proven there
 - then provide the next `DEBUG.txt`
+
+## Section 186 - 2026-04-24 static RE: `22AD86 -> 0x0A8190` and `4EDB6 -> 0x82C00` do not compute packed rank thresholds
+
+What static RE used:
+
+- current repo instrumentation in `hooks_bbcf.cpp`
+- local disassembly dump `tools/bbcf_disasm.txt`
+
+Main result:
+
+- neither `BBCF+0x0022AD86` nor `BBCF+0x0004EDB6` contains the packed rank/subscore threshold math
+- both are orchestration code above an already-formed packed value
+- therefore `rank_change` / `sentinel_wrap` must happen earlier than these callers and earlier than `Bit4Skip`
+
+Why `4EDB6 -> 0x82C00` is not threshold logic:
+
+- `BBCF+0x0044EDB6` is only:
+  - `push 1`
+  - `call 00482C00`
+- `00482C00` does startup / service selection work:
+  - probes globals / allocators
+  - compares returned strings against literals at:
+    - `0x8A6694`
+    - `0x8A66A0`
+    - `0x8A66AC`
+    - `0x8A66B8`
+  - writes mode selector `0x00C929D0 = 0/1/2/3/4`
+  - allocates helper objects and initializes interfaces
+- no code in this function reads packed rank slot `+0x118`, upload field `+0x25F0`, rank id, or subscore
+- so if `WriterParent4EDB6Pre/Post` ever shows a packed flip, that flip is caused by code re-entered underneath service init, not by direct arithmetic inside `0x82C00`
+
+Why `22AD86 -> 0x0A8190` is not threshold logic:
+
+- caller `0062AD81` passes `ecx = game_obj + 0x1F0` into `004A8190`
+- immediately after return, `0062AD86` only:
+  - checks `[edi+60]`
+  - maybe calls `004A8720`
+  - ORs return flags
+- so `22AD86` itself is only per-tick wrapper / scheduler logic
+
+What `0x0A8190` actually does:
+
+- `esi = ecx` gives a state object
+- `[esi+4]` is state enum, not LP/subscore:
+  - jump table at `004A829A`
+  - states visibly transition by writes like:
+    - `mov [esi+4],1`
+    - `mov [esi+4],2`
+    - `mov [esi+4],5`
+    - `mov [esi+4],7`
+    - `mov [esi+4],8`
+- branches are driven by environment / task readiness:
+  - `[state+0x270]`
+  - `[state+0x278]`
+  - globals from `004B9700` / `004B9770`
+  - task flags like `[eax+0x1B1218]`, `[eax+0x57E74]`, `[eax+0xBC58/5C/60/64]`
+  - retry timer `[esi+0x10] = 0xBB8`
+- packed score is only consumed late:
+  - `004A8472: mov esi, [eax+0x25F0]`
+  - then passed as argument into downstream virtual call chain at `004A84B8` / `004A85CB`
+- there is no compare against packed score, no split into rank/subscore, and no branch on `0x7FFF`
+
+Interpretation against live instrumentation:
+
+- `field[1] = 0,1,2` from parent-object snapshots matches this state-machine view:
+  - it is upload task phase progression
+  - not rank threshold iteration
+- if `WriterParent4EDB6Pre/Post` shows `slot_transition=none`, that is expected from static code
+- if `22AD86_pre` shows repeated `self[1]` progression before final upload, that still only proves task-state advance, not rank arithmetic
+
+Conclusion:
+
+- packed value is already authored before `0x0A8190` consumes `[upload_obj+0x25F0]`
+- `4EDB6` is even farther away from score math than `22AD86`
+- exact threshold / promotion / demotion formula must be searched earlier in producer path:
+  - before `state+0x118` is finalized
+  - before `0x205A7` copies packed dword into upload object
+  - likely in code that forms source pair feeding `0x20761`, not in these parent wrappers
+
+Best next RE target from this result:
+
+- stop treating `22AD86` / `4EDB6` as likely threshold owners
+- use them only as timing anchors
+- next static target should be whichever producer creates packed value later observed at:
+  - `state + 0x118`
+  - upload object `+0x25F0`
+  - especially source-pair producer immediately upstream of `0x20761`
+
+## Section 187 - 2026-04-24 live `DEBUG.txt` + static RE: `1FEA0` state-2 helper path synthesizes temporary rank-edge preview, but `packselect` restores authoritative packed slot
+
+Live log path used:
+
+- `/mnt/d/SteamLibrary/steamapps/common/BlazBlue Centralfiction/BBCF_IM/DEBUG.txt`
+
+What this live `DEBUG.txt` proved:
+
+- `WriterParent4EDB6Pre/Post` never appeared at runtime in this real ranked log even though the hook installed.
+- so `4EDB6` is not on the active authoring path for the observed packed transitions in this run.
+- first real packed write still appeared at:
+  - `DataFlow ... new=[0x00207BFF,0x00000000] writer_rva=0x00020761 srcPairBase=0x01D5EBF4`
+- `22AD86_pre` only observed task-state progression in its `self[]` fields; it did not author packed score.
+
+Static RE for the next upstream cut:
+
+- `0x205A7` is still only copy logic:
+  - `mov eax,[esi-8]`
+  - `mov [ebx+0x25F0],eax`
+- `0x20761` is still only blob copy logic:
+  - `rep movsd`
+- therefore the interesting upstream logic is in `0x1FEA0` state machine, especially the state-2 path:
+  - `0x1FFFB: call 0x1E720`
+  - `0x2000D: call 0x1E7B0`
+
+What those helpers do structurally:
+
+- `0x1E980` is allocator / cached-table getter for the shared table object, not threshold arithmetic.
+- `0x1E720` resolves two records through `0x7A16D4` and compares selected fields; it returns `0` only when the relevant pair matches exactly.
+- `0x1E8C0` maps an input value into a small class using two constants fetched by:
+  - `0x1F140(key=0x15, group=2, type=0x6E)`
+  - `0x1F140(key=0x1C, group=2, type=0x6E)`
+- `0x1E7B0` compares the `0x1E8C0` class for two values and returns equal / not-equal.
+- this is the first upstream code in the current cut that looks like rank-band metadata logic instead of upload transport.
+
+Most important behavior correlation from live log:
+
+- cycle 1:
+  - authoritative slot was `0x00207BFF`
+  - after state-2 / phase-3 / state-5 / state-6 / state-7, temporary `entry1_src10` became `0x00207FFF`
+  - then `packselect` changed `entry1_src10` back to `0x00207BFF`
+- cycle 2:
+  - authoritative slot was `0x00207FFF`
+  - state-2 helper path temporarily set `entry1_src10` to `0x00207BFF`
+  - then `packselect` restored `entry1_src10` to `0x00207FFF`
+- cycle 3:
+  - authoritative slot was `0x002083FF`
+  - state-2 helper path temporarily set `entry1_src10` to `0x00207FFF`
+  - then `packselect` restored `entry1_src10` to `0x002083FF`
+
+Interpretation:
+
+- the state-2 helper path is producing a temporary alternate packed value in table `src10`.
+- that alternate value sits on the same rank id but moves subscore to a rank-edge sentinel-like representative such as `0x7FFF`.
+- however this temporary value is not the final upload author:
+  - `stage8 copy (0x2044D)` copies the local slot buffer into table entry fields
+  - `packselect (0x20534)` then restores `src10` to the authoritative packed slot
+  - upload continues with the authoritative slot value, not the temporary helper preview
+
+Current best conclusion:
+
+- exact rank-up/down threshold formula is still not fully extracted.
+- but the search area is now smaller:
+  - not `22AD86`
+  - not `4EDB6`
+  - not `0x205A7`
+  - not `0x20761`
+- current best rank-related compare logic candidate is helper chain around:
+  - `0x1E720`
+  - `0x1E7B0`
+  - `0x1E8C0`
+  - data fetches via `0x1F140`
+- those functions appear to classify values against metadata bands and are the best current code path for reconstructing the real boundary/lookup logic.
+
+## Section 188 - 2026-04-24 exact static formulas for `0x1E8C0` / `0x1E7B0`: real classifier found, but current state-2 inputs are control values, not packed score
+
+Exact static result for `BBCF+0x1E8C0`:
+
+- it does **not** inspect packed rank/subscore fields directly.
+- it fetches two 32-bit constants using `BBCF+0x1F140`:
+  - lower = `0x1F140(key=0x15, group=2, type=0x6E)`
+  - upper = `0x1F140(key=0x1C, group=2, type=0x6E)`
+- then it classifies an input `x` as:
+  - `0` if `x < lower`
+  - otherwise let `step = upper - lower`
+  - let `q = floor((x - lower) / step)`
+  - return `2` if `q` is even
+  - return `1` if `q` is odd
+
+Equivalent compact form:
+
+- `class(x) = 0, if x < lower`
+- `class(x) = 2 - (((x - lower) / (upper - lower)) & 1), otherwise`
+
+Meaning:
+
+- this is a repeating 2-band parity classifier above a lower threshold.
+- it does **not** compute a direct "distance to promotion" value.
+- it only answers which alternating band an input falls into.
+
+Exact static result for `BBCF+0x1E7B0`:
+
+- it calls `0x1E8C0` on two inputs.
+- it returns `0` when both inputs land in the same class.
+- it returns `1` when the classes differ.
+- so `0x1E7B0` is only a band-equality comparator:
+  - `same_band(a, b) ? 0 : 1`
+
+Exact static result for `BBCF+0x1E720`:
+
+- it resolves both inputs through `0x7A16D4`
+- copies out record data
+- compares a selected pair of fields from the resolved records
+- returns `0` only when those selected fields match exactly
+- so this is record/metadata equality, not LP arithmetic
+
+What `0x1F140` appears to be:
+
+- generic keyed lookup plumbing, not arithmetic
+- takes a small key tuple struct and returns a value in `edx:eax`
+- in this path only the low 32-bit `eax` value is consumed by `0x1E8C0`
+
+Critical interpretation from live correlation:
+
+- in current state-2 path, helper calls are made with values like:
+  - `[edi+0x910]` (`field910`)
+  - shared-table fields from `0x1E980`
+- live logs show `field910` is a large control value such as:
+  - `0x69EAA0BE`
+  - not packed ranked score like `0x00208407`
+- live logs also show:
+  - `field914 = 0`
+  - `field918 = 0`
+  - while `PackSelect` still reports selector outputs such as `selPrimary=2 selSecondary=1`
+
+Therefore:
+
+- `0x1E8C0` is a real classifier, and its formula is now known exactly.
+- but in the currently traced `0x1FEA0` state-2 path, it is classifying **state/control values**, not the authoritative packed ranked score.
+- `0x1E7B0` and `0x1E720` are comparison helpers around those control values.
+- this means they are still not the final rank progression threshold formula the user wants.
+
+Updated conclusion:
+
+- `0x1E8C0` / `0x1E7B0` / `0x1E720` explain selector behavior inside state-2.
+- they do **not** yet explain:
+  - why authoritative slot becomes `0x001F817F`
+  - or `0x00207BFF`
+  - or `0x00207FFF`
+  - or `0x00208407`
+- the rank-up/down boundary logic that authors those packed values must still happen earlier than the `0x20761` source pair copy and outside the specific `field910` selector subpath decoded here.
+
+## Section 189 - 2026-04-24 upstream source-table boundary tightened: `0x1E980` is cache/object plumbing, real author must be behind `0x230F0` provider-state dispatch
+
+New static cut from the stage-7 authoritative path:
+
+- `0x20270` is now clearly only a **64-bit aggregate loop** over pre-existing per-entry source pairs.
+- it does not invent packed ranked score values.
+- it consumes:
+  - an entry-id list from `[edi+0x10]`
+  - a returned table base from `0x1E980`
+  - a parallel per-entry work block at `[edi+0xF8]`
+  - and writes local aggregate pairs into `[edi+0xA0-8/-4]`, `[edi+0xA0+0/+4]`, ...
+
+Exact stage-7 structure:
+
+- current entry id is read from `[edi+0x10]`
+- table entry address is derived as `table_base + id * 0x18`
+  - code shape:
+    - `ecx = id + id*2`
+    - `entry = table + ecx*8`
+- per-entry source/work block advances by `0x88` each iteration
+- local aggregate/output block also advances by `0x88`
+
+What stage-7 actually does for the authoritative pair:
+
+- it reads the current table entry pair:
+  - `entry+0x10`
+  - `entry+0x14`
+- then either:
+  - accumulates them into local `[esi-8/-4]` when the work-block marker says this lane is active
+  - or directly seeds local `[esi-8/-4]` if that local lane is still zero
+- later stage-8 (`0x20421`) mirrors the already-built local pair back to the table:
+  - `[ecx+0x10] = [esi-8]`
+  - `[ecx+0x14] = [esi-4]`
+- then `0x205A7` copies that already-final local pair into upload object `+0x25F0`
+
+Therefore:
+
+- the authoritative packed value seen at `0x205A7` / `0x20761` is already alive in the table-entry source pair before stage-7 aggregation completes
+- `0x20270`, `0x20421`, `0x205A7`, and `0x20761` are all downstream of the true author
+
+What `0x1E980` really is:
+
+- singleton/cache object allocator/reuser for a `0x2428`-byte object
+- first call path allocates and zero-inits via `79E086` / `79F840`
+- stores global singleton at `0x00A29DF4`
+- zeroes bookkeeping fields like:
+  - `+0x2410`
+  - `+0x2418`
+  - `+0x241C`
+- no packed-score arithmetic, no `0x7FFF` handling, no rank/subscore compare
+
+Small helpers around it are also non-authoritative:
+
+- `0x22F70`:
+  - just returns `1` if `[ecx] != 0`, else `0`
+- `0x230F0`:
+  - dispatches by provider/object state
+  - jumps into:
+    - `0x23490`
+    - `0x232D0`
+    - `0x23130`
+  - this is the first meaningful upstream dispatcher behind the `1FEA0` state machine
+
+What `0x23610` / `0x236B0` turned out to be:
+
+- small provider guards/adapters, not packed-score math
+- both check whether a provider object exists at `[ctx]`
+- both open/use the nested object at `[ctx+0x1C]`
+- both call allocator/string/object helpers through imported functions
+- both end by setting simple status fields on the caller object
+  - examples:
+    - `[obj] = 2, [obj+4] = 1`
+    - or `[obj] = 1, [obj+4] = 1`
+- they do **not** compute rank thresholds or manipulate packed low/high 16-bit score layout directly
+
+Most important new implication:
+
+- if the authoritative table entry pair `entry+0x10/+0x14` is already nonzero before stage-7 consumes it, and `1E980` itself is only provider-object plumbing, then the best remaining static owner candidates are the larger provider-state handlers reached through `0x230F0`:
+  - `0x23130`
+  - `0x232D0`
+  - `0x23490`
+- those handlers interact with the nested provider at `[obj+0x1C]`, copy `0x58`/`0x18`-sized descriptor blocks, and call:
+  - `0x23750`
+  - `0x237B0`
+  - `0x23A50`
+- this is now the tightest known upstream boundary before the authoritative source pair appears downstream in stage-7
+
+Updated next target:
+
+- stop re-probing `1E8C0`, `1E7B0`, `1E720`, `1E980`, `0x20270`, `0x205A7`, and `0x20761`
+- next static/data-flow pass should focus on:
+  - `0x230F0` dispatch states
+  - especially `0x23130`, `0x232D0`, `0x23490`
+  - and any subordinate writer among `0x23750`, `0x237B0`, `0x23A50`
+- objective there is to find the first code that materializes table entry `+0x10/+0x14` with packed `rank_id << 16 | subscore`, or pulls it from a rank-dependent table/formula with `0x7FFF` boundary handling
+
+## Section 190 - 2026-04-24 `0x230F0` branch family is provider/setup code; `0x1F380` is first local materializer of `entry+0x10/+0x14`, but still through generic typed-value seeds
+
+New static cut on the next upstream layer:
+
+- `0x23130`, `0x232D0`, and `0x23490` do not directly compute ranked LP.
+- they are provider/job setup wrappers that seed nested state and then kick later infrastructure calls.
+- the strongest new boundary is now `0x1F380`.
+
+What `0x23130` actually does:
+
+- branches on `[ctx+4]`
+- on its setup path it seeds the nested provider object at `[ctx+0x1C]` with fields like:
+  - `[provider+0x94] = 0`
+  - `[provider+0x90] = 1`
+  - `[provider+0x98] = 0`
+  - `[provider+0xBC] = 0`
+- then calls:
+  - `0x1FB80`
+  - `0x1FC20`
+  - `0x1AB10`
+- then advances `[ctx+4] = 2`
+
+What `0x232D0` does:
+
+- same overall shape, but seeds:
+  - `[provider+0x94] = [ctx+0x14]`
+  - `[provider+0x90] = 0`
+  - `[provider+0x98] = [ctx+0x18]`
+  - `[provider+0xB8] = 0`
+  - `[provider+0xBC] = &[ctx+0x220]`
+- then the same `1FB80 -> 1FC20 -> 1AB10` chain
+- then `[ctx+4] = 2`
+
+What `0x23490` does:
+
+- also setup/dispatch code
+- on init path it calls `0x23750(dest, src, mode, extra)`
+- then the same infrastructure chain
+- then `[ctx+4] = 2`
+
+What the subordinate helpers turned out to be:
+
+- `0x23750`:
+  - copies `0x18` bytes into `[dest+0x30]`
+  - clears simple state fields like `[dest+0x94]` and `[dest+0xBC]`
+  - writes mode/extra into `[dest+0x90]` and `[dest+0x98]`
+  - no packed score math
+- `0x237B0` and `0x23A50`:
+  - runtime/provider status helpers
+  - manipulate progress/status fields such as:
+    - `[esi+0xB4]`
+    - `[esi+0xC0]`
+  - call validation/resource helpers
+  - no direct writes to ranked table `entry+0x10/+0x14`
+
+The post chain is also non-authoritative:
+
+- `0x1FB80`:
+  - singleton allocator/reuser
+- `0x1FC20`:
+  - indexed accessor only
+- `0x1AB10`:
+  - synchronized object/callback handoff plumbing
+
+Therefore:
+
+- `0x230F0` dispatch family launches work, but it does not appear to author `rank_id << 16 | subscore`.
+
+Why `0x1F380` is now the best local boundary:
+
+- direct writes to table-style payload fields happen here:
+  - `0041F532: [ebx+0x10] = eax`
+  - `0041F538: [ebx+0x14] = eax`
+  - `0041F65C: [ecx+0x10] = eax`
+  - `0041F662: [ecx+0x14] = eax`
+  - `0041F795: [ebx+0x10] = eax`
+  - `0041F79B: [ebx+0x14] = eax`
+- this is the first decoded local region that clearly materializes those fields before the later `0x20270` aggregate loop consumes them.
+
+What `0x1F380` is really doing:
+
+- it still starts by calling `0x1E980`, so it operates on the cached singleton/table object already identified upstream
+- then it builds arrays of records with stride `0x1E0`
+- one hot path writes:
+  - `[record+0x00]`
+  - `[record+0x04]`
+  - `[record+0x10]`
+  - `[record+0x14]`
+  - `[record+0x20]`
+  - `[record+0x24]`
+- but those values come from temporary stack blocks that were themselves seeded from earlier source dwords
+
+Important seed/source detail:
+
+- the hottest materialization path around `0x1F720` loads:
+  - `[src-0x08]`
+  - `[src-0x04]`
+  - `[src+0x10]`
+  - `[src+0x14]`
+- packs them into a temporary block
+- calls:
+  - `0x7A1BDF`
+  - `0x79ECC0`
+- then writes the resulting block into the record, including `+0x10/+0x14`
+
+This matters because:
+
+- `0x79ECC0` is already known copy/finalization plumbing
+- `0x7A1BDF` in this use-site also looks like generic block transformation, not rank arithmetic
+- so `0x1F380` appears to be a materializer/assembler for pre-existing semantic values, not the original threshold logic
+
+New supporting proof that these are generic typed values, not raw LP math:
+
+- `0x407C90` validates a tagged value held in `[obj+4]`
+- it interprets bitfields:
+  - `tag = ([obj+4] >> 20) & 0xF`
+  - signed high byte from `sar eax, 0x18`
+  - low payload via `and eax, 0xFFFFF`
+- and only accepts specific tag/value combinations such as:
+  - tag `1` with payload `<= 4`
+  - tag `7` with zero low payload
+  - tag `3` when `[obj] != 0`
+- `0x407CF0`:
+  - copies the 2-dword value object
+  - re-validates it with `0x407C90`
+  - then routes through generic object/string helpers and compare paths
+
+Interpretation:
+
+- the seed objects flowing through `0x1F380` are generic typed/variant records
+- not a simple `rank_id << 16 | subscore` scalar with direct threshold math
+
+What the `+0x2704/+0x2708` fields turned out to be:
+
+- scheduler/job-state fields on the large owner object used by `0x1F380`
+- examples from `0x216FB..0x21D6D`:
+  - `0x216FB`: clear state bits with `and [obj+0x2704], 0xFFFFFFFC`
+  - `0x21702`: `[obj+0x2708] = 0`
+  - `0x21C81`: `[obj+0x2708] = 1`
+  - `0x21CA1`: `[obj+0x2708] = 0xFFFFFFFF`
+  - `0x21D46`: `or [obj+0x2704], 2`
+  - `0x21D51`: `or [obj+0x2704], 3`
+  - `0x21D5C`: `or [obj+0x2704], 1`
+- these are lifecycle/control fields, not ranked LP thresholds
+
+Updated conclusion:
+
+- `0x230F0` branch family is provider/setup only
+- `0x23750/0x237B0/0x23A50` are support/status helpers only
+- `0x1F380` is the first local writer of `entry+0x10/+0x14`, but only by materializing generic typed-value seeds from earlier source blocks
+- the true semantic author of the authoritative packed ranked value must still be earlier than the source block consumed by the `0x1F720` seed path
+
+Best next target after this cut:
+
+- trace the source object feeding `0x1F720`, especially who populates:
+  - `[src-0x08]`
+  - `[src-0x04]`
+  - `[src+0x10]`
+  - `[src+0x14]`
+- because that source block is now the tightest known place left where the packed rank/subscore meaning can still be created before materialization
+
+## Section 191 - 2026-04-24 `0x1E320/0x1E620` and the `850024/34/44` nodes are generic owned-payload carriers, not ranked LP math
+
+New static cut:
+
+- `0x1E320` constructs a large owner object and embeds three small carrier nodes at:
+  - `[owner+0x2638]` tagged `0x850024`
+  - `[owner+0x2658]` tagged `0x850034`
+  - `[owner+0x2678]` tagged `0x850044`
+- each carrier starts with zero payload:
+  - `[node+0x10] = 0`
+  - `[node+0x14] = 0`
+- the owner also stores small ids beside them:
+  - `[owner+0x2640] = 0x450`
+  - `[owner+0x2660] = 0x452`
+  - `[owner+0x2680] = 0x451`
+
+The destructor/reset family is framework-only:
+
+- `0x1E520`, `0x1E560`, `0x1E5A0`:
+  - retag the node (`0x850024/34/44`)
+  - if `[node+0x10] | [node+0x14] != 0`, call `ds:[0x84A628]`
+  - then zero `[node+0x10]` and `[node+0x14]`
+- `0x1E620` does the same release/reset sequence across all three embedded nodes.
+
+Meaning:
+
+- `0x850024/0x850034/0x850044` are not packed-rank constants. They are vtable/type tags for generic owned-payload objects.
+- `ds:[0x84A628]` is a generic payload release helper used widely across unrelated classes with the same `[+0x10/+0x14]` pattern.
+- this layer still has no:
+  - high/low-16 rank split
+  - `0x7FFF` / `0x8000` / `0xFFFF` checks
+  - rank-up/down arithmetic
+  - threshold-table lookup
+
+Important setter identified:
+
+- `0x21EA0` is the generic carrier setter used by the async/provider path.
+- it:
+  - releases prior payload via `ds:[0x84A628]` if present
+  - writes new payload into `[node+0x10]` and `[node+0x14]`
+  - writes owner/callback metadata into `[node+0x18]` and `[node+0x1C]`
+- this matches the `0x1EC10` state-machine path, which queues work through `0x21EA0(..., 0x41EB60)` and later receives the payload back through `0x1EB60`.
+
+Updated boundary after this cut:
+
+- `0x1F380` still materializes records into the source array at `[owner+0x110]` / `[owner+0x118]`
+- the carrier framework (`0x1E320/0x1E620/0x1E520/560/5A0/0x21EA0`) only stores and transports the `(lo,hi)` pair used later by `0x1F380`
+- therefore the next real target is the provider object behind `0x1EC10` virtual calls, especially methods at offsets:
+  - `+0x58`
+  - `+0x5C`
+  - `+0x70`
+  - `+0x74`
+- those are now the tightest remaining places where authoritative packed rank semantics can still be created before the generic carrier/materialization chain takes over.
+
+## Section 192 - 2026-04-24 Narrow live probe moved to `0x1EC10` provider dispatch because static target resolution stalls at the service-interface layer
+
+Static RE after Section 191 tightened the boundary but did not fully resolve the concrete provider implementations:
+
+- `0x1EC10` gets its provider through `ds:[0x84A650](0x9D3210)`, then uses `[service+0x14]` as the live interface pointer.
+- The live dispatch then reads the provider vtable and calls offsets:
+  - `+0x70`
+  - `+0x5C`
+  - `+0x74`
+  - `+0x58`
+  - `+0x7C`
+- The post-call payload is queued into carrier nodes by `0x21EA0`, typically:
+  - `+0x2638`
+  - `+0x2658`
+  - `+0x2678`
+
+Static map of the main `0x1EC10` branches:
+
+- one branch family uses phase/state combinations that select:
+  - `+0x70 -> node +0x2678`
+  - `+0x5C -> node +0x2638`
+- another branch family selects:
+  - `+0x74 -> node +0x2678`
+  - `+0x58 -> node +0x2638`
+- another branch reaches:
+  - `+0x7C -> node +0x2658`
+
+At this point the blocker is no longer downstream write ownership. It is concrete provider target resolution. The current disasm is enough to prove the service-interface pattern, but not enough to recover the implementation targets with confidence.
+
+Because the user explicitly allowed a narrow fallback probe here, the code now detours `BBCF+0x0001EC10` directly and logs:
+
+- caller RVA
+- `self`
+- dispatch `state` / `phase`
+- service pointer
+- provider pointer
+- provider vtable pointer
+- resolved vtable targets for `+0x58/+0x5C/+0x70/+0x74/+0x7C`
+- inferred selected slot for the current branch
+- expected destination carrier node
+- actual changed carrier node, if any
+- payload before/after for that node
+- decoded low-word rank/subscore when the payload looks like packed ranked data
+- nearby control inputs (`+0x14/+0x18/+0x1C/+0x20/+0x2608/+0x2610/+0x2618/+0x261C`)
+
+Purpose of this probe:
+
+- identify which provider virtual is the real author of the authoritative packed ranked value before `0x21EA0`
+- distinguish generic opaque payloads from actual packed `rank_id << 16 | subscore`
+- catch live `0x7FFF`/rank-change payloads at the provider boundary instead of chasing copies/materializers downstream
+
+This is the first probe placed above the carrier framework rather than below it. If the authoritative packed value appears here, the next RE target becomes the concrete provider virtual target address logged by this hook, not `0x1EC10` itself.
+
+## Section 193 - 2026-04-23 Latest `DEBUG.txt` proves the logged `+0x7C` provider target is still plumbing, not the packed-rank author
+
+Latest deployed log inspected:
+
+- `/mnt/d/SteamLibrary/steamapps/common/BlazBlue Centralfiction/BBCF_IM/DEBUG.txt`
+- timestamp on inspected file:
+  - `2026-04-23 22:09`
+
+New live provider-interface proof from this run:
+
+- `[RANK][ProviderIface]` logged one concrete provider vtable:
+  - `service=0x00983218`
+  - `provider=0x080A3140`
+  - `vtable=0x58BA7228`
+  - `slot58=0x589B06F0`
+  - `slot5C=0x589B0550`
+  - `slot70=0x589B01C0`
+  - `slot74=0x589AFFD0`
+  - `slot7C=0x589AF5A0`
+
+What the new dispatch logs prove:
+
+- during the ranked-transition window captured in this `DEBUG.txt`, the only logged concrete provider virtual actually reached by `0x1EC10` was:
+  - `slot=0x7C`
+  - `target=0x589AF5A0`
+  - expected carrier node `+0x2658`
+- before the carrier node flips, repeated `slot=0x7C` calls only leave:
+  - `payload_after=[0x00000000,0x00000000]`
+  - `packed_like=1` only because the payload is zero, not because it is real rank data
+- when the carrier node finally changes, the returned payload becomes obvious opaque/non-ranked data, e.g.:
+  - `payload_after=[0x313629BF,0xFF30F3E2]`
+  - `payload_after=[0xF6531790,0xB1BF7FBD]`
+  - `payload_after=[0x33EB06B3,0x5103E235]`
+  - `payload_after=[0x470E3639,0x2BB0B30D]`
+  - `payload_after=[0x446931B4,0x0635FAF4]`
+  - `payload_after=[0x63850EF3,0xEEC6C625]`
+- these values are not valid packed ranked scores:
+  - rank high words are nonsense (`0x3136`, `0xF653`, `0x470E`, etc.)
+  - no `0x7FFF` sentinel appeared
+  - no real `0x0020..0x0024` ranked id range appeared
+  - no visible relation to known packed upload fields such as `field2610`
+
+Conclusion from live evidence:
+
+- this `DEBUG.txt` does **not** identify any provider virtual target that produces authoritative packed `rank_id << 16 | subscore` or `0x7FFF` sentinel output
+- the only reached concrete target in this capture was `+0x7C`, and its returned payload is still opaque carrier content, not ranked progress semantics
+
+Resolved static target:
+
+- using the live delta relation against nearby `0x41xxxx` callsites, the logged target `0x589AF5A0` resolves to static address:
+  - `BBCF+0x0001F5A0`
+- important detail:
+  - this address lands inside the already-known `0x1F380` materialization region, not at a new upstream rank-formula routine
+
+Static reverse of the exact resolved region (`0x1F380`, especially `0x1F57F..0x1F7DA`):
+
+- this code is still record materialization / copy logic
+- it iterates source entries under `[self+0x110]` / `[self+0x118]`
+- it gates entries with `0x407C90`
+- it copies existing payload pieces into `0x1E0`-sized output records
+- it mirrors preexisting fields like:
+  - source `+0x08/+0x0C`
+  - source `+0x00/+0x04/+0x18/+0x1C`
+- it uses generic block-copy helpers like:
+  - `0x407CF0`
+  - `0x79ECC0`
+  - `0x7A1BDF`
+- it still shows no:
+  - packed-score split/join logic
+  - `0x7FFF` handling
+  - threshold-table lookup
+  - `+256/+512/+1024` rank-edge arithmetic
+  - visible-rank mapping logic
+
+So this cut closes one question cleanly:
+
+- `+0x7C` is not the rank author
+- it is another downstream materialization/plumbing slice feeding the same sink family the user already told us not to chase
+
+Updated boundary after this cut:
+
+- the authoritative packed-rank author still has not been observed at the provider boundary in this run
+- `+0x7C` can now be deprioritized as a formula candidate
+- the remaining real candidates stay:
+  - `+0x58`
+  - `+0x5C`
+  - `+0x70`
+  - `+0x74`
+- especially `+0x5C` and `+0x74`, because this run only proved the `+0x7C -> +0x2658 -> 0x1F380` lane is still sink/plumbing
+
+Exact next patch/test implication:
+
+- next instrumentation should pivot away from generic `0x1EC10` post-dispatch carrier observation and instead log the **direct return values / out-buffers** of the concrete provider methods for:
+  - `0x589B0550` (`+0x5C`)
+  - `0x589B01C0` (`+0x70`)
+  - `0x589AFFD0` (`+0x74`)
+  - `0x589B06F0` (`+0x58`)
+- success condition for the next cut:
+  - one of those methods emits either:
+    - real packed values in the known ranked range (`0x0020xxxx`, `0x0021xxxx`, `0x0022xxxx`, etc.)
+    - or explicit sentinel/rank-edge outputs such as `0x????7FFF`
+
+## 194. Remaining provider lanes stayed cold; install direct hooks on `+0x58/+0x5C/+0x70/+0x74`
+
+Latest log recheck before the next patch:
+
+- latest deployed `DEBUG.txt` still confirms the prior conclusion:
+  - no provider virtual emitted real packed rank
+  - no provider virtual emitted `0x7FFF`
+  - the only concrete lane previously observed during the ranked transition was `+0x7C -> BBCF+0x0001F5A0`, already ruled out as `0x1F380` sink/materialization plumbing
+- the same log also shows the remaining provider-dispatch traffic is mostly cold/no-op churn:
+  - repeated `callerRva=0x0001FED7`
+  - occasional `callerRva=0x0001F84F`
+  - almost all of these are `state=0 phase=0 slot=unknown target=0x00000000`
+- importantly, no `state=2`, `state=3`, or `state=4` dispatches appeared anywhere in this latest capture, so the candidate lanes behind those states never armed in that run
+
+Static guidance now:
+
+- `BBCF+0x0001F000` seeds provider dispatch `state=2 phase=1`
+- `BBCF+0x0001F080` seeds provider dispatch `state=3 phase=1`
+- `BBCF+0x0001F030` seeds provider dispatch `state=4 phase=1` and also prepares `self+0x2628/+0x262C`
+- since the latest real log never reached those states, generic post-dispatch logging at `0x1EC10` is not enough by itself to identify the author
+
+Code change prepared in this repo:
+
+- `src/Hooks/hooks_bbcf.cpp` now lazily resolves the live provider vtable from the existing `0x1EC10` probe and installs **direct detours** on the remaining candidate slots:
+  - `+0x58`
+  - `+0x5C`
+  - `+0x70`
+  - `+0x74`
+- each direct hook logs:
+  - the actual caller RVA
+  - raw return split (`result_lo/result_hi`)
+  - packed-like decode and `0x7FFF` sentinel shape
+  - raw arguments
+  - before/after snapshots when an argument looks like a readable pointer carrying an output pair
+- this patch avoids chasing `0x1E320/0x21EA0/0x1F380/0x1F720/0x20270/0x20421/0x205A7/0x20761` plumbing again; the new goal is to catch the provider method itself the moment it fires
+
+Build status:
+
+- local `Debug|Win32` build succeeded after fixing a namespace/linkage mismatch in the new hook declarations
+
+Exact next live test:
+
+- deploy the new `bin/Debug/dinput8.dll`
+- run a **real ranked transition** again
+- inspect `BBCF_IM/DEBUG.txt` for new lines:
+  - `[RANK][ProviderVirtual] Hooked slot=0x58 ...`
+  - `[RANK][ProviderVirtual] Hooked slot=0x5C ...`
+  - `[RANK][ProviderVirtual] Hooked slot=0x70 ...`
+  - `[RANK][ProviderVirtual] Hooked slot=0x74 ...`
+  - `[RANK][ProviderVirtual] slot=0x58 ...`
+  - `[RANK][ProviderVirtual] slot=0x5C ...`
+  - `[RANK][ProviderVirtual] slot=0x70 ...`
+  - `[RANK][ProviderVirtual] slot=0x74 ...`
+
+Proof condition for the next cut:
+
+- one of those four direct provider hooks must either:
+  - return `result_lo` in the real packed ranked range (`0x0020xxxx`, `0x0021xxxx`, `0x0022xxxx`, ...)
+  - return or write a `0x????7FFF` sentinel/reset value
+  - or mutate one of its pointed-to arg buffers into that packed/sentinel shape
+- whichever slot first satisfies that condition becomes the new static reverse target for the threshold formula/table (`rank_id << 16 | subscore`, `0x7FFF`, and the observed `±256/±512/±1024` deltas)
+
+## 195. 2026-04-24 follow-up: latest log still old/cold; fixed `+0x58` ABI and installed provider state-arm hooks
+
+Latest log inspected:
+
+- `/mnt/d/SteamLibrary/steamapps/common/BlazBlue Centralfiction/BBCF_IM/DEBUG.txt`
+- file timestamp:
+  - `2026-04-24 01:09`
+
+What this log confirmed:
+
+- no `[RANK][ProviderVirtual] Hooked ...` lines appeared, so this was still from the previous deployed build or did not reach the direct-provider-hook install path
+- provider dispatch stayed in the already-known cold churn:
+  - repeated `callerRva=0x0001FED7`
+  - occasional `callerRva=0x0001F84F`
+  - `state=0 phase=0 slot=unknown target=0x00000000`
+- no `state=2`, `state=3`, or `state=4` dispatches appeared
+- no remaining candidate lane (`+0x58`, `+0x5C`, `+0x70`, `+0x74`) fired in this log
+- no provider output contained authoritative packed rank or `0x7FFF` sentinel
+
+Static/code review found one instrumentation bug before the next run:
+
+- slot `+0x58` was declared as a one-stack-arg hook, but static disassembly of `0x1EC10` proves it is called with three stack args:
+  - `push 1`
+  - `push 2`
+  - `push [self+0x14]`
+  - `call [vtable+0x58]`
+- that meant if `+0x58` fired, the hook could corrupt the caller stack and would not log the real argument set
+
+Patch made:
+
+- fixed `+0x58` provider hook ABI to `__fastcall(self, edx, arg1, arg2, arg3)`
+- logs before/after readable-pair snapshots for all three `+0x58` args
+- installed direct detours for the provider state seeders:
+  - `BBCF+0x0001F000` (`state2_init`)
+  - `BBCF+0x0001F080` (`state3_init`)
+  - `BBCF+0x0001F030` (`state4_init`, includes `self+0x2628/+0x262C`)
+- these hooks log `[RANK][ProviderStateArm]` so the next run can prove whether the missing candidate lanes never arm or arm but fail before dispatch
+
+Build status:
+
+- `Debug|Win32` build succeeded with:
+  - `"/mnt/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe" BBCF_IM.sln /m /p:Configuration=Debug /p:Platform=Win32 /p:PlatformToolset=v143`
+- warnings only; no errors
+
+Exact next live test:
+
+- deploy `bin/Debug/dinput8.dll`
+- run a real ranked transition
+- inspect `DEBUG.txt` for:
+  - `[RANK][ProviderStateArm] Hooked BBCF+0x0001F000 state2 ...`
+  - `[RANK][ProviderStateArm] Hooked BBCF+0x0001F080 state3 ...`
+  - `[RANK][ProviderStateArm] Hooked BBCF+0x0001F030 state4 ...`
+  - `[RANK][ProviderStateArm] label=state2_init ...`
+  - `[RANK][ProviderStateArm] label=state3_init ...`
+  - `[RANK][ProviderStateArm] label=state4_init ...`
+  - `[RANK][ProviderVirtual] Hooked slot=0x58 ...`
+  - `[RANK][ProviderVirtual] Hooked slot=0x5C ...`
+  - `[RANK][ProviderVirtual] Hooked slot=0x70 ...`
+  - `[RANK][ProviderVirtual] Hooked slot=0x74 ...`
+  - `[RANK][ProviderVirtual] slot=0x58 ...`
+  - `[RANK][ProviderVirtual] slot=0x5C ...`
+  - `[RANK][ProviderVirtual] slot=0x70 ...`
+  - `[RANK][ProviderVirtual] slot=0x74 ...`
+
+Next interpretation rule:
+
+- if state-arm lines appear but no provider virtual call lines appear, the failure is between state seeding and `0x1EC10` dispatch
+- if a provider virtual fires and returns/writes `0x0020xxxx`/`0x0021xxxx`/`0x0022xxxx` or `0x????7FFF`, that slot becomes the next static reverse target
+- do not spend more time on `+0x7C` / `0x1F5A0`; it is ruled out as materialization plumbing
+
+## 196. 2026-04-24 ranked round-win crash triage: provider lanes stayed cold; crash was WinMM controller refresh
+
+Crash report:
+
+- user won one round of a real ranked match
+- game crashed before the full match ended
+- newest dump inspected:
+  - `/mnt/c/Users/Usuario/AppData/Local/CrashDumps/BBCF.exe.23884.dmp`
+
+Dump result:
+
+- stored final exception was fail-fast `0xC0000409` at `BBCF+0x3A7B59`
+- earlier stack context showed the real fault path in controller device polling:
+  - `dinput!CDIDev_GetAbsDeviceState`
+  - `dinput!CDIDev_GetDeviceStateSlow`
+  - `winmm!joyGetPosEx`
+  - Steam overlay frames
+  - mod `dinput8` frames
+- matching `DEBUG.txt` tail showed:
+  - `ControllerOverrideManager::ProcessPendingDeviceChange - begin (autoRefresh=1)`
+  - `ControllerOverrideManager::TryEnumerateWinmmDevices - begin count=16`
+  - then crash dump comment logged `gameMode=15 gameState=15 sceneStatus=9`
+
+Ranked-provider evidence from this crashed run:
+
+- direct candidate hooks did install:
+  - `[RANK][ProviderVirtual] Hooked slot=0x58 ...`
+  - `[RANK][ProviderVirtual] Hooked slot=0x5C ...`
+  - `[RANK][ProviderVirtual] Hooked slot=0x70 ...`
+  - `[RANK][ProviderVirtual] Hooked slot=0x74 ...`
+- state-arm hooks did install:
+  - `state2` at `BBCF+0x1F000`
+  - `state3` at `BBCF+0x1F080`
+  - `state4` at `BBCF+0x1F030`
+- no actual `[RANK][ProviderVirtual] slot=...` call lines appeared before the crash
+- no actual `[RANK][ProviderStateArm] label=state*_init ...` lines appeared before the crash
+- therefore this crash did not identify any of `+0x58/+0x5C/+0x70/+0x74` as the authoritative packed-rank provider
+
+Patch made after crash:
+
+- `src/Core/ControllerOverrideManager.cpp`
+  - `IsSafeToRefreshGameInputsNow()` now defers queued device refresh while `GameState_InMatch`
+  - WinMM `joyGetPosEx` is routed through `SafeJoyGetPosEx()` with SEH so a bad device/driver state query is logged and skipped instead of killing the game
+- `src/Hooks/hooks_bbcf.cpp`
+  - cold idle `0x1EC10` dispatch spam is suppressed 4095/4096 times when it is only `state=0 phase=0 slot=unknown result=0` with no packed payload and no node change
+  - provider virtual and state-arm hook evidence remains active
+
+Build status:
+
+- `Debug|Win32` build succeeded after patch:
+  - `"/mnt/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe" BBCF_IM.sln /m /p:Configuration=Debug /p:Platform=Win32 /p:PlatformToolset=v143`
+- one existing warning remained:
+  - `hooks_bbcf.cpp(7960): warning C4102: 'NOT_CUSTOM_PACKET': unreferenced label`
+
+Next live test:
+
+- deploy new `bin/Debug/dinput8.dll`
+- run the same real ranked flow again
+- if the controller refresh path is hit in-match, expected log should now defer refresh instead of calling WinMM:
+  - `ControllerOverrideManager::IsSafeToRefreshGameInputsNow - deferring refresh during match`
+- if WinMM still gets called later and a device query faults, expected log:
+  - `[WINMM] Device id=... state query faulted exception=...`
+- continue looking for:
+  - `[RANK][ProviderStateArm] label=state2_init/state3_init/state4_init`
+  - `[RANK][ProviderVirtual] slot=0x58/0x5C/0x70/0x74`
+
+Interpretation rule unchanged:
+
+- `+0x7C / 0x1F5A0` remains ruled out
+- if any remaining provider virtual returns/writes packed-like `0x0020xxxx`/`0x0021xxxx`/`0x0022xxxx` or `0x????7FFF`, that slot becomes the threshold-formula reverse target
+
+## 197. 2026-04-25 latest ranked log: `+0x5C` fires but is opaque; authoritative packed value is already in `field2610`
+
+Latest log inspected:
+
+- `/mnt/d/SteamLibrary/steamapps/common/BlazBlue Centralfiction/BBCF_IM/DEBUG.txt`
+- size:
+  - about `491 MB`
+- run range:
+  - `BBCF_FIX START - 2026-04-24 21:08:20`
+  - `BBCF_FIX STOP - 2026-04-24 21:22:30`
+- game exited cleanly; no crash signature appeared in this log
+
+Controller-refresh crash guard result:
+
+- only one queued controller refresh appeared early:
+  - `ControllerOverrideManager::ProcessPendingDeviceChange - begin (autoRefresh=1)`
+  - `TryEnumerateWinmmDevices - begin count=4`
+  - `device hash unchanged, skipping reinitialize`
+- no in-match WinMM crash occurred in this run
+
+Provider candidate result:
+
+- install lines appeared for all remaining candidate slots:
+  - `+0x58`
+  - `+0x5C`
+  - `+0x70`
+  - `+0x74`
+- actual call lines appeared only for:
+  - `+0x5C`, caller `BBCF+0x0001EFD5`
+- `+0x58`, `+0x70`, and `+0x74` did not produce actual call logs in this run
+- state-arm label logs did not appear:
+  - no `state2_init`
+  - no `state3_init`
+  - no `state4_init`
+
+What `+0x5C` returned:
+
+- all observed `+0x5C` return pairs were opaque / garbage-like two-dword values, for example:
+  - `0x96EFCCB9:0xE31218F2`
+  - `0xF3E98FE9:0xCE104484`
+  - `0xB5038C90:0x78A165D0`
+  - `0x2E3CDA7C:0x3EABD0EB`
+  - `0xD2F6ACE5:0xF4F4A8CD`
+  - `0x71253ABD:0x6D1933DE`
+- no `+0x5C` return matched packed rank shape
+- no `+0x5C` return or observed pointed arg contained `0x7FFF` sentinel
+- therefore `+0x5C` is now in the same category as old `+0x7C` for this objective: observed, but not authoritative packed-rank author in this run
+
+New important evidence:
+
+- authoritative packed rank values appeared before the `+0x7C` materialization call as `field2610` on the ranked owner records
+- examples:
+  - cycle 1:
+    - `field2610 = 0x00208E07`
+    - later copied by `0x20761`
+    - `GameCall` at `BBCF+0x1EF5F` passed the same `0x00208E07` into the `+0x7C` materializer
+  - cycle 2:
+    - `field2610 = 0x00208C07`
+    - delta from cycle 1: `-0x200` (`-512`)
+  - cycle 3:
+    - `field2610 = 0x00208A07`
+    - delta from cycle 2: `-0x200` (`-512`)
+- this confirms the packed value is already present at owner `+0x2610` before downstream table/upload copy plumbing
+
+Static cross-check:
+
+- `BBCF+0x1EF56` pushes `[owner+0x2610]` into the already-ruled-out `+0x7C` materializer path:
+  - this proves `+0x7C` consumes the packed value
+  - it does not author the packed value
+- `BBCF+0x205A7` / `0x20761` only copy already-built source pairs into upload/table destinations
+- `BBCF+0x205E3` writes `[record+0x2610] = ((byte from descriptor table) >> 3) & 1`; that is a local flag write in the stage-8 loop, not the observed packed `0x00208E07/0x00208C07/0x00208A07` source
+
+Instrumentation bugs fixed after this log:
+
+- `PairLooksPackedRanked()` treated zero as packed-like because `rank_id=0` and `subscore=0` trivially satisfied the old predicate
+  - fixed to require nonzero and rank id in a tight ranked-like band (`0x0010..0x0040`)
+  - this should stop the huge false-positive `ProviderDispatch packed_like=1 rank_id=0 subscore=0` spam
+- `[RANK][WritePacked]` format string had three `%s` slots but four string arguments for leaderboard name formatting
+  - fixed to use four `%s` slots
+  - previous `WritePacked` lines after the leaderboard name fields are partially shifted/misleading
+
+Additional instrumentation prepared:
+
+- `GameCall` now arms the existing page-guard dataflow tracer on `owner+0x2610` when:
+  - the owner is the `RANK_ALL` handle (`1759932`)
+  - `field2610` has ranked packed shape
+- trace reason:
+  - `owner_field2610_follow`
+- this should catch the next write that changes the RANK_ALL owner field across ranked transitions, for example:
+  - `0x00208E07 -> 0x00208C07`
+  - `0x00208C07 -> 0x00208A07`
+- this is aimed at the actual producer of the packed field, before `+0x7C` and before downstream upload/table copies
+
+Build status:
+
+- `Debug|Win32` build succeeded after the logging fixes and `owner+0x2610` trace arm:
+  - `"/mnt/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe" BBCF_IM.sln /m /p:Configuration=Debug /p:Platform=Win32 /p:PlatformToolset=v143`
+- one existing warning remained:
+  - `hooks_bbcf.cpp(7972): warning C4102: 'NOT_CUSTOM_PACKET': unreferenced label`
+
+Updated next target:
+
+- do not chase `+0x7C / 0x1F5A0`
+- do not prioritize `+0x5C` unless later it writes/returns packed shape; latest evidence says it returns opaque data
+- next instrumentation should catch the writer/producer of owner-record `+0x2610` before:
+  - `BBCF+0x1EF56` consumes it for `+0x7C`
+  - `BBCF+0x205A7 / 0x20761` copies it downstream
+- the immediate proof target is first write of `0x00208E07 -> 0x00208C07 -> 0x00208A07` or equivalent packed-rank values into owner `+0x2610`
+- next log should be checked first for:
+  - `[RANK][DataFlow] begin reason=owner_field2610_follow`
+  - `[RANK][DataFlow] ... writer_rva=... new=[0x0020....,0x00000000]`
+
+## 198. 2026-04-25 short ranked log: owner trace armed, then got displaced
+
+Latest log inspected:
+
+- `/mnt/d/SteamLibrary/steamapps/common/BlazBlue Centralfiction/BBCF_IM/DEBUG.txt`
+- size:
+  - about `9.3 MB`
+- run range:
+  - `BBCF_FIX START - 2026-04-25 16:43:37`
+  - `BBCF_FIX STOP - 2026-04-25 16:50:41`
+- tail shows clean shutdown; no crash signature in this file
+
+Important findings:
+
+- provider state-arm hooks installed:
+  - `BBCF+0x1F000`
+  - `BBCF+0x1F080`
+  - `BBCF+0x1F030`
+- no state-arm label fired during this run
+- remaining provider virtual direct-call hooks did not produce useful packed-rank evidence:
+  - no `+0x58`, `+0x70`, or `+0x74` call lines
+  - the only materialization path still observed was `+0x7C`, already ruled out
+- `ProviderDispatch` continued showing packed owner `field2610` before/around `+0x7C`:
+  - `self=0x16BF11E8`, `arg18=0x001ADABC` (`RANK_ALL`), `field2610=0x002089F7`
+  - later `field2610=0x002089E7`
+- table/menu evidence showed reset/sentinel representation:
+  - `packed00=0x7FFF0000`
+  - later row `selector=24` had `packed00=0x8A070020`
+  - this corresponds to packed rank id `0x0020`, subscore `0x8A07`
+
+Why the prepared owner writer trace did not catch the author:
+
+- `GameCall` correctly armed:
+  - `[RANK][DataFlow] begin reason=owner_field2610_follow cycle=1 slot=0x16BF37F8 cur=[0x002089F7,0x00000000]`
+- two milliseconds later, the active trace got replaced:
+  - `[RANK][DataFlow] begin reason=source_pair_follow cycle=1 slot=0x006FE914 ...`
+- shutdown confirmed the active trace was still the unrelated `0x006FE914` slot:
+  - `end reason=BBCF_IM_Shutdown slot=0x006FE914 ...`
+- conclusion:
+  - owner `+0x2610` trace logic was correct, but protected `source_pair_follow` was allowed to displace it in the same match cycle
+
+Instrumentation changed after this log:
+
+- added trace priorities:
+  - `owner_field2610_follow` priority `4`
+  - `source_pair_follow` priority `3`
+  - `phase2_source_row*` and authoritative row traces priority `2`
+  - other protected traces lower
+- `BeginRankedSlotWriteTrace()` now keeps a higher-priority active trace when a lower-priority trace tries to replace it in the same match cycle
+- `ProviderDispatch` now also arms owner `+0x2610` directly when:
+  - `arg18 == 0x001ADABC` (`1759932`, `RANK_ALL`)
+  - `field2610` has packed-rank shape
+- added marker:
+  - `[RANK][Owner2610Arm] source=ProviderDispatch ...`
+
+Next live-test target:
+
+- deploy new debug DLL
+- run real ranked transition again
+- inspect first for:
+  - `[RANK][Owner2610Arm]`
+  - `[RANK][DataFlow] begin reason=owner_field2610_follow`
+  - `[RANK][DataFlow] keep reason=owner_field2610_follow ... ignore_new_reason=source_pair_follow`
+  - first `[RANK][DataFlowWriter]` on owner slot changing `0x0020....`
+- if captured writer is inside BBCF image, reverse that writer path for threshold formula and `0x7FFF` reset behavior
+
+## 199. 2026-04-25 owner trace survived; packed value was already authored before owner arm
+
+Latest log inspected:
+
+- `/mnt/d/SteamLibrary/steamapps/common/BlazBlue Centralfiction/BBCF_IM/DEBUG.txt`
+- size:
+  - about `28 MB`
+- run range:
+  - `BBCF_FIX START - 2026-04-25 17:00:15`
+  - `BBCF_FIX STOP - 2026-04-25 17:11:25`
+- tail shows clean shutdown; no crash signature in this file
+
+Owner trace result:
+
+- priority fix worked:
+  - shutdown ended with owner slot still active
+  - `slot=0x142BBC90`
+  - `last=[0x002089E7,0x00000000]`
+  - `guardHits=774051`
+  - `valueChanges=0`
+- interpretation:
+  - owner `+0x2610` was already `0x002089E7` before the trace armed
+  - no later mutation occurred during the watched interval
+  - owner `+0x2610` remains a consumer/holding field, not the earliest author point caught so far
+
+Provider candidate result:
+
+- `+0x5C` fired again at `callerRva=0x0001EFD5`
+- all observed returns were opaque, not packed-rank and not sentinel:
+  - examples include `0x179262F6`, `0x7DC697DC`, `0x11E3B6FF`, `0xACEFCA81`, `0x3DB2DFA6`, `0xE771C4AB`
+- no useful `+0x58`, `+0x70`, or `+0x74` authored packed-rank evidence appeared
+- state-arm labels still did not fire
+
+Earlier table evidence is now the better target:
+
+- at `17:00:52`, authoritative selector 24 was still sentinel:
+  - row `0x0174F664`
+  - `packed00=0x7FFF0000`
+- at `17:01:08`, selector 24 changed:
+  - `beforePacked=0x7FFF0000`
+  - `afterPacked=0x89E70020`
+  - decoded as packed rank id `0x0020`, subscore `0x89E7`
+- existing dataflow trace missed this because it armed row 24 `+0x0C/+0x10` LP/current fields:
+  - `slot=0x0174F670`
+  - those stayed zero until the trace got replaced
+- the actual packed change is at row 24 `+0x00/+0x04`
+
+Instrumentation changed after this log:
+
+- sentinel authoritative rows now arm dataflow on packed field:
+  - reason `authoritative_row24_zero_packed00`
+  - slot `row+0x00`, not `row+0x0C`
+- max changes bumped for this trace
+- `phase2_source_row*_lp_pair` no longer forcibly preempts any authoritative-row trace
+- expected next proof:
+  - catch writer for `0x7FFF0000 -> 0x89E70020` on authoritative row 24
+  - if writer is inside BBCF image, reverse that path for sentinel reset and packed-rank formula
+
+## 200. 2026-04-25 latest `DEBUG.txt`: authoritative row hydrate and owner writes are still downstream; next probe follows `0x20761` packed source origin
+
+Latest log inspected:
+
+- `/mnt/d/SteamLibrary/steamapps/common/BlazBlue Centralfiction/BBCF_IM/DEBUG.txt`
+- run range:
+  - `BBCF_FIX START - 2026-04-25 17:13:04`
+  - `BBCF_FIX STOP - 2026-04-25 17:24:11`
+- tail shows clean shutdown in this file
+
+Provider result:
+
+- no remaining `0x1EC10` provider candidate produced authoritative packed rank or `0x7FFF` sentinel
+- `+0x5C` still fires and still returns opaque values
+- `+0x58`, `+0x70`, and `+0x74` did not produce useful packed-rank evidence in this run
+- `+0x7C` / `0x1F5A0` remains ruled out as generic materialization/copy plumbing
+
+Authoritative-row trace result:
+
+- new `authoritative_row24_zero_packed00` trace armed correctly:
+  - `slot=0x0174F664`
+  - initial pair `[0x7FFF0000,0x00000000]`
+- it caught byte-wise hydrate from phase2 source row:
+  - source row `0x2CA87DDC`
+  - source pair `[0x89E70020,0x00020000]`
+  - destination became `[0x89E70020,0x00020000]`
+  - writer `BBCF+0x0039ECEA`
+- static/live interpretation:
+  - `0x39ECEA` is copy/hydrate plumbing only
+  - it does not split/join packed rank, compute thresholds, or handle rank deltas
+
+Sentinel/reset evidence:
+
+- authoritative row was also cleared/reset before hydrate by:
+  - `BBCF+0x0039F864`
+  - `BBCF+0x000BE028`
+- `0xBE028` writes the `0x7FFF0000` sentinel shape byte-wise
+- this is useful for reset/sentinel mapping, but it is not the packed-rank formula author
+
+Actual progression movement:
+
+- authoritative row / owner value moved after round outcomes:
+  - `0x002089F7 -> 0x002089E7`
+  - `0x002089E7 -> 0x00208A07`
+- the observed step size at this point is `-0x10` / `+0x20` in subscore, not the earlier assumed `+256/+512/+1024` shape
+- this may be per-round interim progression or a scale/endian-layer issue; do not force the old delta assumption
+
+Owner/local sink result:
+
+- owner `+0x2610` trace caught writes through trampoline bytes containing the original:
+  - `mov [ebx+0x25F0],eax`
+  - logical source site `BBCF+0x000205A7`
+- `0x205A7` only copies an already-built packed value from the local/state slot into upload/owner fields
+- `WriterParentPre`, `post_1FEA0`, `PackSelect`, and `WritePacked` all show the local slot already had the final packed value before the owner write
+
+Best upstream evidence:
+
+- the first useful upstream source is the pair feeding `BBCF+0x00020761`
+- latest run caught:
+  - destination local slot `0x172188B8`
+  - source pair `0x00CFEAF0`
+  - source value already `[0x002089F7,0x00000000]`
+  - writer `BBCF+0x00020761`
+- therefore `0x20761` is still a copy sink, but its source pair is the next thing to watch
+
+Instrumentation changed after this log:
+
+- added protected reason `source_origin_follow`
+- priority:
+  - `source_origin_follow = 5`
+  - `owner_field2610_follow = 4`
+  - `source_pair_follow = 3`
+- when a `0x20761` source pair already has packed-rank shape, trace now arms as `source_origin_follow`
+- `source_origin_follow` gets `maxValueChanges=16`
+- `match_cycle_begin` no longer ends an active `source_origin_follow` trace
+- `BeginRankedSlotWriteTrace()` now preserves `source_origin_follow` across later lower-priority trace attempts, even across match-cycle increments
+
+Next live-test target:
+
+- deploy new debug DLL
+- run another real ranked transition
+- inspect first for:
+  - `[RANK][DataFlowCandidate] tag=source_pair_follow ... writer_rva=0x00020761`
+  - `[RANK][DataFlowArm] tag=source_origin_follow ... packed_source=1`
+  - `[RANK][DataFlow] keep reason=source_origin_follow ... ignore_end_reason=match_cycle_begin`
+  - first `[RANK][DataFlowWriter]` where `slot` is the source pair, not local slot/owner/auth row
+- if the source pair mutates inside BBCF image, reverse that writer path for the actual packed-rank author and threshold/sentinel logic
+
+## 201. 2026-04-25 latest `DEBUG.txt`: source-origin trace armed, then upload summary ended it before source reuse
+
+Latest log inspected:
+
+- `/mnt/d/SteamLibrary/steamapps/common/BlazBlue Centralfiction/BBCF_IM/DEBUG.txt`
+- run range:
+  - `BBCF_FIX START - 2026-04-25 17:31:54`
+  - `BBCF_FIX STOP - 2026-04-25 17:49:38`
+- tail shows clean shutdown in this file
+
+What the newest run proves:
+
+- `owner_field2610_follow` did arm and survive multiple lower-priority trace attempts, but it never saw a value mutation:
+  - `begin reason=owner_field2610_follow ... slot=0x14B04BA8 cur=[0x00208A07,0x00000000]`
+  - later `end reason=BBCF_IM_Shutdown ... valueChanges=0 last=[0x00208A07,0x00000000]`
+- therefore current owner `+0x2610` instrumentation did not catch the first author; the authoritative packed value was already present by the time owner tracing armed
+- `0x20761` source-origin instrumentation did work:
+  - `DataFlowCandidate ... srcPairBase=0x025AE9B0 src=[0x00208A07,0x00000000] writer_rva=0x00020761`
+  - `DataFlowArm tag=source_origin_follow trigger=writer_parent_22B25E_pre srcPairBase=0x025AE9B0 ... packed_source=1`
+- `source_origin_follow` then kept priority over the later owner trace:
+  - `keep reason=source_origin_follow ... ignore_new_reason=owner_field2610_follow`
+- but the trace was ended by upload summary before any guarded access occurred:
+  - `end reason=UploadLeaderboardScore:RANK_ALL slot=0x025AE9B0 ... guardHits=0 valueChanges=0`
+- after that, the same source-pair address later appeared reused/opaque:
+  - `begin reason=source_pair_follow ... slot=0x025AE9B0 cur=[0x8D562AB9,0x025AEBC8] ... packed_source=0`
+- conclusion: source-origin trace was not preempted by lower-value traces anymore; it was displaced by summary-end logic at upload, before it could observe source-pair lifetime or next-cycle rewrite
+
+Static read of `BBCF+0x20761`:
+
+- disassembly around `BBCF+0x00020761` is still plain structure copy, not threshold/rank math:
+  - function prologue begins around `BBCF+0x20720`
+  - `BBCF+0x20751`: `lea edi,[ebx+0x8]`
+  - `BBCF+0x20754`: `mov ecx,0x246`
+  - `BBCF+0x20761`: `rep movs dword ptr es:[edi], dword ptr ds:[esi]`
+  - later stores service result to `[ebx+0x910]` and calls `BBCF+0x1E980`
+- so `0x20761` is confirmed again as downstream bulk copy; its `esi` source pair (`0x025AE9B0` in this run) remains the target to follow, not `0x20761` itself
+
+Still ruled out:
+
+- provider virtuals remain low value unless `+0x58`, `+0x70`, or `+0x74` newly produce packed-shaped or sentinel values
+- `+0x5C` remains opaque-provider return noise
+- `+0x7C`, `0x1F5A0`, `0x1E320`, `0x21EA0`, `0x1F380`, `0x1F720`, `0x20270`, `0x20421`, `0x205A7`, and `0x20761` remain downstream copy/materialization/plumbing, not current rank-threshold owners
+
+Patch made after this log:
+
+- `RankedProbeDumpSummaryImpl()` no longer ends an active `source_origin_follow` trace on upload summary
+- new helper `KeepActiveRankedTraceEnd()` logs:
+  - `[RANK][DataFlow] keep reason=source_origin_follow ... ignore_end_reason=UploadLeaderboardScore:RANK_ALL`
+- this should keep the page guard active across upload and into the next source-buffer reuse, instead of dropping the trace at the exact point latest run lost it
+
+Build:
+
+- command:
+  - `"/mnt/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe" BBCF_IM.sln /m /p:Configuration=Debug /p:Platform=Win32 /p:PlatformToolset=v143`
+- result:
+  - succeeded
+  - `0 Error(s)`
+  - one existing warning: `src\Hooks\hooks_bbcf.cpp(8110,2): warning C4102: 'NOT_CUSTOM_PACKET': unreferenced label`
+
+Next live-test target:
+
+- deploy `bin/Debug/dinput8.dll`
+- run another real ranked transition
+- inspect first for:
+  - `[RANK][DataFlowCandidate] tag=source_pair_follow ... writer_rva=0x00020761`
+  - `[RANK][DataFlowArm] tag=source_origin_follow ... packed_source=1`
+  - `[RANK][DataFlow] keep reason=source_origin_follow ... ignore_end_reason=UploadLeaderboardScore:RANK_ALL`
+  - later `[RANK][DataFlowWriter]` for `slot=0x025AE9B0` or whatever source pair the new run reports
+- if source-origin value changes from packed to opaque or from old packed to new packed, resolve that writer RVA immediately; that writer is now the best candidate upstream of `0x20761` for real rank-id/subscore authoring, sentinel handling, and observed small deltas such as `-0x10/+0x20`
+
+## 202. 2026-04-25 next `DEBUG.txt`: upload keep works; source pair changes off owner-thread
+
+Latest log inspected:
+
+- `/mnt/d/SteamLibrary/steamapps/common/BlazBlue Centralfiction/BBCF_IM/DEBUG.txt`
+- run range:
+  - `BBCF_FIX START - 2026-04-25 18:10:48`
+  - `BBCF_FIX STOP - 2026-04-25 18:23:23`
+- tail shows clean shutdown
+
+What improved:
+
+- `source_origin_follow` armed correctly on the `0x20761` source pair:
+  - destination local slot `0x17514860`
+  - source pair `0x025AE800`
+  - source value `[0x00208A07,0x00000000]`
+  - copy writer `BBCF+0x00020761`
+- the previous patch worked:
+  - `source_origin_follow` stayed active through upload summary
+  - logs showed:
+    - `ignore_end_reason=UploadLeaderboardScore:RANK_ALL`
+    - `ignore_end_reason=RawUploadLeaderboardScore:RANK_ALL`
+  - it also stayed higher priority than repeated owner-field trace attempts through cycles 1-3
+
+What still failed:
+
+- no `[RANK][DataFlowWriter]` fired for the source slot itself
+- however `WriterParentPre` later proved the watched source pair changed anyway:
+  - early: `deferredSrc=0x025AE800 readable=1 src=[0x00208A07,0x00000000]`
+  - later: `deferredSrc=0x025AE800 readable=1 src=[0x00000017,0x025AE7DC]`
+- because no dataflow writer was logged while the value visibly changed, the likely miss is the trace thread filter:
+  - the guard trace was armed by the ranked/update thread
+  - source-pair lifetime/reuse likely happened on a different thread
+  - current VEH only records candidate/write context for `ownerThread`
+
+Patch made after this log:
+
+- `source_origin_follow` now records guard/single-step context from any thread:
+  - normal traces still use owner-thread filtering
+  - only source-origin tracing gets cross-thread observation
+- `KeepActiveRankedTraceEnd()` no longer keeps source-origin traces alive during `BBCF_IM_Shutdown`; shutdown should now print a real end summary with `guardHits`, `valueChanges`, and final value
+
+Next live-test target:
+
+- deploy new debug DLL
+- run another real ranked transition
+- inspect first for:
+  - `[RANK][DataFlowArm] tag=source_origin_follow ... srcPairBase=... packed_source=1`
+  - `[RANK][DataFlow] keep reason=source_origin_follow ... ignore_end_reason=UploadLeaderboardScore:RANK_ALL`
+  - first `[RANK][DataFlowWriter]` where `slot` is the source pair
+  - shutdown/end line for source-origin with nonzero `guardHits`
+- if the writer is now captured, resolve its `writer_rva` immediately; if the writer is still missing but `WriterParentPre` shows source value changes again, the next patch should add direct source-pair change logging at parent-pre with stack capture and then stop relying on page guards for this address
+
+## 203. 2026-04-25 next `DEBUG.txt`: source-origin trace survives, but page guard still misses source-pair reuse
+
+Latest log inspected:
+
+- `/mnt/d/SteamLibrary/steamapps/common/BlazBlue Centralfiction/BBCF_IM/DEBUG.txt`
+- analyzed newest run only:
+  - `BBCF_FIX START - 2026-04-25 18:25:32`
+  - `BBCF_FIX STOP - 2026-04-25 18:36:56`
+
+What this run proves:
+
+- owner-field tracing was no longer able to preempt `source_origin_follow`.
+- `0x20761` again copied an already-authoritative packed pair from a source pointer:
+  - destination local slot: `0x172FDF50`
+  - source pair: `0x00D5E508`
+  - source value: `[0x00208C07,0x00000000]`
+  - writer: `writer_rva=0x00020761`
+- the source-origin trace armed immediately after `writer_parent_22B25E_pre`:
+  - `[RANK][DataFlowArm] tag=source_origin_follow ... srcPairBase=0x00D5E508 src=[0x00208C07,0x00000000] writer_rva=0x00020761 packed_source=1`
+- it stayed alive through later owner-field attempts:
+  - repeated `keep reason=source_origin_follow ... ignore_new_reason=owner_field2610_follow`
+- shutdown now prints a real source-origin end summary:
+  - `[RANK][DataFlow] end reason=BBCF_IM_Shutdown slot=0x00D5E508 page=0x00D5E000 guardHits=0 valueChanges=0 last=[0x00208C07,0x00000000]`
+
+Most important negative result:
+
+- cross-thread observation did not fix the miss.
+- the watched source pair later visibly changed in parent-pre reads:
+  - early: `deferredSrc=0x00D5E508 readable=1 src=[0x00208C07,0x00000000]`
+  - later: `deferredSrc=0x00D5E508 readable=1 src=[0x00000017,0x00D5E4E4]`
+- but the source-origin page trace still ended with:
+  - `guardHits=0`
+  - `valueChanges=0`
+- therefore the source pair can be reused or changed without the current page-guard trace catching the writer. Do not rely on page guards alone for this address.
+
+What remains ruled out:
+
+- `0x20761` is still source-to-destination bulk copy only, not rank arithmetic.
+- `owner+0x2610` still already contains authoritative packed values by the time owner-field/materialization/upload copies run.
+- no new provider virtual evidence (`+0x58`, `+0x70`, `+0x74`) produced a fresh packed-shaped or sentinel-producing owner in this run.
+- `+0x5C` and `+0x7C` remain opaque/plumbing unless future logs show new packed-shaped values there.
+
+Patch made after this log:
+
+- added `LogRankedSourceOriginObservedChange()` in `src/Hooks/hooks_bbcf.cpp`.
+- `LogRankUploadWriterCallerPre()` now calls it after reading `g_deferredSourcePairFollowAddr`.
+- it logs `[RANK][SourceOriginObserved]` only when the deferred source pair first appears or changes and is interesting:
+  - old/new pair values
+  - whether old/new pair is packed-shaped
+  - whether active `source_origin_follow` still targets that address
+  - current guard/value-change counts
+  - trace last value
+  - `ecx`, thread id, and short backtrace RVAs
+- this is intentionally direct observation at the parent-pre timing anchor, because the page guard missed the value change.
+
+Build result:
+
+- command:
+  - `"/mnt/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe" BBCF_IM.sln /m /p:Configuration=Debug /p:Platform=Win32 /p:PlatformToolset=v143`
+- result:
+  - `Build succeeded.`
+  - `0 Error(s)`
+  - existing warning only: `hooks_bbcf.cpp(...): warning C4102: 'NOT_CUSTOM_PACKET': unreferenced label`
+
+Exact next test:
+
+- deploy `bin/Debug/dinput8.dll`
+- run one real ranked transition long enough to reach upload/end
+- inspect newest `DEBUG.txt` first for:
+  - `[RANK][DataFlowArm] tag=source_origin_follow ... srcPairBase=... src=[packed,0x00000000] ... packed_source=1`
+  - `[RANK][SourceOriginObserved] ... old=[0x00208C07,0x00000000] new=[...]`
+  - the following `[RANK][SourceOriginObserved] bt_* ... bbcf_rva=...` lines
+  - any `[RANK][DataFlowWriter]` for the same `srcPairBase`
+- if `SourceOriginObserved` catches packed-to-packed or packed-to-pointer transition, use the backtrace/caller RVAs to instrument the immediate parent/callee around that transition next.
+- if `DataFlowWriter` finally catches a writer, resolve `writer_rva` immediately and statically reverse that function for:
+  - first authoritative `rank_id << 16 | subscore` write
+  - `0x7FFF` reset/sentinel handling
+  - actual observed deltas such as `-0x10/+0x20` or previous `+-256/+-512/+-1024`, without assuming one fixed delta model
+
+## 204. 2026-04-25 next `DEBUG.txt`: direct source observation catches packed reauthoring, but only at parent boundary
+
+Latest log inspected:
+
+- `/mnt/d/SteamLibrary/steamapps/common/BlazBlue Centralfiction/BBCF_IM/DEBUG.txt`
+- analyzed newest run only:
+  - `BBCF_FIX START - 2026-04-25 18:41:42`
+  - `BBCF_FIX STOP - 2026-04-25 18:53:10`
+
+What this run proves:
+
+- `source_origin_follow` armed on the `0x20761` source pair:
+  - destination local slot: `0x16B8B148`
+  - source pair: `0x003CEA34`
+  - source value: `[0x00208A07,0x00000000]`
+  - copy writer: `writer_rva=0x00020761`
+- the page-guard writer trace still did not catch source-pair writes:
+  - shutdown ended source-origin trace with `guardHits=0 valueChanges=0 last=[0x00208A07,0x00000000]`
+- the direct source observer did catch the same source pair changing:
+  - first source observation: `[0x00208A07,0x00000000]`
+  - later false-positive pointer-shaped value: `[0x003CEA0C,0x00000000]`
+  - later authoritative packed value: `[0x00208E07,0x00000000]`
+- the important packed reauthoring line was:
+  - `[RANK][SourceOriginObserved] stage=writer_parent_22B25E_pre cycle=3 srcPairBase=0x003CEA34 old=[0x003CEA0C,0x1167E77A] new=[0x00208E07,0x00000000] oldPacked=0 newPacked=1 activeTrace=1 guardHits=0 valueChanges=0`
+
+Timing correlation:
+
+- just before the new packed value, parent/state logs still showed slot/source around `0x00208C07`.
+- immediately after, both writer-parent and state-machine logs showed:
+  - `slot=[0x00208E07,0x00000000]`
+  - `slot118=[0x00208E07,0x00000000]`
+- this means the authoritative packed value was already on the ranked table/state object before downstream state1/state2/phase3/stage8/packselect paths:
+  - `1E980Delta state1` had `pre_slot=[0x00208E07,0]`
+  - `Stage8Copy` later copied `src10=[0x00208E07,0]`
+  - `packselect` later mirrored `post_src10=[0x00208E07,0]`
+
+Static stack resolution from the source observer:
+
+- stable BBCF frames were:
+  - `BBCF+0x0014FBF4`
+  - `BBCF+0x0004F281`
+  - `BBCF+0x00083065`
+  - `BBCF+0x0004EDBB`
+  - `BBCF+0x003A5675`
+- `0x14FBF4` is a virtual-call site in a higher scheduler object:
+  - `mov eax,[edi+18]`
+  - `lea ecx,[edi+18]`
+  - `call dword ptr [eax]`
+- `0x4F281` is another generic callback/task loop call-return point around `call edi`.
+- `0x83065` is service/shutdown/session infrastructure after a virtual call from global `0x00C929C8`.
+- `0x4EDBB` is still the previously decoded `00482C00` service-init call return.
+- `0x3A5675` is runtime/CRT-style startup wrapper after `call 0044EB10`.
+- none of these stack frames is direct packed-rank arithmetic; they are timing parents.
+
+Patch made after this log:
+
+- added per-stage pre-source storage for writer-parent stages.
+- `LogRankUploadWriterCallerPost()` now compares deferred source pair before vs after each parent call and logs:
+  - `[RANK][WriterParentSourceDelta] stage=... srcPairBase=... pre=[...] post=[...] ... slot=[...]`
+- goal is to identify whether the mutation to `0x00208E07` happens inside the `22AD86` call, inside the `22B25E` call, or was already present before both.
+
+Build result:
+
+- command:
+  - `"/mnt/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe" BBCF_IM.sln /m /p:Configuration=Debug /p:Platform=Win32 /p:PlatformToolset=v143`
+- result:
+  - `Build succeeded.`
+  - `0 Error(s)`
+  - existing warning only: `hooks_bbcf.cpp(...): warning C4102: 'NOT_CUSTOM_PACKET': unreferenced label`
+
+Exact next test:
+
+- deploy `bin/Debug/dinput8.dll`
+- run one real ranked transition
+- inspect newest `DEBUG.txt` first for:
+  - `[RANK][DataFlowArm] tag=source_origin_follow ... srcPairBase=... packed_source=1`
+  - `[RANK][WriterParentSourceDelta] stage=writer_parent_22AD86 ... post=[0x0020....,0x00000000]`
+  - `[RANK][WriterParentSourceDelta] stage=writer_parent_22B25E ... post=[0x0020....,0x00000000]`
+  - `[RANK][SourceOriginObserved] ... new=[0x0020....,0x00000000]`
+- if `WriterParentSourceDelta` names `22AD86`, instrument inside/around `BBCF+0x22AD86`'s target path next.
+- if it names `22B25E`, instrument inside/around `BBCF+0x22B25E`'s target path next.
+- if neither parent call delta fires but `SourceOriginObserved` still sees a packed value later, the mutation happened between parent callbacks; use the same source pair but add a short interval poll around the `0x14FBF4` virtual call boundary.
+
+## 205. 2026-04-25 follow-up: `WriterParentSourceDelta` was throttled out
+
+Latest check:
+
+- same newest log:
+  - `BBCF_FIX START - 2026-04-25 18:41:42`
+  - `BBCF_FIX STOP - 2026-04-25 18:53:10`
+- `SourceOriginObserved` fired many times and caught the important packed reauthoring.
+- `WriterParentSourceDelta` did not appear at all.
+
+Reason:
+
+- `LogRankUploadWriterCallerPost()` returned after 4 post logs per parent stage per cycle.
+- the packed reauthoring happened much later in cycle 3.
+- `LogRankUploadWriterCallerPre()` still ran every call, so `SourceOriginObserved` caught it.
+- post-delta comparison was placed after the throttle, so it never ran at the important moment.
+
+Patch made:
+
+- moved the `WriterParentSourceDelta` comparison before the `WriterParent` post-log throttle.
+- kept the existing noisy `WriterParent` / stack logging capped at 4 hits per cycle.
+- result: next run should still avoid huge post backtrace spam, but source-pair pre/post deltas should be visible for late-cycle calls.
+
+Exact next test:
+
+- build and deploy `bin/Debug/dinput8.dll`.
+- run one real ranked transition.
+- inspect newest `DEBUG.txt` for:
+  - `[RANK][WriterParentSourceDelta] stage=writer_parent_22AD86 ...`
+  - `[RANK][WriterParentSourceDelta] stage=writer_parent_22B25E ...`
+  - matching `[RANK][SourceOriginObserved] ... new=[0x0020....,0x00000000]`
+- if one parent stage reports the packed transition, instrument inside that stage's target next.
+- if deltas still do not appear while `SourceOriginObserved` catches the transition, add interval polling around the `BBCF+0x14FBF4` virtual-call boundary because mutation is happening between the two parent hook post points.
+
+## 206. 2026-04-25 next `DEBUG.txt`: parent delta patch worked; source-origin is stack scratch, not threshold owner
+
+Latest log inspected:
+
+- `/mnt/d/SteamLibrary/steamapps/common/BlazBlue Centralfiction/BBCF_IM/DEBUG.txt`
+- analyzed newest run:
+  - `BBCF_FIX START - 2026-04-25 19:04:10`
+  - `BBCF_FIX STOP - 2026-04-25 19:11:29`
+
+What this run proves:
+
+- previous patch worked: `WriterParentSourceDelta` now appears.
+- the important lines:
+  - `WriterParentSourceDelta stage=writer_parent_22AD86 cycle=3 srcPairBase=0x0075E9C4 pre=[0x0075E99C,0x1167E77A] post=[0x00208E09,0x00000000]`
+  - `WriterParentSourceDelta stage=writer_parent_22B25E cycle=3 srcPairBase=0x0075E9C4 pre=[0x0075E99C,0x1167E77A] post=[0x00208E09,0x00000000]`
+  - matching `SourceOriginObserved ... new=[0x00208E09,0x00000000]`
+- because both parent stages report the same transition and `22AD86` is the inner call, mutation happens during the `22AD86` target window, which is `BBCF+0x0A8190`.
+
+Important correction:
+
+- the watched `srcPairBase=0x0075E9C4` is stack/scratch memory.
+- the earlier `DataFlowWriter` showed `BBCF+0x20761` copying from that scratch source into a local slot:
+  - `new=[0x00208E09,0] writer_rva=0x00020761`
+  - stack included `BBCF+0x000A84C5`, inside `0x0A8190`
+- static `0x0A8190` confirms this area consumes already-authored packed value from upload object/state and builds call buffers.
+- therefore `source_origin_follow` is not threshold logic. It is a useful timing anchor, but it should not outrank owner-field tracing anymore.
+
+Other key fact:
+
+- `owner+0x2610` was already `0x00208E09` in first provider-dispatch logs around `19:07:07`.
+- so current owner-field arm point is still late for first authoring.
+- however source-origin currently monopolizes the page tracer and blocks later owner-field attempts, so next run should prioritize owner-field tracing.
+
+Patch made:
+
+- `owner_field2610_follow` priority raised above `source_origin_follow`.
+  - owner priority is now `6`
+  - source-origin priority remains `5`
+- `KeepActiveRankedTraceEnd()` now preserves owner-field traces through upload summaries like source-origin traces.
+- match-cycle begin now preserves owner-field traces too.
+
+Exact next test:
+
+- build and deploy `bin/Debug/dinput8.dll`.
+- run one real ranked transition.
+- inspect newest `DEBUG.txt` for:
+  - `[RANK][DataFlow] begin reason=owner_field2610_follow ...`
+  - no repeated `keep reason=source_origin_follow ... ignore_new_reason=owner_field2610_follow`
+  - any `[RANK][DataFlowWriter]` for owner slot `owner+0x2610`
+- if owner trace still begins only after the packed value is already final, next patch should find an earlier owner-allocation/materialization point rather than further chasing stack source-origin buffers.
+
+## 207. 2026-04-25 next `DEBUG.txt`: owner trace is still late; protect state slot `+0x118`
+
+Latest log inspected:
+
+- `/mnt/d/SteamLibrary/steamapps/common/BlazBlue Centralfiction/BBCF_IM/DEBUG.txt`
+- analyzed newest run:
+  - `BBCF_FIX START - 2026-04-25 19:13:38`
+  - `BBCF_FIX STOP - 2026-04-25 19:27:49`
+
+What this run proves:
+
+- owner priority patch worked: source-origin no longer blocks owner tracing.
+- owner trace begins and survives upload summaries:
+  - `begin reason=owner_field2610_follow cycle=1 slot=0x173997A0 ... cur=[0x00208E09,0]`
+  - shutdown summary: `guardHits=762913 valueChanges=0 last=[0x00208E09,0]`
+- but owner trace is still too late: `owner+0x2610` already contains final `0x00208E09` before first owner arm.
+
+Earlier producer evidence:
+
+- state/table slot `state+0x118` is already final before owner/write/upload:
+  - `CallCluster stage=post_1FEA0 ... slot=[0x00208E09,0]`
+  - `1E980Delta stage=state2 ... pre_slot=[0x00208E09,0] post_src10=[0x00208E09,0]`
+  - later `WritePacked ... RANK_ALL ... srcSlot=0x173940C8 ... cur=[0x00208E09,0]`
+- this means state2/state3/owner/write/upload are downstream; threshold output enters the table slot before these phases.
+
+Patch made:
+
+- added protected state-slot trace reasons:
+  - `state_machine_first_seen_window`
+  - `first_out_of_match_after_inmatch_window`
+- these now outrank owner/source traces with priority `7`.
+- `KeepActiveRankedTraceEnd()` preserves these state-slot traces through upload summaries.
+- same-slot continuation now survives cycle changes for these protected state-slot traces.
+
+Exact next test:
+
+- build and deploy `bin/Debug/dinput8.dll`.
+- run one real ranked transition.
+- inspect newest `DEBUG.txt` for:
+  - `keep reason=first_out_of_match_after_inmatch_window` or `state_machine_first_seen_window`
+  - first `[RANK][DataFlowWriter]` for `slot=state+0x118`
+  - whether writer is still `writer_rva=0x00020761` or an earlier non-copy producer
+- if it is still `0x20761`, stop chasing `owner+0x2610` and instrument the `0x0A8190` call path that feeds this table slot.
+
+## 208. 2026-04-25 next `DEBUG.txt`: state slot trace worked; first table writer is still `0x20761`
+
+Latest log inspected:
+
+- `/mnt/d/SteamLibrary/steamapps/common/BlazBlue Centralfiction/BBCF_IM/DEBUG.txt`
+- analyzed newest run:
+  - `BBCF_FIX START - 2026-04-25 19:40:35`
+  - `BBCF_FIX STOP - 2026-04-25 19:45:46`
+
+What this run proves:
+
+- state-slot protection worked in cycle 1:
+  - `begin reason=first_out_of_match_after_inmatch_window cycle=1 slot=0x17500FB0 cur=[0,0]`
+  - owner/source attempts were ignored while this protected trace was active.
+- first write to `state+0x118` was still the known copy site:
+  - `slot=0x17500FB0 old=[0,0] new=[0x00208E09,0]`
+  - `writer_rva=0x00020761`
+  - `srcPairBase=0x00E8EBC8 src=[0x00208E09,0]`
+  - stack includes `BBCF+0x000A84C5`, with caller `BBCF+0x0022AD81 -> BBCF+0x000A8190`
+- therefore `state+0x118` is downstream too; `0x20761` only copies a packed scratch/source pair into the state table.
+
+Additional issue found:
+
+- the state-slot trace still ended at `match_cycle_begin`:
+  - `end reason=match_cycle_begin slot=0x17500FB0 ... valueChanges=1`
+- `RankedProbeTickFrameState()` preserved source-origin and owner traces there, but not the new state-slot trace reason.
+
+Patch made:
+
+- fixed `match_cycle_begin` preservation to include `IsStateSlotRankedTraceReason()`.
+- added two tight `0x0A8190` call-site probes:
+  - `RankUploadA8190Virtual10Trace` at `BBCF+0x000A84B8`
+  - `RankUploadA8190Virtual0CTrace` at `BBCF+0x000A84C1`
+- new log line:
+  - `[RANK][A8190Virtual] stage=a8190_v10_pre/post or a8190_v0c_pre/post ...`
+- it records:
+  - `g_deferredSourcePairFollowAddr`
+  - current deferred source pair
+  - `0x0A8190` frame locals around `ebp-0x1218`, `ebp-0x1220`, `ebp-0x1224`, `ebp-0x1210`
+  - the pair pointed to by `[ebp-0x1218]`
+  - active trace slot/reason
+
+Exact next test:
+
+- build and deploy `bin/Debug/dinput8.dll`.
+- run one real ranked transition.
+- inspect newest `DEBUG.txt` for:
+  - `[RANK][A8190Virtual] stage=a8190_v10_pre`
+  - `[RANK][A8190Virtual] stage=a8190_v10_post`
+  - `[RANK][A8190Virtual] stage=a8190_v0c_pre`
+  - `[RANK][A8190Virtual] stage=a8190_v0c_post`
+- if the source pair becomes packed between `v10_pre/post`, target the `[eax+0x10]` callee.
+- if it becomes packed between `v0c_pre/post`, target the `[ebx+0x0C]` callee.
+- if it is already packed before `v10_pre`, the producer is earlier than this virtual-call sequence and the next target should move before `004A8472`.
