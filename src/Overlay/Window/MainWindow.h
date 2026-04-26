@@ -17,6 +17,7 @@ struct RankedProgressOverlaySnapshot
 	uint32_t previousRank = 0;
 	uint32_t nextRank = 0;
 	uint32_t currentLp = 0;
+	uint32_t lowerThreshold = 0;
 	uint32_t nextThreshold = 0;
 	uint32_t remainingLp = 0;
 	uint32_t rawPackedField00 = 0;

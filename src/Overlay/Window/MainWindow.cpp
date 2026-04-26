@@ -41,6 +41,59 @@ namespace
 	constexpr size_t kRankedCharSeleStaticSize = 0x1BC0;
 	constexpr uintptr_t kRankedTableBaseFnRva = 0x0009D5C0;
 	constexpr uint32_t kInvalidRankedCharacterId = 0xFFFFFFFFu;
+	constexpr int32_t kRankedLpBase = 0x7FFF;
+
+	struct RankedLpBoundsTableEntry
+	{
+		int16_t upperOffset;
+		int16_t lowerOffset;
+		int16_t unknown4;
+		int16_t counterLimit;
+	};
+
+	// Transcribed from BBCF.exe DAT_009DFFD0. The game indexes this as rank_id * 8.
+	constexpr RankedLpBoundsTableEntry kRankedLpBoundsTable[] = {
+		{ 100, 0, 0, 0 },
+		{ 100, 0, 0, 0 },
+		{ 100, 0, 0, 0 },
+		{ 100, 0, 0, 0 },
+		{ 100, 0, 0, 0 },
+		{ 100, 0, 0, 0 },
+		{ 100, 0, 0, 0 },
+		{ 100, 0, 0, 0 },
+		{ 100, 0, 0, 0 },
+		{ 100, 0, 0, 0 },
+		{ 2048, -5120, 3072, 0 },
+		{ 2048, -5120, 3072, 0 },
+		{ 2048, -5120, 3072, 0 },
+		{ 2048, -5120, 3072, 0 },
+		{ 3072, -5120, 4096, 0 },
+		{ 3072, -5120, 4096, 0 },
+		{ 3072, -5120, 4096, 0 },
+		{ 3072, -5120, 4096, 0 },
+		{ 4096, -5120, 5120, 5 },
+		{ 4096, -5120, 5120, 5 },
+		{ 4096, -5120, 5120, 5 },
+		{ 4096, -5120, 5120, 5 },
+		{ 4096, -5120, 5120, 5 },
+		{ 5120, -5120, 5120, 5 },
+		{ 5120, -5120, 5120, 5 },
+		{ 5120, -5120, 5120, 5 },
+		{ 5120, -5120, 5120, 5 },
+		{ 5120, -5120, 5120, 5 },
+		{ 6144, -5120, 6144, 5 },
+		{ 6144, -5120, 6144, 5 },
+		{ 6144, -5120, 6144, 5 },
+		{ 6144, -5120, 6144, 5 },
+		{ 6144, -5120, 6144, 5 },
+		{ 7168, -5120, 7168, 5 },
+		{ 8192, -5120, 8192, 5 },
+		{ 8192, -5120, 20480, 5 },
+		{ 9216, -5120, 20480, 5 },
+		{ 10240, -5120, 20480, 5 },
+		{ 15360, -5120, 20480, 5 },
+		{ 5120, -5120, 20480, 5 },
+	};
 
 	struct RankedOverlayTuning
 	{
@@ -106,6 +159,7 @@ namespace
 			uint32_t characterId = kInvalidRankedCharacterId;
 			uint32_t visibleRank = 0;
 			uint32_t currentLp = 0;
+			uint32_t lowerThreshold = 0;
 			uint32_t nextThreshold = 0;
 			uint32_t rawPackedField00 = 0;
 			uint32_t packedSubscore = 0;
@@ -209,6 +263,80 @@ namespace
 				before.metadataNextRank != after.metadataNextRank;
 		}
 
+	bool TryGetRankedLpBounds(uint32_t internalRank, uint32_t* outLowerBound, uint32_t* outUpperBound, int16_t* outCounterLimit)
+	{
+		if (internalRank >= (sizeof(kRankedLpBoundsTable) / sizeof(kRankedLpBoundsTable[0])))
+		{
+			return false;
+		}
+
+		const RankedLpBoundsTableEntry& entry = kRankedLpBoundsTable[internalRank];
+		const int32_t lowerBound = kRankedLpBase + entry.lowerOffset;
+		const int32_t upperBound = kRankedLpBase + entry.upperOffset;
+		if (lowerBound < 0 || upperBound <= lowerBound)
+		{
+			return false;
+		}
+
+		if (outLowerBound)
+		{
+			*outLowerBound = static_cast<uint32_t>(lowerBound);
+		}
+		if (outUpperBound)
+		{
+			*outUpperBound = static_cast<uint32_t>(upperBound);
+		}
+		if (outCounterLimit)
+		{
+			*outCounterLimit = entry.counterLimit;
+		}
+		return true;
+	}
+
+	float ComputeRankedLpProgress(uint32_t currentLp, uint32_t lowerBound, uint32_t upperBound)
+	{
+		if (upperBound <= lowerBound)
+		{
+			return 0.0f;
+		}
+
+		const float progress = (static_cast<float>(currentLp) - static_cast<float>(lowerBound)) /
+			static_cast<float>(upperBound - lowerBound);
+		if (progress < 0.0f)
+		{
+			return 0.0f;
+		}
+		if (progress > 1.0f)
+		{
+			return 1.0f;
+		}
+		return progress;
+	}
+
+	void ApplyRankedLpBoundsToDisplayState(uint32_t internalRank, RankedProgressDisplayState* state)
+	{
+		if (!state)
+		{
+			return;
+		}
+
+		uint32_t lowerBound = 0;
+		uint32_t upperBound = 0;
+		if (!state->isUnranked && TryGetRankedLpBounds(internalRank, &lowerBound, &upperBound, nullptr))
+		{
+			state->lowerThreshold = lowerBound;
+			state->nextThreshold = upperBound;
+			state->thresholdKnown = true;
+			state->progress = ComputeRankedLpProgress(state->currentLp, lowerBound, upperBound);
+			return;
+		}
+
+		state->lowerThreshold = 0u;
+		state->nextThreshold = 0u;
+		state->thresholdKnown = false;
+		state->progress = 0.0f;
+	}
+
 	void ApplyUploadedLpToDisplayState(const RankedUploadOverlayState& uploadState, RankedProgressDisplayState* state)
 	{
 		if (!state)
@@ -221,9 +349,7 @@ namespace
 		state->rawPackedField00 = (uploadState.internalRank & 0xFFFFu) | ((uploadState.subscore & 0xFFFFu) << 16);
 		state->packedSubscore = uploadState.subscore;
 		state->currentLp = state->isUnranked ? 0u : uploadState.subscore;
-		state->nextThreshold = 0u;
-		state->thresholdKnown = false;
-		state->progress = 0.0f;
+		ApplyRankedLpBoundsToDisplayState(uploadState.internalRank, state);
 		state->lpFromUpload = true;
 		state->valid = true;
 	}
@@ -633,9 +759,24 @@ namespace
 		outSnapshot->debugFieldF4 = *reinterpret_cast<const uint32_t*>(rowObject + 0xF4);
 		outSnapshot->isUnranked = outSnapshot->currentRank == 0;
 		outSnapshot->currentLp = outSnapshot->isUnranked ? 0u : outSnapshot->packedSubscore;
-		outSnapshot->nextThreshold = 0u;
-		outSnapshot->remainingLp = 0u;
-		outSnapshot->progress = 0.0f;
+		if (!outSnapshot->isUnranked &&
+			TryGetRankedLpBounds(outSnapshot->currentRank, &outSnapshot->lowerThreshold, &outSnapshot->nextThreshold, nullptr))
+		{
+			outSnapshot->remainingLp = outSnapshot->nextThreshold > outSnapshot->currentLp
+				? (outSnapshot->nextThreshold - outSnapshot->currentLp)
+				: 0u;
+			outSnapshot->progress = ComputeRankedLpProgress(
+				outSnapshot->currentLp,
+				outSnapshot->lowerThreshold,
+				outSnapshot->nextThreshold);
+		}
+		else
+		{
+			outSnapshot->lowerThreshold = 0u;
+			outSnapshot->nextThreshold = 0u;
+			outSnapshot->remainingLp = 0u;
+			outSnapshot->progress = 0.0f;
+		}
 		MaybeLogRankedRowDump(rowIndex, rowObject, *outSnapshot);
 		const uint32_t visibleRank = InternalRankToVisibleRank(outSnapshot->currentRank, outSnapshot->isUnranked);
 		outSnapshot->currentRank = visibleRank;
@@ -653,6 +794,7 @@ namespace
 			state.characterId = snapshot.rowIndex;
 			state.visibleRank = snapshot.currentRank;
 			state.currentLp = snapshot.currentLp;
+			state.lowerThreshold = snapshot.lowerThreshold;
 			state.nextThreshold = 0u;
 			state.rawPackedField00 = snapshot.rawPackedField00;
 			state.packedSubscore = snapshot.packedSubscore;
@@ -660,7 +802,9 @@ namespace
 			state.rawField10 = snapshot.rawField10;
 			state.rawField20 = snapshot.rawField20;
 			state.metadataNextRank = snapshot.metadataNextRank;
-			state.progress = 0.0f;
+			state.progress = snapshot.progress;
+			const uint32_t internalRank = VisibleRankToInternalRank(snapshot.currentRank);
+			ApplyRankedLpBoundsToDisplayState(internalRank, &state);
 			state.lpFromUpload = true;
 			return state;
 		}
@@ -723,10 +867,9 @@ namespace
 			outState->characterId = characterId;
 			outState->visibleRank = uploadState->visibleRank;
 			outState->currentLp = uploadState->subscore;
-			outState->nextThreshold = 0u;
 			outState->rawPackedField00 = (uploadState->internalRank & 0xFFFFu) | ((uploadState->subscore & 0xFFFFu) << 16);
 			outState->packedSubscore = uploadState->subscore;
-			outState->progress = 0.0f;
+			ApplyRankedLpBoundsToDisplayState(uploadState->internalRank, outState);
 			return true;
 		}
 
@@ -1096,6 +1239,7 @@ namespace
 			outState->characterId = g_rankedProgressAnimation.target.characterId;
 			outState->visibleRank = g_rankedProgressAnimation.target.visibleRank;
 			outState->currentLp = LerpUint(g_rankedProgressAnimation.source.currentLp, g_rankedProgressAnimation.target.currentLp, t);
+			outState->lowerThreshold = g_rankedProgressAnimation.target.lowerThreshold;
 			outState->nextThreshold = std::max<uint32_t>(g_rankedProgressAnimation.target.nextThreshold, 1u);
 			outState->progress = LerpFloat(g_rankedProgressAnimation.source.progress, g_rankedProgressAnimation.target.progress, t);
 		}
@@ -1110,7 +1254,8 @@ namespace
 				outState->characterId = g_rankedProgressAnimation.source.characterId;
 				outState->visibleRank = g_rankedProgressAnimation.source.visibleRank;
 				outState->currentLp = LerpUint(g_rankedProgressAnimation.source.currentLp,
-					rankUp ? g_rankedProgressAnimation.source.nextThreshold : 0u, t);
+					rankUp ? g_rankedProgressAnimation.source.nextThreshold : g_rankedProgressAnimation.source.lowerThreshold, t);
+				outState->lowerThreshold = g_rankedProgressAnimation.source.lowerThreshold;
 				outState->nextThreshold = std::max<uint32_t>(g_rankedProgressAnimation.source.nextThreshold, 1u);
 				outState->progress = LerpFloat(g_rankedProgressAnimation.source.progress, rankUp ? 1.0f : 0.0f, t);
 				if (outPhase)
@@ -1126,8 +1271,9 @@ namespace
 				outState->isUnranked = g_rankedProgressAnimation.target.isUnranked;
 				outState->characterId = g_rankedProgressAnimation.target.characterId;
 				outState->visibleRank = g_rankedProgressAnimation.target.visibleRank;
-				outState->currentLp = LerpUint(rankUp ? 0u : g_rankedProgressAnimation.target.nextThreshold,
+				outState->currentLp = LerpUint(rankUp ? g_rankedProgressAnimation.target.lowerThreshold : g_rankedProgressAnimation.target.nextThreshold,
 					g_rankedProgressAnimation.target.currentLp, t);
+				outState->lowerThreshold = g_rankedProgressAnimation.target.lowerThreshold;
 				outState->nextThreshold = std::max<uint32_t>(g_rankedProgressAnimation.target.nextThreshold, 1u);
 				outState->progress = LerpFloat(rankUp ? 0.0f : 1.0f, g_rankedProgressAnimation.target.progress, t);
 				if (outPhase)
@@ -1514,25 +1660,14 @@ bool TriggerRankedProgressAutomationAnimation(uint32_t characterId, int32_t lpDe
 	RankedProgressDisplayState targetState = sourceState;
 	const int32_t rawTargetLp = static_cast<int32_t>(sourceState.currentLp) + lpDelta;
 	targetState.currentLp = rawTargetLp > 0 ? static_cast<uint32_t>(rawTargetLp) : 0u;
-	if (targetState.nextThreshold == 0u)
-	{
-		targetState.nextThreshold = std::max<uint32_t>(sourceState.nextThreshold, sourceState.currentLp + 1u);
-	}
 	if (targetState.currentLp > targetState.nextThreshold)
 	{
 		targetState.nextThreshold = targetState.currentLp + 100u;
 	}
-	targetState.progress = targetState.nextThreshold > 0
-		? static_cast<float>(targetState.currentLp) / static_cast<float>(targetState.nextThreshold)
-		: 0.0f;
-	if (targetState.progress < 0.0f)
-	{
-		targetState.progress = 0.0f;
-	}
-	else if (targetState.progress > 1.0f)
-	{
-		targetState.progress = 1.0f;
-	}
+	targetState.progress = ComputeRankedLpProgress(
+		targetState.currentLp,
+		targetState.lowerThreshold,
+		targetState.nextThreshold);
 
 	const uint64_t serial = ++g_rankedUploadCompletionSerial;
 	StartRankedProgressAnimation(sourceState, targetState, lpDelta, serial);
