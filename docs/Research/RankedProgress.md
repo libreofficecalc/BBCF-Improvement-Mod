@@ -12027,3 +12027,483 @@ Exact next test:
 - if the source pair becomes packed between `v10_pre/post`, target the `[eax+0x10]` callee.
 - if it becomes packed between `v0c_pre/post`, target the `[ebx+0x0C]` callee.
 - if it is already packed before `v10_pre`, the producer is earlier than this virtual-call sequence and the next target should move before `004A8472`.
+
+## 209. 2026-04-25 — static analysis + rank-change instrumentation patch
+
+### Static binary analysis
+
+Searched BBCF.exe for the delta computation code described by the verified delta table:
+
+- Lookup table `[1024, 512, 256, 128, 64, 32, 16, 8, 4, 2, 1]` as consecutive uint32 → **not found**
+- `shr r32, cl` near 1024 constant and clamp-10 pattern → **not found**
+- `neg r32` + `shr r32, cl` near 1024 → **not found**
+- `mov esi, 1024` at RVA `0x000A8FCF` (inside 0x0A8190): context is flag/bitmask construction (not rank delta)
+- `mov edi, 1024` at RVA `0x00033409` (near Producer33C00): context is unrelated
+
+Conclusion: **delta computation is server-side**. Auth blob at 0x0174D190 is a read-only
+session cache populated from Steam leaderboard at session start. No local rank computation
+exists in the binary.
+
+### Delta formula derived from observed data
+
+```
+diff = opponentRank - playerRank
+win_delta  = +(1024 >> clamp(max(0, -diff), 0, 10))
+loss_delta = -(1024 >> clamp(abs(diff),     0, 10))
+```
+
+Verified against all provided data points. The win/loss asymmetry at diff+1 is
+explained by using `-diff` for win shift and `abs(diff)` for loss shift.
+
+### Rank ladder correction
+
+Prior "34-rank system" was wrong. 34 = overlay state count, not rank count.
+Actual ladder: AUTH, LV1–LV35, then named ranks (Leader/Hero/Kishin/Hades/etc.).
+
+### Patches applied
+
+Four changes to `hooks_bbcf.cpp`:
+
+1. **`LogRankedTableRowDeltaSummary`** — added `[RANK][AuthBlobDelta]` log after every
+   `TableDiff` entry with explicit: bRank, aRank, rankDelta, bSub, aSub, subDelta.
+
+2. **`LogAuthoritativeRankedTableSummary`** — bumped `authoritative_row_packed00_follow`
+   VEH trace budget from 4 to 20 (catches more auth blob writes across sessions).
+
+3. **`RankedProbeTickFrameState`** — added `[RANK][AuthBlobMatchExit]` log when leaving
+   InMatch state. Logs packed00 for selectors 24 and 21 plus raw `matchRoundsRaw`.
+   Establishes post-match baseline for cross-session delta confirmation.
+
+4. **`HookedRankMenuBlobApply`** (Producer33C00) — increased `s_budget` 24→100 and
+   relaxed `interesting` filter to include any call when `matchCycleCount > 0`.
+
+Build result: 0 Error(s), 59 Warning(s) (pre-existing).
+
+### Exact next test
+
+Deploy `bin/Debug/dinput8.dll`.
+
+**PRIORITY: Force a rank change.** Play a ranked match that results in a rank-up or rank-down.
+Then start a NEW session. The new `DEBUG.txt` should contain at the very start:
+
+- `[RANK][TableDiff] tag=authoritative_prev_to_cur selector=24 beforePacked=... afterPacked=...`
+- `[RANK][AuthBlobDelta] tag=authoritative_prev_to_cur selector=24 ... subDelta=±N`
+- `[RANK][DataFlowWriter] reason=authoritative_row24_zero_packed00 ... writer_rva=...`
+- `[RANK][AuthBlobMatchExit] cycle=N selector=24 ...` (from previous session's exit)
+
+If no rank change occurred: `AuthBlobMatchExit` still confirms the baseline, but `TableDiff`
+will show only sentinel→current (same value as before).
+
+The `AuthBlobDelta.subDelta` should match one of the delta table entries above.
+The `DataFlowWriter.writer_rva` will identify the memcpy instruction (bulk leaderboard copy).
+
+If a `[RANK][DataFlowWriter]` appears BETWEEN matches (not at session start), that would
+indicate local computation — investigate that writer_rva immediately.
+
+## 210. 2026-04-26 — Two rank-up debug sessions; local computation confirmed; computation chain pinned
+
+### Context
+
+Two rank-up sessions captured and analyzed:
+1. **Bullet LV28→LV29** (DEBUG.txt, 608 K lines, session 2026-04-25)
+2. **Kokonoe LV33→LV34** (DEBUG - KOKONOE RANKUP LV33 TO LV34.txt, 339 K lines, session 2026-04-26)
+
+Operator also provided a manually recorded LP table (full session cross-reference).
+
+### Critical correction: auth blob is NOT read-only
+
+Prior conclusion was wrong. `AuthBlobMatchExit` polling proved the auth blob at
+`0x0174D190` updates after **every** match within the same session. The LP delta and
+rank-up/down decision are computed **locally in BBCF.exe**, not server-side.
+
+Bullet session subscore progression (selector=21, rank_id=27=LV28):
+```
+session start: 34365
+C4: +1024 → 35389
+C5: +1024 → 36413
+C6: -512  → 35901
+...
+C12: sub=37437 (no rank-up)
+C13: rank_id=28, sub=0x7FFF → RANK UP
+C14: +1024 → 33791
+```
+
+### Computation chain (confirmed)
+
+```
+BBCF+0x0022B25E  →  writes new canonical packed rank to source pair buffer (session-heap addr)
+                     [0x00217FFF,0x00000000] for rank-up cycle; ECX=0x01CE1A1C
+BBCF+0x0014FBF4  →  called by 0x0022B25E; backtrace anchor for the actual write
+BBCF+0x00020761  →  reads source pair; writes canonical packed value to state machine slot
+BBCF+0x000205A7  →  reads state machine slot; writes to owner+0x2610  (known copy endpoint)
+```
+
+Sibling: `BBCF+0x0022AD86` probed alongside 0x0022B25E; fires on non-rank-up cycles.
+
+Call backtrace from `SourceOriginObserved` (consistent across all cycles):
+```
+bt_3: BBCF+0x0014FBF4
+bt_4: BBCF+0x0004F281
+bt_5: BBCF+0x00083065
+bt_6: BBCF+0x0004EDBB
+bt_7: BBCF+0x003A5675
+```
+
+### Rank-up threshold ranges
+
+From manual LP log and AuthBlobMatchExit observations:
+
+| Rank transition | Last non-triggering LP | Triggering delta | Post-rank LP |
+|---|---|---|---|
+| LV28→LV29 (rank_id 27→28) | 37437 | +1024 | 0x7FFF=32767 |
+| LV33→LV34 (rank_id 32→33) | 38153 | +1024 | 0x7FFF=32767 |
+
+Resulting bounds:
+- T(LV28→LV29) ∈ (37437, 38461]
+- T(LV33→LV34) ∈ (38153, 39177]
+
+Candidate formulas (both fit):
+- **Formula A**: `T = 32767 + floor(rank_id/5) × 1024` (tier-based, same threshold per 5 ranks)
+  - rank_id=27: T=37887 ✓   rank_id=32: T=38911 ✓
+- **Formula B**: `T = 32768 + rank_id × 192` (linear, 0xC0 per step)
+  - rank_id=27: T=37952 ✓   rank_id=32: T=38912 ✓
+
+Need Ghidra analysis of BBCF+0x0022B25E or additional rank-up at a different tier to confirm.
+
+### LP floor / rank transition sentinel
+
+`0x7FFF = 32767` is the **universal starting LP** for any rank transition (both up and down),
+confirmed by post-rank-up cycle showing 32767 → 33791 (+1024 win at equal rank).
+
+### diff formula (manual LP log confirmed)
+
+`diff = opponentDisplayLV - selfDisplayLV` where AUTH=0, LV1=1, …, Leader=36.
+
+All entries in the manual log validate the formula exactly.
+
+Key entries:
+- AUTH (LV0) vs LV28: diff=-28, win=+1, loss=-1 (clamped to 1024>>10)
+- LV33 vs LV27: diff=-6, win=+16, loss=-16 (1024>>6)
+- LV33 vs Leader (LV36): diff=+3, win=+1024, loss=-128
+
+### Instrumentation changes in this build
+
+1. `LogRankUploadPackedWrite`: s_budget 36 → 200 (captures all cycles including rank-up)
+2. `RankedProbeTickFrameState` match_cycle_begin: new `auth_blob_match_window` VEH arm
+   - Arms on selector=21 or 24 auth blob slot at each match start
+   - maxValueChanges=6; will catch mid-match auth blob write with writer_rva + srcPairBase
+
+### WritePacked budget discovery
+
+Old budget=36 exhausted at cycle 6 in the Bullet session (6 objects × 6 cycles).
+Kokonoe session only had 2 objects so budget lasted 18 cycles (captured rank-up at cycle 5).
+New budget=200 ensures all future sessions are fully captured.
+
+### Next step
+
+Ghidra: decompile `BBCF+0x0022B25E` and `BBCF+0x0014FBF4`.
+Look for: LP delta application (shifts/clamp), threshold comparison, rank_id increment,
+sub reset to 0x7FFF.
+
+Also: deploy new build and run a few ranked matches. The `auth_blob_match_window` probe will
+fire and reveal the writer_rva for the auth blob update, completing the computation chain.
+
+---
+
+## Entry #211 — Susanoo session (2× loss, Kokonoe LV34 vs LV23)
+
+**Session**: Two ranked losses for Kokonoe (selector=24, rank_id=33, LV34) vs LV23 Susanoo.
+Expected delta: diff = 23 - 34 = -11, loss = -(1024>>10) = -1 each. Auth blob confirmed:
+cycle=1: sel=24 sub 32767→32766 (-1); cycle=2: sel=24 sub 32766→32765 (-1). ✓
+
+### Key finding: computation is inside an UNIDENTIFIED EXTERNAL DLL
+
+`SourceOriginObserved` backtrace for both cycles:
+```
+bt_0 = DLL:0x5A5BA632  ← actual write instruction for source pair
+bt_1 = DLL:0x5A5BC782
+bt_2 = DLL:0x5A5B0770  ← calls BBCF+0x0022AC30 via indirect at 0x5A5B0783
+bt_3 = BBCF+0x0014FBF4
+bt_4 = BBCF+0x0004F281
+bt_5 = BBCF+0x00083065
+bt_6 = BBCF+0x0004EDBB
+bt_7 = BBCF+0x003A5675
+```
+
+The actual write to the source pair buffer (0x025AE538) is happening INSIDE A DLL at ~0x5A5A0000.
+This DLL is NOT in the BBCF game directory (only steam_api.dll and dinput8.dll are there).
+Must be loaded at runtime (Steam client DLL, injected overlay, or loaded by steam_api).
+
+`ECX=0x01CE1A1C` is consistent across ALL sessions (Bullet, Kokonoe rank-up, Susanoo) —
+confirming it is a fixed-address global/static object.
+
+### Revised computation chain
+
+```
+DLL:0x5A5BA632   →  writes new canonical packed rank to source pair (e.g. 0x025AE538)
+DLL:0x5A5B0793   →  calls BBCF+0x0022B25E (callback to propagate value)
+DLL:0x5A5B0783   →  calls BBCF+0x0022AC30 via indirect (vtable-style, feeds 0x0022AD86)
+BBCF+0x0014FBF4  →  calls into the DLL (entry point in BBCF.exe)
+BBCF+0x00020761  →  reads source pair; writes to state machine slot
+BBCF+0x000205A7  →  reads state machine slot; writes to owner+0x2610
+```
+
+`0x0022B25E` and `0x0022AD86` are confirmed to be called AS CALLBACKS BY THE DLL,
+not as computation functions. The computation (delta + threshold) is inside the DLL.
+
+### Auth blob timing
+
+`AuthBlobMatchExit` (our polling probe) fires at 01:24:39.158.
+`A8190Virtual` (state machine post-match processing) fires at 01:24:39.172.
+
+Auth blob update PRECEDES the state machine computation by ~14ms.
+The auth blob may be written by a separate code path (game frame callback during InMatch).
+The state machine path is a separate post-match result propagation.
+
+### auth_blob_match_window probe armed on wrong selector
+
+Cycle=1: probe armed on sel=21 (Bullet, row=0x0174F1E4) because loop was `{ 21u, 24u }`.
+Kokonoe (sel=24) changed but VEH was on Bullet's row — write not caught.
+
+### Probe fixes applied in this build
+
+1. `SourceOriginModule` log: one-time logging of module names for all SourceOriginObserved
+   backtrace frames. Next session will reveal the full path of the DLL at ~0x5A5A0000.
+
+2. Auth blob selector tracking: `s_lastChangedAuthBlobSelector` updated at AuthBlobMatchExit
+   by comparing pre-match vs post-match packed00. Next cycle's arm uses the tracked selector.
+   Fallback order changed from `{ 21, 24 }` to `{ 24, 21 }` (Kokonoe-first for unknown state).
+
+3. Pre-match packed00 snapshot at match_cycle_begin for both sel=21 and sel=24.
+
+### WriterParentSourceDelta for cycle=2
+
+```
+stage=writer_parent_22AD86 cycle=2 srcPairBase=0x025AE538
+pre=[0x00000017,0x025AE514]  post=[0x00217FFD,0x00000000]
+```
+Confirms: 0x0022AD86 is the non-rank-up path's BBCF callback (called by DLL for losses/small wins).
+
+### Next step
+
+1. Deploy build. Run any ranked match. Check DEBUG.txt for `[RANK][SourceOriginModule]` lines.
+   They will show the full path of the DLL at ~0x5A5A0000 — that is the primary Ghidra target.
+2. Also check `[RANK][DataFlowArm] tag=auth_blob_match_window` — should now say
+   `last_changed_sel=0` (first session) but arm on sel=24 (Kokonoe default).
+   After cycle=1, `last_changed_sel=24` should appear for cycle=2+.
+3. If DLL identified: load in Ghidra, analyze function containing 0x5A5BA632.
+   Look for: LP delta (shifts/clamp), threshold compare, rank_id+1, sub=0x7FFF reset.
+
+---
+
+## Entry #212 — Hakumen session (2× loss, Kokonoe LV34 vs Hakumen ~LV33 or LV35)
+
+### Critical correction: "external DLL" was our own mod
+
+`SourceOriginObserved` backtrace bt_0/bt_1 are DINPUT8.dll because they're OUR VEH handler frames
+(executing during page guard fault dispatch). bt_2-bt_4 are Windows ntdll exception dispatch
+(0x775Bxxxx = ntdll.dll). bt_5+ are the real BBCF.exe code. There was never an external DLL.
+The computation is entirely inside BBCF.exe.
+
+`SourceOriginModule` confirmed:
+```
+bt_0=0x5B0AA747 module_base=0x5AFA0000 name=DINPUT8.dll  ← our mod
+bt_1=0x5B0AC982 module_base=0x5AFA0000 name=DINPUT8.dll  ← our mod
+bt_2=0x5B0A0790 module_base=0x5AFA0000 name=DINPUT8.dll  ← our mod
+bt_3=0x00FEFBF4 module_base=0x00EA0000 name=BBCF.exe      ← BBCF.exe
+bt_4=0x00EEF281 module_base=0x00EA0000 name=BBCF.exe
+...
+```
+
+Previous "DLL at 0x5A5Axxx" → now confirmed as DINPUT8.dll at 0x5AFA0000 (ASLR variance).
+
+### Auth blob VEH armed correctly and captured computation
+
+DataFlowArm: `tag=auth_blob_match_window cycle=1 selector=24 last_changed_sel=0` ✓ (sel=24 default)
+
+Three auth blob writes captured for cycle=1 (slot=0x0174F664):
+
+| seq | writer_rva | access offset | old→new | meaning |
+|-----|-----------|--------------|---------|---------|
+| 239 | `0x000BE382` | +2 (LP bytes) | 0x7FFD→0x7DFD | LP update: 32765→32253 (-512) |
+| 240 | `0x000BDCA7` | +6 (metadata) | 0x0400→0x10400 | extended metadata write |
+| 241 | `0x000BE457` | +4 | 0x10400→0x10000 | rank-diff metadata |
+
+Delta: -512 per match. diff=±1 from formula: Hakumen must be LV33 or LV35.
+
+### Computation function identified: BBCF+0x000BE320
+
+This is the function containing the LP delta application. It is called from BBCF+0x000A1D22.
+
+Key instruction at `BBCF+0x000BE382` (inside 0x000BE320):
+```
+E8 6E FA FF FF   CALL BBCF+0x000BDDF0   ; compute delta → EAX=512
+66 29 46 02      SUB WORD [ESI+2], AX    ; apply delta to auth blob LP field
+```
+ESI=0x0174F664 (auth blob row), AX=0x0200=512, result: 0x7FFD-0x0200=0x7DFD ✓
+
+Bytes after 0x000BE457 contain rank threshold logic:
+```
+83 FF 09    CMP EDI, 9       (EDI=rank_id=33)
+76 3F       JBE +0x3F        (rank_id <= 9 → skip?)
+80 7D FF 00 CMP [EBP-1], 0  (win/loss flag?)
+75 39       JNZ +0x39
+```
+This is the rank transition (rank-up) threshold region — directly after the LP update logic.
+
+### Sub-function: BBCF+0x000BDDF0 (delta computation)
+
+Called at 0x000BE37D, immediately before the SUB [ESI+2], AX.
+Returns delta value in EAX: 512 for diff=±1 loss in this session.
+This function computes: 1024 >> clamp(abs(diff), 0, 10) based on diff and win/loss.
+
+### Call chain for auth blob update
+
+```
+BBCF+0x00168FB3 → calls BBCF+0x000A9DB0
+BBCF+0x000A9DB0 → ... → calls BBCF+0x000AA267
+BBCF+0x000AA267 → calls BBCF+0x000A1CA0
+BBCF+0x000A1CA0 → calls BBCF+0x000A1D22 (at BBCF+0x000A1D1B)
+BBCF+0x000A1D22 → calls BBCF+0x000BE320  (at BBCF+0x000A1D22)
+BBCF+0x000BE320 → calls BBCF+0x000BDDF0 (delta); then SUB LP; writes metadata
+```
+
+### Timing: auth blob precedes state machine by ~1 second
+
+Auth blob update: 03:31:10.984 (during InMatch result processing)
+State machine write: 03:31:12.020 (after match exit, result screen processing)
+
+The source pair (0x00D6EA9C) is populated BETWEEN these two events, likely by reading the
+updated auth blob and converting to canonical packed format.
+
+### Session LP deltas
+
+- cycle=1: sel=24 sub 32765→32253 (Δ=-512, Hakumen diff=+1 or -1 from LV34)
+- cycle=2: sel=24 sub 32253→31741 (Δ=-512, same opponent)
+
+### Next step
+
+**Primary Ghidra targets (confirmed in BBCF.exe):**
+1. `BBCF+0x000BE320` — LP delta writer + threshold logic
+   - Decompile to find: exact delta formula, threshold comparison, rank_id increment, sub=0x7FFF reset
+2. `BBCF+0x000BDDF0` — delta computation sub-function
+   - Decompile to find: how diff + win/loss maps to delta value
+3. `BBCF+0x000A1D22` — auth blob update coordinator (also likely sets source pair)
+
+Open Ghidra, load BBCF.exe, go to 0x000BE320+ImageBase (0x00400000+0x000BE320=0x004BE320).
+Decompile the function. Look for the complete LP delta formula and the rank-up threshold.
+
+---
+
+## Entry #213 — Ghidra confirmation: ranked LP computation is in BBCF.exe
+
+### Critical correction
+
+Manual Ghidra inspection confirms ranked LP computation is **inside `BBCF.exe`**, not an external DLL.
+
+The previous “external DLL at ~0x5A5A0000” interpretation was wrong. Those frames were our own injected `DINPUT8.dll` / VEH handling path and exception dispatch. The actual ranked LP writer and delta logic are in BBCF.exe.
+
+Confirmed Ghidra targets:
+
+- `BBCF+0x000BE320` → `0x004BE320` with image base `0x00400000`
+  - main ranked LP update / bounds / rank-transition decision function
+- `BBCF+0x000BDDF0` → `0x004BDDF0`
+  - LP delta magnitude computation function
+- `BBCF+0x000BE700` → `0x004BE700`
+  - likely rank transition handler, called after LP crosses bound / promotion-counter condition
+- `DAT_009DFFD0`
+  - ranked bounds / metadata table, indexed as `rank_id * 8`
+
+### Function: `BBCF+0x000BE320` / `0x004BE320`
+
+Ghidra decompile:
+
+```c
+void __cdecl FUN_004be320(ushort *param_1,uint param_2)
+
+{
+  ushort uVar1;
+  short sVar2;
+  uint uVar3;
+  undefined4 uVar4;
+  uint uVar5;
+  uint uVar6;
+  ushort uVar7;
+  bool bVar8;
+  bool bVar9;
+  
+  bVar9 = (short)param_2 == 0x28;
+  if (bVar9) {
+    param_2 = 0;
+  }
+  uVar1 = *param_1;
+  uVar3 = (uint)uVar1;
+  if ((uVar1 == 0) && (param_1[1] == 0)) {
+    param_1[1] = 0x7fff;
+  }
+  if ((char)param_1[5] == '\0') {
+    *(char *)(param_1 + 4) = (char)param_1[4] + '\x01';
+    FUN_004be1d0(param_1);
+    return;
+  }
+  uVar5 = uVar3;
+  if (9 < uVar3) {
+    uVar4 = FUN_004bddf0(uVar3,param_2);
+    param_1[1] = param_1[1] - (short)uVar4;
+    sVar2 = *(short *)(&DAT_009dffd0 + (uint)*param_1 * 8);
+    if ((sVar2 + 0x7fff < (int)(uint)param_1[1]) ||
+       (sVar2 = *(short *)(&DAT_009dffd2 + (uint)*param_1 * 8),
+       (int)(uint)param_1[1] < sVar2 + 0x7fff)) {
+      param_1[1] = sVar2 + 0x7fff;
+    }
+    uVar5 = (uint)*param_1;
+  }
+  uVar7 = (ushort)param_2;
+  if (0x17 < uVar3) {
+    if (uVar3 < 0x1d) {
+      if (uVar1 == uVar7) {
+        param_1[3] = param_1[3] + 1;
+        if ((short)*(ushort *)(&DAT_009dffd6 + uVar5 * 8) < (short)param_1[3]) {
+          param_1[3] = *(ushort *)(&DAT_009dffd6 + uVar5 * 8);
+        }
+      }
+    }
+    else {
+      if (uVar3 < 0x23) {
+        uVar5 = param_2 & 0xffff;
+        uVar6 = uVar3;
+        if (uVar7 < uVar1) {
+          uVar6 = param_2 & 0xffff;
+          uVar5 = uVar3;
+        }
+        if (uVar6 + 2 < uVar5) goto LAB_004be439;
+      }
+      else {
+        if (uVar3 < 0x25) {
+          bVar8 = uVar7 < 0x1d;
+        }
+        else {
+          bVar8 = uVar7 < 0x18;
+        }
+        if (bVar8) goto LAB_004be439;
+      }
+      FUN_004bdca0(param_1,1);
+    }
+  }
+LAB_004be439:
+  uVar5 = param_2 & 0xffff;
+  uVar6 = uVar3;
+  if (uVar7 < uVar1) {
+    uVar6 = param_2 & 0xffff;
+    uVar5 = uVar3;
+  }
+  if (uVar5 <= uVar6 + 2) {
+    param_1[2] = 0;
+  }
+  if ((((9 < uVar3) && (!bVar9)) && (0x13 < uVar3)) &&
+     (((int)(uint)param_1[1] <= *(short *)(&DAT_009dffd2 + uVar3 * 8) + 0x7fff ||
+      ((0x17 < uVar3 && (*(short *)(&DAT_009dffd6 + uVar3 * 8) <= (short)param_1[3])))))) {
+    FUN_004be700((short *)param_1);
+  }
+  return;
+}

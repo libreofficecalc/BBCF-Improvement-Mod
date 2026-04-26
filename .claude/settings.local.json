@@ -12,7 +12,17 @@
       "Bash(awk '{for\\(i=1;i<=NF;i++\\) if\\($i~/writePacked=/\\) print NR\": \"$i}')",
       "Bash(awk '{print $1, $2}')",
       "Bash(npx skills *)",
-      "Read(//home/usuario/.agents/skills/caveman/**)"
+      "Read(//home/usuario/.agents/skills/caveman/**)",
+      "Bash(find /mnt/c/Program Files* -name \"debug.txt\")",
+      "Bash(python3 -c \"import capstone; print\\('capstone ok'\\)\")",
+      "Bash(pip3 list *)",
+      "Bash(python3 *)",
+      "Bash(awk -F'[\\\\\\\\[\\\\\\\\]]' 'NR>1')",
+      "Bash(awk '{print NR, $0}')",
+      "Bash(awk 'NR>36')",
+      "Bash(\"/mnt/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe\" \"/mnt/c/Users/Usuario/source/repos/HaiKamDesu/BBCF-Improvement-Mod/BBCF_IM.sln\" /m /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v143)",
+      "Bash(\"/mnt/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe\" \"C:/Users/Usuario/source/repos/HaiKamDesu/BBCF-Improvement-Mod/BBCF_IM.sln\" /m /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v143)",
+      "Bash(grep -v \"^[0-9]\\\\{1,5\\\\}:\")"
     ]
   }
 }

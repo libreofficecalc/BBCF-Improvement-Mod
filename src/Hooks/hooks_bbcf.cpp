@@ -288,6 +288,12 @@ struct RankedProbeStats
 
 RankedProbeStats g_rankedProbeStats;
 
+// Auth blob selector tracking: records which selector (21 or 24) changed last match
+// so the next cycle's VEH arm targets the right row.
+static uint32_t s_authBlobPreMatchPacked21 = 0u;
+static uint32_t s_authBlobPreMatchPacked24 = 0u;
+static uint32_t s_lastChangedAuthBlobSelector = 0u; // 0=unknown, else 21 or 24
+
 struct RankedProviderDispatchSnapshot
 {
 	uint32_t state = 0;
@@ -2433,6 +2439,30 @@ void LogRankedSourceOriginObservedChange(const char* stage, uint32_t srcPairBase
 			reinterpret_cast<void*>(frame),
 			(moduleBase && frame >= moduleBase) ? static_cast<unsigned int>(frame - moduleBase) : 0u);
 	}
+	// One-time: log module names for all backtrace frames to identify the computation DLL.
+	{
+		static bool s_modulesLogged = false;
+		if (!s_modulesLogged && newPacked)
+		{
+			s_modulesLogged = true;
+			for (USHORT i = 0; i < captured; ++i)
+			{
+				HMODULE hMod = nullptr;
+				if (GetModuleHandleExA(
+					GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+					reinterpret_cast<LPCSTR>(frames[i]), &hMod) && hMod)
+				{
+					char modPath[MAX_PATH] = {};
+					GetModuleFileNameA(hMod, modPath, sizeof(modPath));
+					LOG(1, "[RANK][SourceOriginModule] bt_%u=0x%p module_base=0x%p name=%s\n",
+						static_cast<unsigned int>(i),
+						frames[i],
+						static_cast<void*>(hMod),
+						modPath);
+				}
+			}
+		}
+	}
 
 	s_haveObservedSourcePair = true;
 	s_observedSourcePairBase = srcPairBase;
@@ -2747,6 +2777,25 @@ void LogRankedTableRowDeltaSummary(const char* tag, uintptr_t beforeBase, uintpt
 			static_cast<unsigned int>((afterState.packed00 >> 16) & 0xFFFFu),
 			static_cast<unsigned int>((beforeState.fieldD4 >> 16) & 0xFFFFu),
 			static_cast<unsigned int>((afterState.fieldD4 >> 16) & 0xFFFFu));
+		{
+			const uint16_t bRank = static_cast<uint16_t>(beforeState.packed00 & 0xFFFFu);
+			const uint16_t aRank = static_cast<uint16_t>(afterState.packed00 & 0xFFFFu);
+			const uint16_t bSub  = static_cast<uint16_t>((beforeState.packed00 >> 16) & 0xFFFFu);
+			const uint16_t aSub  = static_cast<uint16_t>((afterState.packed00 >> 16) & 0xFFFFu);
+			const int32_t subDelta = static_cast<int32_t>(aSub) - static_cast<int32_t>(bSub);
+			const int32_t rankDelta = static_cast<int32_t>(aRank) - static_cast<int32_t>(bRank);
+			LOG(1, "[RANK][AuthBlobDelta] tag=%s selector=%u bRank=%u aRank=%u rankDelta=%d bSub=%u aSub=%u subDelta=%d blobFmt=before(sub<<16|rank)=0x%08X after=0x%08X\n",
+				tag ? tag : "(null)",
+				static_cast<unsigned int>(selector),
+				static_cast<unsigned int>(bRank),
+				static_cast<unsigned int>(aRank),
+				static_cast<int>(rankDelta),
+				static_cast<unsigned int>(bSub),
+				static_cast<unsigned int>(aSub),
+				static_cast<int>(subDelta),
+				static_cast<unsigned int>(beforeState.packed00),
+				static_cast<unsigned int>(afterState.packed00));
+		}
 	}
 
 	if (changedRows > 0u)
@@ -2965,7 +3014,7 @@ void LogAuthoritativeRankedTableSummary(uintptr_t rankedTableBase)
 			char reason[64] = {};
 			_snprintf_s(reason, sizeof(reason), _TRUNCATE, "authoritative_row%u_packed00_follow", static_cast<unsigned int>(targetSelector));
 			BeginRankedSlotWriteTrace(static_cast<uint32_t>(reinterpret_cast<uintptr_t>(targetRow) + 0x00u), reason);
-			BumpRankedTraceMaxChangesIfCurrent(static_cast<uint32_t>(reinterpret_cast<uintptr_t>(targetRow) + 0x00u), 4u);
+			BumpRankedTraceMaxChangesIfCurrent(static_cast<uint32_t>(reinterpret_cast<uintptr_t>(targetRow) + 0x00u), 20u);
 			LOG(1, "[RANK][DataFlowArm] tag=authoritative_packed00 selector=%u row=0x%p packed00=0x%08X field0C=0x%08X field10=0x%08X field20=0x%08X fieldD4=0x%08X\n",
 				static_cast<unsigned int>(targetSelector),
 				targetRow,
@@ -6313,13 +6362,17 @@ uint32_t __fastcall HookedRankMenuBlobApply(void* self, void* edx, void* blobNod
 	const uintptr_t returnAddr = reinterpret_cast<uintptr_t>(_ReturnAddress());
 	if (moduleBase != 0)
 	{
-		static int s_budget = 24;
+		static int s_budget = 100;
 		static uintptr_t s_lastNode = 0;
 		static uintptr_t s_lastSink = 0;
 		static uint32_t s_lastReturnRva = 0;
 		const uint32_t returnRva = static_cast<uint32_t>(returnAddr - moduleBase);
 		const uintptr_t nodeValue = reinterpret_cast<uintptr_t>(blobNode);
-		const bool interesting = IsInLastDecodedBlobRange(nodeValue) || IsInLastBlobLookupRange(nodeValue);
+		// Accept any call when a match has occurred, not just blob-range nodes, to
+		// catch computation nodes that may live outside the known decoded blob region.
+		const bool interesting = IsInLastDecodedBlobRange(nodeValue) ||
+			IsInLastBlobLookupRange(nodeValue) ||
+			g_rankedProbeStats.matchCycleCount > 0u;
 		if (s_budget > 0 &&
 			interesting &&
 			(s_lastNode != nodeValue || s_lastSink != reinterpret_cast<uintptr_t>(sinkObject) || s_lastReturnRva != returnRva))
@@ -6540,7 +6593,7 @@ void LogRankUploadPackedWrite(uint32_t objectValue, uint32_t tailValue, uint32_t
 {
 	RankedProbeNoteWritePacked();
 
-	static int s_budget = 36;
+	static int s_budget = 200;
 	if (s_budget <= 0)
 	{
 		return;
@@ -7232,6 +7285,50 @@ void RankedProbeTickFrameState()
 		else
 		{
 			EndRankedSlotWriteTrace("match_cycle_begin");
+
+			// Arm auth blob trace for this match cycle.
+			// The auth blob at 0x0174D190 is updated mid-match when the result is processed.
+			// Monitoring it here catches the writer RVA and source address for rank/LP updates.
+			uintptr_t authBase = 0;
+			if (TryGetRankedTableBaseLocal(&authBase))
+			{
+				// Snapshot pre-match packed00 for both selectors so AuthBlobMatchExit can
+				// detect which one changed and update s_lastChangedAuthBlobSelector.
+				auto readAuthPacked = [&](uint32_t sel) -> uint32_t {
+					const uint8_t* const row = reinterpret_cast<const uint8_t*>(authBase + 0xD4u + sel * 0x180u);
+					return (!row || IsBadReadPtr(row, 8)) ? 0u : *reinterpret_cast<const uint32_t*>(row);
+				};
+				s_authBlobPreMatchPacked21 = readAuthPacked(21u);
+				s_authBlobPreMatchPacked24 = readAuthPacked(24u);
+
+				// Arm on the selector that changed last cycle (if known),
+				// otherwise fall back to { 24u, 21u } — sel=24 is Kokonoe, recently active.
+				const uint32_t selOrder[2] = {
+					s_lastChangedAuthBlobSelector != 0u ? s_lastChangedAuthBlobSelector
+					                                    : 24u,
+					s_lastChangedAuthBlobSelector == 21u ? 24u : 21u
+				};
+				for (const uint32_t sel : selOrder)
+				{
+					const uint32_t packed00 = (sel == 21u) ? s_authBlobPreMatchPacked21 : s_authBlobPreMatchPacked24;
+					const uint16_t rankId = static_cast<uint16_t>(packed00 & 0xFFFFu);
+					if (rankId == 0u || rankId >= 0x60u) continue;
+					const uint8_t* const row = reinterpret_cast<const uint8_t*>(authBase + 0xD4u + sel * 0x180u);
+					const uint32_t traceAddr = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(row));
+					char armReason[64] = {};
+					_snprintf_s(armReason, sizeof(armReason), _TRUNCATE,
+						"auth_blob_match_window_sel%u", static_cast<unsigned>(sel));
+					BeginRankedSlotWriteTrace(traceAddr, armReason);
+					BumpRankedTraceMaxChangesIfCurrent(traceAddr, 6u);
+					LOG(1, "[RANK][DataFlowArm] tag=auth_blob_match_window cycle=%u selector=%u row=0x%p slot=0x%08X packed00=0x%08X last_changed_sel=%u\n",
+						g_rankedProbeStats.matchCycleCount + 1u,
+						static_cast<unsigned>(sel), row,
+						static_cast<unsigned>(traceAddr),
+						static_cast<unsigned>(packed00),
+						static_cast<unsigned>(s_lastChangedAuthBlobSelector));
+					break;
+				}
+			}
 		}
 		g_lastPlausibleRankedStateMachineSelf = 0u;
 		++g_rankedProbeStats.matchCycleCount;
@@ -7281,6 +7378,37 @@ void RankedProbeTickFrameState()
 		gameState != GameState_InMatch)
 	{
 		RankedProbeDumpCycleSummary("left_inmatch", seq);
+
+		// Capture auth blob packed values for selector characters as a post-match baseline.
+		// Also updates s_lastChangedAuthBlobSelector for the next cycle's VEH arm.
+		uintptr_t authBase = 0;
+		if (TryGetRankedTableBaseLocal(&authBase))
+		{
+			const uint32_t matchRoundsRaw = g_gameVals.pMatchRounds ? *g_gameVals.pMatchRounds : 0u;
+			for (const uint32_t sel : { 24u, 21u })
+			{
+				const uint8_t* const row = reinterpret_cast<const uint8_t*>(authBase + 0xD4u + sel * 0x180u);
+				if (IsBadReadPtr(row, 8)) continue;
+				const uint32_t packed00 = *reinterpret_cast<const uint32_t*>(row);
+				const uint32_t rank = packed00 & 0xFFFFu;
+				const uint32_t sub  = (packed00 >> 16) & 0xFFFFu;
+				LOG(1, "[RANK][AuthBlobMatchExit] cycle=%u selector=%u authBase=0x%08X packed00=0x%08X rank=%u sub=%u matchRoundsRaw=0x%08X\n",
+					g_rankedProbeStats.matchCycleCount,
+					static_cast<unsigned int>(sel),
+					static_cast<unsigned int>(authBase),
+					static_cast<unsigned int>(packed00),
+					static_cast<unsigned int>(rank),
+					static_cast<unsigned int>(sub),
+					static_cast<unsigned int>(matchRoundsRaw));
+
+				// Track which selector's auth blob row changed since match start.
+				const uint32_t preMatchPacked = (sel == 21u) ? s_authBlobPreMatchPacked21 : s_authBlobPreMatchPacked24;
+				if (preMatchPacked != 0u && packed00 != preMatchPacked)
+				{
+					s_lastChangedAuthBlobSelector = sel;
+				}
+			}
+		}
 	}
 }
 
