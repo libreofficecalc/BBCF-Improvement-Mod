@@ -205,12 +205,25 @@ Rank Numbering
 
 - internal `rank_id` is zero-indexed
 - visible LV labels generally display `rank_id + 1`
-- named ranks start after LV35:
-  - rank_id 35 → visible 36 → Leader
-  - rank_id 36 → Hero
-  - rank_id 37 → Kisshin
-  - rank_id 38 → Meiou
-  - rank_id 39 → Tentei
+- confirmed leaderboard label order, top to bottom:
+  - `SkillRank_12290`
+  - `SkillRank_997`
+  - `Ruler`
+  - `Hades`
+  - `Kisshin`
+  - `Hero`
+  - `Leader`
+  - `LV35` down through `LV1`
+- `AUTH` is unranked state and does not appear in leaderboard rank labels
+- visible rank mapping for the currently known contiguous ladder:
+  - visible 1..35 → `LV1`..`LV35`
+  - visible 36 → `Leader`
+  - visible 37 → `Hero`
+  - visible 38 → `Kisshin`
+  - visible 39 → `Hades`
+  - visible 40 → `Ruler`
+  - visible 41 → `SkillRank_997` (inferred bucket after `Ruler` from leaderboard order)
+  - visible 42 → `SkillRank_12290` (inferred bucket after `SkillRank_997` from leaderboard order)
 
 Confirmed Non-Authoritative Layers
 
@@ -253,6 +266,7 @@ For UI work:
 For future RE:
 
 - primary functions: `0x004BE320`, `0x004BDDF0`, `0x004BE700`, `0x004BE730`
+- keep `kEnableRankedReverseEngineeringHooks=false` during normal leaderboard/rank-label capture; crash dumps `BBCF.exe.33216.dmp` and `BBCF.exe.3596.dmp` showed ranked RE detour wrappers on the Rankings crash path
 - inspect callers to determine sign/win-loss encoding
 - inspect named-rank edge handling around rank_id 39 / `0x27`
 - inspect table `+4` use sites

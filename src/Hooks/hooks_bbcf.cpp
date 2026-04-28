@@ -100,6 +100,8 @@ DWORD RankUploadWriterCaller4EDB6TargetAddr = 0;
 DWORD RankUploadWriterCaller3A5670TargetAddr = 0;
 DWORD RankMenuRowPairStateTargetAddr = 0;
 constexpr uintptr_t kRankedTableBaseFnRva = 0x0009D5C0;
+constexpr bool kEnableRankedReverseEngineeringHooks = false;
+constexpr bool kEnableUnsafeRankUploadStateMachineDirectTrace = false;
 
 void RankedProbeTickFrameState();
 void RankedProbeNoteLobbyCaller();
@@ -9193,6 +9195,11 @@ bool placeHooks_bbcf()
 
 		HookManager::SetHook("SkipReplayListConfirm", (DWORD)(GetBbcfBaseAdress() + 0x002c3038), 5, SkipReplayListConfirm);
 
+		// The ranked RE hook pack is intentionally off for normal debug builds.
+		// Rankings/leaderboard capture needs stable menu entry first; these invasive
+		// callsite/direct detours have crashed on that path in multiple dumps.
+		if (kEnableRankedReverseEngineeringHooks)
+		{
 			RankUploadPhase3CallTargetAddr = (DWORD)(GetBbcfBaseAdress() + 0x0001E980);
 			RankUploadPhase3PostCallTraceJmpBackAddr = HookManager::SetHook("RankUploadPhase3PostCallTrace", (DWORD)(GetBbcfBaseAdress() + 0x00020035), 5, RankUploadPhase3PostCallTrace);
 			RankUploadState1CallTraceJmpBackAddr = HookManager::SetHook("RankUploadState1CallTrace", (DWORD)(GetBbcfBaseAdress() + 0x0001FF06), 5, RankUploadState1CallTrace);
@@ -9206,14 +9213,19 @@ bool placeHooks_bbcf()
 		// [DISABLED: BuilderTrace 0x1D1A2 - confirmed dead-end; builder front-end fires on cheap/lobby path without reaching trusted upload chain (section 50)]
 		// RankUploadBuilderTraceJmpBackAddr = HookManager::SetHook("RankUploadBuilderTrace", (DWORD)(GetBbcfBaseAdress() + 0x0001D1A2), 16, RankUploadBuilderTrace);
 
-		// Direct 0x1FEA0 state-machine detour restored with hidden stack arg preserved.
-		// Old regression came from treating this as plain __thiscall and dropping caller-pushed ECX.
-		RankUploadStateMachineCallTargetAddr = (DWORD)(GetBbcfBaseAdress() + 0x0001FEA0);
-		if (!orig_RankUploadStateMachineDirect)
+		// Disabled by default: crash dumps from the Rankings menu show this direct
+		// detour returning through our wrapper after BBCF raises an access violation.
+		// Keep the implementation for controlled RE sessions, but do not install it
+		// in normal debug builds needed for leaderboard/rank-label capture.
+		if (kEnableUnsafeRankUploadStateMachineDirectTrace)
 		{
-			orig_RankUploadStateMachineDirect = reinterpret_cast<RankUploadStateMachineDirectFn>(
-				DetourFunction(reinterpret_cast<PBYTE>(RankUploadStateMachineCallTargetAddr), reinterpret_cast<PBYTE>(HookedRankUploadStateMachineDirect)));
-			LOG(2, "[RANK][StateMachineDirect] Hooked BBCF+0x0001FEA0 orig=0x%p\n", orig_RankUploadStateMachineDirect);
+			RankUploadStateMachineCallTargetAddr = (DWORD)(GetBbcfBaseAdress() + 0x0001FEA0);
+			if (!orig_RankUploadStateMachineDirect)
+			{
+				orig_RankUploadStateMachineDirect = reinterpret_cast<RankUploadStateMachineDirectFn>(
+					DetourFunction(reinterpret_cast<PBYTE>(RankUploadStateMachineCallTargetAddr), reinterpret_cast<PBYTE>(HookedRankUploadStateMachineDirect)));
+				LOG(2, "[RANK][StateMachineDirect] Hooked BBCF+0x0001FEA0 orig=0x%p\n", orig_RankUploadStateMachineDirect);
+			}
 		}
 		RankUploadProviderDispatchTargetAddr = (DWORD)(GetBbcfBaseAdress() + 0x0001EC10);
 		if (!orig_RankUploadProviderDispatch)
@@ -9373,7 +9385,8 @@ bool placeHooks_bbcf()
 		RankUploadSourceCopyTraceJmpBackAddr = HookManager::SetHook("RankUploadSourceCopyTrace", (DWORD)(GetBbcfBaseAdress() + 0x000202CA), 9, RankUploadSourceCopyTrace);
 		RankUploadSourcePairCopyCheckAddr = (DWORD)(GetBbcfBaseAdress() + 0x000202C2);
 		RankUploadSourcePairTraceJmpBackAddr = HookManager::SetHook("RankUploadSourcePairTrace", (DWORD)(GetBbcfBaseAdress() + 0x000202AE), 20, RankUploadSourcePairTrace);
-		RankUploadPackedWriteTraceJmpBackAddr = HookManager::SetHook("RankUploadPackedWriteTrace", (DWORD)(GetBbcfBaseAdress() + 0x000205A4), 12, RankUploadPackedWriteTrace);
+			RankUploadPackedWriteTraceJmpBackAddr = HookManager::SetHook("RankUploadPackedWriteTrace", (DWORD)(GetBbcfBaseAdress() + 0x000205A4), 12, RankUploadPackedWriteTrace);
+		}
 
-	return true;
-}
+		return true;
+	}

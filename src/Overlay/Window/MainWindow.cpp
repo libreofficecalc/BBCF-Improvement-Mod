@@ -130,8 +130,8 @@ namespace
 		ImVec4 midRankColor = ImVec4(0.0f, 1.0f, 0.992f, 1.0f);
 		// Rank text color for LV30-LV35.
 		ImVec4 highRankColor = ImVec4(0.973f, 0.271f, 0.0f, 1.0f);
-		// Rank text color for Leader / Hero / Kisshin / Meiou / Tentei.
-		ImVec4 leaderRankColor = ImVec4(0.996f, 0.933f, 0.0f, 1.0f);
+			// Rank text color for Leader and higher named ranks.
+			ImVec4 leaderRankColor = ImVec4(0.996f, 0.933f, 0.0f, 1.0f);
 
 		// Color used for positive LP change text such as `+20`.
 		ImVec4 lpGainColor = ImVec4(0.31f, 0.92f, 0.41f, 1.0f);
@@ -381,8 +381,10 @@ namespace
 		case 36u: return "Leader";
 		case 37u: return "Hero";
 		case 38u: return "Kisshin";
-		case 39u: return "Meiou";
-		case 40u: return "Tentei";
+		case 39u: return "Hades";
+		case 40u: return "Ruler";
+		case 41u: return "SkillRank_997";
+		case 42u: return "SkillRank_12290";
 		default:
 			break;
 		}
@@ -406,7 +408,7 @@ namespace
 		}
 
 		char buffer[32] = {};
-		std::snprintf(buffer, sizeof(buffer), "Skillrank_%u", static_cast<unsigned int>(visibleRank));
+		std::snprintf(buffer, sizeof(buffer), "SkillRank_%u", static_cast<unsigned int>(visibleRank));
 		return std::string(buffer);
 	}
 

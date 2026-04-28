@@ -12507,3 +12507,130 @@ LAB_004be439:
   }
   return;
 }
+
+## Entry #214 — Rankings menu crash fix
+
+### Symptom
+
+Opening the in-game Rankings / leaderboard menu crashed BBCF before the operator could inspect
+the full rank-label list.
+
+Latest dump analyzed:
+
+- `C:\Users\Usuario\AppData\Local\CrashDumps\BBCF.exe.33216.dmp`
+- terminal exception: `0xC0000409` fail-fast at `BBCF+0x3A7B59`
+- earlier stack showed `dinput8+0x1044B6` returning through our direct detour wrapper after a
+  BBCF access violation
+- call path included `BBCF+0x1F9A2`, matching the ranked state-machine area around the
+  direct `BBCF+0x1FEA0` detour
+
+### Patch
+
+Disabled installation of the unsafe direct detour for `BBCF+0x0001FEA0` by default:
+
+- file: `src/Hooks/hooks_bbcf.cpp`
+- guard: `kEnableUnsafeRankUploadStateMachineDirectTrace = false`
+
+The implementation remains in the file for controlled RE sessions, but normal debug builds no
+longer install it. Ranked progress UI and Steam leaderboard logging remain enabled.
+
+### Verification
+
+Built successfully:
+
+```text
+"C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe" BBCF_IM.sln /m /p:Configuration=Debug /p:Platform=Win32 /p:PlatformToolset=v143
+```
+
+Result:
+
+- build succeeded
+- only existing warning: `hooks_bbcf.cpp(8585): warning C4102: 'NOT_CUSTOM_PACKET': unreferenced label`
+
+### Next test
+
+Deploy `bin/Debug/dinput8.dll`, launch BBCF, open Rankings / leaderboard menu, and confirm:
+
+- no crash when entering Rankings
+- log contains Steam leaderboard find/download/readback lines for the Rankings flow
+- operator can inspect and report the visible rank-label order
+
+## Entry #215 — Second Rankings crash: disable full ranked RE hook pack
+
+### Symptom
+
+After disabling only the direct `BBCF+0x0001FEA0` detour, Rankings still crashed.
+
+Latest dump analyzed:
+
+- `C:\Users\Usuario\AppData\Local\CrashDumps\BBCF.exe.3596.dmp`
+- terminal exception: `0xC0000409` fail-fast at `BBCF+0x3A7B59`
+- stack still returned through a ranked RE wrapper, now at `dinput8+0x104476`
+- caller path included `BBCF+0x1F9A2`, near the same ranked upload state-machine flow
+- `DEBUG.txt` had repeated `[RANK][CallCluster]` logs (`post_1FD80`, `post_248D0`, `post_24D40`) right before crash
+- no Steam leaderboard find/download/readback lines appeared before the crash
+
+### Patch
+
+Disabled the full invasive ranked RE hook pack by default:
+
+- file: `src/Hooks/hooks_bbcf.cpp`
+- guard: `kEnableRankedReverseEngineeringHooks = false`
+
+This skips the upload/menu probe detours that patch ranked state-machine, provider dispatch,
+menu row, blob, progress, and packed-write callsites. The hook implementations remain available
+for controlled RE sessions, but normal debug builds now prioritize stable leaderboard entry and
+rank-label capture.
+
+The narrower `kEnableUnsafeRankUploadStateMachineDirectTrace = false` guard remains in place as
+an extra explicit block for the direct `BBCF+0x0001FEA0` detour.
+
+### Verification
+
+Built successfully:
+
+```text
+"C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe" BBCF_IM.sln /m /p:Configuration=Debug /p:Platform=Win32 /p:PlatformToolset=v143
+```
+
+Result:
+
+- build succeeded
+- only existing warning: `hooks_bbcf.cpp(8586): warning C4102: 'NOT_CUSTOM_PACKET': unreferenced label`
+
+### Next test
+
+Deploy `bin/Debug/dinput8.dll`, launch BBCF, open Rankings / leaderboard menu, and confirm:
+
+- no crash when entering Rankings
+- Steam leaderboard logs appear, if the game reaches that code path
+- operator can inspect and report the visible rank-label order
+
+## Entry #216 — Confirmed leaderboard rank-label order
+
+The ReleaseDeploy Visual Studio build with the ranked RE hook pack disabled allowed the operator
+to enter Rankings successfully.
+
+Confirmed leaderboard label order, top to bottom:
+
+```text
+SkillRank_12290
+SkillRank_997
+Ruler
+Hades
+Kisshin
+Hero
+Leader
+LV35
+...
+LV1
+```
+
+`AUTH` is not a leaderboard rank label. It is the unranked/auth state and does not appear in the
+leaderboards.
+
+Active correction:
+
+- old `Meiou` / `Tentei` assumptions are obsolete
+- named labels above LV35 are now: `Leader`, `Hero`, `Kisshin`, `Hades`, `Ruler`, `SkillRank_997`, `SkillRank_12290`
+- overlay display mapping updated to use the confirmed labels and game-style `SkillRank_` casing
