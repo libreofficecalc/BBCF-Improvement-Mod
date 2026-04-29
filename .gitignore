@@ -1,3 +1,7 @@
 .vs/
 bin/
 build/
+
+# Ghidra generated project databases are large binary artifacts.
+# Keep headless scripts/reports tracked and regenerate this folder locally.
+docs/Research/BBCF-Ghidra-Project/

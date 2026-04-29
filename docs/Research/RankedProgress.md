@@ -12634,3 +12634,41 @@ Active correction:
 - old `Meiou` / `Tentei` assumptions are obsolete
 - named labels above LV35 are now: `Leader`, `Hero`, `Kisshin`, `Hades`, `Ruler`, `SkillRank_997`, `SkillRank_12290`
 - overlay display mapping updated to use the confirmed labels and game-style `SkillRank_` casing
+
+## Entry #217 — Repo-local Ghidra project and focused LP decompile reports
+
+Agent pass created a repo-local Ghidra project:
+
+- project folder: `docs/Research/BBCF-Ghidra-Project/`
+- project name: `BBCF`
+- imported binary: `D:\SteamLibrary\steamapps\common\BlazBlue Centralfiction\BBCF.exe`
+- Ghidra: `D:\Programs\ghidra_11.4.2_PUBLIC`
+
+Headless helpers added:
+
+- `docs/Research/run_ghidra_ranked_lp_import.cmd`
+- `docs/Research/run_ghidra_ranked_lp_decompile.cmd`
+- `docs/Research/run_ghidra_ranked_lp_callers.cmd`
+- `docs/Research/run_ghidra_ranked_lp_helpers.cmd`
+- scripts under `docs/Research/ghidra_scripts/`
+
+Generated reports:
+
+- `docs/Research/RankedLpGhidraReport.txt`
+- `docs/Research/RankedLpCallersGhidraReport.txt`
+- `docs/Research/RankedLpHelpersGhidraReport.txt`
+
+What headless Ghidra confirmed:
+
+- `FUN_004be320` / `BBCF+0x000BE320` is the loss-side LP update helper.
+- `FUN_004be4b0` / `BBCF+0x000BE4B0` is the win-side LP update helper.
+- `FUN_004a1ca0` calls win-side helper when its result argument is `0`.
+- `FUN_004a1ca0` calls loss-side helper when its result argument is neither `0` nor `2`.
+- `FUN_004a1ca0` calls `FUN_004be280` on result argument `2`; that path resets proximity/counter conditions but does not add/subtract LP in the decompile.
+- `DAT_009DFFD0` remains the rank bounds/proximity table used by both win and loss helpers.
+
+Current LP formula status:
+
+- UI progress is solved from local row packed LP plus `DAT_009DFFD0` bounds.
+- Core win/loss LP math is now code-level understood and documented in `RankedREState.md`.
+- Full pre-match prediction is still not product-finished until live logs validate the result parameter meanings and opponent-rank argument for real ranked results, especially at Leader+ ranks.

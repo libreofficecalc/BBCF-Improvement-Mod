@@ -1,0 +1,358 @@
+Program: BBCF.exe
+Image base: 00400000
+
+===== References to 004bddf0 =====
+004be37d UNCONDITIONAL_CALL FUN_004be320 at 004be320
+
+===== Caller decompile for target 004bddf0 via 004be37d =====
+Function: FUN_004be320 at 004be320
+
+void FUN_004be320(ushort *param_1,uint param_2)
+
+{
+  ushort uVar1;
+  short sVar2;
+  uint uVar3;
+  uint uVar4;
+  uint uVar5;
+  ushort uVar6;
+  bool bVar7;
+  bool bVar8;
+  
+  bVar8 = (short)param_2 == 0x28;
+  if (bVar8) {
+    param_2 = 0;
+  }
+  uVar1 = *param_1;
+  uVar3 = (uint)uVar1;
+  if ((uVar1 == 0) && (param_1[1] == 0)) {
+    param_1[1] = 0x7fff;
+  }
+  if ((char)param_1[5] == '\0') {
+    *(char *)(param_1 + 4) = (char)param_1[4] + '\x01';
+    FUN_004be1d0();
+    return;
+  }
+  uVar4 = uVar3;
+  if (9 < uVar3) {
+    sVar2 = FUN_004bddf0(uVar3,param_2,DAT_008a8f7c);
+    param_1[1] = param_1[1] - sVar2;
+    sVar2 = *(short *)(&DAT_009dffd0 + (uint)*param_1 * 8);
+    if ((sVar2 + 0x7fff < (int)(uint)param_1[1]) ||
+       (sVar2 = *(short *)(&DAT_009dffd2 + (uint)*param_1 * 8),
+       (int)(uint)param_1[1] < sVar2 + 0x7fff)) {
+      param_1[1] = sVar2 + 0x7fff;
+    }
+    uVar4 = (uint)*param_1;
+  }
+  uVar6 = (ushort)param_2;
+  if (0x17 < uVar3) {
+    if (uVar3 < 0x1d) {
+      if (uVar1 == uVar6) {
+        param_1[3] = param_1[3] + 1;
+        if ((short)*(ushort *)(&DAT_009dffd6 + uVar4 * 8) < (short)param_1[3]) {
+          param_1[3] = *(ushort *)(&DAT_009dffd6 + uVar4 * 8);
+        }
+      }
+    }
+    else {
+      if (uVar3 < 0x23) {
+        uVar4 = param_2 & 0xffff;
+        uVar5 = uVar3;
+        if (uVar6 < uVar1) {
+          uVar5 = param_2 & 0xffff;
+          uVar4 = uVar3;
+        }
+        if (uVar5 + 2 < uVar4) goto LAB_004be439;
+      }
+      else {
+        if (uVar3 < 0x25) {
+          bVar7 = uVar6 < 0x1d;
+        }
+        else {
+          bVar7 = uVar6 < 0x18;
+        }
+        if (bVar7) goto LAB_004be439;
+      }
+      FUN_004bdca0(1);
+    }
+  }
+LAB_004be439:
+  uVar4 = param_2 & 0xffff;
+  uVar5 = uVar3;
+  if (uVar6 < uVar1) {
+    uVar5 = param_2 & 0xffff;
+    uVar4 = uVar3;
+  }
+  if (uVar4 <= uVar5 + 2) {
+    param_1[2] = 0;
+  }
+  if ((((9 < uVar3) && (!bVar8)) && (0x13 < uVar3)) &&
+     (((int)(uint)param_1[1] <= *(short *)(&DAT_009dffd2 + uVar3 * 8) + 0x7fff ||
+      ((0x17 < uVar3 && (*(short *)(&DAT_009dffd6 + uVar3 * 8) <= (short)param_1[3])))))) {
+    FUN_004be700(param_1);
+  }
+  return;
+}
+
+
+
+===== References to 004be320 =====
+004be09c UNCONDITIONAL_CALL FUN_004be040 at 004be040
+004be136 UNCONDITIONAL_CALL FUN_004be0c0 at 004be0c0
+004a1d22 UNCONDITIONAL_CALL FUN_004a1ca0 at 004a1ca0
+
+===== Caller decompile for target 004be320 via 004be09c =====
+Function: FUN_004be040 at 004be040
+
+undefined4 FUN_004be040(uint *param_1,undefined4 param_2)
+
+{
+  uint uVar1;
+  uint local_10;
+  uint local_c;
+  uint local_8;
+  
+  local_c = param_1[1];
+  uVar1 = *param_1;
+  local_8 = param_1[2];
+  local_10 = uVar1;
+  FUN_004be4b0(&local_10,param_2);
+  if ((int)(local_10 & 0xffff) < (int)(short)uVar1) {
+    return CONCAT31((int3)(char)(uVar1 >> 8),1);
+  }
+  local_c = param_1[1];
+  uVar1 = *param_1;
+  local_8 = param_1[2];
+  local_10 = uVar1;
+  FUN_004be320(&local_10,param_2);
+  return CONCAT31((int3)(char)(uVar1 >> 8),(int)(local_10 & 0xffff) < (int)(short)uVar1);
+}
+
+
+
+===== Caller decompile for target 004be320 via 004be136 =====
+Function: FUN_004be0c0 at 004be0c0
+
+uint FUN_004be0c0(uint *param_1,undefined4 param_2)
+
+{
+  uint uVar1;
+  uint local_10;
+  uint local_c;
+  uint local_8;
+  
+  if ((char)(param_1[2] >> 0x10) == '\0') {
+    return param_1[2] >> 0x10;
+  }
+  local_c = param_1[1];
+  uVar1 = *param_1;
+  local_8 = param_1[2];
+  local_10 = uVar1;
+  FUN_004be4b0(&local_10,param_2);
+  if ((int)(short)uVar1 < (int)(local_10 & 0xffff)) {
+    return CONCAT31((int3)(char)(uVar1 >> 8),1);
+  }
+  local_c = param_1[1];
+  uVar1 = *param_1;
+  local_8 = param_1[2];
+  local_10 = uVar1;
+  FUN_004be320(&local_10,param_2);
+  return CONCAT31((int3)(char)(uVar1 >> 8),(int)(short)uVar1 < (int)(local_10 & 0xffff));
+}
+
+
+
+===== Caller decompile for target 004be320 via 004a1d22 =====
+Function: FUN_004a1ca0 at 004a1ca0
+
+void __thiscall
+FUN_004a1ca0(int param_1,int param_2,int param_3,int param_4,undefined4 param_5,undefined4 param_6,
+            undefined4 param_7)
+
+{
+  short *psVar1;
+  int iVar2;
+  int iVar3;
+  
+  iVar2 = param_2 * 0x180 + 0xd4 + param_1;
+  psVar1 = (short *)(iVar2 + 0x24 + param_3 * 2);
+  *psVar1 = *psVar1 + 1;
+  if (param_4 == 0) {
+    psVar1 = (short *)(iVar2 + 0xa4 + param_3 * 2);
+    *psVar1 = *psVar1 + 1;
+    *(int *)(param_1 + 0xcc) = *(int *)(param_1 + 0xcc) + 1;
+    if (*(uint *)(param_1 + 0xd0) < *(uint *)(param_1 + 0xcc)) {
+      *(uint *)(param_1 + 0xd0) = *(uint *)(param_1 + 0xcc);
+    }
+    *(int *)(iVar2 + 0x1c) = *(int *)(iVar2 + 0x1c) + 1;
+    if (*(uint *)(iVar2 + 0x20) < *(uint *)(iVar2 + 0x1c)) {
+      *(uint *)(iVar2 + 0x20) = *(uint *)(iVar2 + 0x1c);
+    }
+    FUN_004be4b0(iVar2,param_5);
+  }
+  else {
+    *(undefined4 *)(param_1 + 0xcc) = 0;
+    *(undefined4 *)(iVar2 + 0x1c) = 0;
+    if (param_4 == 2) {
+      FUN_004be280();
+    }
+    else {
+      FUN_004be320(iVar2,param_5);
+    }
+  }
+  iVar2 = FUN_0047c8c0();
+  *(int *)(param_1 + 0xc0) = *(int *)(param_1 + 0xc0) + *(int *)(iVar2 + 0x200088);
+  iVar2 = FUN_0047c8c0();
+  iVar2 = *(int *)(iVar2 + 0x200090);
+  iVar3 = FUN_0047c8c0();
+  iVar3 = *(int *)(iVar3 + 0x200094);
+  if (iVar2 < *(int *)(param_1 + 0xc0)) {
+    *(int *)(param_1 + 0xc0) = iVar2;
+  }
+  if (*(int *)(param_1 + 0xc0) < iVar3) {
+    *(int *)(param_1 + 0xc0) = iVar3;
+  }
+  if (*(int *)(param_1 + 0xc0) < 0) {
+    *(uint *)(param_1 + 0x14) = *(uint *)(param_1 + 0x14) | 1;
+  }
+  else {
+    *(uint *)(param_1 + 0x14) = *(uint *)(param_1 + 0x14) & 0xfffffffe;
+  }
+  FUN_004a27d0(param_7,param_4);
+  if (param_4 == 0) {
+    iVar2 = FUN_004bdfb0(param_6);
+    *(int *)(param_1 + 200) = *(int *)(param_1 + 200) + iVar2;
+    if (999999999 < *(uint *)(param_1 + 200)) {
+      *(undefined4 *)(param_1 + 200) = 999999999;
+    }
+  }
+  FUN_004a2870();
+  return;
+}
+
+
+
+===== References to 004be700 =====
+004be497 UNCONDITIONAL_CALL FUN_004be320 at 004be320
+
+===== References to 004be730 =====
+004be6e7 UNCONDITIONAL_CALL FUN_004be4b0 at 004be4b0
+
+===== Caller decompile for target 004be730 via 004be6e7 =====
+Function: FUN_004be4b0 at 004be4b0
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_004be4b0(ushort *param_1,uint param_2)
+
+{
+  ushort uVar1;
+  bool bVar2;
+  undefined2 uVar3;
+  short sVar4;
+  uint uVar5;
+  uint uVar6;
+  uint uVar7;
+  ushort uVar8;
+  
+  uVar1 = *param_1;
+  uVar6 = (uint)uVar1;
+  if ((short)param_2 == 0x28) {
+    param_2 = 0;
+  }
+  if ((uVar1 == 0) && (param_1[1] == 0)) {
+    param_1[1] = 0x7fff;
+  }
+  if ((char)param_1[5] == '\0') {
+    *(char *)(param_1 + 4) = (char)param_1[4] + '\x01';
+    *(char *)((int)param_1 + 9) = *(char *)((int)param_1 + 9) + '\x01';
+    FUN_004be1d0();
+    return;
+  }
+  uVar8 = (ushort)param_2;
+  if (uVar6 < 10) {
+    param_1[1] = param_1[1] + 100;
+    if (*(short *)(&DAT_009dffd0 + uVar6 * 8) + 0x7fff < (int)(uint)param_1[1]) {
+      param_1[1] = *(short *)(&DAT_009dffd0 + uVar6 * 8) + 0x7fff;
+    }
+    else if ((int)(uint)param_1[1] < *(short *)(&DAT_009dffd2 + uVar6 * 8) + 0x7fff) {
+      param_1[1] = *(short *)(&DAT_009dffd2 + uVar6 * 8) + 0x7fff;
+    }
+  }
+  else if (uVar6 < 0x18) {
+    uVar3 = FUN_004bdd60(uVar6,param_2,DAT_008a8f7c,DAT_008a8f74);
+    FUN_004bdcd0(uVar3);
+    uVar5 = param_2 & 0xffff;
+    uVar7 = uVar6;
+    if (uVar8 < uVar1) {
+      uVar7 = param_2 & 0xffff;
+      uVar5 = uVar6;
+    }
+    if (uVar5 <= uVar7 + 2) {
+      sVar4 = FUN_004bde70(uVar6,param_2,_DAT_008aa214,_DAT_008aa218);
+      param_1[2] = param_1[2] + sVar4;
+      if ((short)*(ushort *)(&DAT_009dffd4 + (uint)*param_1 * 8) < (short)param_1[2]) {
+        param_1[2] = *(ushort *)(&DAT_009dffd4 + (uint)*param_1 * 8);
+      }
+    }
+  }
+  else {
+    uVar3 = FUN_004bdd60(uVar6,param_2,DAT_008a8f7c,0);
+    FUN_004bdcd0(uVar3);
+    if (uVar6 < 0x23) {
+      uVar5 = param_2 & 0xffff;
+      uVar7 = uVar6;
+      if (uVar8 < uVar1) {
+        uVar7 = param_2 & 0xffff;
+        uVar5 = uVar6;
+      }
+      if (uVar5 <= uVar7 + 2) {
+        uVar3 = FUN_004bde70(uVar6,param_2,_DAT_008aa214,0x3f800000);
+        FUN_004bdd30(uVar3);
+      }
+    }
+  }
+  if (0x17 < uVar6) {
+    if (uVar6 < 0x1d) {
+      if (uVar8 < 0x16) goto LAB_004be67c;
+    }
+    else if (uVar6 < 0x26) {
+      if (uVar8 < 0x18) goto LAB_004be67c;
+    }
+    else if ((0x27 < uVar6) || (uVar8 < 0x1d)) goto LAB_004be67c;
+    param_1[3] = 0;
+  }
+LAB_004be67c:
+  bVar2 = false;
+  if (9 < uVar6) {
+    if (uVar6 < 0x1d) {
+      bVar2 = true;
+    }
+    else if (uVar6 < 0x23) {
+      if (uVar8 < 0x18) {
+        return;
+      }
+      bVar2 = true;
+    }
+    else if (uVar8 < uVar1) {
+      return;
+    }
+  }
+  if ((int)(uint)param_1[1] < *(short *)(&DAT_009dffd0 + uVar6 * 8) + 0x7fff) {
+    if ((*(short *)(&DAT_009dffd4 + uVar6 * 8) <= (short)param_1[2]) && (bVar2)) {
+      FUN_004be730(param_1);
+    }
+  }
+  else if (*param_1 < 0x27) {
+    *param_1 = *param_1 + 1;
+    param_1[1] = 0x7fff;
+    param_1[2] = 0;
+    param_1[3] = 0;
+    return;
+  }
+  return;
+}
+
+
+

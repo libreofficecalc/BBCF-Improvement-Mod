@@ -34,6 +34,15 @@ Ranked system is solved enough for UI progress:
 - progress bar = clamp((currentLp - lowerBound) / (upperBound - lowerBound), 0, 1)
 - Steam remains upload/readback boundary, not live progress authority
 
+Full predictive LP status:
+
+- not fully product-finished as a "predict exact next match gain/loss before result" feature
+- headless Ghidra now confirms the core LP update functions, bounds table, rank-up/rank-down helpers, and caller split between win/loss/draw-style paths
+- remaining work for a prediction feature is mostly integration/validation:
+  - identify the exact opponent rank value passed at the match-result callsite in all online ranked result cases
+  - verify `param_4 == 0` as win, `param_4 == 1` as loss, and `param_4 == 2` as draw/no-LP-update in live logs
+  - validate high-rank proximity/counter fields against real Leader+ matches before exposing prediction as final user-facing truth
+
 Critical Correction
 
 Manual Ghidra inspection proved ranked LP computation is in `BBCF.exe`.
@@ -76,13 +85,32 @@ Delta function:
 - Ghidra: `0x004BDDF0`
 - decompile name: `FUN_004bddf0(uint rankA, uint rankB)`
 
-Effective formula:
+Effective loss formula:
 
 ```c
-delta = max(1, 1024 >> abs((uint16_t)rankA - (uint16_t)rankB));
+lossDelta = max(1, trunc(1024 * pow(0.5f, abs((uint16_t)rankA - (uint16_t)rankB))));
 ```
 
-The caller subtracts this return value from LP. The sign / win-loss meaning is encoded by which ranks are passed and caller context, not by this function returning a signed value.
+The loss caller subtracts this value from LP, then clamps to the current rank's bounds table row.
+
+Win gain logic:
+
+- `FUN_004be4b0(row, opponentRank)` is the win-side LP update helper.
+- Internal rank `< 10`: gain is fixed `+100` LP, clamped to table bounds.
+- Internal rank `10..23`:
+  - same-rank opponent: `+1024`
+  - lower-rank opponent: `max(1, trunc(1024 * pow(0.5f, selfRank - opponentRank)))`
+  - higher-rank opponent: `trunc(1024 + ((opponentRank - selfRank) * 0.25f * 1024))`
+- Internal rank `24..39`:
+  - same-rank or higher-rank opponent: `+1024`
+  - lower-rank opponent: `max(1, trunc(1024 * pow(0.5f, selfRank - opponentRank)))`
+- Rank-up happens either by reaching the upper LP bound, or for qualifying ranks by filling the separate proximity/counter field enough to call `FUN_004be730`.
+
+Caller split:
+
+- `FUN_004a1ca0` calls `FUN_004be4b0` when its result parameter is `0`.
+- The same function calls `FUN_004be320` when that result parameter is neither `0` nor `2`.
+- The `2` path calls `FUN_004be280`, which resets proximity/counter conditions but does not directly add/subtract LP in the decompile.
 
 Bounds Table
 
@@ -248,10 +276,10 @@ Do not use these as active tasks or current truth:
 
 Remaining Unknowns
 
-- exact caller context for sign/win-loss around `FUN_004bddf0`
-- full named-rank behavior beyond rank_id 39 table limit
-- all uses of `unknown4` table field
-- exact high-rank counter semantics using `row[3]` and `counterLimit`
+- live validation of the `FUN_004a1ca0` result parameter meanings (`0` win, nonzero/non-2 loss, `2` draw/no-LP-update)
+- full named-rank behavior beyond rank_id 39 table limit; `FUN_004be730` refuses to increment past `0x27`
+- full high-rank proximity/counter semantics using `row[2]`, `row[3]`, `unknown4`, and `counterLimit`
+- runtime validation that the opponent/rank argument passed into `FUN_004be4b0` / `FUN_004be320` always matches the visible opponent rank bucket in real ranked matches
 
 Operational Guidance
 
@@ -275,3 +303,11 @@ Reference
 
 Full research log:
 → docs/Research/RankedProgress.md
+
+Headless Ghidra project and focused reports:
+
+- project: `docs/Research/BBCF-Ghidra-Project/`
+- usage: `docs/Research/GhidraHeadless.md`
+- main functions/table report: `docs/Research/RankedLpGhidraReport.txt`
+- caller report: `docs/Research/RankedLpCallersGhidraReport.txt`
+- helper report: `docs/Research/RankedLpHelpersGhidraReport.txt`
