@@ -313,6 +313,28 @@ namespace
 		return progress;
 	}
 
+	uint32_t GetRankedLpSpan(uint32_t internalRank)
+	{
+		uint32_t lowerBound = 0;
+		uint32_t upperBound = 0;
+		if (!TryGetRankedLpBounds(internalRank, &lowerBound, &upperBound, nullptr) || upperBound <= lowerBound)
+		{
+			return 0u;
+		}
+
+		return upperBound - lowerBound;
+	}
+
+	uint32_t GetCumulativeRankedLpBase(uint32_t internalRank)
+	{
+		uint32_t total = 0u;
+		for (uint32_t rank = 0; rank < internalRank; ++rank)
+		{
+			total += GetRankedLpSpan(rank);
+		}
+		return total;
+	}
+
 	void ApplyRankedLpBoundsToDisplayState(uint32_t internalRank, RankedProgressDisplayState* state)
 	{
 		if (!state)
@@ -324,13 +346,27 @@ namespace
 		uint32_t upperBound = 0;
 		if (!state->isUnranked && TryGetRankedLpBounds(internalRank, &lowerBound, &upperBound, nullptr))
 		{
-			state->lowerThreshold = lowerBound;
-			state->nextThreshold = upperBound;
+			const uint32_t cumulativeBase = GetCumulativeRankedLpBase(internalRank);
+			const uint32_t rankSpan = upperBound - lowerBound;
+			uint32_t rankProgressLp = 0u;
+			if (state->packedSubscore > lowerBound)
+			{
+				rankProgressLp = state->packedSubscore - lowerBound;
+				if (rankProgressLp > rankSpan)
+				{
+					rankProgressLp = rankSpan;
+				}
+			}
+
+			state->currentLp = cumulativeBase + rankProgressLp;
+			state->lowerThreshold = cumulativeBase;
+			state->nextThreshold = cumulativeBase + rankSpan;
 			state->thresholdKnown = true;
-			state->progress = ComputeRankedLpProgress(state->currentLp, lowerBound, upperBound);
+			state->progress = ComputeRankedLpProgress(state->currentLp, state->lowerThreshold, state->nextThreshold);
 			return;
 		}
 
+		state->currentLp = 0u;
 		state->lowerThreshold = 0u;
 		state->nextThreshold = 0u;
 		state->thresholdKnown = false;
@@ -348,7 +384,6 @@ namespace
 		state->isUnranked = uploadState.visibleRank == 0u;
 		state->rawPackedField00 = (uploadState.internalRank & 0xFFFFu) | ((uploadState.subscore & 0xFFFFu) << 16);
 		state->packedSubscore = uploadState.subscore;
-		state->currentLp = state->isUnranked ? 0u : uploadState.subscore;
 		ApplyRankedLpBoundsToDisplayState(uploadState.internalRank, state);
 		state->lpFromUpload = true;
 		state->valid = true;
@@ -760,10 +795,26 @@ namespace
 		outSnapshot->metadataNextRank = (*reinterpret_cast<const uint32_t*>(rowObject + 0xD4) >> 16) & 0xFFFFu;
 		outSnapshot->debugFieldF4 = *reinterpret_cast<const uint32_t*>(rowObject + 0xF4);
 		outSnapshot->isUnranked = outSnapshot->currentRank == 0;
-		outSnapshot->currentLp = outSnapshot->isUnranked ? 0u : outSnapshot->packedSubscore;
 		if (!outSnapshot->isUnranked &&
 			TryGetRankedLpBounds(outSnapshot->currentRank, &outSnapshot->lowerThreshold, &outSnapshot->nextThreshold, nullptr))
 		{
+			const uint32_t rawLowerThreshold = outSnapshot->lowerThreshold;
+			const uint32_t rawUpperThreshold = outSnapshot->nextThreshold;
+			const uint32_t cumulativeBase = GetCumulativeRankedLpBase(outSnapshot->currentRank);
+			const uint32_t rankSpan = rawUpperThreshold - rawLowerThreshold;
+			uint32_t rankProgressLp = 0u;
+			if (outSnapshot->packedSubscore > rawLowerThreshold)
+			{
+				rankProgressLp = outSnapshot->packedSubscore - rawLowerThreshold;
+				if (rankProgressLp > rankSpan)
+				{
+					rankProgressLp = rankSpan;
+				}
+			}
+
+			outSnapshot->currentLp = cumulativeBase + rankProgressLp;
+			outSnapshot->lowerThreshold = cumulativeBase;
+			outSnapshot->nextThreshold = cumulativeBase + rankSpan;
 			outSnapshot->remainingLp = outSnapshot->nextThreshold > outSnapshot->currentLp
 				? (outSnapshot->nextThreshold - outSnapshot->currentLp)
 				: 0u;
@@ -868,7 +919,6 @@ namespace
 			outState->lpFromUpload = true;
 			outState->characterId = characterId;
 			outState->visibleRank = uploadState->visibleRank;
-			outState->currentLp = uploadState->subscore;
 			outState->rawPackedField00 = (uploadState->internalRank & 0xFFFFu) | ((uploadState->subscore & 0xFFFFu) << 16);
 			outState->packedSubscore = uploadState->subscore;
 			ApplyRankedLpBoundsToDisplayState(uploadState->internalRank, outState);
