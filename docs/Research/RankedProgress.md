@@ -12821,7 +12821,7 @@ Patch made:
 - copied rank counts are published only after the chunked pass completes
 - character switch now resets first placement request to `-kPlacementRefreshSeconds`, matching global placement, so Kokonoe can request `DownloadLeaderboardEntriesForUsers` immediately after `RANK_KK` is found
 
-Next test:
+Next test (Entry #220):
 
 - deploy this build and open ranked without visiting the in-game Kokonoe leaderboard
 - expected proof:
@@ -12832,3 +12832,38 @@ Next test:
 - expected proof:
   - `RequestUserInformation` lines should come from the main thread used by the game/mod tick, not the detached distribution worker
   - names should no longer be forced into permanent `unknown` by off-thread Steam API reads
+
+## Entry #221 — Distribution worker thread was still spawned; caused permanent "unknown" names in game leaderboard
+
+**Result of Entry #220 test:** Kokonoe character placement fix confirmed working (no longer requires opening game leaderboard first). However, the in-game leaderboard started showing all names as "unknown" for any user whose entry was touched by our code, and only a full Steam restart cleared it. The build from commit `Fixed unlimited playback triggers` did not exhibit this; the regression was introduced in commit `Added character + global placement to UI, added stats to ranked ladder`.
+
+**Root cause identified:** `ProcessDistributionWorker` ran in a `std::thread` and called `m_SteamUserStats->GetDownloadedLeaderboardEntry()` (via `GetDownloadedLeaderboardEntryQuiet`) from off the main thread. Steam's leaderboard entry cache is not thread-safe. The off-thread calls raced with the game's own `GetDownloadedLeaderboardEntry` calls (which run on the main thread to populate the in-game Rankings screen), corrupting Steam's internal name-to-steamID mapping for those entries. Any user whose entry was read off-thread then showed as "unknown" permanently until Steam restarted, because Steam marks those persona records as "already resolved" with corrupt data.
+
+Symptom pattern:
+- If game leaderboard was opened first (loading entries 1–10), those 10 names were cached before our worker ran → showed fine
+- Our worker then read all remaining entries off-thread → those users got corrupted → showed "unknown"
+- Even restarting the game / mod did not fix it; Steam's persona cache persisted across restarts
+- Only a full Steam restart cleared the corrupt cache
+
+Entry #220's patch description said "distribution parsing no longer calls Steam APIs from a detached worker thread" and described chunked main-thread processing, but the actual implementation in the commit still spawned the thread. The `m_distributionEntries`, `m_distributionCopyIndex`, and `m_pendingRankPopulation` member variables were already present (scaffolded for the chunked design) but unused.
+
+**Fix applied (this entry):**
+
+Eliminated the `std::thread` entirely from `RankedLeaderboardTracker`. All distribution entry reading now happens on the main thread in 512-entry chunks per `Tick()` call:
+
+- `OnDistributionDownloaded`: stores `m_distributionEntries` handle and count, resets `m_distributionCopyIndex = 0`, clears `m_distributionPending` — no thread spawned
+- `UpdateDistribution`: when `m_distributionInProgress && m_distributionEntries != 0`, calls `ProcessDistributionChunk()` instead of starting a worker
+- `ProcessDistributionChunk()`: processes up to `kDistributionChunkSize = 512` entries per call using `GetDownloadedLeaderboardEntryQuiet`, accumulates into `m_pendingRankPopulation`; when `m_distributionCopyIndex >= m_distributionEntryCount`, publishes to `m_rankPopulation` and marks finished
+- Removed: `std::thread m_distributionWorker`, `std::atomic<bool>` flags, `mutable std::mutex m_distributionMutex`, `JoinDistributionWorkerIfFinished()`, `StartDistributionWorker()`, `ProcessDistributionWorker()`
+- All distribution bools converted from `std::atomic<bool>` to plain `bool` (no cross-thread access)
+- Removed `#include <atomic>`, `#include <mutex>`, `#include <thread>` from `MainWindow.cpp`
+
+`GetDownloadedLeaderboardEntryQuiet` in `SteamUserStatsWrapper.cpp` is unchanged — it remains a direct pass-through to the raw Steam API with no logging or persona side effects, which is correct for distribution counting.
+
+Next test:
+
+- Reset Steam (cold persona cache)
+- Launch game, enter ranked — let our mod do the distribution and placement downloads
+- Open in-game Rankings leaderboard
+- Expected: all names show correctly, not "unknown"
+- Check `DEBUG.txt` for `[RANK][LeaderboardUI] distribution complete counted=N downloaded=M` — no more `distribution worker` lines

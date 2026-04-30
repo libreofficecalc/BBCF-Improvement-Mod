@@ -25,15 +25,12 @@
 #include "imgui_internal.h"
 
 #include <algorithm>
-#include <atomic>
 #include <array>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
-#include <mutex>
 #include <sstream>
 #include <string>
-#include <thread>
 #include <utility>
 #include <vector>
 
@@ -548,14 +545,6 @@ namespace
 	class RankedLeaderboardTracker
 	{
 	public:
-		~RankedLeaderboardTracker()
-		{
-			if (m_distributionWorker.joinable())
-			{
-				m_distributionWorker.join();
-			}
-		}
-
 		void Tick(uint32_t characterId)
 		{
 			if (!g_interfaces.pSteamUserStatsWrapper || !g_interfaces.pSteamUserWrapper)
@@ -566,10 +555,20 @@ namespace
 			const double now = ImGui::GetTime();
 			EnsureGlobalLeaderboard(now);
 			UpdateGlobalPlacement(now);
-			UpdateDistribution(now);
-			JoinDistributionWorkerIfFinished();
 			EnsureCharacterLeaderboard(characterId, now);
 			UpdateCharacterPlacement(now);
+		}
+
+		void TickDistribution()
+		{
+			if (!g_interfaces.pSteamUserStatsWrapper || !g_interfaces.pSteamUserWrapper)
+			{
+				return;
+			}
+
+			const double now = ImGui::GetTime();
+			EnsureGlobalLeaderboard(now);
+			UpdateDistribution(now);
 		}
 
 		bool GetGlobalPlacement(int* outRank) const
@@ -599,36 +598,29 @@ namespace
 			(void)visibleRank;
 			if (outLoading)
 			{
-				*outLoading = m_distributionInProgress.load();
+				*outLoading = m_distributionInProgress;
 			}
 			if (!outCount || !outPercent || visibleRank >= m_rankPopulation.size())
 			{
 				return false;
 			}
 
-			std::lock_guard<std::mutex> guard(m_distributionMutex);
 			if (m_distributionTotal == 0u)
 			{
 				return false;
 			}
 			*outCount = m_rankPopulation[visibleRank];
 			*outPercent = static_cast<float>(m_rankPopulation[visibleRank]) * 100.0f / static_cast<float>(m_distributionTotal);
-			return m_distributionFinished.load() || m_distributionInProgress.load();
+			return m_distributionFinished || m_distributionInProgress;
 		}
 
 		void RequestDistributionRefresh()
 		{
-			JoinDistributionWorkerIfFinished();
-			if (m_distributionWorker.joinable())
-			{
-				return;
-			}
-			if (m_distributionPending.load() || m_distributionInProgress.load())
+			if (m_distributionPending || m_distributionInProgress)
 			{
 				return;
 			}
 
-			std::lock_guard<std::mutex> guard(m_distributionMutex);
 			m_rankPopulation.fill(0u);
 			m_distributionTotal = 0u;
 			m_pendingRankPopulation.fill(0u);
@@ -636,9 +628,8 @@ namespace
 			m_distributionEntries = 0;
 			m_distributionEntryCount = 0;
 			m_distributionCopyIndex = 0;
-			m_distributionWorkerDone.store(false);
-			m_distributionFinished.store(false);
-			m_distributionInProgress.store(true);
+			m_distributionFinished = false;
+			m_distributionInProgress = true;
 		}
 
 	private:
@@ -701,14 +692,20 @@ namespace
 
 		void UpdateDistribution(double now)
 		{
-			if (!m_globalLeaderboard || m_distributionPending.load())
+			if (!m_globalLeaderboard || m_distributionPending)
 			{
 				return;
 			}
 
-			if (!m_distributionInProgress.load())
+			if (m_distributionInProgress && m_distributionEntries != 0)
 			{
-				if (m_distributionFinished.load() || now < m_lastDistributionStart + kDistributionRefreshSeconds)
+				ProcessDistributionChunk();
+				return;
+			}
+
+			if (!m_distributionInProgress)
+			{
+				if (m_distributionFinished || now < m_lastDistributionStart + kDistributionRefreshSeconds)
 				{
 					return;
 				}
@@ -719,8 +716,8 @@ namespace
 				const int entryCount = g_interfaces.pSteamUserStatsWrapper->GetLeaderboardEntryCount(m_globalLeaderboard);
 				if (entryCount <= 0)
 				{
-					m_distributionInProgress.store(false);
-					m_distributionFinished.store(true);
+					m_distributionInProgress = false;
+					m_distributionFinished = true;
 					return;
 				}
 				m_distributionRequestedEnd = entryCount;
@@ -732,12 +729,12 @@ namespace
 					entryCount);
 				if (call)
 				{
-					m_distributionPending.store(true);
+					m_distributionPending = true;
 					m_distributionResult.Set(call, this, &RankedLeaderboardTracker::OnDistributionDownloaded);
 				}
 				else
 				{
-					m_distributionInProgress.store(false);
+					m_distributionInProgress = false;
 				}
 			}
 		}
@@ -886,94 +883,63 @@ namespace
 
 		void OnDistributionDownloaded(LeaderboardScoresDownloaded_t* callback, bool ioFailure)
 		{
-			m_distributionPending.store(false);
+			m_distributionPending = false;
 			if (ioFailure || !callback)
 			{
-				m_distributionInProgress.store(false);
+				m_distributionInProgress = false;
 				LOG(1, "[RANK][LeaderboardUI] distribution download failed range=1..%d ioFailure=%d\n",
 					m_distributionRequestedEnd,
 					ioFailure ? 1 : 0);
 				return;
 			}
 
+			m_distributionEntries = callback->m_hSteamLeaderboardEntries;
 			m_distributionEntryCount = callback->m_cEntryCount;
-			StartDistributionWorker(callback->m_hSteamLeaderboardEntries, callback->m_cEntryCount);
+			m_distributionCopyIndex = 0;
+			LOG(1, "[RANK][LeaderboardUI] distribution download ready downloaded=%d\n", callback->m_cEntryCount);
 		}
 
-		void JoinDistributionWorkerIfFinished()
+		void ProcessDistributionChunk()
 		{
-			if (m_distributionWorker.joinable() && m_distributionWorkerDone.load())
-			{
-				m_distributionWorker.join();
-			}
-		}
-
-		void StartDistributionWorker(SteamLeaderboardEntries_t entries, int entryCount)
-		{
-			JoinDistributionWorkerIfFinished();
-			if (m_distributionWorker.joinable())
-			{
-				m_distributionInProgress.store(false);
-				LOG(1, "[RANK][LeaderboardUI] distribution worker still running; skipped downloaded=%d\n", entryCount);
-				return;
-			}
-
-			m_distributionParsing.store(true);
-			m_distributionWorkerDone.store(false);
-			try
-			{
-				m_distributionWorker = std::thread(&RankedLeaderboardTracker::ProcessDistributionWorker, this, entries, entryCount);
-			}
-			catch (...)
-			{
-				m_distributionParsing.store(false);
-				m_distributionInProgress.store(false);
-				m_distributionWorkerDone.store(true);
-				LOG(1, "[RANK][LeaderboardUI] distribution worker start failed downloaded=%d\n", entryCount);
-				return;
-			}
-			LOG(1, "[RANK][LeaderboardUI] distribution worker queued downloaded=%d\n", entryCount);
-		}
-
-		void ProcessDistributionWorker(SteamLeaderboardEntries_t entries, int entryCount)
-		{
-			std::array<uint32_t, 64> rankPopulation{};
-			uint32_t distributionTotal = 0u;
 			SteamUserStatsWrapper* const stats = g_interfaces.pSteamUserStatsWrapper;
-			if (stats)
+			if (!stats)
 			{
-				for (int i = 0; i < entryCount; ++i)
-				{
-					LeaderboardEntry_t entry{};
-					int32 detailScratch[1] = {};
-					if (!stats->GetDownloadedLeaderboardEntryQuiet(entries, i, &entry, detailScratch, 0))
-					{
-						continue;
-					}
+				return;
+			}
 
-					const uint32_t internalRank = (static_cast<uint32_t>(entry.m_nScore) >> 16) & 0xFFFFu;
-					const uint32_t visibleRank = InternalRankToVisibleRank(internalRank, false);
-					if (visibleRank > 0u && visibleRank < rankPopulation.size())
-					{
-						++rankPopulation[visibleRank];
-						++distributionTotal;
-					}
+			const int chunkEnd = (std::min)(m_distributionCopyIndex + kDistributionChunkSize, m_distributionEntryCount);
+			for (int i = m_distributionCopyIndex; i < chunkEnd; ++i)
+			{
+				LeaderboardEntry_t entry{};
+				int32 detailScratch[1] = {};
+				if (!stats->GetDownloadedLeaderboardEntryQuiet(m_distributionEntries, i, &entry, detailScratch, 0))
+				{
+					continue;
+				}
+
+				const uint32_t internalRank = (static_cast<uint32_t>(entry.m_nScore) >> 16) & 0xFFFFu;
+				const uint32_t visibleRank = InternalRankToVisibleRank(internalRank, false);
+				if (visibleRank > 0u && visibleRank < m_pendingRankPopulation.size())
+				{
+					++m_pendingRankPopulation[visibleRank];
+					++m_pendingDistributionTotal;
 				}
 			}
+			m_distributionCopyIndex = chunkEnd;
 
+			if (m_distributionCopyIndex >= m_distributionEntryCount)
 			{
-				std::lock_guard<std::mutex> guard(m_distributionMutex);
-				m_rankPopulation = rankPopulation;
-				m_distributionTotal = distributionTotal;
+				m_rankPopulation = m_pendingRankPopulation;
+				m_distributionTotal = m_pendingDistributionTotal;
+				m_distributionInProgress = false;
+				m_distributionFinished = true;
+				LOG(1, "[RANK][LeaderboardUI] distribution complete counted=%u downloaded=%d\n",
+					static_cast<unsigned int>(m_pendingDistributionTotal),
+					m_distributionEntryCount);
 			}
-			m_distributionParsing.store(false);
-			m_distributionInProgress.store(false);
-			m_distributionFinished.store(true);
-			m_distributionWorkerDone.store(true);
-			LOG(1, "[RANK][LeaderboardUI] distribution worker complete counted=%u downloaded=%d\n",
-				static_cast<unsigned int>(distributionTotal),
-				entryCount);
 		}
+
+		static constexpr int kDistributionChunkSize = 512;
 
 		SteamLeaderboard_t m_globalLeaderboard = 0;
 		SteamLeaderboard_t m_characterLeaderboard = 0;
@@ -983,11 +949,9 @@ namespace
 		bool m_characterFindPending = false;
 		bool m_globalPlacementPending = false;
 		bool m_characterPlacementPending = false;
-		std::atomic<bool> m_distributionPending{ false };
-		std::atomic<bool> m_distributionParsing{ false };
-		std::atomic<bool> m_distributionInProgress{ false };
-		std::atomic<bool> m_distributionFinished{ false };
-		std::atomic<bool> m_distributionWorkerDone{ false };
+		bool m_distributionPending = false;
+		bool m_distributionInProgress = false;
+		bool m_distributionFinished = false;
 		bool m_hasGlobalPlacement = false;
 		bool m_hasCharacterPlacement = false;
 
@@ -1001,8 +965,6 @@ namespace
 		uint32_t m_pendingDistributionTotal = 0u;
 		std::array<uint32_t, 64> m_rankPopulation{};
 		std::array<uint32_t, 64> m_pendingRankPopulation{};
-		mutable std::mutex m_distributionMutex;
-		std::thread m_distributionWorker;
 
 		double m_lastGlobalFindAttempt = -15.0;
 		double m_lastCharacterFindAttempt = -15.0;
@@ -1025,6 +987,8 @@ namespace
 		{
 			return;
 		}
+
+		g_rankedLeaderboardTracker.TickDistribution();
 
 		ImGui::SetNextWindowSize(ImVec2(460.0f, 560.0f), ImGuiCond_FirstUseEver);
 		if (!ImGui::Begin(L("Ranked ladder###RankedLadder").c_str(), &g_showRankedLadderWindow, ImGuiWindowFlags_NoCollapse))
