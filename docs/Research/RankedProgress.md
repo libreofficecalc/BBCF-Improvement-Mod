@@ -12708,3 +12708,127 @@ Current LP formula status:
 - UI progress is solved from local row packed LP plus `DAT_009DFFD0` bounds.
 - Core win/loss LP math is now code-level understood and documented in `RankedREState.md`.
 - Full pre-match prediction is still not product-finished until live logs validate the result parameter meanings and opponent-rank argument for real ranked results, especially at Leader+ ranks.
+
+## Entry #218 — Ranked UI Steam-download regression and Hades counter correction
+
+User-reported regression after ranked-progress UI work:
+
+- normal in-game Rankings / leaderboard now shows everyone as `unknown`
+- entering ranked character select freezes briefly
+- a Hades-ranked player shows `305128 LP out of 305128 LP` and the UI shows both promotion and demotion counters
+
+Static/code evidence:
+
+- `src/Overlay/Window/MainWindow.cpp` had started `DownloadLeaderboardEntries(RANK_ALL, Global, 1..1000000)` from the ranked overlay tracker.
+- Steam leaderboard downloads are callback-based, but processing a very large callback still runs on the game/mod callback path and can stall UI.
+- That population-wide request is also the strongest suspect for disrupting normal leaderboard/persona-name availability, because it asks Steam for a huge RANK_ALL result set unrelated to the game's own Rankings screen.
+- Ghidra report `RankedLpHelpersGhidraReport.txt` shows promotion counter logic is not active for Hades:
+  - win-side rank-up-by-counter path is active only below internal rank `35`
+  - Hades is visible rank `39`, internal rank `38`
+  - Hades rank-up is LP-threshold based, not promotion-counter based
+- Demotion counter remains meaningful for Hades:
+  - loss-side counter increment applies to internal rank `37+` when opponent rank qualifies
+  - demotion threshold still uses `DAT_009DFFD0 + 6`, currently `5`
+
+Patch made:
+
+- restored the population-wide RANK_ALL download for ranked ladder stats, but moved entry parsing to a detached worker thread so the Steam callback/render path does not loop every entry
+- left small `GlobalAroundUser` placement requests for local global/character leaderboard placement
+- fixed per-character leaderboard lookup names from lowercase `rank_XX` to the game-observed uppercase `RANK_XX` form, e.g. Kokonoe now asks for `RANK_KK`
+- changed promotion counter limit exposure so ranks `internal >= 35` report no promotion counter
+- changed demotion counter limit exposure so only ranks `internal > 23` report demotion counters
+
+Hades interpretation after this patch:
+
+- visible Hades = internal rank `38`
+- `DAT_009DFFD0[38]` bounds are lower `27647`, upper `48127`
+- cumulative UI threshold to Ruler is `305128 LP`
+- if a Hades row's subscore is exactly at the upper bound, the UI can show `305128/305128`; game win logic should normally rank up at that boundary, so a live row/log from the Hades account is needed to tell whether that state is a real edge state, stale/upload-derived state, or a remaining UI-source bug
+- Hades should show demotion counter only, not promotion counter
+
+Next test:
+
+- deploy this build, open normal Rankings first, and verify whether names are still `unknown`
+- enter ranked character select and verify the big ranked-ladder query no longer stalls the game while stats are parsed
+- check that Kokonoe placement appears after `RANK_KK` lookup/download completes
+- on the Hades account, capture `[RANK][OverlayProgress]` for the Hades character; the important fields are `rank`, `lp`, `nextLp`, `promotion`, `demotion`, `packed00`, and `packedSub`
+
+## Entry #219 — DEBUG.txt proves persona requests were missing and Kokonoe placement source works
+
+User retested with the async ranked-ladder build:
+
+- normal in-game Rankings still showed all names as `unknown`
+- Kokonoe character placement appeared only after visiting the in-game Kokonoe leaderboard and returning to ranked
+
+What `/mnt/d/SteamLibrary/steamapps/common/BlazBlue Centralfiction/BBCF_IM/DEBUG.txt` proved:
+
+- leaderboard entries were downloading successfully; examples:
+  - `GetDownloadedLeaderboardEntry ... steamID=... globalRank=... score=...`
+- no `RequestUserInformation` lines appeared while leaderboard entries were read
+- therefore Steam had SteamIDs but persona names were not being requested/cached, explaining `unknown`
+- `RANK_KK` is the correct Kokonoe leaderboard name
+- after `RANK_KK` was available, a local-only character placement request returned the needed data:
+  - `DownloadLeaderboardEntries handle=1759970 request=1(AroundUser) range=0..0`
+  - `GetDownloadedLeaderboardEntry ... isLocal=1 globalRank=34 score=2130431`
+
+Patch made:
+
+- `SteamUserStatsWrapper::GetDownloadedLeaderboardEntry` now one-shot requests persona info for each returned leaderboard SteamID:
+  - calls `SteamFriendsWrapper::RequestUserInformation(steamID, true)`
+  - uses a process-local set so each SteamID is requested once
+  - logs `[Leaderboard] RequestUserInformation steamID=... pending=...`
+- ranked overlay character placement now uses `DownloadLeaderboardEntriesForUsers` for the local SteamID once the character leaderboard handle is known, instead of relying on `AroundUser`
+
+Next test:
+
+- deploy this build and open normal Rankings
+- proof that the fix is active:
+  - `[Leaderboard] RequestUserInformation steamID=... pending=...` appears for downloaded rows
+  - names should populate once Steam persona callbacks arrive
+- open ranked progress on Kokonoe without visiting in-game Kokonoe leaderboard first
+- proof that placement path is active:
+  - `FindLeaderboard name='RANK_KK'`
+  - `DownloadLeaderboardEntriesForUsers ... name='RANK_KK' users=1`
+  - local row returns `globalRank=34` or current real rank
+
+## Entry #220 — Latest DEBUG.txt: persona requests fire, but off-thread Steam reads and first-placement throttle remain
+
+User retested after Entry #219 and saw the same symptoms:
+
+- normal in-game Rankings still showed `unknown`
+- Kokonoe placement still appeared only after opening the in-game Kokonoe leaderboard first
+
+What the new `DEBUG.txt` proved:
+
+- persona requests now fire:
+  - `[Leaderboard] RequestUserInformation steamID=... pending=1`
+- those requests were emitted from the ranked-ladder distribution worker thread, not the main Steam callback path
+- the async parser still called Steam APIs off-thread:
+  - `GetDownloadedLeaderboardEntry`
+  - `RequestUserInformation`
+- Kokonoe leaderboard discovery itself worked early:
+  - `FindLeaderboard name='RANK_KK'`
+  - `[RANK][LeaderboardUI] found character leaderboard char=24 handle=1759970`
+- Kokonoe placement download was delayed until roughly 60 seconds after launch:
+  - `DownloadLeaderboardEntriesForUsers handle=1759970 users=1 ...`
+- root cause for that delay was `m_lastCharacterPlacementRequest = 0.0` on character change; with a 60 second refresh interval, first request could not run until ImGui time passed 60 seconds
+
+Patch made:
+
+- distribution parsing no longer calls Steam APIs from a detached worker thread
+- after `LeaderboardScoresDownloaded_t`, the tracker now copies/reads leaderboard entries in 512-entry chunks on the normal game/mod tick path
+- each chunk calls `GetDownloadedLeaderboardEntry` on the main path, so persona prefetch also runs on the main path
+- copied rank counts are published only after the chunked pass completes
+- character switch now resets first placement request to `-kPlacementRefreshSeconds`, matching global placement, so Kokonoe can request `DownloadLeaderboardEntriesForUsers` immediately after `RANK_KK` is found
+
+Next test:
+
+- deploy this build and open ranked without visiting the in-game Kokonoe leaderboard
+- expected proof:
+  - `found character leaderboard char=24 handle=1759970`
+  - `DownloadLeaderboardEntriesForUsers ... users=1` appears immediately after, not 45-60 seconds later
+  - local row returns `isLocal=1 globalRank=...`
+- open normal in-game Rankings
+- expected proof:
+  - `RequestUserInformation` lines should come from the main thread used by the game/mod tick, not the detached distribution worker
+  - names should no longer be forced into permanent `unknown` by off-thread Steam API reads

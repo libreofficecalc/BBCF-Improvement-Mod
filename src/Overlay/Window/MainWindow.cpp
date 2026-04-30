@@ -25,13 +25,17 @@
 #include "imgui_internal.h"
 
 #include <algorithm>
+#include <atomic>
 #include <array>
 #include <cmath>
 #include <cstdio>
-#include <sstream>
-#include <utility>
 #include <cstring>
+#include <mutex>
+#include <sstream>
 #include <string>
+#include <thread>
+#include <utility>
+#include <vector>
 
 namespace
 {
@@ -98,7 +102,7 @@ namespace
 	struct RankedOverlayTuning
 	{
 		// Overall ranked progress window width in pixels.
-		float overlayWidth = 500.0f;
+		float overlayWidth = 680.0f;
 		// Height of the horizontal LP progress bar in pixels.
 		float barHeight = 20.0f;
 
@@ -212,6 +216,19 @@ namespace
 	};
 
 	RankedOverlayVisibilityState g_rankedOverlayVisibility{};
+	bool g_showRankedLadderWindow = false;
+
+	struct RankedProgressTopRowOptions
+	{
+		bool showMatches = true;
+		bool showWins = true;
+		bool showLosses = false;
+		bool showWinrate = true;
+		bool showCharacterLeaderboardPlacement = true;
+		bool showGlobalLeaderboardPlacement = true;
+	};
+
+	RankedProgressTopRowOptions g_rankedProgressTopRowOptions{};
 
 	struct RankedUploadObservationState
 	{
@@ -301,11 +318,11 @@ namespace
 		}
 		if (outPromotionCounterLimit)
 		{
-			*outPromotionCounterLimit = entry.unknown4;
+			*outPromotionCounterLimit = internalRank < 35u ? entry.unknown4 : 0;
 		}
 		if (outDemotionCounterLimit)
 		{
-			*outDemotionCounterLimit = entry.counterLimit;
+			*outDemotionCounterLimit = internalRank > 23u ? entry.counterLimit : 0;
 		}
 		return true;
 	}
@@ -511,6 +528,579 @@ namespace
 		}
 
 		return g_rankedOverlayTuning.leaderRankColor;
+	}
+
+	const char* GetRankLeaderboardCode(uint32_t characterId)
+	{
+		static const char* kCodes[] =
+		{
+			"RG", "JN", "NL", "RC", "TK", "TG",
+			"LI", "AR", "BG", "CA", "HK", "NU",
+			"TB", "HZ", "MU", "MK", "VN", "PL",
+			"RL", "IY", "AM", "BL", "AZ", "KG",
+			"KK", "TM", "CE", "LA", "HB", "NI",
+			"NT", "IZ", "SU", "ES", "MA", "JB",
+		};
+
+		return characterId < (sizeof(kCodes) / sizeof(kCodes[0])) ? kCodes[characterId] : nullptr;
+	}
+
+	class RankedLeaderboardTracker
+	{
+	public:
+		~RankedLeaderboardTracker()
+		{
+			if (m_distributionWorker.joinable())
+			{
+				m_distributionWorker.join();
+			}
+		}
+
+		void Tick(uint32_t characterId)
+		{
+			if (!g_interfaces.pSteamUserStatsWrapper || !g_interfaces.pSteamUserWrapper)
+			{
+				return;
+			}
+
+			const double now = ImGui::GetTime();
+			EnsureGlobalLeaderboard(now);
+			UpdateGlobalPlacement(now);
+			UpdateDistribution(now);
+			JoinDistributionWorkerIfFinished();
+			EnsureCharacterLeaderboard(characterId, now);
+			UpdateCharacterPlacement(now);
+		}
+
+		bool GetGlobalPlacement(int* outRank) const
+		{
+			if (!outRank || !m_hasGlobalPlacement)
+			{
+				return false;
+			}
+
+			*outRank = m_globalPlacement;
+			return true;
+		}
+
+		bool GetCharacterPlacement(uint32_t characterId, int* outRank) const
+		{
+			if (!outRank || !m_hasCharacterPlacement || m_characterId != characterId)
+			{
+				return false;
+			}
+
+			*outRank = m_characterPlacement;
+			return true;
+		}
+
+		bool GetRankPopulationStats(uint32_t visibleRank, uint32_t* outCount, float* outPercent, bool* outLoading) const
+		{
+			(void)visibleRank;
+			if (outLoading)
+			{
+				*outLoading = m_distributionInProgress.load();
+			}
+			if (!outCount || !outPercent || visibleRank >= m_rankPopulation.size())
+			{
+				return false;
+			}
+
+			std::lock_guard<std::mutex> guard(m_distributionMutex);
+			if (m_distributionTotal == 0u)
+			{
+				return false;
+			}
+			*outCount = m_rankPopulation[visibleRank];
+			*outPercent = static_cast<float>(m_rankPopulation[visibleRank]) * 100.0f / static_cast<float>(m_distributionTotal);
+			return m_distributionFinished.load() || m_distributionInProgress.load();
+		}
+
+		void RequestDistributionRefresh()
+		{
+			JoinDistributionWorkerIfFinished();
+			if (m_distributionWorker.joinable())
+			{
+				return;
+			}
+			if (m_distributionPending.load() || m_distributionInProgress.load())
+			{
+				return;
+			}
+
+			std::lock_guard<std::mutex> guard(m_distributionMutex);
+			m_rankPopulation.fill(0u);
+			m_distributionTotal = 0u;
+			m_pendingRankPopulation.fill(0u);
+			m_pendingDistributionTotal = 0u;
+			m_distributionEntries = 0;
+			m_distributionEntryCount = 0;
+			m_distributionCopyIndex = 0;
+			m_distributionWorkerDone.store(false);
+			m_distributionFinished.store(false);
+			m_distributionInProgress.store(true);
+		}
+
+	private:
+		static constexpr double kPlacementRefreshSeconds = 60.0;
+		static constexpr double kDistributionRefreshSeconds = 3600.0;
+
+		void EnsureGlobalLeaderboard(double now)
+		{
+			if (m_globalLeaderboard || m_globalFindPending || now < m_lastGlobalFindAttempt + 15.0)
+			{
+				return;
+			}
+
+			SteamAPICall_t call = g_interfaces.pSteamUserStatsWrapper->FindLeaderboard("RANK_ALL");
+			if (call)
+			{
+				m_globalFindPending = true;
+				m_lastGlobalFindAttempt = now;
+				m_globalFindResult.Set(call, this, &RankedLeaderboardTracker::OnGlobalLeaderboardFound);
+			}
+		}
+
+		void EnsureCharacterLeaderboard(uint32_t characterId, double now)
+		{
+			if (characterId >= 64u)
+			{
+				return;
+			}
+			if (m_characterId != characterId)
+			{
+				m_characterId = characterId;
+				m_characterLeaderboard = 0;
+				m_characterFindPending = false;
+				m_characterPlacementPending = false;
+				m_hasCharacterPlacement = false;
+				m_lastCharacterFindAttempt = -15.0;
+				m_lastCharacterPlacementRequest = -kPlacementRefreshSeconds;
+			}
+			if (m_characterLeaderboard || m_characterFindPending || now < m_lastCharacterFindAttempt + 15.0)
+			{
+				return;
+			}
+
+			const char* code = GetRankLeaderboardCode(characterId);
+			if (!code)
+			{
+				return;
+			}
+
+			std::string leaderboardName = "RANK_";
+			leaderboardName += code;
+			SteamAPICall_t call = g_interfaces.pSteamUserStatsWrapper->FindLeaderboard(leaderboardName.c_str());
+			if (call)
+			{
+				m_characterFindPending = true;
+				m_lastCharacterFindAttempt = now;
+				m_characterFindResult.Set(call, this, &RankedLeaderboardTracker::OnCharacterLeaderboardFound);
+			}
+		}
+
+		void UpdateDistribution(double now)
+		{
+			if (!m_globalLeaderboard || m_distributionPending.load())
+			{
+				return;
+			}
+
+			if (!m_distributionInProgress.load())
+			{
+				if (m_distributionFinished.load() || now < m_lastDistributionStart + kDistributionRefreshSeconds)
+				{
+					return;
+				}
+
+				RequestDistributionRefresh();
+				m_lastDistributionStart = now;
+
+				const int entryCount = g_interfaces.pSteamUserStatsWrapper->GetLeaderboardEntryCount(m_globalLeaderboard);
+				if (entryCount <= 0)
+				{
+					m_distributionInProgress.store(false);
+					m_distributionFinished.store(true);
+					return;
+				}
+				m_distributionRequestedEnd = entryCount;
+
+				SteamAPICall_t call = g_interfaces.pSteamUserStatsWrapper->DownloadLeaderboardEntries(
+					m_globalLeaderboard,
+					k_ELeaderboardDataRequestGlobal,
+					1,
+					entryCount);
+				if (call)
+				{
+					m_distributionPending.store(true);
+					m_distributionResult.Set(call, this, &RankedLeaderboardTracker::OnDistributionDownloaded);
+				}
+				else
+				{
+					m_distributionInProgress.store(false);
+				}
+			}
+		}
+
+		void UpdateGlobalPlacement(double now)
+		{
+			if (!m_globalLeaderboard || m_globalPlacementPending || now < m_lastGlobalPlacementRequest + kPlacementRefreshSeconds)
+			{
+				return;
+			}
+
+			SteamAPICall_t call = g_interfaces.pSteamUserStatsWrapper->DownloadLeaderboardEntries(
+				m_globalLeaderboard,
+				k_ELeaderboardDataRequestGlobalAroundUser,
+				0,
+				0);
+			if (call)
+			{
+				m_globalPlacementPending = true;
+				m_lastGlobalPlacementRequest = now;
+				m_globalPlacementResult.Set(call, this, &RankedLeaderboardTracker::OnGlobalPlacementDownloaded);
+			}
+		}
+
+		void UpdateCharacterPlacement(double now)
+		{
+			if (!m_characterLeaderboard || m_characterPlacementPending || now < m_lastCharacterPlacementRequest + kPlacementRefreshSeconds)
+			{
+				return;
+			}
+
+			SteamAPICall_t call = 0;
+			CSteamID localSteamId{};
+			if (g_interfaces.pSteamUserWrapper)
+			{
+				localSteamId = g_interfaces.pSteamUserWrapper->GetSteamID();
+				call = g_interfaces.pSteamUserStatsWrapper->DownloadLeaderboardEntriesForUsers(
+					m_characterLeaderboard,
+					&localSteamId,
+					1);
+			}
+			else
+			{
+				call = g_interfaces.pSteamUserStatsWrapper->DownloadLeaderboardEntries(
+					m_characterLeaderboard,
+					k_ELeaderboardDataRequestGlobalAroundUser,
+					0,
+					0);
+			}
+			if (call)
+			{
+				m_characterPlacementPending = true;
+				m_lastCharacterPlacementRequest = now;
+				m_characterPlacementResult.Set(call, this, &RankedLeaderboardTracker::OnCharacterPlacementDownloaded);
+			}
+		}
+
+		bool TryExtractLocalRank(SteamLeaderboardEntries_t entries, int entryCount, int* outRank) const
+		{
+			if (!g_interfaces.pSteamUserStatsWrapper || !g_interfaces.pSteamUserWrapper || !outRank)
+			{
+				return false;
+			}
+
+			const uint64 localSteamId = g_interfaces.pSteamUserWrapper->GetSteamID().ConvertToUint64();
+			for (int i = 0; i < entryCount; ++i)
+			{
+				LeaderboardEntry_t entry{};
+				int32 details[8] = {};
+				if (!g_interfaces.pSteamUserStatsWrapper->GetDownloadedLeaderboardEntry(entries, i, &entry, details, 8))
+				{
+					continue;
+				}
+				if (entry.m_steamIDUser.ConvertToUint64() == localSteamId)
+				{
+					*outRank = entry.m_nGlobalRank;
+					return true;
+				}
+			}
+
+			return false;
+		}
+
+		void OnGlobalLeaderboardFound(LeaderboardFindResult_t* callback, bool ioFailure)
+		{
+			m_globalFindPending = false;
+			if (ioFailure || !callback || !callback->m_bLeaderboardFound)
+			{
+				LOG(1, "[RANK][LeaderboardUI] failed to find RANK_ALL ioFailure=%d\n", ioFailure ? 1 : 0);
+				return;
+			}
+
+			m_globalLeaderboard = callback->m_hSteamLeaderboard;
+			LOG(1, "[RANK][LeaderboardUI] found RANK_ALL handle=%llu\n",
+				static_cast<unsigned long long>(m_globalLeaderboard));
+		}
+
+		void OnCharacterLeaderboardFound(LeaderboardFindResult_t* callback, bool ioFailure)
+		{
+			m_characterFindPending = false;
+			if (ioFailure || !callback || !callback->m_bLeaderboardFound)
+			{
+				LOG(1, "[RANK][LeaderboardUI] failed to find character leaderboard char=%u ioFailure=%d\n",
+					static_cast<unsigned int>(m_characterId),
+					ioFailure ? 1 : 0);
+				return;
+			}
+
+			m_characterLeaderboard = callback->m_hSteamLeaderboard;
+			LOG(1, "[RANK][LeaderboardUI] found character leaderboard char=%u handle=%llu\n",
+				static_cast<unsigned int>(m_characterId),
+				static_cast<unsigned long long>(m_characterLeaderboard));
+		}
+
+		void OnGlobalPlacementDownloaded(LeaderboardScoresDownloaded_t* callback, bool ioFailure)
+		{
+			m_globalPlacementPending = false;
+			if (ioFailure || !callback)
+			{
+				return;
+			}
+
+			int rank = 0;
+			if (TryExtractLocalRank(callback->m_hSteamLeaderboardEntries, callback->m_cEntryCount, &rank))
+			{
+				m_globalPlacement = rank;
+				m_hasGlobalPlacement = true;
+			}
+		}
+
+		void OnCharacterPlacementDownloaded(LeaderboardScoresDownloaded_t* callback, bool ioFailure)
+		{
+			m_characterPlacementPending = false;
+			if (ioFailure || !callback)
+			{
+				return;
+			}
+
+			int rank = 0;
+			if (TryExtractLocalRank(callback->m_hSteamLeaderboardEntries, callback->m_cEntryCount, &rank))
+			{
+				m_characterPlacement = rank;
+				m_hasCharacterPlacement = true;
+			}
+		}
+
+		void OnDistributionDownloaded(LeaderboardScoresDownloaded_t* callback, bool ioFailure)
+		{
+			m_distributionPending.store(false);
+			if (ioFailure || !callback)
+			{
+				m_distributionInProgress.store(false);
+				LOG(1, "[RANK][LeaderboardUI] distribution download failed range=1..%d ioFailure=%d\n",
+					m_distributionRequestedEnd,
+					ioFailure ? 1 : 0);
+				return;
+			}
+
+			m_distributionEntryCount = callback->m_cEntryCount;
+			StartDistributionWorker(callback->m_hSteamLeaderboardEntries, callback->m_cEntryCount);
+		}
+
+		void JoinDistributionWorkerIfFinished()
+		{
+			if (m_distributionWorker.joinable() && m_distributionWorkerDone.load())
+			{
+				m_distributionWorker.join();
+			}
+		}
+
+		void StartDistributionWorker(SteamLeaderboardEntries_t entries, int entryCount)
+		{
+			JoinDistributionWorkerIfFinished();
+			if (m_distributionWorker.joinable())
+			{
+				m_distributionInProgress.store(false);
+				LOG(1, "[RANK][LeaderboardUI] distribution worker still running; skipped downloaded=%d\n", entryCount);
+				return;
+			}
+
+			m_distributionParsing.store(true);
+			m_distributionWorkerDone.store(false);
+			try
+			{
+				m_distributionWorker = std::thread(&RankedLeaderboardTracker::ProcessDistributionWorker, this, entries, entryCount);
+			}
+			catch (...)
+			{
+				m_distributionParsing.store(false);
+				m_distributionInProgress.store(false);
+				m_distributionWorkerDone.store(true);
+				LOG(1, "[RANK][LeaderboardUI] distribution worker start failed downloaded=%d\n", entryCount);
+				return;
+			}
+			LOG(1, "[RANK][LeaderboardUI] distribution worker queued downloaded=%d\n", entryCount);
+		}
+
+		void ProcessDistributionWorker(SteamLeaderboardEntries_t entries, int entryCount)
+		{
+			std::array<uint32_t, 64> rankPopulation{};
+			uint32_t distributionTotal = 0u;
+			SteamUserStatsWrapper* const stats = g_interfaces.pSteamUserStatsWrapper;
+			if (stats)
+			{
+				for (int i = 0; i < entryCount; ++i)
+				{
+					LeaderboardEntry_t entry{};
+					int32 detailScratch[1] = {};
+					if (!stats->GetDownloadedLeaderboardEntryQuiet(entries, i, &entry, detailScratch, 0))
+					{
+						continue;
+					}
+
+					const uint32_t internalRank = (static_cast<uint32_t>(entry.m_nScore) >> 16) & 0xFFFFu;
+					const uint32_t visibleRank = InternalRankToVisibleRank(internalRank, false);
+					if (visibleRank > 0u && visibleRank < rankPopulation.size())
+					{
+						++rankPopulation[visibleRank];
+						++distributionTotal;
+					}
+				}
+			}
+
+			{
+				std::lock_guard<std::mutex> guard(m_distributionMutex);
+				m_rankPopulation = rankPopulation;
+				m_distributionTotal = distributionTotal;
+			}
+			m_distributionParsing.store(false);
+			m_distributionInProgress.store(false);
+			m_distributionFinished.store(true);
+			m_distributionWorkerDone.store(true);
+			LOG(1, "[RANK][LeaderboardUI] distribution worker complete counted=%u downloaded=%d\n",
+				static_cast<unsigned int>(distributionTotal),
+				entryCount);
+		}
+
+		SteamLeaderboard_t m_globalLeaderboard = 0;
+		SteamLeaderboard_t m_characterLeaderboard = 0;
+		uint32_t m_characterId = kInvalidRankedCharacterId;
+
+		bool m_globalFindPending = false;
+		bool m_characterFindPending = false;
+		bool m_globalPlacementPending = false;
+		bool m_characterPlacementPending = false;
+		std::atomic<bool> m_distributionPending{ false };
+		std::atomic<bool> m_distributionParsing{ false };
+		std::atomic<bool> m_distributionInProgress{ false };
+		std::atomic<bool> m_distributionFinished{ false };
+		std::atomic<bool> m_distributionWorkerDone{ false };
+		bool m_hasGlobalPlacement = false;
+		bool m_hasCharacterPlacement = false;
+
+		int m_globalPlacement = 0;
+		int m_characterPlacement = 0;
+		int m_distributionRequestedEnd = 0;
+		SteamLeaderboardEntries_t m_distributionEntries = 0;
+		int m_distributionEntryCount = 0;
+		int m_distributionCopyIndex = 0;
+		uint32_t m_distributionTotal = 0u;
+		uint32_t m_pendingDistributionTotal = 0u;
+		std::array<uint32_t, 64> m_rankPopulation{};
+		std::array<uint32_t, 64> m_pendingRankPopulation{};
+		mutable std::mutex m_distributionMutex;
+		std::thread m_distributionWorker;
+
+		double m_lastGlobalFindAttempt = -15.0;
+		double m_lastCharacterFindAttempt = -15.0;
+		double m_lastGlobalPlacementRequest = -kPlacementRefreshSeconds;
+		double m_lastCharacterPlacementRequest = -kPlacementRefreshSeconds;
+		double m_lastDistributionStart = -kDistributionRefreshSeconds;
+
+		CCallResult<RankedLeaderboardTracker, LeaderboardFindResult_t> m_globalFindResult;
+		CCallResult<RankedLeaderboardTracker, LeaderboardFindResult_t> m_characterFindResult;
+		CCallResult<RankedLeaderboardTracker, LeaderboardScoresDownloaded_t> m_globalPlacementResult;
+		CCallResult<RankedLeaderboardTracker, LeaderboardScoresDownloaded_t> m_characterPlacementResult;
+		CCallResult<RankedLeaderboardTracker, LeaderboardScoresDownloaded_t> m_distributionResult;
+	};
+
+	RankedLeaderboardTracker g_rankedLeaderboardTracker{};
+
+	void DrawRankedLadderWindow()
+	{
+		if (!g_showRankedLadderWindow)
+		{
+			return;
+		}
+
+		ImGui::SetNextWindowSize(ImVec2(460.0f, 560.0f), ImGuiCond_FirstUseEver);
+		if (!ImGui::Begin(L("Ranked ladder###RankedLadder").c_str(), &g_showRankedLadderWindow, ImGuiWindowFlags_NoCollapse))
+		{
+			ImGui::End();
+			return;
+		}
+
+		ImGui::Columns(4, "ranked_ladder_columns", true);
+		ImGui::TextUnformatted(L("Rank").c_str());
+		ImGui::NextColumn();
+		ImGui::TextUnformatted(L("LP").c_str());
+		ImGui::NextColumn();
+		ImGui::TextUnformatted(L("Next").c_str());
+		ImGui::NextColumn();
+		ImGui::TextUnformatted(L("Players").c_str());
+		ImGui::NextColumn();
+		ImGui::Separator();
+
+		ImGui::TextUnformatted("AUTH");
+		ImGui::NextColumn();
+		ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.62f, 0.64f, 0.69f, 1.0f));
+		ImGui::TextUnformatted("0 LP");
+		ImGui::NextColumn();
+		ImGui::TextUnformatted("LV1");
+		ImGui::NextColumn();
+		ImGui::TextUnformatted("Ignored");
+		ImGui::NextColumn();
+		ImGui::PopStyleColor();
+
+		constexpr uint32_t rankCount = static_cast<uint32_t>(sizeof(kRankedLpBoundsTable) / sizeof(kRankedLpBoundsTable[0]));
+		for (uint32_t internalRank = 0; internalRank < rankCount; ++internalRank)
+		{
+			const uint32_t visibleRank = internalRank + 1u;
+			const std::string rankLabel = FormatVisibleRankLabel(visibleRank, false);
+			const ImVec4 rankColor = GetVisibleRankColor(visibleRank, false);
+			const uint32_t requiredLp = GetCumulativeRankedLpBase(internalRank);
+			const uint32_t nextLp = requiredLp + GetRankedLpSpan(internalRank);
+
+			ImGui::PushStyleColor(ImGuiCol_Text, rankColor);
+			ImGui::TextUnformatted(rankLabel.c_str());
+			ImGui::PopStyleColor();
+			ImGui::NextColumn();
+
+			char lpBuffer[32] = {};
+			std::snprintf(lpBuffer, sizeof(lpBuffer), "%u LP", static_cast<unsigned int>(requiredLp));
+			ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.62f, 0.64f, 0.69f, 1.0f));
+			ImGui::TextUnformatted(lpBuffer);
+			ImGui::NextColumn();
+
+			char nextBuffer[32] = {};
+			std::snprintf(nextBuffer, sizeof(nextBuffer), "%u LP", static_cast<unsigned int>(nextLp));
+			ImGui::TextUnformatted(nextBuffer);
+			ImGui::NextColumn();
+			ImGui::PopStyleColor();
+
+			uint32_t populationCount = 0u;
+			float populationPercent = 0.0f;
+			bool populationLoading = false;
+			if (g_rankedLeaderboardTracker.GetRankPopulationStats(visibleRank, &populationCount, &populationPercent, &populationLoading))
+			{
+				char percentBuffer[32] = {};
+				std::snprintf(percentBuffer, sizeof(percentBuffer), "%u (%.2f%%)",
+					static_cast<unsigned int>(populationCount),
+					populationPercent);
+				ImGui::TextUnformatted(percentBuffer);
+			}
+			else
+			{
+				ImGui::TextUnformatted(populationLoading ? "Loading" : "--");
+			}
+			ImGui::NextColumn();
+		}
+
+		ImGui::Columns(1);
+		ImGui::End();
 	}
 
 	bool IsRankAllOrigin(const char* origin)
@@ -2523,11 +3113,12 @@ void DrawRankedProgressOverlayStandalone()
 	if (!hasLiveSnapshot && !g_rankedOverlayVisibility.stickyRankedSessionVisible && !showUploadCard)
 	{
 		g_rankedProgressAnimationSnapshot = {};
+		DrawRankedLadderWindow();
 		return;
 	}
 
 	ImGui::SetNextWindowPos(ImVec2(360.0f, 20.0f), ImGuiCond_FirstUseEver);
-	ImGui::SetNextWindowSizeConstraints(ImVec2(460.0f, 108.0f), ImVec2(720.0f, 180.0f));
+	ImGui::SetNextWindowSizeConstraints(ImVec2(640.0f, 108.0f), ImVec2(10000.0f, 180.0f));
 	const float windowAlpha = showUploadCard ? uploadOverlayAlpha : 1.0f;
 	const ImVec4 windowBgColor = ImVec4(0.06f, 0.06f, 0.08f, 0.92f * windowAlpha);
 	ImGui::PushStyleColor(ImGuiCol_WindowBg, windowBgColor);
@@ -2538,10 +3129,26 @@ void DrawRankedProgressOverlayStandalone()
 		ImGui::End();
 		ImGui::PopStyleVar();
 		ImGui::PopStyleColor();
+		DrawRankedLadderWindow();
 		return;
 	}
 
 	ImGui::SetWindowSize(ImVec2(g_rankedOverlayTuning.overlayWidth, 118.0f), ImGuiCond_FirstUseEver);
+	if (ImGui::BeginPopupContextWindow("ranked_progress_context", 1, true))
+	{
+		if (ImGui::MenuItem(L("Ranked ladder").c_str()))
+		{
+			g_showRankedLadderWindow = true;
+		}
+		ImGui::Separator();
+		ImGui::MenuItem(L("Show matches").c_str(), nullptr, &g_rankedProgressTopRowOptions.showMatches);
+		ImGui::MenuItem(L("Show wins").c_str(), nullptr, &g_rankedProgressTopRowOptions.showWins);
+		ImGui::MenuItem(L("Show losses").c_str(), nullptr, &g_rankedProgressTopRowOptions.showLosses);
+		ImGui::MenuItem(L("Show winrate %").c_str(), nullptr, &g_rankedProgressTopRowOptions.showWinrate);
+		ImGui::MenuItem(L("Show Character leaderboard Placement").c_str(), nullptr, &g_rankedProgressTopRowOptions.showCharacterLeaderboardPlacement);
+		ImGui::MenuItem(L("Show Global Leaderboard Placement").c_str(), nullptr, &g_rankedProgressTopRowOptions.showGlobalLeaderboardPlacement);
+		ImGui::EndPopup();
+	}
 
 	RankedProgressDisplayState baseDisplay{};
 	RankedProgressOverlaySnapshot statsSnapshot{};
@@ -2581,6 +3188,7 @@ void DrawRankedProgressOverlayStandalone()
 		ImGui::End();
 		ImGui::PopStyleVar();
 		ImGui::PopStyleColor();
+		DrawRankedLadderWindow();
 		return;
 	}
 
@@ -2596,6 +3204,7 @@ void DrawRankedProgressOverlayStandalone()
 	promotionDeltaAlpha = ComputeToastAlpha(&g_rankedPromotionToast, renderedDisplay, &promotionDelta);
 	demotionDeltaAlpha = ComputeToastAlpha(&g_rankedDemotionToast, renderedDisplay, &demotionDelta);
 	RememberRankedDisplayState(renderedDisplay);
+	g_rankedLeaderboardTracker.Tick(renderedDisplay.characterId);
 
 	const std::string characterName = getCharacterNameByIndexA(static_cast<int>(renderedDisplay.characterId));
 	const std::string rankLabel = FormatVisibleRankLabel(renderedDisplay.visibleRank, renderedDisplay.isUnranked);
@@ -2608,6 +3217,7 @@ void DrawRankedProgressOverlayStandalone()
 	const double winRatePercent = matches > 0
 		? (static_cast<double>(wins) * 100.0 / static_cast<double>(matches))
 		: 0.0;
+	const uint32_t losses = matches > wins ? (matches - wins) : 0u;
 
 	std::string prefixText = characterName;
 	prefixText += " (";
@@ -2618,14 +3228,71 @@ void DrawRankedProgressOverlayStandalone()
 	DrawBoldText(drawList, ImVec2(startPos.x + prefixSize.x, startPos.y), rankColorU32, rankLabel.c_str());
 	drawList->AddText(ImVec2(startPos.x + prefixSize.x + rankSize.x + 1.0f, startPos.y),
 		ImGui::GetColorU32(ImGuiCol_Text), ")");
-	char statsBuffer[128] = {};
-	std::snprintf(statsBuffer, sizeof(statsBuffer), " - %u Matches %u Wins (%.2f%%)",
-		static_cast<unsigned int>(matches),
-		static_cast<unsigned int>(wins),
-		winRatePercent);
-	const ImVec2 statsSize = ImGui::CalcTextSize(statsBuffer);
+	std::ostringstream statsText;
+	std::vector<std::string> recordParts;
+	if (g_rankedProgressTopRowOptions.showMatches)
+	{
+		std::ostringstream part;
+		part << static_cast<unsigned int>(matches) << " Matches";
+		recordParts.push_back(part.str());
+	}
+	if (g_rankedProgressTopRowOptions.showWins)
+	{
+		std::ostringstream part;
+		part << static_cast<unsigned int>(wins) << " Wins";
+		recordParts.push_back(part.str());
+	}
+	if (g_rankedProgressTopRowOptions.showLosses)
+	{
+		std::ostringstream part;
+		part << static_cast<unsigned int>(losses) << " Losses";
+		recordParts.push_back(part.str());
+	}
+	if (!recordParts.empty())
+	{
+		statsText << " - ";
+		for (size_t i = 0; i < recordParts.size(); ++i)
+		{
+			if (i != 0)
+			{
+				statsText << ", ";
+			}
+			statsText << recordParts[i];
+		}
+		if (g_rankedProgressTopRowOptions.showWinrate)
+		{
+			statsText << " (" << std::fixed;
+			statsText.precision(2);
+			statsText << winRatePercent << "%)";
+		}
+	}
+	else if (g_rankedProgressTopRowOptions.showWinrate)
+	{
+		statsText << " - " << std::fixed;
+		statsText.precision(2);
+		statsText << winRatePercent << "%";
+	}
+	if (g_rankedProgressTopRowOptions.showCharacterLeaderboardPlacement)
+	{
+		int characterPlacement = 0;
+		if (g_rankedLeaderboardTracker.GetCharacterPlacement(renderedDisplay.characterId, &characterPlacement))
+		{
+			statsText << " - #" << characterPlacement << " in " << characterName << " Leaderboard";
+		}
+	}
+	if (g_rankedProgressTopRowOptions.showGlobalLeaderboardPlacement)
+	{
+		int globalPlacement = 0;
+		if (g_rankedLeaderboardTracker.GetGlobalPlacement(&globalPlacement))
+		{
+			statsText << " - #" << globalPlacement << " in Global Leaderboard";
+		}
+	}
+
+	const std::string statsString = statsText.str();
+	const ImVec2 statsSize = ImGui::CalcTextSize(statsString.c_str());
 	drawList->AddText(ImVec2(startPos.x + prefixSize.x + rankSize.x + suffixSize.x + 4.0f, startPos.y),
-		ImGui::GetColorU32(ImGuiCol_Text), statsBuffer);
+		ImGui::GetColorU32(ImGuiCol_Text), statsString.c_str());
 	ImGui::Dummy(ImVec2(prefixSize.x + rankSize.x + suffixSize.x + statsSize.x + 8.0f, ImGui::GetTextLineHeight()));
 
 	const float availableBarWidth = ImGui::GetContentRegionAvail().x;
@@ -2767,4 +3434,5 @@ void DrawRankedProgressOverlayStandalone()
 	ImGui::End();
 	ImGui::PopStyleVar();
 	ImGui::PopStyleColor();
+	DrawRankedLadderWindow();
 }

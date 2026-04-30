@@ -12,13 +12,18 @@
 #include <cstdint>
 #include <cstdio>
 #include <intrin.h>
+#include <mutex>
 #include <sstream>
 #include <string>
+#include <unordered_set>
 
 namespace
 {
 	constexpr SteamLeaderboard_t kRankAllLeaderboardHandle = static_cast<SteamLeaderboard_t>(1759932);
 	constexpr uintptr_t kBbcfRvaStaticNetUserData = 0x004AD0C0;
+	constexpr int kPersonaPrefetchEntryLimit = 128;
+	std::mutex g_leaderboardPersonaRequestMutex;
+	std::unordered_set<uint64> g_requestedLeaderboardPersonas;
 
 	std::string ToLowerCopy(const char* text)
 	{
@@ -80,6 +85,28 @@ namespace
 	bool IsRankLikeLeaderboardHandle(SteamLeaderboard_t handle)
 	{
 		return handle == kRankAllLeaderboardHandle || IsRankLikeLeaderboardName(GetLeaderboardHandleName(handle));
+	}
+
+	void RequestPersonaForLeaderboardEntry(CSteamID steamId)
+	{
+		if (!g_interfaces.pSteamFriendsWrapper || !steamId.IsValid())
+		{
+			return;
+		}
+
+		const uint64 steamIdValue = steamId.ConvertToUint64();
+		{
+			std::lock_guard<std::mutex> guard(g_leaderboardPersonaRequestMutex);
+			if (!g_requestedLeaderboardPersonas.insert(steamIdValue).second)
+			{
+				return;
+			}
+		}
+
+		const bool pending = g_interfaces.pSteamFriendsWrapper->RequestUserInformation(steamId, true);
+		LOG(2, "[Leaderboard] RequestUserInformation steamID=%llu pending=%d\n",
+			static_cast<unsigned long long>(steamIdValue),
+			pending ? 1 : 0);
 	}
 
 	int32_t ResolveCharacterIdFromRankLeaderboardName(const std::string& leaderboardName)
@@ -560,10 +587,16 @@ SteamAPICall_t SteamUserStatsWrapper::DownloadLeaderboardEntriesForUsers(SteamLe
 bool SteamUserStatsWrapper::GetDownloadedLeaderboardEntry(SteamLeaderboardEntries_t hSteamLeaderboardEntries, int index, LeaderboardEntry_t *pLeaderboardEntry, int32 *pDetails, int cDetailsMax)
 {
 	const bool result = m_SteamUserStats->GetDownloadedLeaderboardEntry(hSteamLeaderboardEntries, index, pLeaderboardEntry, pDetails, cDetailsMax);
-	const int detailCount = (result && pLeaderboardEntry) ? pLeaderboardEntry->m_cDetails : 0;
+	const int detailCount = (result && pLeaderboardEntry) ? (std::min)(pLeaderboardEntry->m_cDetails, cDetailsMax) : 0;
 	const uint64 localSteamId = g_interfaces.pSteamUserWrapper ? g_interfaces.pSteamUserWrapper->GetSteamID().ConvertToUint64() : 0ull;
 	const uint64 entrySteamId = (result && pLeaderboardEntry) ? pLeaderboardEntry->m_steamIDUser.ConvertToUint64() : 0ull;
-	LOG(2, "[Leaderboard] GetDownloadedLeaderboardEntry entries=%llu name='%s' index=%d result=%d steamID=%llu isLocal=%d globalRank=%d score=%d detailsCount=%d details=%s\n",
+	if (result && pLeaderboardEntry && entrySteamId != 0ull && index >= 0 && index < kPersonaPrefetchEntryLimit)
+	{
+		RequestPersonaForLeaderboardEntry(pLeaderboardEntry->m_steamIDUser);
+	}
+	const int logLevel = (index >= 0 && index < kPersonaPrefetchEntryLimit) ||
+		(entrySteamId != 0ull && localSteamId != 0ull && entrySteamId == localSteamId) ? 2 : 7;
+	LOG(logLevel, "[Leaderboard] GetDownloadedLeaderboardEntry entries=%llu name='%s' index=%d result=%d steamID=%llu isLocal=%d globalRank=%d score=%d detailsCount=%d details=%s\n",
 		static_cast<unsigned long long>(hSteamLeaderboardEntries),
 		GetLeaderboardEntriesName(hSteamLeaderboardEntries).c_str(),
 		index,
@@ -575,6 +608,11 @@ bool SteamUserStatsWrapper::GetDownloadedLeaderboardEntry(SteamLeaderboardEntrie
 		detailCount,
 		FormatDetails(result ? pDetails : nullptr, result ? detailCount : 0).c_str());
 	return result;
+}
+
+bool SteamUserStatsWrapper::GetDownloadedLeaderboardEntryQuiet(SteamLeaderboardEntries_t hSteamLeaderboardEntries, int index, LeaderboardEntry_t *pLeaderboardEntry, int32 *pDetails, int cDetailsMax)
+{
+	return m_SteamUserStats->GetDownloadedLeaderboardEntry(hSteamLeaderboardEntries, index, pLeaderboardEntry, pDetails, cDetailsMax);
 }
 
 CALL_RESULT(LeaderboardScoreUploaded_t)
