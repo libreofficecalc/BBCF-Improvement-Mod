@@ -161,6 +161,8 @@ namespace
 			uint32_t currentLp = 0;
 			uint32_t lowerThreshold = 0;
 			uint32_t nextThreshold = 0;
+			uint32_t promotionCounter = 0;
+			uint32_t promotionCounterLimit = 0;
 			uint32_t demotionCounter = 0;
 			uint32_t demotionCounterLimit = 0;
 			uint32_t rawPackedField00 = 0;
@@ -194,6 +196,8 @@ namespace
 
 	RankedProgressAnimationState g_rankedProgressAnimation{};
 	RankedDeltaToastState g_rankedDeltaToast{};
+	RankedDeltaToastState g_rankedPromotionToast{};
+	RankedDeltaToastState g_rankedDemotionToast{};
 	std::array<RankedProgressDisplayState, 64> g_lastKnownRankDisplayByCharacter{};
 	std::array<uint8_t, 64> g_hasLastKnownRankDisplayByCharacter{};
 	uint32_t g_lastRankedOverlayCharacterId = kInvalidRankedCharacterId;
@@ -214,6 +218,7 @@ namespace
 		bool pending = false;
 		uint64_t serial = 0;
 		ULONGLONG startedAtMs = 0;
+		ULONGLONG firstBackingChangeAtMs = 0;
 		uint32_t attemptedCharacterId = kInvalidRankedCharacterId;
 		int32_t uploadedScore = 0;
 		std::array<RankedProgressDisplayState, 64> baselineStates{};
@@ -253,6 +258,8 @@ namespace
 			return before.visibleRank != after.visibleRank ||
 				before.currentLp != after.currentLp ||
 				before.nextThreshold != after.nextThreshold ||
+				before.promotionCounter != after.promotionCounter ||
+				before.promotionCounterLimit != after.promotionCounterLimit ||
 				before.demotionCounter != after.demotionCounter ||
 				before.demotionCounterLimit != after.demotionCounterLimit ||
 				before.thresholdKnown != after.thresholdKnown;
@@ -269,7 +276,7 @@ namespace
 				before.metadataNextRank != after.metadataNextRank;
 		}
 
-	bool TryGetRankedLpBounds(uint32_t internalRank, uint32_t* outLowerBound, uint32_t* outUpperBound, int16_t* outCounterLimit)
+	bool TryGetRankedLpBounds(uint32_t internalRank, uint32_t* outLowerBound, uint32_t* outUpperBound, int16_t* outPromotionCounterLimit, int16_t* outDemotionCounterLimit)
 	{
 		if (internalRank >= (sizeof(kRankedLpBoundsTable) / sizeof(kRankedLpBoundsTable[0])))
 		{
@@ -292,9 +299,13 @@ namespace
 		{
 			*outUpperBound = static_cast<uint32_t>(upperBound);
 		}
-		if (outCounterLimit)
+		if (outPromotionCounterLimit)
 		{
-			*outCounterLimit = entry.counterLimit;
+			*outPromotionCounterLimit = entry.unknown4;
+		}
+		if (outDemotionCounterLimit)
+		{
+			*outDemotionCounterLimit = entry.counterLimit;
 		}
 		return true;
 	}
@@ -323,7 +334,7 @@ namespace
 	{
 		uint32_t lowerBound = 0;
 		uint32_t upperBound = 0;
-		if (!TryGetRankedLpBounds(internalRank, &lowerBound, &upperBound, nullptr) || upperBound <= lowerBound)
+		if (!TryGetRankedLpBounds(internalRank, &lowerBound, &upperBound, nullptr, nullptr) || upperBound <= lowerBound)
 		{
 			return 0u;
 		}
@@ -350,8 +361,9 @@ namespace
 
 		uint32_t lowerBound = 0;
 		uint32_t upperBound = 0;
-		int16_t counterLimit = 0;
-		if (!state->isUnranked && TryGetRankedLpBounds(internalRank, &lowerBound, &upperBound, &counterLimit))
+		int16_t promotionCounterLimit = 0;
+		int16_t demotionCounterLimit = 0;
+		if (!state->isUnranked && TryGetRankedLpBounds(internalRank, &lowerBound, &upperBound, &promotionCounterLimit, &demotionCounterLimit))
 		{
 			const uint32_t cumulativeBase = GetCumulativeRankedLpBase(internalRank);
 			const uint32_t rankSpan = upperBound - lowerBound;
@@ -368,7 +380,16 @@ namespace
 			state->currentLp = cumulativeBase + rankProgressLp;
 			state->lowerThreshold = cumulativeBase;
 			state->nextThreshold = cumulativeBase + rankSpan;
-			state->demotionCounterLimit = counterLimit > 0 ? static_cast<uint32_t>(counterLimit) : 0u;
+			state->promotionCounterLimit = promotionCounterLimit > 0 ? static_cast<uint32_t>(promotionCounterLimit) : 0u;
+			if (state->promotionCounterLimit == 0u)
+			{
+				state->promotionCounter = 0u;
+			}
+			else if (state->promotionCounter > state->promotionCounterLimit)
+			{
+				state->promotionCounter = state->promotionCounterLimit;
+			}
+			state->demotionCounterLimit = demotionCounterLimit > 0 ? static_cast<uint32_t>(demotionCounterLimit) : 0u;
 			if (state->demotionCounterLimit == 0u)
 			{
 				state->demotionCounter = 0u;
@@ -385,6 +406,8 @@ namespace
 		state->currentLp = 0u;
 		state->lowerThreshold = 0u;
 		state->nextThreshold = 0u;
+		state->promotionCounter = 0u;
+		state->promotionCounterLimit = 0u;
 		state->demotionCounter = 0u;
 		state->demotionCounterLimit = 0u;
 		state->thresholdKnown = false;
@@ -796,8 +819,10 @@ namespace
 		outSnapshot->rawPackedField00 = packedField00;
 		outSnapshot->currentRank = packedField00 & 0xFFFFu;
 		outSnapshot->packedSubscore = (packedField00 >> 16) & 0xFFFFu;
-		outSnapshot->rawField04 = *reinterpret_cast<const uint32_t*>(rowObject + 0x04);
-		outSnapshot->demotionCounter = (*reinterpret_cast<const uint32_t*>(rowObject + 0x04) >> 16) & 0xFFFFu;
+		const uint32_t rawField04 = *reinterpret_cast<const uint32_t*>(rowObject + 0x04);
+		outSnapshot->rawField04 = rawField04;
+		outSnapshot->promotionCounter = rawField04 & 0xFFFFu;
+		outSnapshot->demotionCounter = (rawField04 >> 16) & 0xFFFFu;
 		outSnapshot->rawField0C = *reinterpret_cast<const uint32_t*>(rowObject + 0x0C);
 		outSnapshot->rawField10 = *reinterpret_cast<const uint32_t*>(rowObject + 0x10);
 		outSnapshot->rawField14 = *reinterpret_cast<const uint32_t*>(rowObject + 0x14);
@@ -815,10 +840,20 @@ namespace
 		outSnapshot->metadataNextRank = (*reinterpret_cast<const uint32_t*>(rowObject + 0xD4) >> 16) & 0xFFFFu;
 		outSnapshot->debugFieldF4 = *reinterpret_cast<const uint32_t*>(rowObject + 0xF4);
 		outSnapshot->isUnranked = outSnapshot->currentRank == 0;
+		int16_t promotionCounterLimit = 0;
 		int16_t demotionCounterLimit = 0;
 		if (!outSnapshot->isUnranked &&
-			TryGetRankedLpBounds(outSnapshot->currentRank, &outSnapshot->lowerThreshold, &outSnapshot->nextThreshold, &demotionCounterLimit))
+			TryGetRankedLpBounds(outSnapshot->currentRank, &outSnapshot->lowerThreshold, &outSnapshot->nextThreshold, &promotionCounterLimit, &demotionCounterLimit))
 		{
+			outSnapshot->promotionCounterLimit = promotionCounterLimit > 0 ? static_cast<uint32_t>(promotionCounterLimit) : 0u;
+			if (outSnapshot->promotionCounterLimit == 0u)
+			{
+				outSnapshot->promotionCounter = 0u;
+			}
+			else if (outSnapshot->promotionCounter > outSnapshot->promotionCounterLimit)
+			{
+				outSnapshot->promotionCounter = outSnapshot->promotionCounterLimit;
+			}
 			outSnapshot->demotionCounterLimit = demotionCounterLimit > 0 ? static_cast<uint32_t>(demotionCounterLimit) : 0u;
 			if (outSnapshot->demotionCounterLimit == 0u)
 			{
@@ -858,6 +893,8 @@ namespace
 			outSnapshot->lowerThreshold = 0u;
 			outSnapshot->nextThreshold = 0u;
 			outSnapshot->remainingLp = 0u;
+			outSnapshot->promotionCounter = 0u;
+			outSnapshot->promotionCounterLimit = 0u;
 			outSnapshot->demotionCounter = 0u;
 			outSnapshot->demotionCounterLimit = 0u;
 			outSnapshot->progress = 0.0f;
@@ -881,6 +918,8 @@ namespace
 			state.currentLp = snapshot.currentLp;
 			state.lowerThreshold = snapshot.lowerThreshold;
 			state.nextThreshold = 0u;
+			state.promotionCounter = snapshot.promotionCounter;
+			state.promotionCounterLimit = snapshot.promotionCounterLimit;
 			state.demotionCounter = snapshot.demotionCounter;
 			state.demotionCounterLimit = snapshot.demotionCounterLimit;
 			state.rawPackedField00 = snapshot.rawPackedField00;
@@ -993,36 +1032,58 @@ namespace
 		g_rankedDeltaToast.characterId = target.characterId;
 		g_rankedDeltaToast.delta = delta;
 		g_rankedDeltaToast.startTime = g_rankedProgressAnimation.startTime;
-		LOG(1, "[RANK][OverlayAnim] start char=%u fromRank=%u fromLp=%u fromNext=%u toRank=%u toLp=%u toNext=%u delta=%+d uploadSerial=%llu\n",
+		const int32_t promotionDelta = static_cast<int32_t>(target.promotionCounter) - static_cast<int32_t>(source.promotionCounter);
+		const int32_t demotionDelta = static_cast<int32_t>(target.demotionCounter) - static_cast<int32_t>(source.demotionCounter);
+		g_rankedPromotionToast.active = promotionDelta != 0;
+		g_rankedPromotionToast.uploadSerial = uploadSerial;
+		g_rankedPromotionToast.characterId = target.characterId;
+		g_rankedPromotionToast.delta = promotionDelta;
+		g_rankedPromotionToast.startTime = g_rankedProgressAnimation.startTime;
+		g_rankedDemotionToast.active = demotionDelta != 0;
+		g_rankedDemotionToast.uploadSerial = uploadSerial;
+		g_rankedDemotionToast.characterId = target.characterId;
+		g_rankedDemotionToast.delta = demotionDelta;
+		g_rankedDemotionToast.startTime = g_rankedProgressAnimation.startTime;
+		LOG(1, "[RANK][OverlayAnim] start char=%u fromRank=%u fromLp=%u fromNext=%u fromPromo=%u/%u fromDemo=%u/%u toRank=%u toLp=%u toNext=%u toPromo=%u/%u toDemo=%u/%u delta=%+d promoDelta=%+d demoDelta=%+d uploadSerial=%llu\n",
 			static_cast<unsigned int>(target.characterId),
 			static_cast<unsigned int>(source.visibleRank),
 			static_cast<unsigned int>(source.currentLp),
 			static_cast<unsigned int>(source.nextThreshold),
+			static_cast<unsigned int>(source.promotionCounter),
+			static_cast<unsigned int>(source.promotionCounterLimit),
+			static_cast<unsigned int>(source.demotionCounter),
+			static_cast<unsigned int>(source.demotionCounterLimit),
 			static_cast<unsigned int>(target.visibleRank),
 			static_cast<unsigned int>(target.currentLp),
 			static_cast<unsigned int>(target.nextThreshold),
+			static_cast<unsigned int>(target.promotionCounter),
+			static_cast<unsigned int>(target.promotionCounterLimit),
+			static_cast<unsigned int>(target.demotionCounter),
+			static_cast<unsigned int>(target.demotionCounterLimit),
 			delta,
+			promotionDelta,
+			demotionDelta,
 			static_cast<unsigned long long>(uploadSerial));
 	}
 
-	float ComputeDeltaToastAlpha(const RankedProgressDisplayState& displayState, int32_t* outDelta)
+	float ComputeToastAlpha(RankedDeltaToastState* toast, const RankedProgressDisplayState& displayState, int32_t* outDelta)
 	{
 		if (outDelta)
 		{
 			*outDelta = 0;
 		}
 
-		if (!g_rankedDeltaToast.active || g_rankedDeltaToast.characterId == kInvalidRankedCharacterId)
+		if (!toast || !toast->active || toast->characterId == kInvalidRankedCharacterId)
 		{
 			return 0.0f;
 		}
 
-		if (displayState.characterId != g_rankedDeltaToast.characterId)
+		if (displayState.characterId != toast->characterId)
 		{
 			return 0.0f;
 		}
 
-		const double elapsed = ImGui::GetTime() - g_rankedDeltaToast.startTime;
+		const double elapsed = ImGui::GetTime() - toast->startTime;
 		if (elapsed < 0.0)
 		{
 			return 0.0f;
@@ -1042,7 +1103,7 @@ namespace
 			const double fadeOutElapsed = elapsed - fadeOutStart;
 			if (fadeOutElapsed >= fadeOutDuration)
 			{
-				g_rankedDeltaToast.active = false;
+				toast->active = false;
 				return 0.0f;
 			}
 			alpha = 1.0f - static_cast<float>(fadeOutElapsed / fadeOutDuration);
@@ -1059,15 +1120,20 @@ namespace
 
 		if (outDelta)
 		{
-			*outDelta = g_rankedDeltaToast.delta;
+			*outDelta = toast->delta;
 		}
 		return alpha;
 	}
 
-		void BeginObservedRankedUploadWindow(uint32_t attemptedCharacterId, int32_t uploadedScore)
-		{
-			g_rankedUploadObservation = {};
-			g_rankedUploadObservation.pending = true;
+	float ComputeDeltaToastAlpha(const RankedProgressDisplayState& displayState, int32_t* outDelta)
+	{
+		return ComputeToastAlpha(&g_rankedDeltaToast, displayState, outDelta);
+	}
+
+	void BeginObservedRankedUploadWindow(uint32_t attemptedCharacterId, int32_t uploadedScore)
+	{
+		g_rankedUploadObservation = {};
+		g_rankedUploadObservation.pending = true;
 		g_rankedUploadObservation.serial = ++g_rankedUploadCompletionSerial;
 		g_rankedUploadObservation.startedAtMs = GetTickCount64();
 		g_rankedUploadObservation.attemptedCharacterId = attemptedCharacterId;
@@ -1118,76 +1184,88 @@ namespace
 			return;
 		}
 
-			std::array<RankedProgressDisplayState, 64> currentStates{};
-			std::array<uint8_t, 64> hasCurrentState{};
-			if (!TryCaptureAllRankedDisplayStates(&currentStates, &hasCurrentState))
+		std::array<RankedProgressDisplayState, 64> currentStates{};
+		std::array<uint8_t, 64> hasCurrentState{};
+		if (!TryCaptureAllRankedDisplayStates(&currentStates, &hasCurrentState))
+		{
+			return;
+		}
+
+		uint32_t backingChangeCount = 0;
+		for (uint32_t characterId = 0; characterId < 64u; ++characterId)
+		{
+			if (!g_rankedUploadObservation.hasBaseline[characterId] || !hasCurrentState[characterId])
+			{
+				continue;
+			}
+
+			const RankedProgressDisplayState& before = g_rankedUploadObservation.baselineStates[characterId];
+			const RankedProgressDisplayState& after = currentStates[characterId];
+			if (!before.valid || !after.valid)
+			{
+				continue;
+			}
+
+			const bool displayChanged = DidRankedDisplayStateChange(before, after);
+			const bool backingChanged = DidRankedBackingStateChange(before, after);
+			if (!backingChanged)
+			{
+				continue;
+			}
+
+			++backingChangeCount;
+			LOG(1, "[RANK][OverlayObserve] backing-change serial=%llu char=%u displayChanged=%d rank=%u->%u lp=%u->%u next=%u->%u promotion=%u/%u->%u/%u demotion=%u/%u->%u/%u packed00=0x%08X->0x%08X packedSub=%u->%u raw04=0x%08X->0x%08X raw0C=0x%08X->0x%08X raw10=0x%08X->0x%08X raw20=0x%08X->0x%08X nextMeta=%u->%u\n",
+				static_cast<unsigned long long>(g_rankedUploadObservation.serial),
+				static_cast<unsigned int>(characterId),
+				displayChanged ? 1 : 0,
+				static_cast<unsigned int>(before.visibleRank),
+				static_cast<unsigned int>(after.visibleRank),
+				static_cast<unsigned int>(before.currentLp),
+				static_cast<unsigned int>(after.currentLp),
+				static_cast<unsigned int>(before.nextThreshold),
+				static_cast<unsigned int>(after.nextThreshold),
+				static_cast<unsigned int>(before.promotionCounter),
+				static_cast<unsigned int>(before.promotionCounterLimit),
+				static_cast<unsigned int>(after.promotionCounter),
+				static_cast<unsigned int>(after.promotionCounterLimit),
+				static_cast<unsigned int>(before.demotionCounter),
+				static_cast<unsigned int>(before.demotionCounterLimit),
+				static_cast<unsigned int>(after.demotionCounter),
+				static_cast<unsigned int>(after.demotionCounterLimit),
+				static_cast<unsigned int>(before.rawPackedField00),
+				static_cast<unsigned int>(after.rawPackedField00),
+				static_cast<unsigned int>(before.packedSubscore),
+				static_cast<unsigned int>(after.packedSubscore),
+				static_cast<unsigned int>(before.rawField04),
+				static_cast<unsigned int>(after.rawField04),
+				static_cast<unsigned int>(before.rawField0C),
+				static_cast<unsigned int>(after.rawField0C),
+				static_cast<unsigned int>(before.rawField10),
+				static_cast<unsigned int>(after.rawField10),
+				static_cast<unsigned int>(before.rawField20),
+				static_cast<unsigned int>(after.rawField20),
+				static_cast<unsigned int>(before.metadataNextRank),
+				static_cast<unsigned int>(after.metadataNextRank));
+		}
+		if (backingChangeCount > 0)
+		{
+			if (g_rankedUploadObservation.firstBackingChangeAtMs == 0)
+			{
+				g_rankedUploadObservation.firstBackingChangeAtMs = nowMs;
+			}
+			LOG(1, "[RANK][OverlayObserve] backing-change-summary serial=%llu count=%u attemptedChar=%u uploadedScore=%d\n",
+				static_cast<unsigned long long>(g_rankedUploadObservation.serial),
+				static_cast<unsigned int>(backingChangeCount),
+				static_cast<unsigned int>(g_rankedUploadObservation.attemptedCharacterId),
+				g_rankedUploadObservation.uploadedScore);
+			if (nowMs < g_rankedUploadObservation.firstBackingChangeAtMs + 250ull)
 			{
 				return;
 			}
+		}
 
-			uint32_t backingChangeCount = 0;
-			for (uint32_t characterId = 0; characterId < 64u; ++characterId)
-			{
-				if (!g_rankedUploadObservation.hasBaseline[characterId] || !hasCurrentState[characterId])
-				{
-					continue;
-				}
-
-				const RankedProgressDisplayState& before = g_rankedUploadObservation.baselineStates[characterId];
-				const RankedProgressDisplayState& after = currentStates[characterId];
-				if (!before.valid || !after.valid)
-				{
-					continue;
-				}
-
-				const bool displayChanged = DidRankedDisplayStateChange(before, after);
-				const bool backingChanged = DidRankedBackingStateChange(before, after);
-				if (!backingChanged)
-				{
-					continue;
-				}
-
-				++backingChangeCount;
-				LOG(1, "[RANK][OverlayObserve] backing-change serial=%llu char=%u displayChanged=%d rank=%u->%u lp=%u->%u next=%u->%u demotion=%u/%u->%u/%u packed00=0x%08X->0x%08X packedSub=%u->%u raw04=0x%08X->0x%08X raw0C=0x%08X->0x%08X raw10=0x%08X->0x%08X raw20=0x%08X->0x%08X nextMeta=%u->%u\n",
-					static_cast<unsigned long long>(g_rankedUploadObservation.serial),
-					static_cast<unsigned int>(characterId),
-					displayChanged ? 1 : 0,
-					static_cast<unsigned int>(before.visibleRank),
-					static_cast<unsigned int>(after.visibleRank),
-					static_cast<unsigned int>(before.currentLp),
-					static_cast<unsigned int>(after.currentLp),
-					static_cast<unsigned int>(before.nextThreshold),
-					static_cast<unsigned int>(after.nextThreshold),
-					static_cast<unsigned int>(before.demotionCounter),
-					static_cast<unsigned int>(before.demotionCounterLimit),
-					static_cast<unsigned int>(after.demotionCounter),
-					static_cast<unsigned int>(after.demotionCounterLimit),
-					static_cast<unsigned int>(before.rawPackedField00),
-					static_cast<unsigned int>(after.rawPackedField00),
-					static_cast<unsigned int>(before.packedSubscore),
-					static_cast<unsigned int>(after.packedSubscore),
-					static_cast<unsigned int>(before.rawField04),
-					static_cast<unsigned int>(after.rawField04),
-					static_cast<unsigned int>(before.rawField0C),
-					static_cast<unsigned int>(after.rawField0C),
-					static_cast<unsigned int>(before.rawField10),
-					static_cast<unsigned int>(after.rawField10),
-					static_cast<unsigned int>(before.rawField20),
-					static_cast<unsigned int>(after.rawField20),
-					static_cast<unsigned int>(before.metadataNextRank),
-					static_cast<unsigned int>(after.metadataNextRank));
-			}
-			if (backingChangeCount > 0)
-			{
-				LOG(1, "[RANK][OverlayObserve] backing-change-summary serial=%llu count=%u attemptedChar=%u uploadedScore=%d\n",
-					static_cast<unsigned long long>(g_rankedUploadObservation.serial),
-					static_cast<unsigned int>(backingChangeCount),
-					static_cast<unsigned int>(g_rankedUploadObservation.attemptedCharacterId),
-					g_rankedUploadObservation.uploadedScore);
-			}
-
-			uint32_t selectedCharacterId = kInvalidRankedCharacterId;
-			int32_t selectedDelta = 0;
+		uint32_t selectedCharacterId = kInvalidRankedCharacterId;
+		int32_t selectedDelta = 0;
 		uint32_t selectedPriority = 0;
 		for (uint32_t characterId = 0; characterId < 64u; ++characterId)
 		{
@@ -1334,6 +1412,8 @@ namespace
 			outState->currentLp = LerpUint(g_rankedProgressAnimation.source.currentLp, g_rankedProgressAnimation.target.currentLp, t);
 			outState->lowerThreshold = g_rankedProgressAnimation.target.lowerThreshold;
 			outState->nextThreshold = std::max<uint32_t>(g_rankedProgressAnimation.target.nextThreshold, 1u);
+			outState->promotionCounter = g_rankedProgressAnimation.target.promotionCounter;
+			outState->promotionCounterLimit = g_rankedProgressAnimation.target.promotionCounterLimit;
 			outState->demotionCounter = g_rankedProgressAnimation.target.demotionCounter;
 			outState->demotionCounterLimit = g_rankedProgressAnimation.target.demotionCounterLimit;
 			outState->progress = LerpFloat(g_rankedProgressAnimation.source.progress, g_rankedProgressAnimation.target.progress, t);
@@ -1352,6 +1432,8 @@ namespace
 					rankUp ? g_rankedProgressAnimation.source.nextThreshold : g_rankedProgressAnimation.source.lowerThreshold, t);
 				outState->lowerThreshold = g_rankedProgressAnimation.source.lowerThreshold;
 				outState->nextThreshold = std::max<uint32_t>(g_rankedProgressAnimation.source.nextThreshold, 1u);
+				outState->promotionCounter = g_rankedProgressAnimation.source.promotionCounter;
+				outState->promotionCounterLimit = g_rankedProgressAnimation.source.promotionCounterLimit;
 				outState->demotionCounter = g_rankedProgressAnimation.source.demotionCounter;
 				outState->demotionCounterLimit = g_rankedProgressAnimation.source.demotionCounterLimit;
 				outState->progress = LerpFloat(g_rankedProgressAnimation.source.progress, rankUp ? 1.0f : 0.0f, t);
@@ -1372,6 +1454,8 @@ namespace
 					g_rankedProgressAnimation.target.currentLp, t);
 				outState->lowerThreshold = g_rankedProgressAnimation.target.lowerThreshold;
 				outState->nextThreshold = std::max<uint32_t>(g_rankedProgressAnimation.target.nextThreshold, 1u);
+				outState->promotionCounter = g_rankedProgressAnimation.target.promotionCounter;
+				outState->promotionCounterLimit = g_rankedProgressAnimation.target.promotionCounterLimit;
 				outState->demotionCounter = g_rankedProgressAnimation.target.demotionCounter;
 				outState->demotionCounterLimit = g_rankedProgressAnimation.target.demotionCounterLimit;
 				outState->progress = LerpFloat(rankUp ? 0.0f : 1.0f, g_rankedProgressAnimation.target.progress, t);
@@ -1569,6 +1653,8 @@ namespace
 			s_last.currentRank != snapshot.currentRank ||
 			s_last.currentLp != snapshot.currentLp ||
 			s_last.nextThreshold != snapshot.nextThreshold ||
+			s_last.promotionCounter != snapshot.promotionCounter ||
+			s_last.promotionCounterLimit != snapshot.promotionCounterLimit ||
 			s_last.demotionCounter != snapshot.demotionCounter ||
 			s_last.demotionCounterLimit != snapshot.demotionCounterLimit ||
 			s_last.earnedPoints != snapshot.earnedPoints ||
@@ -1578,7 +1664,7 @@ namespace
 		g_rankedProgressOverlaySnapshot = snapshot;
 		if (changed)
 		{
-			LOG(1, "[RANK][OverlayProgress] active=%d row=%u selector=%u cursor=%u rank=%u prev=%u next=%u lp=%u nextLp=%u remainingLp=%u demotion=%u/%u wins=%u matches=%u remainingMatches=%u percent=%.4f state=%d/%d unranked=%d metadataNext=%u packed00=0x%08X packedSub=%u f4=0x%08X raw04=0x%08X raw0C=0x%08X raw10=0x%08X raw14=0x%08X raw18=0x%08X raw20=0x%08X rawE0=0x%08X rawE4=0x%08X rawE8=0x%08X rawEC=0x%08X\n",
+			LOG(1, "[RANK][OverlayProgress] active=%d row=%u selector=%u cursor=%u rank=%u prev=%u next=%u lp=%u nextLp=%u remainingLp=%u promotion=%u/%u demotion=%u/%u wins=%u matches=%u remainingMatches=%u percent=%.4f state=%d/%d unranked=%d metadataNext=%u packed00=0x%08X packedSub=%u f4=0x%08X raw04=0x%08X raw0C=0x%08X raw10=0x%08X raw14=0x%08X raw18=0x%08X raw20=0x%08X rawE0=0x%08X rawE4=0x%08X rawE8=0x%08X rawEC=0x%08X\n",
 				snapshot.active ? 1 : 0,
 				static_cast<unsigned int>(snapshot.rowIndex),
 				static_cast<unsigned int>(snapshot.selectorValue),
@@ -1589,6 +1675,8 @@ namespace
 				static_cast<unsigned int>(snapshot.currentLp),
 				static_cast<unsigned int>(snapshot.nextThreshold),
 				static_cast<unsigned int>(snapshot.remainingLp),
+				static_cast<unsigned int>(snapshot.promotionCounter),
+				static_cast<unsigned int>(snapshot.promotionCounterLimit),
 				static_cast<unsigned int>(snapshot.demotionCounter),
 				static_cast<unsigned int>(snapshot.demotionCounterLimit),
 				static_cast<unsigned int>(snapshot.earnedPoints),
@@ -2499,8 +2587,14 @@ void DrawRankedProgressOverlayStandalone()
 	RankedProgressDisplayState renderedDisplay{};
 	int32_t renderedDelta = 0;
 	float deltaAlpha = 0.0f;
+	int32_t promotionDelta = 0;
+	float promotionDeltaAlpha = 0.0f;
+	int32_t demotionDelta = 0;
+	float demotionDeltaAlpha = 0.0f;
 	uint32_t animationPhase = 0;
 	BuildAnimatedDisplayState(baseDisplay, &renderedDisplay, &renderedDelta, &deltaAlpha, &animationPhase);
+	promotionDeltaAlpha = ComputeToastAlpha(&g_rankedPromotionToast, renderedDisplay, &promotionDelta);
+	demotionDeltaAlpha = ComputeToastAlpha(&g_rankedDemotionToast, renderedDisplay, &demotionDelta);
 	RememberRankedDisplayState(renderedDisplay);
 
 	const std::string characterName = getCharacterNameByIndexA(static_cast<int>(renderedDisplay.characterId));
@@ -2585,21 +2679,81 @@ void DrawRankedProgressOverlayStandalone()
 	ImGui::TextUnformatted(rightBuffer);
 	ImGui::PopStyleColor();
 
-	if (renderedDisplay.demotionCounterLimit > 0u)
+	const bool showPromotionCounter = renderedDisplay.promotionCounterLimit > 0u;
+	const bool showDemotionCounter = renderedDisplay.demotionCounterLimit > 0u;
+	if (showPromotionCounter || showDemotionCounter)
 	{
-		const bool nextLossMayDemote = renderedDisplay.demotionCounter + 1u >= renderedDisplay.demotionCounterLimit;
-		ImGui::PushStyleColor(
-			ImGuiCol_Text,
-			nextLossMayDemote ? g_rankedOverlayTuning.lpLossColor : ImVec4(0.62f, 0.64f, 0.69f, 1.0f));
 		char demotionBuffer[64] = {};
-		std::snprintf(
-			demotionBuffer,
-			sizeof(demotionBuffer),
-			"Demotion %u/%u",
-			static_cast<unsigned int>(renderedDisplay.demotionCounter),
-			static_cast<unsigned int>(renderedDisplay.demotionCounterLimit));
-		ImGui::TextUnformatted(demotionBuffer);
-		ImGui::PopStyleColor();
+		char demotionDeltaBuffer[32] = {};
+		char promotionBuffer[64] = {};
+		char promotionDeltaBuffer[32] = {};
+		if (showDemotionCounter)
+		{
+			std::snprintf(
+				demotionBuffer,
+				sizeof(demotionBuffer),
+				"Demotion %u/%u",
+				static_cast<unsigned int>(renderedDisplay.demotionCounter),
+				static_cast<unsigned int>(renderedDisplay.demotionCounterLimit));
+		}
+		if (showPromotionCounter)
+		{
+			std::snprintf(
+				promotionBuffer,
+				sizeof(promotionBuffer),
+				"Promotion %u/%u",
+				static_cast<unsigned int>(renderedDisplay.promotionCounter),
+				static_cast<unsigned int>(renderedDisplay.promotionCounterLimit));
+		}
+
+		if (showDemotionCounter)
+		{
+			const bool nextLossMayDemote = renderedDisplay.demotionCounter + 1u >= renderedDisplay.demotionCounterLimit;
+			ImGui::PushStyleColor(
+				ImGuiCol_Text,
+				nextLossMayDemote ? g_rankedOverlayTuning.lpLossColor : ImVec4(0.62f, 0.64f, 0.69f, 1.0f));
+			ImGui::TextUnformatted(demotionBuffer);
+			ImGui::PopStyleColor();
+			if (demotionDelta != 0 && demotionDeltaAlpha > 0.0f)
+			{
+				std::snprintf(demotionDeltaBuffer, sizeof(demotionDeltaBuffer), "%+d", demotionDelta);
+				ImVec4 demotionDeltaColor = demotionDelta > 0
+					? ImVec4(g_rankedOverlayTuning.lpLossColor.x, g_rankedOverlayTuning.lpLossColor.y, g_rankedOverlayTuning.lpLossColor.z, demotionDeltaAlpha)
+					: ImVec4(g_rankedOverlayTuning.lpGainColor.x, g_rankedOverlayTuning.lpGainColor.y, g_rankedOverlayTuning.lpGainColor.z, demotionDeltaAlpha);
+				ImGui::SameLine();
+				DrawBoldText(drawList, ImGui::GetCursorScreenPos(), ImGui::GetColorU32(demotionDeltaColor), demotionDeltaBuffer);
+				ImGui::Dummy(ImVec2(ImGui::CalcTextSize(demotionDeltaBuffer).x + 2.0f, ImGui::GetTextLineHeight()));
+			}
+		}
+		else
+		{
+			ImGui::Dummy(ImVec2(1.0f, ImGui::GetTextLineHeight()));
+		}
+
+		if (showPromotionCounter)
+		{
+			float promotionWidth = ImGui::CalcTextSize(promotionBuffer).x;
+			float promotionDeltaWidth = 0.0f;
+			if (promotionDelta != 0 && promotionDeltaAlpha > 0.0f)
+			{
+				std::snprintf(promotionDeltaBuffer, sizeof(promotionDeltaBuffer), "%+d", promotionDelta);
+				promotionDeltaWidth = ImGui::CalcTextSize(promotionDeltaBuffer).x + ImGui::GetStyle().ItemSpacing.x;
+			}
+			const float promotionOffset = fullWidth - promotionWidth - promotionDeltaWidth;
+			ImGui::SameLine(promotionOffset > thirdWidth ? promotionOffset : thirdWidth);
+			if (promotionDeltaWidth > 0.0f)
+			{
+				ImVec4 promotionDeltaColor = promotionDelta > 0
+					? ImVec4(g_rankedOverlayTuning.lpGainColor.x, g_rankedOverlayTuning.lpGainColor.y, g_rankedOverlayTuning.lpGainColor.z, promotionDeltaAlpha)
+					: ImVec4(g_rankedOverlayTuning.lpLossColor.x, g_rankedOverlayTuning.lpLossColor.y, g_rankedOverlayTuning.lpLossColor.z, promotionDeltaAlpha);
+				DrawBoldText(drawList, ImGui::GetCursorScreenPos(), ImGui::GetColorU32(promotionDeltaColor), promotionDeltaBuffer);
+				ImGui::Dummy(ImVec2(ImGui::CalcTextSize(promotionDeltaBuffer).x + 2.0f, ImGui::GetTextLineHeight()));
+				ImGui::SameLine();
+			}
+			ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.62f, 0.64f, 0.69f, 1.0f));
+			ImGui::TextUnformatted(promotionBuffer);
+			ImGui::PopStyleColor();
+		}
 	}
 
 	g_rankedProgressAnimationSnapshot.characterId = renderedDisplay.characterId;
