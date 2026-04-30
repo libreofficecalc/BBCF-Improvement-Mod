@@ -142,7 +142,7 @@ private:
     bool TryFireTrigger(TriggerType trigger, int currentFrame);
     bool IsKeyPressedEdge(int virtualKey);
     void SyncKeyEdgeState();
-    bool AreBindableKeysReleased() const;
+    bool IsTriggerKeyDown(int virtualKey) const;
     void ResetTriggerRuntimeState(bool enableRuntime);
     void LogRuntimeGateState(const char* tag) const;
     void LogEntryCacheSummary(const char* tag) const;

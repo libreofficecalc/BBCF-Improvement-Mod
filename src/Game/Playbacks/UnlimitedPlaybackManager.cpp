@@ -443,6 +443,7 @@ UnlimitedPlaybackManager& UnlimitedPlaybackManager::Instance() {
 }
 
 UnlimitedPlaybackManager::UnlimitedPlaybackManager() {
+    m_mode = Mode_Unlimited;
     for (int i = 0; i < Trigger_Count; ++i) {
         m_triggers[i].enabled = (i != Trigger_KeyPress);
         m_triggers[i].cooldownFrames = 1;
@@ -489,7 +490,7 @@ void UnlimitedPlaybackManager::Tick() {
         TryRestoreRuntimeSlotAfterPlayback();
     }
 
-    if (m_mode != Mode_Unlimited || !inTrainingMatch || !m_triggerRuntimeEnabled || m_profileRuntimeSuppressedUntilReset) {
+    if (!inTrainingMatch || !m_triggerRuntimeEnabled || m_profileRuntimeSuppressedUntilReset) {
         return;
     }
 
@@ -497,7 +498,7 @@ void UnlimitedPlaybackManager::Tick() {
         return;
     }
 
-    if (!m_keyPressTriggerArmed && AreBindableKeysReleased()) {
+    if (!m_keyPressTriggerArmed && !IsTriggerKeyDown(m_triggers[Trigger_KeyPress].keyCode)) {
         LogRuntimeGateState("Tick arming key-press triggers");
         SyncKeyEdgeState();
         m_keyPressTriggerArmed = true;
@@ -1150,6 +1151,7 @@ bool UnlimitedPlaybackManager::PlayEntryNow(size_t idx) {
 void UnlimitedPlaybackManager::ClearAll() {
     CancelReplayRecording(nullptr);
     m_triggerRuntimeEnabled = false;
+    m_mode = Mode_Unlimited;
     m_entries.clear();
     m_cache.clear();
     for (int i = 0; i < Trigger_Count; ++i) {
@@ -1284,7 +1286,6 @@ bool UnlimitedPlaybackManager::LoadProfile(const std::string& profilePath, bool 
     std::vector<PlaybackEntry> parsedEntries;
     std::unordered_map<std::string, std::string> embeddedEntryDataHex;
     std::array<TriggerConfig, Trigger_Count> parsedTriggers = m_triggers;
-    int parsedMode = m_mode;
     int parsedSelectionMode = m_selectionMode;
     bool parsedAutoMirror = m_autoMirrorOnSideSwap;
 
@@ -1303,7 +1304,6 @@ bool UnlimitedPlaybackManager::LoadProfile(const std::string& profilePath, bool 
         const std::string value = Trim(line.substr(pos + 1));
 
         if (key == "mode") {
-            parsedMode = std::atoi(value.c_str());
             continue;
         }
         if (key == kProfileFormatVersionKey || key == kProfileFormatKindKey || key == "version") {
@@ -1415,7 +1415,7 @@ bool UnlimitedPlaybackManager::LoadProfile(const std::string& profilePath, bool 
 
     m_entries = parsedEntries;
     m_triggers = parsedTriggers;
-    SetMode(parsedMode);
+    SetMode(Mode_Unlimited);
     SetSelectionMode(parsedSelectionMode);
     SetAutoMirrorOnSideSwap(parsedAutoMirror);
     const size_t slash = p.find_last_of("/\\");
@@ -1981,21 +1981,14 @@ void UnlimitedPlaybackManager::SyncKeyEdgeState() {
     }
 }
 
-bool UnlimitedPlaybackManager::AreBindableKeysReleased() const {
-    for (int vk = 1; vk < 256; ++vk) {
-        if (vk == VK_LBUTTON || vk == VK_RBUTTON || vk == VK_MBUTTON || vk == VK_XBUTTON1 || vk == VK_XBUTTON2) {
-            continue;
-        }
-        if (GetAsyncKeyState(vk) & 0x8000) {
-            return false;
-        }
+bool UnlimitedPlaybackManager::IsTriggerKeyDown(int virtualKey) const {
+    if (IsControllerBindCode(virtualKey)) {
+        return IsControllerBindingDown(kControllerBindings[virtualKey - kControllerBindBase]);
     }
-    for (const auto& binding : kControllerBindings) {
-        if (IsControllerBindingDown(binding)) {
-            return false;
-        }
+    if (virtualKey <= 0 || virtualKey >= 256) {
+        return false;
     }
-    return true;
+    return (GetAsyncKeyState(virtualKey) & 0x8000) != 0;
 }
 
 bool UnlimitedPlaybackManager::IsKeyPressedEdge(int virtualKey) {
