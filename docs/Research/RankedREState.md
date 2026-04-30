@@ -30,8 +30,8 @@ Ranked system is solved enough for UI progress:
 - read local per-character packed rank row
 - current rank = packed high/low split depending on layer
 - current LP = subscore / low word from canonical packed score, or high word from blob-swapped row field
-- lower/upper LP bounds come from `DAT_009DFFD0`, not guessed formulas
-- progress bar = clamp((currentLp - lowerBound) / (upperBound - lowerBound), 0, 1)
+- lower/upper LP bounds and counter limits come from `DAT_009DFFD0`, not guessed formulas
+- progress bar = clamp((currentLp - lowerBound) / (upperBound - lowerBound), 0, 1), but high-rank demotion risk also depends on `row[3]`
 - Steam remains upload/readback boundary, not live progress authority
 
 Full predictive LP status:
@@ -76,6 +76,15 @@ Confirmed behavior:
   - `rank_id > 0x13`
   - LP at or below lower bound, or for `rank_id > 0x17`, `row[3]` reaches table counter limit
 - calls `FUN_004be700((short*)row)` on that transition condition
+
+Important live correction from Kokonoe LV34 -> LV33 rankdown log:
+
+- log file: `D:\SteamLibrary\steamapps\common\BlazBlue Centralfiction\BBCF_IM\DEBUG - KOKONOE RANKDOWN LV34 TO LV33 - Threshholds dont match.txt`
+- before rankdown: visible LV34 / internal `33`, packed row `0x76BD0021`, subscore `30397`
+- LV34/internal 33 LP lower bound is `27647`, so LP floor did not cause this rankdown
+- row second dword was `0x00040000`, meaning `row[3] = 4`
+- loss path incremented `row[3]` to `5`, then `FUN_004be700` demoted to internal `32` and reset subscore to `0x7FFF`
+- conclusion: base rankdown model must include demotion counter for high ranks; "Reworked LP to be intuitive" was not root cause, it only made UI hide separate counter risk
 
 Delta Magnitude Function
 
@@ -127,7 +136,7 @@ Row layout:
 - `+0`: `int16 upperOffset`
 - `+2`: `int16 lowerOffset`
 - `+4`: `int16 unknown4`
-- `+6`: `int16 counterLimit`, compared against `row[3]`
+- `+6`: `int16 counterLimit`, compared against `row[3]` for high-rank demotion
 
 Bounds:
 
@@ -223,6 +232,7 @@ Known row source:
 - row address: `base + 0xD4 + characterId * 0x180`
 - row field `+0x00` stores blob-swapped packed value
 - current UI should read this row, use `rank_id = packed00 & 0xFFFF`, `currentLp = packed00 >> 16`
+- demotion counter lives in high word of row field `+0x04`: `demotionCounter = (*(uint32_t*)(row + 0x04) >> 16) & 0xFFFF`
 
 Known examples:
 
@@ -289,6 +299,7 @@ For UI work:
 - compute current LP from subscore
 - compute bounds from `DAT_009DFFD0` table
 - progress = clamp((currentLp - lowerBound) / (upperBound - lowerBound), 0, 1)
+- for ranks with table `counterLimit > 0`, show demotion counter separately; LP progress alone is not safe rankdown threshold
 - keep current rank / next rank display from rank_id mapping
 
 For future RE:

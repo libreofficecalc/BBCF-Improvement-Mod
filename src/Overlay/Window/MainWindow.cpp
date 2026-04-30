@@ -161,8 +161,11 @@ namespace
 			uint32_t currentLp = 0;
 			uint32_t lowerThreshold = 0;
 			uint32_t nextThreshold = 0;
+			uint32_t demotionCounter = 0;
+			uint32_t demotionCounterLimit = 0;
 			uint32_t rawPackedField00 = 0;
 			uint32_t packedSubscore = 0;
+			uint32_t rawField04 = 0;
 			uint32_t rawField0C = 0;
 			uint32_t rawField10 = 0;
 			uint32_t rawField20 = 0;
@@ -250,6 +253,8 @@ namespace
 			return before.visibleRank != after.visibleRank ||
 				before.currentLp != after.currentLp ||
 				before.nextThreshold != after.nextThreshold ||
+				before.demotionCounter != after.demotionCounter ||
+				before.demotionCounterLimit != after.demotionCounterLimit ||
 				before.thresholdKnown != after.thresholdKnown;
 		}
 
@@ -257,6 +262,7 @@ namespace
 		{
 			return before.rawPackedField00 != after.rawPackedField00 ||
 				before.packedSubscore != after.packedSubscore ||
+				before.rawField04 != after.rawField04 ||
 				before.rawField0C != after.rawField0C ||
 				before.rawField10 != after.rawField10 ||
 				before.rawField20 != after.rawField20 ||
@@ -344,7 +350,8 @@ namespace
 
 		uint32_t lowerBound = 0;
 		uint32_t upperBound = 0;
-		if (!state->isUnranked && TryGetRankedLpBounds(internalRank, &lowerBound, &upperBound, nullptr))
+		int16_t counterLimit = 0;
+		if (!state->isUnranked && TryGetRankedLpBounds(internalRank, &lowerBound, &upperBound, &counterLimit))
 		{
 			const uint32_t cumulativeBase = GetCumulativeRankedLpBase(internalRank);
 			const uint32_t rankSpan = upperBound - lowerBound;
@@ -361,6 +368,15 @@ namespace
 			state->currentLp = cumulativeBase + rankProgressLp;
 			state->lowerThreshold = cumulativeBase;
 			state->nextThreshold = cumulativeBase + rankSpan;
+			state->demotionCounterLimit = counterLimit > 0 ? static_cast<uint32_t>(counterLimit) : 0u;
+			if (state->demotionCounterLimit == 0u)
+			{
+				state->demotionCounter = 0u;
+			}
+			else if (state->demotionCounter > state->demotionCounterLimit)
+			{
+				state->demotionCounter = state->demotionCounterLimit;
+			}
 			state->thresholdKnown = true;
 			state->progress = ComputeRankedLpProgress(state->currentLp, state->lowerThreshold, state->nextThreshold);
 			return;
@@ -369,6 +385,8 @@ namespace
 		state->currentLp = 0u;
 		state->lowerThreshold = 0u;
 		state->nextThreshold = 0u;
+		state->demotionCounter = 0u;
+		state->demotionCounterLimit = 0u;
 		state->thresholdKnown = false;
 		state->progress = 0.0f;
 	}
@@ -778,6 +796,8 @@ namespace
 		outSnapshot->rawPackedField00 = packedField00;
 		outSnapshot->currentRank = packedField00 & 0xFFFFu;
 		outSnapshot->packedSubscore = (packedField00 >> 16) & 0xFFFFu;
+		outSnapshot->rawField04 = *reinterpret_cast<const uint32_t*>(rowObject + 0x04);
+		outSnapshot->demotionCounter = (*reinterpret_cast<const uint32_t*>(rowObject + 0x04) >> 16) & 0xFFFFu;
 		outSnapshot->rawField0C = *reinterpret_cast<const uint32_t*>(rowObject + 0x0C);
 		outSnapshot->rawField10 = *reinterpret_cast<const uint32_t*>(rowObject + 0x10);
 		outSnapshot->rawField14 = *reinterpret_cast<const uint32_t*>(rowObject + 0x14);
@@ -795,9 +815,19 @@ namespace
 		outSnapshot->metadataNextRank = (*reinterpret_cast<const uint32_t*>(rowObject + 0xD4) >> 16) & 0xFFFFu;
 		outSnapshot->debugFieldF4 = *reinterpret_cast<const uint32_t*>(rowObject + 0xF4);
 		outSnapshot->isUnranked = outSnapshot->currentRank == 0;
+		int16_t demotionCounterLimit = 0;
 		if (!outSnapshot->isUnranked &&
-			TryGetRankedLpBounds(outSnapshot->currentRank, &outSnapshot->lowerThreshold, &outSnapshot->nextThreshold, nullptr))
+			TryGetRankedLpBounds(outSnapshot->currentRank, &outSnapshot->lowerThreshold, &outSnapshot->nextThreshold, &demotionCounterLimit))
 		{
+			outSnapshot->demotionCounterLimit = demotionCounterLimit > 0 ? static_cast<uint32_t>(demotionCounterLimit) : 0u;
+			if (outSnapshot->demotionCounterLimit == 0u)
+			{
+				outSnapshot->demotionCounter = 0u;
+			}
+			else if (outSnapshot->demotionCounter > outSnapshot->demotionCounterLimit)
+			{
+				outSnapshot->demotionCounter = outSnapshot->demotionCounterLimit;
+			}
 			const uint32_t rawLowerThreshold = outSnapshot->lowerThreshold;
 			const uint32_t rawUpperThreshold = outSnapshot->nextThreshold;
 			const uint32_t cumulativeBase = GetCumulativeRankedLpBase(outSnapshot->currentRank);
@@ -828,6 +858,8 @@ namespace
 			outSnapshot->lowerThreshold = 0u;
 			outSnapshot->nextThreshold = 0u;
 			outSnapshot->remainingLp = 0u;
+			outSnapshot->demotionCounter = 0u;
+			outSnapshot->demotionCounterLimit = 0u;
 			outSnapshot->progress = 0.0f;
 		}
 		MaybeLogRankedRowDump(rowIndex, rowObject, *outSnapshot);
@@ -849,8 +881,11 @@ namespace
 			state.currentLp = snapshot.currentLp;
 			state.lowerThreshold = snapshot.lowerThreshold;
 			state.nextThreshold = 0u;
+			state.demotionCounter = snapshot.demotionCounter;
+			state.demotionCounterLimit = snapshot.demotionCounterLimit;
 			state.rawPackedField00 = snapshot.rawPackedField00;
 			state.packedSubscore = snapshot.packedSubscore;
+			state.rawField04 = snapshot.rawField04;
 			state.rawField0C = snapshot.rawField0C;
 			state.rawField10 = snapshot.rawField10;
 			state.rawField20 = snapshot.rawField20;
@@ -1113,7 +1148,7 @@ namespace
 				}
 
 				++backingChangeCount;
-				LOG(1, "[RANK][OverlayObserve] backing-change serial=%llu char=%u displayChanged=%d rank=%u->%u lp=%u->%u next=%u->%u packed00=0x%08X->0x%08X packedSub=%u->%u raw0C=0x%08X->0x%08X raw10=0x%08X->0x%08X raw20=0x%08X->0x%08X nextMeta=%u->%u\n",
+				LOG(1, "[RANK][OverlayObserve] backing-change serial=%llu char=%u displayChanged=%d rank=%u->%u lp=%u->%u next=%u->%u demotion=%u/%u->%u/%u packed00=0x%08X->0x%08X packedSub=%u->%u raw04=0x%08X->0x%08X raw0C=0x%08X->0x%08X raw10=0x%08X->0x%08X raw20=0x%08X->0x%08X nextMeta=%u->%u\n",
 					static_cast<unsigned long long>(g_rankedUploadObservation.serial),
 					static_cast<unsigned int>(characterId),
 					displayChanged ? 1 : 0,
@@ -1123,10 +1158,16 @@ namespace
 					static_cast<unsigned int>(after.currentLp),
 					static_cast<unsigned int>(before.nextThreshold),
 					static_cast<unsigned int>(after.nextThreshold),
+					static_cast<unsigned int>(before.demotionCounter),
+					static_cast<unsigned int>(before.demotionCounterLimit),
+					static_cast<unsigned int>(after.demotionCounter),
+					static_cast<unsigned int>(after.demotionCounterLimit),
 					static_cast<unsigned int>(before.rawPackedField00),
 					static_cast<unsigned int>(after.rawPackedField00),
 					static_cast<unsigned int>(before.packedSubscore),
 					static_cast<unsigned int>(after.packedSubscore),
+					static_cast<unsigned int>(before.rawField04),
+					static_cast<unsigned int>(after.rawField04),
 					static_cast<unsigned int>(before.rawField0C),
 					static_cast<unsigned int>(after.rawField0C),
 					static_cast<unsigned int>(before.rawField10),
@@ -1293,6 +1334,8 @@ namespace
 			outState->currentLp = LerpUint(g_rankedProgressAnimation.source.currentLp, g_rankedProgressAnimation.target.currentLp, t);
 			outState->lowerThreshold = g_rankedProgressAnimation.target.lowerThreshold;
 			outState->nextThreshold = std::max<uint32_t>(g_rankedProgressAnimation.target.nextThreshold, 1u);
+			outState->demotionCounter = g_rankedProgressAnimation.target.demotionCounter;
+			outState->demotionCounterLimit = g_rankedProgressAnimation.target.demotionCounterLimit;
 			outState->progress = LerpFloat(g_rankedProgressAnimation.source.progress, g_rankedProgressAnimation.target.progress, t);
 		}
 		else
@@ -1309,6 +1352,8 @@ namespace
 					rankUp ? g_rankedProgressAnimation.source.nextThreshold : g_rankedProgressAnimation.source.lowerThreshold, t);
 				outState->lowerThreshold = g_rankedProgressAnimation.source.lowerThreshold;
 				outState->nextThreshold = std::max<uint32_t>(g_rankedProgressAnimation.source.nextThreshold, 1u);
+				outState->demotionCounter = g_rankedProgressAnimation.source.demotionCounter;
+				outState->demotionCounterLimit = g_rankedProgressAnimation.source.demotionCounterLimit;
 				outState->progress = LerpFloat(g_rankedProgressAnimation.source.progress, rankUp ? 1.0f : 0.0f, t);
 				if (outPhase)
 				{
@@ -1327,6 +1372,8 @@ namespace
 					g_rankedProgressAnimation.target.currentLp, t);
 				outState->lowerThreshold = g_rankedProgressAnimation.target.lowerThreshold;
 				outState->nextThreshold = std::max<uint32_t>(g_rankedProgressAnimation.target.nextThreshold, 1u);
+				outState->demotionCounter = g_rankedProgressAnimation.target.demotionCounter;
+				outState->demotionCounterLimit = g_rankedProgressAnimation.target.demotionCounterLimit;
 				outState->progress = LerpFloat(rankUp ? 0.0f : 1.0f, g_rankedProgressAnimation.target.progress, t);
 				if (outPhase)
 				{
@@ -1522,6 +1569,8 @@ namespace
 			s_last.currentRank != snapshot.currentRank ||
 			s_last.currentLp != snapshot.currentLp ||
 			s_last.nextThreshold != snapshot.nextThreshold ||
+			s_last.demotionCounter != snapshot.demotionCounter ||
+			s_last.demotionCounterLimit != snapshot.demotionCounterLimit ||
 			s_last.earnedPoints != snapshot.earnedPoints ||
 			s_last.totalPoints != snapshot.totalPoints ||
 			s_last.networkState != snapshot.networkState ||
@@ -1529,7 +1578,7 @@ namespace
 		g_rankedProgressOverlaySnapshot = snapshot;
 		if (changed)
 		{
-			LOG(1, "[RANK][OverlayProgress] active=%d row=%u selector=%u cursor=%u rank=%u prev=%u next=%u lp=%u nextLp=%u remainingLp=%u wins=%u matches=%u remainingMatches=%u percent=%.4f state=%d/%d unranked=%d metadataNext=%u packed00=0x%08X packedSub=%u f4=0x%08X raw0C=0x%08X raw10=0x%08X raw14=0x%08X raw18=0x%08X raw20=0x%08X rawE0=0x%08X rawE4=0x%08X rawE8=0x%08X rawEC=0x%08X\n",
+			LOG(1, "[RANK][OverlayProgress] active=%d row=%u selector=%u cursor=%u rank=%u prev=%u next=%u lp=%u nextLp=%u remainingLp=%u demotion=%u/%u wins=%u matches=%u remainingMatches=%u percent=%.4f state=%d/%d unranked=%d metadataNext=%u packed00=0x%08X packedSub=%u f4=0x%08X raw04=0x%08X raw0C=0x%08X raw10=0x%08X raw14=0x%08X raw18=0x%08X raw20=0x%08X rawE0=0x%08X rawE4=0x%08X rawE8=0x%08X rawEC=0x%08X\n",
 				snapshot.active ? 1 : 0,
 				static_cast<unsigned int>(snapshot.rowIndex),
 				static_cast<unsigned int>(snapshot.selectorValue),
@@ -1540,6 +1589,8 @@ namespace
 				static_cast<unsigned int>(snapshot.currentLp),
 				static_cast<unsigned int>(snapshot.nextThreshold),
 				static_cast<unsigned int>(snapshot.remainingLp),
+				static_cast<unsigned int>(snapshot.demotionCounter),
+				static_cast<unsigned int>(snapshot.demotionCounterLimit),
 				static_cast<unsigned int>(snapshot.earnedPoints),
 				static_cast<unsigned int>(snapshot.totalPoints),
 				static_cast<unsigned int>(snapshot.remainingPoints),
@@ -1551,6 +1602,7 @@ namespace
 				static_cast<unsigned int>(snapshot.rawPackedField00),
 				static_cast<unsigned int>(snapshot.packedSubscore),
 				static_cast<unsigned int>(snapshot.debugFieldF4),
+				static_cast<unsigned int>(snapshot.rawField04),
 				static_cast<unsigned int>(snapshot.rawField0C),
 				static_cast<unsigned int>(snapshot.rawField10),
 				static_cast<unsigned int>(snapshot.rawField14),
@@ -2532,6 +2584,23 @@ void DrawRankedProgressOverlayStandalone()
 	ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.62f, 0.64f, 0.69f, 1.0f));
 	ImGui::TextUnformatted(rightBuffer);
 	ImGui::PopStyleColor();
+
+	if (renderedDisplay.demotionCounterLimit > 0u)
+	{
+		const bool nextLossMayDemote = renderedDisplay.demotionCounter + 1u >= renderedDisplay.demotionCounterLimit;
+		ImGui::PushStyleColor(
+			ImGuiCol_Text,
+			nextLossMayDemote ? g_rankedOverlayTuning.lpLossColor : ImVec4(0.62f, 0.64f, 0.69f, 1.0f));
+		char demotionBuffer[64] = {};
+		std::snprintf(
+			demotionBuffer,
+			sizeof(demotionBuffer),
+			"Demotion %u/%u",
+			static_cast<unsigned int>(renderedDisplay.demotionCounter),
+			static_cast<unsigned int>(renderedDisplay.demotionCounterLimit));
+		ImGui::TextUnformatted(demotionBuffer);
+		ImGui::PopStyleColor();
+	}
 
 	g_rankedProgressAnimationSnapshot.characterId = renderedDisplay.characterId;
 	g_rankedProgressAnimationSnapshot.displayedRank = renderedDisplay.visibleRank;

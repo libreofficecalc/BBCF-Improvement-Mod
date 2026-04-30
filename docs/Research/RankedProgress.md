@@ -260,6 +260,42 @@ Current stable `DEBUG.txt` proves these points:
    - `local_m24` changed in small integers and occasionally matched detail-like values (`24`, `12`, `6`), but did not behave like the packed `0x00228664`
    - conclusion: `BBCF+0x1D1A2` is still propagation/setup, not the score-composition point
 
+## 2026-04-30 Kokonoe LV34 -> LV33 Rankdown Correction
+
+Operator provided copied log:
+
+- `/mnt/d/SteamLibrary/steamapps/common/BlazBlue Centralfiction/BBCF_IM/DEBUG - KOKONOE RANKDOWN LV34 TO LV33 - Threshholds dont match.txt`
+
+What log proves:
+
+1. Rankdown happened from visible LV34 to LV33:
+   - before: `packed00=0x76BD0021`, internal `0x21` / visible `34`, subscore `0x76BD = 30397`
+   - after: `packed00=0x7FFF0020`, internal `0x20` / visible `33`, subscore reset `0x7FFF`
+2. This did not happen at LV34 LP lower bound:
+   - table lower bound for internal `33` is `0x7FFF - 5120 = 27647`
+   - pre-rankdown subscore was `30397`, still `2750` above floor
+3. Ghidra decompile already explains this:
+   - `FUN_004be320` demotes when LP is at/below lower bound OR, for `rank_id > 0x17`, `row[3] >= DAT_009DFFD0[rank_id].counterLimit`
+   - internal `33` has counter limit `5`
+4. Row dump/dataflow confirms counter path:
+   - before rankdown row dword `+0x04` was `0x00040000`, so `row[3] = 4`
+   - loss path incremented it to `5`
+   - `FUN_004be700` then wrote rank `0x20`, LP `0x7FFF`, and reset `row[3]`
+5. Conclusion:
+   - "Reworked LP to be intuitive" cumulative display layer was not cause of wrong threshold math
+   - base UI understanding was incomplete because high-rank demotion is counter-gated as well as LP-floor gated
+
+Patch made:
+
+- ranked progress snapshot/display now reads row `+0x04` high word as demotion counter
+- UI shows `Demotion N/limit` when table counter limit exists, colored red when next loss can demote
+- logs include `demotion=N/limit` and `raw04` in overlay progress / backing-change lines
+
+Next validation:
+
+- build `Debug|Win32`
+- operator should inspect/play high-rank character at counter `4/5`; overlay should show `Demotion 4/5`, then demote on next qualifying loss even while LP bar is above lower floor
+
 ## 2026-04-21 Kokonoe Live Ranked Follow-Up
 
 Operator test:
