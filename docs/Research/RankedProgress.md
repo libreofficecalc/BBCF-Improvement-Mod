@@ -12867,3 +12867,97 @@ Next test:
 - Open in-game Rankings leaderboard
 - Expected: all names show correctly, not "unknown"
 - Check `DEBUG.txt` for `[RANK][LeaderboardUI] distribution complete counted=N downloaded=M` — no more `distribution worker` lines
+
+---
+
+## Entry #222 — Binary search distribution + playerbase data scaffolding
+
+**Date:** 2026-04-30
+
+**Context:** After Entry #221, the thread-safety fix moved the "unknown names" trigger from the progress overlay to only the ranked ladder window. Root cause confirmed: `DownloadLeaderboardEntries(handle, GlobalTop, 1, 76732)` queues ~76k persona lookups simultaneously, saturating Steam's internal persona resolution pipeline and causing all subsequent game leaderboard page loads to return "unknown" for player names. A full Steam restart was required to clear the state.
+
+**Why passive accumulation was ruled out:**
+The ranked ladder must show a full population distribution without requiring the user to manually scroll through 76k entries in the in-game leaderboard. The game's normal leaderboard downloads only cover small pages (e.g. 10 entries at a time), so passive accumulation from game calls is not feasible.
+
+**Root cause of persona flooding:**
+Downloading any large contiguous range via `DownloadLeaderboardEntries` causes Steam to queue that many persona lookups at once. The fix is to download at most 1 entry per Steam call, spread over many frames with 4 parallel async slots.
+
+**Fix: Binary search distribution (this entry)**
+
+Replace `UpdateDistribution` (which did one massive download) with `RankedDistributionSearch`, a class that finds exact tier boundary positions using binary search:
+
+- Score format: `(internalRank << 16) | lp`, leaderboard sorted descending → players grouped by tier (highest first), then LP within tier
+- `boundary[T]` = # players with `internalRank >= T` = global position of the last player in tier T or above
+- `count[T]` = `boundary[T] - boundary[T+1]` = # players with exactly `internalRank == T`
+- Binary search for each `boundary[T]`: find last position where `score >= T << 16`
+- Search range for tier T: `[boundary[T+1], totalCount]` — narrows with known lower boundary
+- Total probes: `maxTierCount * log2(totalPlayers)` ≈ `42 * 17 = 714` worst case
+- 4 parallel `CCallResult` slots: each tier's binary search runs independently, so up to 4 tiers searched in parallel at once
+- Each probe downloads exactly 1 entry → exactly 1 persona lookup queued → no flooding
+
+**`PlayerLeaderboardEntry` struct — everything extractable from one RANK_ALL entry:**
+
+```cpp
+struct PlayerLeaderboardEntry {
+    uint64_t steamId;         // Steam 64-bit ID
+    int32_t globalRank;       // 1-indexed position on RANK_ALL
+    int32_t score;            // (internalRank << 16) | lp
+    int32_t details[4];       // [0] = character ID used in last ranked match (confirmed from RE)
+    std::string displayName;  // from Steam persona cache at probe time
+    int steamLevel;           // from Steam persona cache (-1 if not yet resolved)
+
+    // Accessors
+    uint16_t InternalRank()   // (score >> 16) & 0xFFFF → tier index
+    uint16_t LP()             // score & 0xFFFF → league points within tier
+    uint32_t VisibleRank()    // internalRank + 1 (same as InternalRankToVisibleRank)
+    uint8_t CharacterId()     // details[0] if in [0,63], else 0xFF
+};
+```
+
+**What can be deduced from a RANK_ALL entry (full summary):**
+
+| Field | Source | Notes |
+|---|---|---|
+| Global rank position | `m_nGlobalRank` | 1-indexed on RANK_ALL |
+| Rank tier | `(score>>16)&0xFFFF` | LV1–LV35, Leader, Hero, Kisshin, Hades, Ruler, SkillRank_997, SkillRank_12290 |
+| LP within tier | `score & 0xFFFF` | 0–65535 |
+| Last ranked character | `details[0]` | Character ID (0-indexed); confirmed: 24=Kokonoe etc. |
+| Display name | `GetFriendPersonaName(steamId)` | From Steam persona cache after entry is downloaded |
+| Steam level | `GetFriendSteamLevel(steamId)` | From Steam persona cache |
+| Steam ID | `m_steamIDUser` | Unique 64-bit account identifier |
+| Region/country | ❌ not available | Steam does not expose this publicly |
+| Win rate / history | ❌ not in leaderboard | Would need separate API |
+| All characters played | ❌ RANK_ALL only shows last | Cross-referencing per-character leaderboards requires separate downloads |
+
+**Architectural changes:**
+
+Removed from `RankedLeaderboardTracker`:
+- `TickDistribution()`, `UpdateDistribution()`, `ProcessDistributionChunk()`, `OnDistributionDownloaded()`, `RequestDistributionRefresh()`
+- All distribution member variables (`m_distributionPending`, `m_distributionInProgress`, `m_distributionFinished`, `m_distributionEntries`, `m_distributionEntryCount`, `m_distributionCopyIndex`, `m_distributionTotal`, `m_pendingDistributionTotal`, `m_rankPopulation`, `m_pendingRankPopulation`, `m_lastDistributionStart`, `m_distributionResult`)
+- `kDistributionRefreshSeconds`
+
+Added:
+- `RankedDistributionSearch g_rankedDistributionSearch{}` singleton
+- `RankedLeaderboardTracker::GetGlobalLeaderboard()` public getter
+- `DrawRankedLadderWindow` now calls `g_rankedLeaderboardTracker.Tick(kInvalidRankedCharacterId)` to ensure global handle, then `g_rankedDistributionSearch.Tick(handle, entryCount)`
+- Distribution table reads from `g_rankedDistributionSearch.GetRankPopulationStats(...)` instead of tracker
+- Progress indicator in ladder window header: shows probe count while scanning, total players + sample count when complete
+
+**Binary search correctness:**
+- Init probe: download position 1 → get `maxTier` (highest internalRank in the leaderboard)
+- For each T from maxTier down to 1: binary search `boundary[T]` in `[boundary[T+1], totalCount]`
+  - Probe at `mid = lo + (hi - lo + 1) / 2` (rounds up to avoid stalling at `lo == hi - 1`)
+  - If `internalRank[mid] >= T`: `lo = mid` (boundary at or above mid)
+  - If `internalRank[mid] < T`: `hi = mid - 1` (boundary before mid)
+  - Converge when `lo >= hi`: `boundary[T] = lo`
+- `count[T] = boundary[T] - boundary[T+1]`
+- `boundary[0] = totalCount` (known), `boundary[maxTier+1] = 0` (no players above max)
+
+**Future use of `m_probeEntries`:**
+All probe entries (boundary-point samples across the full leaderboard) are stored with full data. These provide a representative sample at each tier boundary. For full playerbase reports, downstream code can access `g_rankedDistributionSearch.GetProbeEntries()` to get: globalRank, score, tier, LP, characterId, displayName, steamLevel for each sampled player.
+
+**Next test:**
+- Open ranked ladder window with cold persona cache
+- Expected: no "unknown" names in normal in-game leaderboard during/after scan
+- DEBUG.txt should show `[RANK][Distribution]` lines: `Binary search started totalCount=N`, then ~714 `Tier T boundary=B` lines, then `Complete tiers=M probesFired=P`
+- Ladder window header shows probe count while scanning, then `Total ranked players: N  |  Samples: K` when done

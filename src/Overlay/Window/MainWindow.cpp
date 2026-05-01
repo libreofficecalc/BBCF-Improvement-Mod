@@ -542,6 +542,311 @@ namespace
 		return characterId < (sizeof(kCodes) / sizeof(kCodes[0])) ? kCodes[characterId] : nullptr;
 	}
 
+	// All data extractable from a single RANK_ALL leaderboard entry.
+	// score = (internalRank << 16) | lp  (BBCF packing)
+	// details[0] = character ID used in the last ranked match
+	struct PlayerLeaderboardEntry
+	{
+		uint64_t steamId = 0;
+		int32_t globalRank = 0;   // 1-indexed position on RANK_ALL
+		int32_t score = 0;        // raw packed score
+		int32_t details[4] = {};  // [0] = character ID in BBCF
+
+		// From Steam persona cache (populated at probe time; may be empty if not yet resolved)
+		std::string displayName;
+		int steamLevel = -1;     // -1 if not yet known
+
+		uint16_t InternalRank() const { return static_cast<uint16_t>((static_cast<uint32_t>(score) >> 16) & 0xFFFFu); }
+		uint16_t LP() const { return static_cast<uint16_t>(static_cast<uint32_t>(score) & 0xFFFFu); }
+		uint32_t VisibleRank() const { return static_cast<uint32_t>(InternalRank()) + 1u; }
+		// Character ID from details[0]; 0xFF = not valid
+		uint8_t CharacterId() const
+		{
+			return (details[0] >= 0 && details[0] < 64) ? static_cast<uint8_t>(details[0]) : 0xFFu;
+		}
+	};
+
+	// Finds the exact player count per rank tier using binary search on the RANK_ALL leaderboard.
+	// Makes one download per probe (kMaxParallelSlots parallel), each returning exactly one entry.
+	// Total probes ≈ maxTierCount * log2(totalPlayers), fully sequential within each tier.
+	// Probe entries are stored in m_probeEntries for future playerbase reports.
+	class RankedDistributionSearch
+	{
+	public:
+		static constexpr int kMaxParallelSlots = 4;
+		static constexpr int kMaxTierCount = 64;
+		static constexpr int kMaxLegitTier = static_cast<int>(sizeof(kRankedLpBoundsTable) / sizeof(kRankedLpBoundsTable[0])) - 1;
+
+		enum class Status { Idle, Searching, Complete, Failed };
+
+		void Tick(SteamLeaderboard_t handle, int totalCount)
+		{
+			if (m_status == Status::Complete || m_status == Status::Failed)
+				return;
+			if (!handle || totalCount <= 0 || !g_interfaces.pSteamUserStatsWrapper)
+				return;
+
+			if (m_status == Status::Idle)
+			{
+				m_handle = handle;
+				m_totalCount = totalCount;
+				m_boundary.fill(0);
+				m_boundaryKnown.fill(false);
+				m_tierCount.fill(0u);
+				m_totalPopulation = 0u;
+				m_nextTierToSearch = kMaxLegitTier;
+				m_probeEntries.clear();
+				m_probesFired = 0;
+				m_probesCompleted = 0;
+				for (auto& s : m_slots) { s.tier = -1; s.pending = false; }
+				m_boundary[0] = totalCount;
+				m_boundaryKnown[0] = true;
+				m_status = Status::Searching;
+				LOG(1, "[RANK][Distribution] Binary search started totalCount=%d\n", totalCount);
+			}
+
+			FillFreeSlots();
+		}
+
+		Status GetStatus() const { return m_status; }
+		int GetProbesFired() const { return m_probesFired; }
+		int GetProbesCompleted() const { return m_probesCompleted; }
+		int GetMaxTier() const { return kMaxLegitTier; }
+		uint32_t GetTotalPopulation() const { return m_totalPopulation; }
+		const std::vector<PlayerLeaderboardEntry>& GetProbeEntries() const { return m_probeEntries; }
+
+		bool GetRankPopulationStats(uint32_t visibleRank, uint32_t* outCount, float* outPercent, bool* outLoading) const
+		{
+			if (outLoading)
+				*outLoading = (m_status == Status::Searching);
+			if (!outCount || !outPercent)
+				return false;
+			const uint32_t internalRank = visibleRank > 0u ? (visibleRank - 1u) : 0u;
+			if (internalRank >= static_cast<uint32_t>(kMaxTierCount) || m_totalPopulation == 0u || m_status != Status::Complete)
+				return false;
+			*outCount = m_tierCount[internalRank];
+			*outPercent = static_cast<float>(m_tierCount[internalRank]) * 100.0f / static_cast<float>(m_totalPopulation);
+			return true;
+		}
+
+	private:
+		struct Slot
+		{
+			int tier = -1;   // -1=idle, >=0=binary search for boundary[tier]
+			int bsLo = 0;
+			int bsHi = 0;
+			bool pending = false;
+			int probePos = 0;
+		};
+
+		void FillFreeSlots()
+		{
+			for (int i = 0; i < kMaxParallelSlots; ++i)
+			{
+				if (!m_slots[i].pending && m_slots[i].tier == -1)
+					TryKickSlot(i);
+			}
+		}
+
+		bool TryKickSlot(int slot)
+		{
+			// Binary search one tier boundary per slot
+			while (m_nextTierToSearch >= 1)
+			{
+				const int T = m_nextTierToSearch;
+				m_nextTierToSearch--;
+
+				if (m_boundaryKnown[T])
+					continue;
+
+				// lo = boundary[T+1] (all positions 1..lo confirmed to have internalRank >= T)
+				const int lo = (T + 1 <= kMaxTierCount && m_boundaryKnown[T + 1]) ? m_boundary[T + 1] : 0;
+				const int hi = m_totalCount;
+
+				if (lo >= hi)
+				{
+					// All players are in tier > T already accounted for; boundary[T] = hi = totalCount
+					m_boundary[T] = hi;
+					m_boundaryKnown[T] = true;
+					continue;
+				}
+
+				m_slots[slot].tier = T;
+				m_slots[slot].bsLo = lo;
+				m_slots[slot].bsHi = hi;
+				const int mid = lo + (hi - lo + 1) / 2;
+				m_slots[slot].probePos = mid;
+				KickDownload(slot, mid);
+				return true;
+			}
+
+			return false; // no more tiers to assign
+		}
+
+		void KickDownload(int slot, int position)
+		{
+			SteamAPICall_t call = g_interfaces.pSteamUserStatsWrapper->DownloadLeaderboardEntries(
+				m_handle,
+				k_ELeaderboardDataRequestGlobal,
+				position,
+				position);
+
+			if (!call)
+			{
+				LOG(1, "[RANK][Distribution] Slot %d download failed pos=%d\n", slot, position);
+				m_slots[slot].tier = -1;
+				m_slots[slot].pending = false;
+				return;
+			}
+
+			m_slots[slot].pending = true;
+			m_slots[slot].probePos = position;
+			++m_probesFired;
+
+			switch (slot)
+			{
+			case 0: m_probeResults[0].Set(call, this, &RankedDistributionSearch::OnProbe0); break;
+			case 1: m_probeResults[1].Set(call, this, &RankedDistributionSearch::OnProbe1); break;
+			case 2: m_probeResults[2].Set(call, this, &RankedDistributionSearch::OnProbe2); break;
+			case 3: m_probeResults[3].Set(call, this, &RankedDistributionSearch::OnProbe3); break;
+			default: break;
+			}
+		}
+
+		void OnProbe0(LeaderboardScoresDownloaded_t* cb, bool fail) { OnProbeCommon(0, cb, fail); }
+		void OnProbe1(LeaderboardScoresDownloaded_t* cb, bool fail) { OnProbeCommon(1, cb, fail); }
+		void OnProbe2(LeaderboardScoresDownloaded_t* cb, bool fail) { OnProbeCommon(2, cb, fail); }
+		void OnProbe3(LeaderboardScoresDownloaded_t* cb, bool fail) { OnProbeCommon(3, cb, fail); }
+
+		void OnProbeCommon(int slot, LeaderboardScoresDownloaded_t* cb, bool fail)
+		{
+			++m_probesCompleted;
+			m_slots[slot].pending = false;
+
+			if (fail || !cb || cb->m_cEntryCount <= 0)
+			{
+				LOG(1, "[RANK][Distribution] Slot %d probe fail tier=%d pos=%d\n",
+					slot, m_slots[slot].tier, m_slots[slot].probePos);
+				// Conservative: treat bsLo as the boundary
+				const int T = m_slots[slot].tier;
+				m_boundary[T] = m_slots[slot].bsLo;
+				m_boundaryKnown[T] = true;
+				m_slots[slot].tier = -1;
+				FillFreeSlots();
+				CheckCompletion();
+				return;
+			}
+
+			// Read the entry (request 4 details to capture BBCF's character ID in details[0])
+			LeaderboardEntry_t entry{};
+			int32_t details[4] = {};
+			SteamUserStatsWrapper* const stats = g_interfaces.pSteamUserStatsWrapper;
+			if (!stats || !stats->GetDownloadedLeaderboardEntryQuiet(cb->m_hSteamLeaderboardEntries, 0, &entry, details, 4))
+			{
+				LOG(1, "[RANK][Distribution] Slot %d GetDownloadedEntry failed\n", slot);
+				const int T = m_slots[slot].tier;
+				m_boundary[T] = m_slots[slot].bsLo;
+				m_boundaryKnown[T] = true;
+				m_slots[slot].tier = -1;
+				FillFreeSlots();
+				CheckCompletion();
+				return;
+			}
+
+			// Store entry with all available data for future playerbase reports
+			PlayerLeaderboardEntry pe{};
+			pe.steamId = entry.m_steamIDUser.ConvertToUint64();
+			pe.globalRank = entry.m_nGlobalRank;
+			pe.score = entry.m_nScore;
+			for (int i = 0; i < 4; ++i) pe.details[i] = details[i];
+			if (g_interfaces.pSteamFriendsWrapper)
+			{
+				const char* name = g_interfaces.pSteamFriendsWrapper->GetFriendPersonaName(entry.m_steamIDUser);
+				if (name && name[0] != '\0')
+					pe.displayName = name;
+				const int lvl = g_interfaces.pSteamFriendsWrapper->GetFriendSteamLevel(entry.m_steamIDUser);
+				if (lvl > 0)
+					pe.steamLevel = lvl;
+			}
+			m_probeEntries.push_back(std::move(pe));
+
+			const uint16_t internalRank = (static_cast<uint32_t>(entry.m_nScore) >> 16) & 0xFFFFu;
+			const int probePos = m_slots[slot].probePos;
+
+			LOG(2, "[RANK][Distribution] Slot %d probe result tier=%d pos=%d actualPos=%d internalRank=%u\n",
+				slot, m_slots[slot].tier, probePos, entry.m_nGlobalRank, static_cast<unsigned int>(internalRank));
+
+			// Binary search probe: update lo/hi for boundary[T]
+			const int T = m_slots[slot].tier;
+			if (static_cast<int>(internalRank) >= T)
+				m_slots[slot].bsLo = probePos;  // boundary[T] >= probePos
+			else
+				m_slots[slot].bsHi = probePos - 1; // boundary[T] < probePos
+
+			if (m_slots[slot].bsLo >= m_slots[slot].bsHi)
+			{
+				m_boundary[T] = m_slots[slot].bsLo;
+				m_boundaryKnown[T] = true;
+				m_slots[slot].tier = -1;
+				LOG(1, "[RANK][Distribution] Tier %d boundary=%d (probesFired=%d)\n",
+					T, m_boundary[T], m_probesFired);
+				FillFreeSlots();
+				CheckCompletion();
+			}
+			else
+			{
+				const int lo = m_slots[slot].bsLo;
+				const int hi = m_slots[slot].bsHi;
+				const int mid = lo + (hi - lo + 1) / 2;
+				m_slots[slot].probePos = mid;
+				KickDownload(slot, mid);
+			}
+		}
+
+		void CheckCompletion()
+		{
+			if (m_status != Status::Searching) return;
+			if (m_nextTierToSearch >= 1) return;
+
+			for (int i = 0; i < kMaxParallelSlots; ++i)
+				if (m_slots[i].pending) return;
+
+			// All tier boundaries known — compute distribution
+			m_totalPopulation = 0u;
+			for (int T = 0; T <= kMaxLegitTier; ++T)
+			{
+				const int higher = (T + 1 <= kMaxLegitTier) ? m_boundary[T + 1] : 0;
+				m_tierCount[T] = static_cast<uint32_t>((std::max)(0, m_boundary[T] - higher));
+				m_totalPopulation += m_tierCount[T];
+			}
+
+			m_status = Status::Complete;
+			LOG(1, "[RANK][Distribution] Complete tiers=%d probesFired=%d probesCompleted=%d totalPop=%u samples=%u\n",
+				kMaxLegitTier + 1, m_probesFired, m_probesCompleted, m_totalPopulation,
+				static_cast<unsigned int>(m_probeEntries.size()));
+		}
+
+		Status m_status = Status::Idle;
+		SteamLeaderboard_t m_handle = 0;
+		int m_totalCount = 0;
+		int m_nextTierToSearch = 0;
+
+		// boundary[T] = # players with internalRank >= T (= last global position in tier T or above)
+		// boundary[0] = totalCount (all players), boundary[maxTier+1..] = 0
+		std::array<int, kMaxTierCount + 1> m_boundary{};
+		std::array<bool, kMaxTierCount + 1> m_boundaryKnown{};
+		std::array<uint32_t, kMaxTierCount> m_tierCount{};
+		uint32_t m_totalPopulation = 0u;
+
+		Slot m_slots[kMaxParallelSlots]{};
+		CCallResult<RankedDistributionSearch, LeaderboardScoresDownloaded_t> m_probeResults[kMaxParallelSlots];
+
+		// Sampled entries from all probes — available for playerbase report generation
+		std::vector<PlayerLeaderboardEntry> m_probeEntries;
+		int m_probesFired = 0;
+		int m_probesCompleted = 0;
+	};
+
 	class RankedLeaderboardTracker
 	{
 	public:
@@ -559,17 +864,7 @@ namespace
 			UpdateCharacterPlacement(now);
 		}
 
-		void TickDistribution()
-		{
-			if (!g_interfaces.pSteamUserStatsWrapper || !g_interfaces.pSteamUserWrapper)
-			{
-				return;
-			}
-
-			const double now = ImGui::GetTime();
-			EnsureGlobalLeaderboard(now);
-			UpdateDistribution(now);
-		}
+		SteamLeaderboard_t GetGlobalLeaderboard() const { return m_globalLeaderboard; }
 
 		bool GetGlobalPlacement(int* outRank) const
 		{
@@ -593,48 +888,8 @@ namespace
 			return true;
 		}
 
-		bool GetRankPopulationStats(uint32_t visibleRank, uint32_t* outCount, float* outPercent, bool* outLoading) const
-		{
-			(void)visibleRank;
-			if (outLoading)
-			{
-				*outLoading = m_distributionInProgress;
-			}
-			if (!outCount || !outPercent || visibleRank >= m_rankPopulation.size())
-			{
-				return false;
-			}
-
-			if (m_distributionTotal == 0u)
-			{
-				return false;
-			}
-			*outCount = m_rankPopulation[visibleRank];
-			*outPercent = static_cast<float>(m_rankPopulation[visibleRank]) * 100.0f / static_cast<float>(m_distributionTotal);
-			return m_distributionFinished || m_distributionInProgress;
-		}
-
-		void RequestDistributionRefresh()
-		{
-			if (m_distributionPending || m_distributionInProgress)
-			{
-				return;
-			}
-
-			m_rankPopulation.fill(0u);
-			m_distributionTotal = 0u;
-			m_pendingRankPopulation.fill(0u);
-			m_pendingDistributionTotal = 0u;
-			m_distributionEntries = 0;
-			m_distributionEntryCount = 0;
-			m_distributionCopyIndex = 0;
-			m_distributionFinished = false;
-			m_distributionInProgress = true;
-		}
-
 	private:
 		static constexpr double kPlacementRefreshSeconds = 60.0;
-		static constexpr double kDistributionRefreshSeconds = 3600.0;
 
 		void EnsureGlobalLeaderboard(double now)
 		{
@@ -687,55 +942,6 @@ namespace
 				m_characterFindPending = true;
 				m_lastCharacterFindAttempt = now;
 				m_characterFindResult.Set(call, this, &RankedLeaderboardTracker::OnCharacterLeaderboardFound);
-			}
-		}
-
-		void UpdateDistribution(double now)
-		{
-			if (!m_globalLeaderboard || m_distributionPending)
-			{
-				return;
-			}
-
-			if (m_distributionInProgress && m_distributionEntries != 0)
-			{
-				ProcessDistributionChunk();
-				return;
-			}
-
-			if (!m_distributionInProgress)
-			{
-				if (m_distributionFinished || now < m_lastDistributionStart + kDistributionRefreshSeconds)
-				{
-					return;
-				}
-
-				RequestDistributionRefresh();
-				m_lastDistributionStart = now;
-
-				const int entryCount = g_interfaces.pSteamUserStatsWrapper->GetLeaderboardEntryCount(m_globalLeaderboard);
-				if (entryCount <= 0)
-				{
-					m_distributionInProgress = false;
-					m_distributionFinished = true;
-					return;
-				}
-				m_distributionRequestedEnd = entryCount;
-
-				SteamAPICall_t call = g_interfaces.pSteamUserStatsWrapper->DownloadLeaderboardEntries(
-					m_globalLeaderboard,
-					k_ELeaderboardDataRequestGlobal,
-					1,
-					entryCount);
-				if (call)
-				{
-					m_distributionPending = true;
-					m_distributionResult.Set(call, this, &RankedLeaderboardTracker::OnDistributionDownloaded);
-				}
-				else
-				{
-					m_distributionInProgress = false;
-				}
 			}
 		}
 
@@ -881,66 +1087,6 @@ namespace
 			}
 		}
 
-		void OnDistributionDownloaded(LeaderboardScoresDownloaded_t* callback, bool ioFailure)
-		{
-			m_distributionPending = false;
-			if (ioFailure || !callback)
-			{
-				m_distributionInProgress = false;
-				LOG(1, "[RANK][LeaderboardUI] distribution download failed range=1..%d ioFailure=%d\n",
-					m_distributionRequestedEnd,
-					ioFailure ? 1 : 0);
-				return;
-			}
-
-			m_distributionEntries = callback->m_hSteamLeaderboardEntries;
-			m_distributionEntryCount = callback->m_cEntryCount;
-			m_distributionCopyIndex = 0;
-			LOG(1, "[RANK][LeaderboardUI] distribution download ready downloaded=%d\n", callback->m_cEntryCount);
-		}
-
-		void ProcessDistributionChunk()
-		{
-			SteamUserStatsWrapper* const stats = g_interfaces.pSteamUserStatsWrapper;
-			if (!stats)
-			{
-				return;
-			}
-
-			const int chunkEnd = (std::min)(m_distributionCopyIndex + kDistributionChunkSize, m_distributionEntryCount);
-			for (int i = m_distributionCopyIndex; i < chunkEnd; ++i)
-			{
-				LeaderboardEntry_t entry{};
-				int32 detailScratch[1] = {};
-				if (!stats->GetDownloadedLeaderboardEntryQuiet(m_distributionEntries, i, &entry, detailScratch, 0))
-				{
-					continue;
-				}
-
-				const uint32_t internalRank = (static_cast<uint32_t>(entry.m_nScore) >> 16) & 0xFFFFu;
-				const uint32_t visibleRank = InternalRankToVisibleRank(internalRank, false);
-				if (visibleRank > 0u && visibleRank < m_pendingRankPopulation.size())
-				{
-					++m_pendingRankPopulation[visibleRank];
-					++m_pendingDistributionTotal;
-				}
-			}
-			m_distributionCopyIndex = chunkEnd;
-
-			if (m_distributionCopyIndex >= m_distributionEntryCount)
-			{
-				m_rankPopulation = m_pendingRankPopulation;
-				m_distributionTotal = m_pendingDistributionTotal;
-				m_distributionInProgress = false;
-				m_distributionFinished = true;
-				LOG(1, "[RANK][LeaderboardUI] distribution complete counted=%u downloaded=%d\n",
-					static_cast<unsigned int>(m_pendingDistributionTotal),
-					m_distributionEntryCount);
-			}
-		}
-
-		static constexpr int kDistributionChunkSize = 512;
-
 		SteamLeaderboard_t m_globalLeaderboard = 0;
 		SteamLeaderboard_t m_characterLeaderboard = 0;
 		uint32_t m_characterId = kInvalidRankedCharacterId;
@@ -949,37 +1095,25 @@ namespace
 		bool m_characterFindPending = false;
 		bool m_globalPlacementPending = false;
 		bool m_characterPlacementPending = false;
-		bool m_distributionPending = false;
-		bool m_distributionInProgress = false;
-		bool m_distributionFinished = false;
 		bool m_hasGlobalPlacement = false;
 		bool m_hasCharacterPlacement = false;
 
 		int m_globalPlacement = 0;
 		int m_characterPlacement = 0;
-		int m_distributionRequestedEnd = 0;
-		SteamLeaderboardEntries_t m_distributionEntries = 0;
-		int m_distributionEntryCount = 0;
-		int m_distributionCopyIndex = 0;
-		uint32_t m_distributionTotal = 0u;
-		uint32_t m_pendingDistributionTotal = 0u;
-		std::array<uint32_t, 64> m_rankPopulation{};
-		std::array<uint32_t, 64> m_pendingRankPopulation{};
 
 		double m_lastGlobalFindAttempt = -15.0;
 		double m_lastCharacterFindAttempt = -15.0;
 		double m_lastGlobalPlacementRequest = -kPlacementRefreshSeconds;
 		double m_lastCharacterPlacementRequest = -kPlacementRefreshSeconds;
-		double m_lastDistributionStart = -kDistributionRefreshSeconds;
 
 		CCallResult<RankedLeaderboardTracker, LeaderboardFindResult_t> m_globalFindResult;
 		CCallResult<RankedLeaderboardTracker, LeaderboardFindResult_t> m_characterFindResult;
 		CCallResult<RankedLeaderboardTracker, LeaderboardScoresDownloaded_t> m_globalPlacementResult;
 		CCallResult<RankedLeaderboardTracker, LeaderboardScoresDownloaded_t> m_characterPlacementResult;
-		CCallResult<RankedLeaderboardTracker, LeaderboardScoresDownloaded_t> m_distributionResult;
 	};
 
 	RankedLeaderboardTracker g_rankedLeaderboardTracker{};
+	RankedDistributionSearch g_rankedDistributionSearch{};
 
 	void DrawRankedLadderWindow()
 	{
@@ -988,13 +1122,48 @@ namespace
 			return;
 		}
 
-		g_rankedLeaderboardTracker.TickDistribution();
+		// Ensure global leaderboard is resolved, then tick the distribution search
+		g_rankedLeaderboardTracker.Tick(kInvalidRankedCharacterId);
+		const SteamLeaderboard_t globalHandle = g_rankedLeaderboardTracker.GetGlobalLeaderboard();
+		if (globalHandle && g_interfaces.pSteamUserStatsWrapper)
+		{
+			const int entryCount = g_interfaces.pSteamUserStatsWrapper->GetLeaderboardEntryCount(globalHandle);
+			g_rankedDistributionSearch.Tick(globalHandle, entryCount);
+		}
 
 		ImGui::SetNextWindowSize(ImVec2(460.0f, 560.0f), ImGuiCond_FirstUseEver);
 		if (!ImGui::Begin(L("Ranked ladder###RankedLadder").c_str(), &g_showRankedLadderWindow, ImGuiWindowFlags_NoCollapse))
 		{
 			ImGui::End();
 			return;
+		}
+
+		// Distribution search status header
+		{
+			const auto distStatus = g_rankedDistributionSearch.GetStatus();
+			if (distStatus == RankedDistributionSearch::Status::Searching)
+			{
+				char probeInfo[64] = {};
+				std::snprintf(probeInfo, sizeof(probeInfo), "Scanning... %d probes fired",
+					g_rankedDistributionSearch.GetProbesFired());
+				ImGui::TextUnformatted(probeInfo);
+			}
+			else if (distStatus == RankedDistributionSearch::Status::Complete)
+			{
+				char totalInfo[64] = {};
+				std::snprintf(totalInfo, sizeof(totalInfo), "Total ranked players: %u  |  Samples: %u",
+					g_rankedDistributionSearch.GetTotalPopulation(),
+					static_cast<unsigned int>(g_rankedDistributionSearch.GetProbeEntries().size()));
+				ImGui::TextUnformatted(totalInfo);
+			}
+			else if (distStatus == RankedDistributionSearch::Status::Failed)
+			{
+				ImGui::TextUnformatted("Distribution search failed.");
+			}
+			else
+			{
+				ImGui::TextUnformatted(!globalHandle ? "Waiting for leaderboard handle..." : "Opening ladder begins scan.");
+			}
 		}
 
 		ImGui::Columns(4, "ranked_ladder_columns", true);
@@ -1048,7 +1217,7 @@ namespace
 			uint32_t populationCount = 0u;
 			float populationPercent = 0.0f;
 			bool populationLoading = false;
-			if (g_rankedLeaderboardTracker.GetRankPopulationStats(visibleRank, &populationCount, &populationPercent, &populationLoading))
+			if (g_rankedDistributionSearch.GetRankPopulationStats(visibleRank, &populationCount, &populationPercent, &populationLoading))
 			{
 				char percentBuffer[32] = {};
 				std::snprintf(percentBuffer, sizeof(percentBuffer), "%u (%.2f%%)",
