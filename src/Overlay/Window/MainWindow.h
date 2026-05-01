@@ -26,6 +26,10 @@ struct RankedProgressOverlaySnapshot
 	uint32_t demotionCounterLimit = 0;
 	uint32_t rawPackedField00 = 0;
 	uint32_t packedSubscore = 0;
+	uint32_t rawLowerThreshold = 0;
+	uint32_t rawUpperThreshold = 0;
+	uint32_t cumulativeBase = 0;
+	uint32_t rankSpan = 0;
 	uint32_t rawField04 = 0;
 	uint32_t rawField0C = 0;
 	uint32_t rawField10 = 0;

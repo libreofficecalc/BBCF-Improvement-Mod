@@ -12743,7 +12743,7 @@ Hades interpretation after this patch:
 - visible Hades = internal rank `38`
 - `DAT_009DFFD0[38]` bounds are lower `27647`, upper `48127`
 - cumulative UI threshold to Ruler is `305128 LP`
-- if a Hades row's subscore is exactly at the upper bound, the UI can show `305128/305128`; game win logic should normally rank up at that boundary, so a live row/log from the Hades account is needed to tell whether that state is a real edge state, stale/upload-derived state, or a remaining UI-source bug
+- if a Hades row's subscore is exactly at the upper bound, the UI can show `305128/305128`; later live logging confirmed this can be a real game state because Hades threshold rank-up is gated by opponent rank
 - Hades should show demotion counter only, not promotion counter
 
 Next test:
@@ -12961,3 +12961,76 @@ All probe entries (boundary-point samples across the full leaderboard) are store
 - Expected: no "unknown" names in normal in-game leaderboard during/after scan
 - DEBUG.txt should show `[RANK][Distribution]` lines: `Binary search started totalCount=N`, then ~714 `Tier T boundary=B` lines, then `Complete tiers=M probesFired=P`
 - Ladder window header shows probe count while scanning, then `Total ranked players: N  |  Samples: K` when done
+
+## Entry — Hades full cumulative bar one-shot logging
+
+User reported a Hades-rank friend saw `305128 / 305128 LP` in the ranked progress UI. Keep cumulative LP: UI is intentionally modelling a full ranked ladder, not raw per-rank game LP.
+
+Static/code check:
+
+- Hades = visible rank `39`, internal rank `38`.
+- `DAT_009DFFD0[38]` raw bounds are `27647..48127`.
+- Hades raw span is `20480`.
+- cumulative lower/base before Hades is `284648`.
+- cumulative upper/next for Hades is `305128`.
+- Therefore `305128 / 305128 LP` means the overlay believes Hades raw subscore is at/above `48127`; this is not a cumulative formula bug by itself.
+- Ghidra decompile still says Hades has no promotion-counter rank-up path: win-side promotion counter path is inactive for internal `>= 35`, although table field `+4` remains nonzero. Demotion counter still matters.
+
+Patch made:
+
+- Added raw/cumulative debug fields to ranked overlay snapshots and display states.
+- Added `[RANK][OverlayCore]` logs for high-rank rows and Arakune row `7`.
+- Added `[RANK][OverlayDisplay]` logs for upload baseline, backing changes, animation source/target, and callback source/target.
+- Added upload split logs showing packed score, internal rank, visible rank, subscore, and expected row `packed00`.
+- Did not change cumulative LP display behavior.
+
+Next test:
+
+- Send debug build to Hades friend.
+- Friend plays one ranked set as Arakune.
+- Friend sends `BBCF_IM/DEBUG.txt`.
+- Analyze `row=7`, any `visible=39` rows, and upload events. Required fields are `rawSub`, `rawLower`, `rawUpper`, `rawAtUpper`, `rawOutOfBounds`, `cumulativeBase`, `rankProgress`, `rankSpan`, `cumulativeLp`, `cumulativeNext`, `packed00`, `uploadPacked`, `promo`, and `demo`.
+
+Expected conclusions from one log:
+
+- If `row=7 visible=39 rawSub=48127 rawAtUpper=1`, game row itself is full Hades and we need explain why game has not promoted to Ruler yet.
+- If Arakune row raw subscore is below `48127` but rendered/callback target says `305128`, overlay source/cached/upload path is wrong.
+- If upload packed score rank/subscore disagrees with row `packed00`, upload resolution or row matching is wrong.
+- If row is not Arakune or character ID differs from details/upload, character resolution is wrong.
+
+## Entry — David Hades Arakune debug log result
+
+Input log:
+
+`D:\SteamLibrary\steamapps\common\BlazBlue Centralfiction\BBCF_IM\DEBUG - DAVID HADES ARAKUNE SET.txt`
+
+Result:
+
+- The UI did not invent the full Hades bar.
+- Arakune row `7` is internal rank `38` / visible `39` Hades.
+- Row first dword is `0xBBFF0026`, meaning internal rank `0x26` and raw subscore `0xBBFF` (`48127`).
+- Hades raw bounds are `27647..48127`, so `rawAtUpper=1`.
+- Cumulative display is therefore `284648 + (48127 - 27647) = 305128`, matching `305128 / 305128`.
+- Steam upload for `RANK_ALL` used `0x0026BBFF` with details `[7,...]`.
+- Steam readback returned the same score for character/global leaderboards.
+- The set changed only stats fields for Arakune: wins/matches went `576/672 -> 578/674`; rank/subscore stayed `38/48127`.
+
+Decompile correction:
+
+- `FUN_004be4b0` has a high-rank gate before threshold rank-up:
+
+```c
+if (selfRank >= 0x23 && opponentRank < selfRank) {
+    return;
+}
+```
+
+- Hades is `selfRank=0x26`.
+- So a Hades player at raw upper bound can beat lower-ranked opponents, update stats, upload the same capped Hades score, and still not move to Ruler.
+- To rank Hades -> Ruler from the cap, the win must be against Hades-or-higher.
+
+Doc/UI implication:
+
+- Keep cumulative LP.
+- Keep Hades promotion counter hidden.
+- Full Hades bar is a legal game state, not necessarily stale state or overlay bug.

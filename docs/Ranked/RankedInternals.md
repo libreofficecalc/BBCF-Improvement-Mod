@@ -97,6 +97,16 @@ if (row[0] < 0x27) {
 }
 ```
 
+Important high-rank gate in the win helper:
+
+```c
+if (row[0] >= 0x23 && opponentRank < row[0]) {
+    return;
+}
+```
+
+This return happens before the LP-threshold rank-up check. So Leader and above can gain/clamp LP from a win against a lower-ranked opponent, but cannot rank up from that win. For Hades (`internal 38`), a full raw subscore (`48127`) can legally remain Hades until the player wins against Hades-or-higher.
+
 ## Bounds Table
 
 Table:
@@ -143,6 +153,24 @@ Current table:
 | 38 | 39 | 48127 | 27647 | 20480 | 5 |
 | 39 | 40 | 37887 | 27647 | 20480 | 5 |
 
+## Cumulative UI LP
+
+The mod's ranked progress UI intentionally displays cumulative ladder LP, not raw game `row[1]`.
+
+For Hades:
+
+```text
+visible rank: 39
+internal rank: 38
+raw lower: 27647
+raw upper: 48127
+raw span: 20480
+cumulative lower/base: 284648
+cumulative upper/next: 305128
+```
+
+So a displayed `305128 / 305128 LP` means the UI believes internal rank `38` has raw subscore at or above `48127`. It does not by itself prove a cumulative-LP formula bug.
+
 ## Win LP
 
 For `rank_id < 10`:
@@ -185,6 +213,8 @@ On wins:
 - increases only when opponent is within 2 ranks
 - counter gain uses `FUN_004bde70`
 - capped by table field `+4`
+- named ranks from Leader upward (`internal >= 35`) do not use promotion-counter rank-up even though table field `+4` is nonzero; Hades (`internal 38`) rank-up is LP-threshold based only
+- for named ranks from Leader upward (`internal >= 35`), threshold rank-up is also gated by opponent rank: wins against lower-ranked opponents return before the threshold rank-up check
 
 Rank-up by counter:
 

@@ -113,7 +113,9 @@ High-rank demotion rules get stricter.
 
 Wins:
 
-- Same rank LP gain based on downward rank difference. (+1024 | +512 | +256 | +128 | +64 | +32 | +16 | +8 | +4 | +2 | +1)
+- Same-rank or higher-rank wins can advance LP and trigger rank-up.
+- Wins against lower-ranked opponents can still count in match stats and can leave LP capped, but they do not trigger rank-up from this named-rank bucket.
+- LP gain against lower ranks still scales down. (+1024 | +512 | +256 | +128 | +64 | +32 | +16 | +8 | +4 | +2 | +1)
 
 Losses:
 
@@ -182,6 +184,7 @@ Resetting demotion counter:
 - Hades and Ruler appear to need wins against LV30 or higher to reset demotion strikes.
 - Kisshin appears to use the previous bucket's LV25-or-higher reset rule.
 - This named-rank area still needs more live testing.
+- Hades has no promotion counter. If the mod shows Hades at `305128 / 305128 LP`, that is cumulative UI LP for Hades' raw upper bound (`48127`). A full Hades bar is valid if the player has not won against Hades-or-higher since reaching that cap.
 
 
 
@@ -189,6 +192,7 @@ Resetting demotion counter:
 ## Still Being Verified
 
 - Exact named-rank behavior above Ruler.
+- Exact opponent-rank requirement for every named-rank edge above Ruler.
 - Whether every online result path passes opponent rank the same way.
 - How often promotion-counter rank-ups happen in real player history.
 - Whether draw/no-result paths only reset counters and never change LP.

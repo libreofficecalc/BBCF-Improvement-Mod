@@ -298,9 +298,24 @@ For UI work:
 - use local ranked row / auth packed rank as source
 - compute current LP from subscore
 - compute bounds from `DAT_009DFFD0` table
-- progress = clamp((currentLp - lowerBound) / (upperBound - lowerBound), 0, 1)
+- current UI intentionally displays cumulative ladder LP: `cumulativeBase(rank_id) + clamp(subscore - lowerBound, 0, upperBound - lowerBound)`
+- progress = clamp((subscore - lowerBound) / (upperBound - lowerBound), 0, 1)
 - for ranks with table `counterLimit > 0`, show demotion counter separately; LP progress alone is not safe rankdown threshold
 - keep current rank / next rank display from rank_id mapping
+- Hades is visible `39` / internal `38`; raw bounds are `27647..48127`, cumulative bounds are `284648..305128`, and promotion counter must be hidden because promotion-counter rank-up path is inactive for internal `>= 35`
+- Full Hades is a valid game state. In `FUN_004be4b0`, named ranks from Leader upward return before threshold rank-up if `opponentRank < selfRank`, so Hades at raw `48127` needs a win against Hades-or-higher to move to Ruler.
+
+Hades full-bar debug result:
+
+- A Hades player reported displayed `305128 / 305128 LP`.
+- That exact value is Hades' cumulative upper bound, so it means the overlay believes raw subscore is at or above `48127`.
+- David's Hades Arakune log (`DEBUG - DAVID HADES ARAKUNE SET.txt`, 2026-05-01) confirmed row, upload, and Steam readback all agree:
+  - row `7`, internal `38`, visible `39`
+  - raw subscore `48127`, raw bounds `27647..48127`
+  - row packed `0xBBFF0026`, upload/readback packed `0x0026BBFF`
+  - cumulative display `305128 / 305128`
+  - wins/matches changed, but rank/subscore did not
+- This is consistent with the decompiled high-rank gate if the set win was against a lower-than-Hades opponent.
 
 For future RE:
 
