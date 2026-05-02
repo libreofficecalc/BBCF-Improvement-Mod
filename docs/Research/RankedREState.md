@@ -119,6 +119,16 @@ Win gain logic:
   - lower-rank opponent: `max(1, trunc(1024 * pow(0.5f, selfRank - opponentRank)))`
 - Rank-up happens either by reaching the upper LP bound, or for qualifying ranks by filling the separate proximity/counter field enough to call `FUN_004be730`.
 
+Promotion-counter gain logic:
+
+- `FUN_004bde70(selfRank, opponentRank, 0.67f, higherMultiplier)` computes `row[2]` gain.
+- This is separate from LP gain and must not be predicted from LP delta.
+- Active only for qualifying wins where `10 <= selfRank < 35` and opponent is within 2 ranks.
+- Opponent lower than self: repeated `trunc(gain * 0.67f)` per rank gap.
+- Opponent higher than self and self rank `10..23`: repeated `trunc(gain * 2.0f)` per rank gap.
+- Same-rank win, or self rank `24..34` with higher-ranked opponent: `+1024`.
+- Observed user case `LP +256` with promotion `+459` is explained by a two-ranks-lower win: LP uses `0.5^2`, promotion uses `0.67^2`.
+
 Caller split:
 
 - `FUN_004a1ca0` calls `FUN_004be4b0` when its result parameter is `0`.

@@ -77,6 +77,8 @@ Promotion counter:
 
 - Promotion counter is now active.
 - Qualifying wins (when the opponent is within 2 ranks of you) can add hidden LP promotion-counter progress.
+- This hidden gain is not always the same as LP gain. Same-rank wins add `+1024`, one-rank-lower wins add `+686`, and two-ranks-lower wins add `+459`.
+- Wins against one/two ranks higher in this bucket add much more hidden promotion progress: `+2048` / `+4096`.
 - If this counter fills to its internal rank-dependant limit, you can rank up before the LP bar hits the top.
 
 Demotion counter:
@@ -98,6 +100,7 @@ Losses:
 Promotion counter:
 
 - Still active for wins against opponents within 2 ranks.
+- One-rank-lower wins add `+686` hidden promotion progress, and two-ranks-lower wins add `+459`, even though LP gain is only `+512` / `+256`.
 - Ceiling/trigger point is higher than earlier ranks.
 
 Demotion counter:
@@ -121,6 +124,7 @@ Promotion counter:
 
 - Still active.
 - Builds on wins against opponents within 2 ranks.
+- Hidden promotion progress uses `+1024` for same-rank or higher-ranked wins, `+686` for one-rank-lower wins, and `+459` for two-ranks-lower wins.
 
 Demotion counter:
 
@@ -149,6 +153,7 @@ Promotion counter:
 - Still active.
 - Builds on wins against opponents within 2 ranks.
 - LV34 and LV35 have larger promotion-counter targets.
+- Same hidden gain pattern as LV25-LV29: `+1024` same/higher, `+686` one lower, `+459` two lower.
 
 Demotion counter:
 

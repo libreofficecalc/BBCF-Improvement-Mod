@@ -43,6 +43,9 @@ namespace
 	constexpr uintptr_t kRankedTableBaseFnRva = 0x0009D5C0;
 	constexpr uint32_t kInvalidRankedCharacterId = 0xFFFFFFFFu;
 	constexpr int32_t kRankedLpBase = 0x7FFF;
+	constexpr float kRankedPromotionCounterLowerMultiplier = 0.67f;
+	constexpr float kRankedPromotionCounterMidHigherMultiplier = 2.0f;
+	constexpr float kRankedPromotionCounterHighHigherMultiplier = 1.0f;
 
 	struct RankedLpBoundsTableEntry
 	{
@@ -205,6 +208,8 @@ namespace
 	{
 		RankedPredictionResultKind kind = RankedPredictionResultKind::Unknown;
 		int32_t lpDelta = 0;
+		int32_t promotionCounterDelta = 0;
+		int32_t demotionCounterDelta = 0;
 		uint32_t resultingVisibleRank = 0;
 		const char* reason = "";
 	};
@@ -637,6 +642,41 @@ namespace
 		return gap <= 2u;
 	}
 
+	int32_t PredictPromotionCounterGain(uint32_t selfInternalRank, uint32_t opponentInternalRank)
+	{
+		if (!RankedWinCanTriggerPromotionCounter(selfInternalRank, opponentInternalRank))
+		{
+			return 0;
+		}
+
+		int32_t gain = 1024;
+		if (opponentInternalRank < selfInternalRank)
+		{
+			for (uint32_t rank = selfInternalRank; rank != opponentInternalRank; --rank)
+			{
+				gain = static_cast<int32_t>(static_cast<float>(gain) * kRankedPromotionCounterLowerMultiplier);
+				if (gain < 1)
+				{
+					return 1;
+				}
+			}
+			return gain;
+		}
+
+		const float higherMultiplier = selfInternalRank < 24u
+			? kRankedPromotionCounterMidHigherMultiplier
+			: kRankedPromotionCounterHighHigherMultiplier;
+		for (uint32_t rank = opponentInternalRank; rank != selfInternalRank; --rank)
+		{
+			gain = static_cast<int32_t>(static_cast<float>(gain) * higherMultiplier);
+			if (gain < 1)
+			{
+				return 1;
+			}
+		}
+		return gain;
+	}
+
 	bool RankedLossAddsDemotionCounter(uint32_t selfInternalRank, uint32_t opponentInternalRank)
 	{
 		if (selfInternalRank >= 24u && selfInternalRank < 29u)
@@ -688,6 +728,7 @@ namespace
 		const uint32_t beforeProgress = rawSubscore > self.rawLowerThreshold ? rawSubscore - self.rawLowerThreshold : 0u;
 		const uint32_t afterProgress = afterRaw > self.rawLowerThreshold ? afterRaw - self.rawLowerThreshold : 0u;
 		outcome.lpDelta = static_cast<int32_t>(afterProgress) - static_cast<int32_t>(beforeProgress);
+		outcome.promotionCounterDelta = PredictPromotionCounterGain(selfInternalRank, opponentInternalRank);
 
 		if (!highRankGateBlocksRankUp && rawUpper != 0u && afterRaw >= rawUpper && selfInternalRank < 39u)
 		{
@@ -698,8 +739,8 @@ namespace
 		}
 
 		if (self.promotionCounterLimit > 0u &&
-			RankedWinCanTriggerPromotionCounter(selfInternalRank, opponentInternalRank) &&
-			self.promotionCounter + static_cast<uint32_t>((std::max)(rawDelta, 0)) >= self.promotionCounterLimit)
+			outcome.promotionCounterDelta > 0 &&
+			self.promotionCounter + static_cast<uint32_t>(outcome.promotionCounterDelta) >= self.promotionCounterLimit)
 		{
 			outcome.kind = RankedPredictionResultKind::RankUp;
 			outcome.resultingVisibleRank = self.visibleRank + 1u;
@@ -739,6 +780,13 @@ namespace
 		outcome.lpDelta = static_cast<int32_t>(afterProgress) - static_cast<int32_t>(beforeProgress);
 
 		const bool canRankDown = selfInternalRank > 19u && opponentInternalRank != 40u;
+		if (canRankDown &&
+			self.demotionCounterLimit > 0u &&
+			RankedLossAddsDemotionCounter(selfInternalRank, opponentInternalRank))
+		{
+			outcome.demotionCounterDelta = 1;
+		}
+
 		if (canRankDown && afterRaw <= rawLower)
 		{
 			outcome.kind = RankedPredictionResultKind::RankDown;
@@ -749,8 +797,8 @@ namespace
 
 		if (canRankDown &&
 			self.demotionCounterLimit > 0u &&
-			RankedLossAddsDemotionCounter(selfInternalRank, opponentInternalRank) &&
-			self.demotionCounter + 1u >= self.demotionCounterLimit)
+			outcome.demotionCounterDelta > 0 &&
+			self.demotionCounter + static_cast<uint32_t>(outcome.demotionCounterDelta) >= self.demotionCounterLimit)
 		{
 			outcome.kind = RankedPredictionResultKind::RankDown;
 			outcome.resultingVisibleRank = self.visibleRank > 1u ? self.visibleRank - 1u : 0u;
@@ -3387,6 +3435,36 @@ namespace
 		DrawCenteredBoldText(drawList, mainText, ImGui::GetColorU32(mainColor), ImGui::GetContentRegionAvail().x);
 		ImGui::SetWindowFontScale(1.0f);
 		ImGui::PopStyleColor();
+
+		if (outcome.promotionCounterDelta != 0 || outcome.demotionCounterDelta != 0)
+		{
+			ImGui::PushStyleColor(ImGuiCol_Text, g_rankedOverlayTuning.predictionReasonColor);
+			ImGui::SetWindowFontScale(0.82f);
+			if (outcome.promotionCounterDelta != 0)
+			{
+				char counterText[64] = {};
+				std::snprintf(
+					counterText,
+					sizeof(counterText),
+					"%+d Promotion Counter",
+					outcome.promotionCounterDelta);
+				ImGui::SetCursorPosX(ImGui::GetCursorPosX() + CenteredTextOffsetX(ImGui::GetContentRegionAvail().x, counterText));
+				ImGui::TextUnformatted(counterText);
+			}
+			if (outcome.demotionCounterDelta != 0)
+			{
+				char counterText[64] = {};
+				std::snprintf(
+					counterText,
+					sizeof(counterText),
+					"%+d Demotion Counter",
+					outcome.demotionCounterDelta);
+				ImGui::SetCursorPosX(ImGui::GetCursorPosX() + CenteredTextOffsetX(ImGui::GetContentRegionAvail().x, counterText));
+				ImGui::TextUnformatted(counterText);
+			}
+			ImGui::SetWindowFontScale(1.0f);
+			ImGui::PopStyleColor();
+		}
 
 		if (outcome.reason && outcome.reason[0] != '\0')
 		{

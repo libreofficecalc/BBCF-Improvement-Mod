@@ -13060,10 +13060,13 @@ Patch made:
   - `Automatic Demotion Reached`
   - `Can only rank up against your rank or higher.`
 
-Known limitation:
+Prediction correction after user observed `LP +256` but promotion counter `+459`:
 
-- promotion-counter gain still uses the current raw win delta as the estimate.
-- exact `FUN_004bde70` counter-gain behavior should be mirrored once fully named/decompiled.
+- `FUN_004bde70` is now mirrored in the prediction UI for promotion-counter gain.
+- Promotion gain is separate from LP gain.
+- Opponent lower than self uses repeated `trunc(gain * 0.67f)` from `1024`.
+- Opponent higher than self uses `2.0f` per rank gap for internal `10..23`, and `1.0f` for internal `24..34`.
+- This explains the observed case: two-ranks-lower win gives LP `1024 * 0.5 * 0.5 = 256`, but promotion `trunc(trunc(1024 * 0.67) * 0.67) = 459`.
 
 Next live validation:
 
@@ -13110,6 +13113,7 @@ Rule coverage check:
   - internal `< 10`: fixed `+100`
   - internal `10..23`: same/lower/higher formulas
   - internal `24..39`: same-or-higher `+1024`, lower-rank halving formula
+  - promotion-counter gain mirrors `FUN_004bde70`, not raw LP delta
   - internal `>= 35`: lower-rank wins cannot trigger threshold rank-up
   - internal `39` cannot rank up past Ruler through the proven helper
 - Loss prediction still mirrors `FUN_004be320`:
@@ -13129,3 +13133,41 @@ Verification:
 
 - Build result: success, 0 errors.
 - Existing warnings only: `FrameHistory.h` float truncation warnings while compiling `MainWindow.cpp`.
+
+## Entry — Promotion counter gain correction
+
+User observed a real ranked result where LP increased by `+256` while the promotion counter increased by `+459`.
+
+Static proof:
+
+- `FUN_004be4b0` calls `FUN_004bdd60` / `FUN_004bdcd0` for LP gain.
+- It separately calls `FUN_004bde70` for promotion-counter gain.
+- `FUN_004bde70` starts at `1024` and applies different multipliers:
+  - opponent lower than self: repeated `trunc(gain * 0.67f)` per rank gap
+  - opponent higher than self at internal `10..23`: repeated `trunc(gain * 2.0f)` per rank gap
+  - opponent higher than self at internal `24..34`: `1.0f`, so same as same-rank promotion gain
+- Constants were verified from `BBCF.exe` data:
+  - `0x008AA214 = 0.67f`
+  - `0x008AA218 = 2.0f`
+  - LP lower-rank multiplier remains `0.5f` at `0x008A8F7C`
+
+Conclusion:
+
+- The old assumption "promotion counter increases by LP gain" was wrong.
+- The observed `+256 LP / +459 promotion` result is exactly a two-ranks-lower win:
+  - LP: `1024 * 0.5 * 0.5 = 256`
+  - promotion: `trunc(trunc(1024 * 0.67) * 0.67) = 459`
+
+Patch made:
+
+- `PredictRankedWin` now uses `PredictPromotionCounterGain`, mirroring `FUN_004bde70`, before predicting `Automatic Promotion Reached`.
+- `docs/Ranked/RankedInternals.md`, `docs/Ranked/RankedExplanation.md`, and `docs/Research/RankedREState.md` now document the corrected model.
+
+Verification:
+
+- Built `Debug|Win32` successfully after this patch, 0 errors.
+- Existing warnings only: `FrameHistory.h` float truncation warnings while compiling `MainWindow.cpp`.
+
+Next live validation:
+
+- In a real ranked confirmation, verify prediction around promotion counter for a two-ranks-lower opponent: LP should show `+256`, and automatic-promotion prediction should use hidden gain `+459`.

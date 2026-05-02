@@ -211,10 +211,36 @@ On wins:
 
 - active for `10 <= rank_id < 35`
 - increases only when opponent is within 2 ranks
-- counter gain uses `FUN_004bde70`
+- counter gain uses `FUN_004bde70`; it is not the same as the LP gain
 - capped by table field `+4`
 - named ranks from Leader upward (`internal >= 35`) do not use promotion-counter rank-up even though table field `+4` is nonzero; Hades (`internal 38`) rank-up is LP-threshold based only
 - for named ranks from Leader upward (`internal >= 35`), threshold rank-up is also gated by opponent rank: wins against lower-ranked opponents return before the threshold rank-up check
+
+Promotion-counter gain:
+
+```text
+gain starts at 1024
+
+if opponent is lower:
+  gain = trunc(gain * 0.67) once per rank gap
+
+if opponent is higher and self rank is 10..23:
+  gain = trunc(gain * 2.0) once per rank gap
+
+if opponent is same rank, or self rank is 24..34 and opponent is higher:
+  gain = 1024
+```
+
+Examples:
+
+```text
+same-rank win: LP +1024, promotion +1024
+one-rank-lower win: LP +512, promotion +686
+two-ranks-lower win: LP +256, promotion +459
+one-rank-higher win at LV11-LV24: LP +1280, promotion +2048
+two-ranks-higher win at LV11-LV24: LP +1536, promotion +4096
+one/two-ranks-higher win at LV25-LV35: LP +1024, promotion +1024
+```
 
 Rank-up by counter:
 
@@ -294,11 +320,9 @@ Prediction model:
   capped and opponent rank is lower, the win side shows `Nothing.` because the
   game returns before the threshold rank-up check
 
-Known limitation:
-
-- promotion-counter gain is estimated from the same raw LP win delta until
-  `FUN_004bde70` is fully named and mirrored. LP-threshold and demotion-counter
-  predictions are based on currently documented rules.
+Prediction model now mirrors `FUN_004bde70` for promotion-counter gain.
+LP-threshold and demotion-counter predictions are based on currently documented
+rules.
 
 ## Live Kokonoe Rankdown Proof
 
