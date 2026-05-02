@@ -1,0 +1,30 @@
+# Keep ripgrep/Codex scans small. Use --no-ignore for explicit tasks.
+
+/.git/
+/.vs/
+/bin/
+/build/
+/BBCF_IM/
+
+# Vendored code; inspect only for dependency-specific work.
+/depends/*
+!/depends/AGENTS.md
+
+# Large research/disassembly artifacts.
+docs/Research/RankedProgress.md
+docs/Research/*GhidraReport.txt
+docs/Research/Tadatys-BBCF-Ghidra/BBCF.h
+docs/Research/BBCF-Ghidra-Project/
+tools/bbcf_disasm*.txt
+
+# Generated/local runtime artifacts.
+/*.dmp
+/*.log
+/*.pdb
+/*.obj
+/*.ilk
+/DEBUG.txt
+/CrashReports/
+__pycache__/
+*.pyc
+tools/urt_automation/runtime/

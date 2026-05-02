@@ -4,14 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Read AGENTS.md first
 
-`AGENTS.md` is the authoritative handbook for this repo — it covers startup/shutdown flow, every module's purpose, architectural patterns, networking, the deploy workflow, and working guidance for agents. Read it before making changes.
+`AGENTS.md` is the always-loaded bootstrap. Keep it small. For deeper context, read only the relevant section of `docs/AI_REPO_MAP.md` and then targeted source files.
 
 ## Build
 
 **Command-line (WSL/bash):**
 ```bash
 "/mnt/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe" \
-  BBCF_IM.sln /m /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v143
+  BBCF_IM.sln /m /p:Configuration=Debug /p:Platform=Win32 /p:PlatformToolset=v143
 ```
 
 **Configurations:** `Debug|Win32`, `DebugDeploy|Win32`, `Release|Win32`, `ReleaseDeploy|Win32`  
@@ -43,6 +43,10 @@ The mod is a Win32 DLL (`dinput8.dll`) placed next to `BBCF.exe`. It forwards `D
 | Training state save/load | `src/Game/Playbacks/` |
 | Replay rewind / URT | `src/Game/ReplayRewind/`, `src/Game/ReplayTakeover/` |
 
-## Do not build or deploy automatically
+## Do not deploy or release automatically
 
-Stop after preparing code/config changes and tell the operator what to run. See `AGENTS.md § Operator deploy workflow` for the URT debug cycle automation and the `safe_readonly_exec.ps1` policy.
+Do not use Deploy configs unless explicitly asked. For source edits, prefer a local `Debug|Win32` build; for docs/config-only edits, no build is needed. See `docs/AI_REPO_MAP.md` for URT automation and safe command pointers.
+
+## Token budget
+
+Avoid broad scans of `depends/`, `docs/Research`, `bin/`, `build/`, and generated/runtime output. Prefer exact `rg`, small `sed` slices, narrow tests/builds, `/compact` after long milestones, and `/clear` when switching unrelated tasks.

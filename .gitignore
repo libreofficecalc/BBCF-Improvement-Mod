@@ -1,7 +1,23 @@
-.vs/
-bin/
-build/
+/.vs/
+*.suo
+
+/bin/
+/build/
+
+# Local runtime output from BBCF/mod runs.
+/BBCF_IM/
+/CrashReports/
+/DEBUG.txt
+/*.log
+/*.dmp
+
+# Python/script caches from local analysis helpers.
+__pycache__/
+*.pyc
 
 # Ghidra generated project databases are large binary artifacts.
 # Keep headless scripts/reports tracked and regenerate this folder locally.
 docs/Research/BBCF-Ghidra-Project/
+
+# URT automation local outputs.
+tools/urt_automation/runtime/

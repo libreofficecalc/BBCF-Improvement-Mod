@@ -1,107 +1,38 @@
-# BBCF Improvement Mod – Agent Handbook
+# Agent Bootstrap
 
-This handbook is a one-stop map for agents modifying the BBCF Improvement Mod. The project builds a proxy `dinput8.dll` that loads alongside BlazBlue Centralfiction, forwards DirectInput to the original DLL, installs runtime hooks, and exposes overlay, networking, and palette systems. Use this file to locate every component, understand how modules interact, and ship new features without guesswork.
+Keep this file small. It is always loaded; deeper context is opt-in.
 
-## Build requirements and outputs
-- **Toolchain**: Visual Studio plus Windows SDK for Win32 DLL builds. In this workspace, the verified command-line build uses MSBuild with an explicit `v143` override even if the project file requests a newer/missing toolset: `"/mnt/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe" BBCF_IM.sln /m /p:Configuration=Debug /p:Platform=Win32 /p:PlatformToolset=v143`. Open `BBCF_IM.sln` and build `Release|Win32` (primary ship) or `Debug|Win32`.
-- **Configuration choice — never use Deploy configurations from agent builds**: `DebugDeploy|Win32` and `ReleaseDeploy|Win32` auto-copy the DLL to the BBCF install directory AND launch BBCF via Steam as a post-build step. Use `Debug|Win32` or `Release|Win32` for all agent-initiated builds; the operator deploys and launches manually.
-- **Third-party bundles (vendored in `depends/`)**: Detours for function patching; DirectX 9 SDK headers/libs; Steamworks SDK headers/redistributable; ImGui source; a WinHTTP client helper. Include/lib paths are pre-wired in `BBCF_IM.vcxproj`.
-- **Primary output**: `bin/<Config>/dinput8.dll` plus symbol-less exports defined in `export/dinput8.def`. Ship `settings.ini` and `palettes.ini` (templates in `resource/`) beside `BBCF.exe`.
-- **Runtime folder**: The mod auto-creates `BBCF_IM/` in the game directory for user palettes, saves, crash dumps, and logs.
+## Token Budget Rules
+- Use caveman skill by default for user-facing replies in this repo. Stop only if user asks for normal mode.
+- Start from the narrowest relevant directory when possible, e.g. `src/Overlay`, `src/Game/ReplayTakeover`, `docs/replay_takeover`.
+- Prefer targeted `rg` symbol search and small file reads. Do not broad-read `src/`, `depends/`, or long research logs.
+- Make smallest safe diff. No unrelated cleanup, formatting churn, or source behavior edits unless requested.
+- Inspect only files needed for current task. Reuse prior findings instead of rereading.
+- For long sessions: `/compact` before continuing after major milestones; `/clear` when switching unrelated tasks.
+- Use smaller models for routine edits/docs. Use larger models for hard debugging, reverse engineering, broad refactors, or reviews.
 
-## Startup, hook, and shutdown flow
-1. **Process attach (`src/Core/dllmain.cpp`)**: `DllMain` spins up `BBCF_IM_Start` on a new thread, skipping per-thread notifications for speed.
-2. **Safety and config**: Logger opens (`logger.*`), crash handler installs (`crashdump.*`), custom directories are created, then `settings.ini` is loaded via `Settings::loadSettingsFile()` with defaults from `settings.def`. Saved settings are initialized (`Settings::initSavedSettings`) and logged for diagnostics.
-3. **Original DLL forwarding**: `LoadOriginalDinputDll()` locates either the system `dinput8.dll` or a user-specified wrapper (via `settingsIni.dinputDllWrapper`), resolves `DirectInput8Create`, and records the handle for later cleanup. The exported `DirectInput8Create` forwards to this pointer while logging results.
-4. **Hook installation**: `placeHooks_detours()` applies Detours hooks defined in `src/Hooks/hooks_detours.*` and registers low-level patches through `HookManager`. On success, singleton managers such as `PaletteManager` are constructed and stored in `g_interfaces` (`interfaces.*`).
-5. **Runtime**: The overlay (`Overlay/WindowManager.*`) and hooked systems cooperate through shared pointers in `interfaces.h`, which exposes live game state (HUD flags, timer, rounds, entities, Steam interfaces, palette slots, etc.) to hooks and UI panels.
-6. **Process detach**: `BBCF_IM_Shutdown()` tears down the overlay, releases interfaces, closes the logger, and frees the original `dinput8.dll` handle.
+## Repo Map
+- Quick repo/module map, commands, ignore guidance: `docs/AI_REPO_MAP.md`.
+- Current URT incident notes: `docs/replay_takeover/URT_SNAPSHOT_DEBUG_STATUS.md`; read only for replay takeover snapshot/playback work.
+- Claude-specific quick guide: `CLAUDE.md`; keep it short and point back to this file plus `docs/AI_REPO_MAP.md`.
 
-## Configuration and data files
-- **`src/Core/settings.def`**: Canonical list of settings, their types, defaults, ranges, hotkeys, and descriptions. Includes UI toggles, overlay sizing, rendering overrides, HUD visibility, input bindings for state/replay control, networking/upload options, and palette sync flags. Update this file to add a setting; `Settings.*` auto-generates parsing/storage logic.
-- **`settings.ini`**: User-editable configuration loaded at startup; restart the game to apply changes. Template lives in `resource/settings.ini` and mirrors keys from `settings.def`.
-- **`palettes.ini`**: Maps character slots to palette bundles and toggles online sharing. Template at `resource/palettes.ini`; read/written by the palette manager and network sync logic.
-- **`notes.h`**: Research notes containing addresses and scene/networking offsets used by hooks; consult before patching game memory.
+## Build / Test
+- Default verification build:
+  `"/mnt/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe" BBCF_IM.sln /m /p:Configuration=Debug /p:Platform=Win32 /p:PlatformToolset=v143`
+- Do not use `DebugDeploy|Win32` or `ReleaseDeploy|Win32` unless explicitly asked; deploy configs can copy DLLs and launch BBCF.
+- User normally deploys/runs game manually. Build locally after code edits unless user says not to or environment is unavailable.
 
-## Core systems (`src/Core/`)
-- **`dllmain.cpp`**: Entry point, loader for the original `dinput8.dll`, startup/shutdown choreography, and exported `DirectInput8Create` forwarder.
-- **`Settings.*`**: Parses `settings.ini`, initializes defaults from `settings.def`, persists saved settings, and exposes `settingsIni`/`savedSettings` structs consumed across the codebase.
-- **`logger.*`**: UTF-8 logger with verbosity levels, thread/level/timestamp prefixes, and an in-memory ring buffer (`GetRecentLogs`) used by crash reporting. Opens `BBCF_IM/DEBUG.txt` during startup and flushes immediately on every write.
-- **`crashdump.*`**: Installs `UnhandledExFilter` to emit enriched crash bundles in `BBCF_IM/CrashReports/Crash_<timestamp>/`, including the `.dmp` with an embedded log user stream, a `logs.txt` snapshot of the ring buffer, and a `crash_context.txt` summary.
-- **`interfaces.*`**: Global `g_interfaces` and `g_tempVals` structs that store pointers to managers (palette, network, overlay, Steam wrappers), Direct3D devices/effects/sprites, and live game state (players, HUD toggles, stage/music selectors). Hooks populate these pointers so overlays and managers can coordinate.
-- **`utils.*`, `info.h`, `keycodes.h`**: Misc helpers (string formatting, file IO, Win32 wrappers), build/version metadata, and virtual-key definitions shared by hotkey code.
+## High-Value Routes
+- Settings/hotkeys: `src/Core/settings.def`, `src/Core/Settings.*`, `resource/settings.ini`.
+- Localization/UI copy: `resource/localization/Localization.csv`, generated `src/Core/LocalizationKeys.autogen.h`, `docs/localization.md`.
+- Overlay UI: `src/Overlay/Window*`, `src/Overlay/Widget*`, `src/Overlay/WindowManager.*`.
+- Hooks: `src/Hooks/*`, `notes.h`, `src/Game/GhidraDefs.h`.
+- Replay/URT: `src/Game/ReplayTakeover`, `src/Game/ReplayRewind`, `src/Game/ReplayStates`, `docs/replay_takeover`.
+- Networking/Steam: `src/Network`, `src/SteamApiWrapper`.
+- Palettes: `src/Palette`, `resource/palettes.ini`.
 
-## Hooking architecture (`src/Hooks/`)
-- **`HookManager.*`**: Central registry for pattern-based or address-based hooks. Supports installing/removing JMP patches, storing original bytes, and toggling hook activation. Use this when adding new low-level patches.
-- **`hooks_detours.*`**: Detours-based hooks for system and library calls. Wraps Direct3D creation (`hook_Direct3DCreate9Ex`), shader loading (`hook_D3DXCreateEffect`), sprite creation (`hook_D3DXCreateSprite`) to inject wrapper classes; intercepts Steam API initialization and matchmaking to capture interface pointers; patches window creation to adjust behavior. Coordinates with wrapper classes in `D3D9EXWrapper/` and Steam wrappers.
-- **`hooks_bbcf.*`**: Game-specific hooks for gameplay features (state saving/loading, hitbox overlay, HUD toggles, replay takeover, etc.). Uses addresses defined in `notes.h` and the structs in `Game/` to manipulate runtime state.
-- **`hooks_palette.*`**: Hooks tied to palette loading and application. Ensures custom palettes/effects are injected, synchronized online, and reflected in character data before rendering.
-- **`hooks_customGameModes.*`**: Hooks that activate or alter custom rule sets, often coordinating with `CustomGameMode/` managers and network messages.
-
-## Rendering and overlay (`src/D3D9EXWrapper/` and `src/Overlay/`)
-- **Wrappers** (`ID3D9EXWrapper.*`, `ID3D9Wrapper_Sprite.*`, `ID3DXWrapper_Effect.*`, `D3DXMath.*`, `d3d9.h`): Thin classes that stand between the game and Direct3D9Ex interfaces. They capture device pointers, intercept presentation/resolution changes, expose sprite/effect creation to the overlay, and make it possible to draw ImGui without disrupting the game render pipeline.
-- **Overlay manager** (`Overlay/WindowManager.*`): Singleton that initializes ImGui, builds windows/menus, and orchestrates drawing each frame. Reads/writes shared state through `g_interfaces` and `Settings` to toggle features, configure visuals, and display HUD elements (frame history, hitboxes, notifications).
-- **ImGui utilities** (`imgui_utils.*`, `fonts.*`): Helpers for consistent UI styling, font loading, and reusable widgets used across overlay windows.
-
-## Palette system (`src/Palette/`)
-- **`PaletteManager.*`**: Central controller for palette loading, storage, application, and persistence. Interfaces with game memory (via hooks) to swap palettes at runtime, saves/loads palette files, and exposes APIs to the overlay and network managers.
-- **`CharPaletteHandle.*`**: Per-character palette container that tracks active palette/effect data and provides apply/reset helpers.
-- **`impl_format.h` / `impl_templates.*`**: Parsing/serialization helpers and template implementations for palette file formats and effect data structures.
-
-## Custom game modes (`src/CustomGameMode/`)
-- **`GameModeManager.*`**: Registers available custom modes, tracks the active mode, and communicates selections to network peers.
-- **`customGameMode.*`**: Definitions and data for individual custom modes; extend here to add new rulesets.
-
-## Networking and Steam integration (`src/Network/` and `src/SteamApiWrapper/`)
-- **Network managers** (`NetworkManager.*`, `RoomManager.*`): Coordinate network sessions, room state, and messaging. Interface with Steam wrappers for transport and with `Game/` structs for session data.
-- **Palette sync** (`OnlinePaletteManager.*`): Exchanges palette metadata/files between players, applies remote palettes locally, and updates `palettes.ini` mappings.
-- **Game mode sync** (`OnlineGameModeManager.*`): Propagates custom game mode selections across clients and enforces them in-game.
-- **Replay and uploads** (`ReplayUploadManager.*`): Handles replay metadata extraction and HTTP upload/archive operations, interacting with the Web helpers.
-- **Packet definitions** (`Packet.h`): Packet types and payload structures used by the above managers.
-- **Steam wrappers** (`SteamApiWrapper/`): Thin wrappers around Steamworks interfaces (Utils, Matchmaking, Networking, Friends, User, UserStats) that provide typed access for network/room features. Initialized via hooks in `hooks_detours.*` and stored in `g_interfaces`.
-
-## Web utilities (`src/Web/`)
-- **`url_downloader.*`**: WinHTTP-based helper for GET/POST requests; used by replay uploads and update checks.
-- **`update_check.*`**: Polls remote endpoints to detect newer mod releases and surfaces the result to the overlay/notifications.
-
-## Game data structures (`src/Game/`)
-- **Gameplay structs** (`Player.*`, `EntityData.h`, `CharData.*`, `characters.*`, `stages.*`, `gamestates.*`, `MatchState.*`): Mirror in-game memory layouts for players, characters, stages, match states, and entity lists. Hooks and managers use these to read/write live game state (e.g., HUD visibility, timer, round counters, animation states).
-- **`GhidraDefs.h`**: Address and struct annotations derived from reverse engineering; informs correct offsets for hooks.
-
-## Resources and exports
-- **`resource/`**: Ship-ready templates for `settings.ini` and `palettes.ini`, along with font/resources referenced by the overlay.
-- **`export/dinput8.def`**: Export definition for the DirectInput forwarder symbol required by Windows to load the proxy DLL.
-- **`LICENSE`**: Project license.
-- **`USER_README.txt` / `README.md`**: Player-facing documentation, features list, and installation instructions.
-
-## Working guidance for agents
-- Use caveman skill by default for user-facing responses in this repo. Only stop if user explicitly asks for normal mode.
-- To add a feature toggle or hotkey, declare it in `src/Core/settings.def`, consume it via `Settings::settingsIni` or `Settings::savedSettings`, and expose controls in `Overlay/WindowManager` using ImGui helpers.
-- To hook game/engine behavior, prefer `HookManager` for JMP patches and `hooks_detours` for Detours-based API intercepts. Populate any new shared pointers in `g_interfaces` so other systems (overlay, palettes, networking) can observe state.
-- Rendering/UI changes should go through the wrapper classes so ImGui draws safely; avoid direct device calls without routing through `ID3D9EXWrapper_Device` and friends.
-- Networking additions should define packets in `Network/Packet.h`, send/receive in `NetworkManager` or specialized managers, and use Steam wrappers for transport. Mirror state changes in `CustomGameMode` or `PaletteManager` as needed.
-- Keep logs verbose while iterating (`logger.h` levels) and update templates in `resource/` when introducing new user-facing config knobs.
-- Localization strings live in `resource/localization/Localization.csv`, which stores every language side by side. Add new UI copy by creating a new row, add languages by introducing new columns with `_DisplayName`/`_LanguageCode` filled in, and keep using the `L()` helper around ImGui labels. Languages missing any fallback keys are automatically disabled in the dropdown.
-
-## Active incident notes
-- Unlimited Replay Takeover snapshot-train crash tracking is documented in `docs/replay_takeover/URT_SNAPSHOT_DEBUG_STATUS.md`. Read it before modifying URT snapshot/playback behavior so all agents stay aligned on current hypotheses, blockers, and required log checkpoints.
-
-## Operator deploy workflow
-- User has their own easy deploy workflow. Default rule for agents: do **not** build or deploy automatically unless user explicitly asks. For RE/testing turns, agents should normally stop after preparing code/logging/config changes and tell the operator exactly what to run/test in game.
-- Agents should still verify their own code edits with a local build before ending the turn unless the user explicitly says not to build or the build environment is unavailable.
-- For repetitive URT repro loops, agents can run one automated cycle via `./tools/urt_automation/run_bbcf_debug_cycle.sh` (repo root). This launches `tools/urt_automation/BBCF-Automatic-Debugger.ahk`, waits for AHK completion, and then closes `BBCF.exe` if still running.
-- Automation caveat: AHK may temporarily take full keyboard/mouse control while the macro runs.
-- Exact current definition of "one cycle" (toast-by-toast behavior) is documented in `docs/replay_takeover/URT_RE_EXECUTION_PLAN.md` under `Automation mode (single debug cycle)`.
-- Read-only escalated command policy:
-  - Use `tools/safe_readonly_exec.ps1` when a command is read-only but would otherwise trigger repeated approval prompts due to slight argument changes (typical case: `cdb.exe` dump analysis).
-  - Prefer request-file mode for a stable invocation:
-    - write payload to `tools/safe_readonly_request.json`,
-    - run helper with fixed `-RequestFile` command line.
-  - Full usage and schema: `tools/SAFE_READONLY_EXECUTOR.md`.
-  - This helper is allowlisted and includes a destructive-token guard plus cdb write-command guard.
-  - Hard rule: do not route delete/destructive operations through this helper (`rm`, `del`, `Remove-Item`, renames/moves/copies, registry edits, etc.). Those must remain explicit and approval-gated.
-
-## Release checklist
-1. Build `Release|Win32` to generate `bin/Release/dinput8.dll`.
-2. Copy `dinput8.dll`, `settings.ini`, and `palettes.ini` into the BBCF install directory next to `BBCF.exe`. The mod will create `BBCF_IM/` on first run.
-3. Launch the game, open the mod menu (`F1` by default), and validate overlay, palette sync, and hooks. Preserve the log/crashdump output if investigating issues.
+## Avoid Unless Requested
+- Build/runtime output: `bin/`, `build/`, `.vs/`, `BBCF_IM/`, crash dumps, logs.
+- Vendored dependencies: `depends/`; search only targeted symbols or explicit dependency tasks.
+- Large RE artifacts: `docs/Research/RankedProgress.md`, `docs/Research/*GhidraReport.txt`, `tools/bbcf_disasm*.txt`.
+- Generated files: `src/Core/LocalizationKeys.autogen.h` except after localization CSV changes.
