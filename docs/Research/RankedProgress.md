@@ -13034,3 +13034,98 @@ Doc/UI implication:
 - Keep cumulative LP.
 - Keep Hades promotion counter hidden.
 - Full Hades bar is a legal game state, not necessarily stale state or overlay bug.
+
+## Entry — Ranked prediction window first implementation
+
+Current ranked understanding is now enough for a first prediction UI:
+
+- local ranked row gives current internal rank, raw subscore, promotion counter, and demotion counter
+- bounds table gives raw LP floor/ceiling and counter limits
+- win/loss LP deltas are rank-difference based
+- Leader+ lower-rank win gate is confirmed: if `selfRank >= 0x23 && opponentRank < selfRank`, the win helper returns before the threshold rank-up check
+
+Patch made:
+
+- Added `ShowRankedPrediction` setting and `resource/settings.ini` template entry.
+- Added a separate `Ranked Prediction` overlay in `src/Overlay/Window/MainWindow.cpp`.
+- The window appears during ranked entry/confirmation while not in match.
+- Opponent identity comes from the current ranked room opponent SteamID.
+- Opponent rank comes from `RANK_ALL` via `DownloadLeaderboardEntriesForUsers`.
+- Window displays opponent name/rank, then two columns:
+  - `Win`: LP gain, `RANK UP`, or `Nothing.`
+  - `Loss`: LP loss or `RANK DOWN`
+- Rank-change reasons shown:
+  - `Automatic Promotion Reached`
+  - `LP Threshold Reached`
+  - `Automatic Demotion Reached`
+  - `Can only rank up against your rank or higher.`
+
+Known limitation:
+
+- promotion-counter gain still uses the current raw win delta as the estimate.
+- exact `FUN_004bde70` counter-gain behavior should be mirrored once fully named/decompiled.
+
+Next live validation:
+
+- Enter ranked search, select an opponent, and stop at the OK confirmation popup.
+- Confirm `Ranked Prediction` appears only in that confirmation flow, not in match.
+- Check `DEBUG.txt` for `[RANK][Prediction] opponent ... visible=...`.
+- Validate one same-rank opponent and one lower-rank Leader+ opponent if available.
+
+## Entry — Ranked prediction confirmation-state visibility fix
+
+Live result after the first implementation:
+
+- User reached the ranked OK confirmation popup, but no prediction window was visible.
+- The installed `DEBUG.txt` had no `[RANK][Prediction]` lines.
+- Existing ranked progress visibility logs showed the confirmation flow moving through `state=4/43`, `4/44`, `4/45`, `4/46`, and `4/48`, then returning to `4/30`.
+
+Correction:
+
+- Treat ranked network `state == 4` with `state1` from `43` through `48` as ranked prediction context.
+- Do not require the ranked ladder row entry flag for the prediction window in those confirmation substates.
+- Draw a visible fallback card if opponent SteamID or rank lookup is not ready, instead of silently returning.
+- Add throttled `[RANK][PredictionUI]` logs for disabled, inactive, waiting, and draw states.
+
+Next live proof:
+
+- In the ranked OK confirmation popup, expect `[RANK][PredictionUI] reason=draw state=4/43..48 ...`.
+- If the window says `Waiting for opponent...` and logs `opponentSteam=0`, the remaining problem is opponent-source discovery for the confirmation popup.
+- If opponent SteamID is nonzero, expect the normal `[RANK][Prediction] opponent ... visible=...` lookup line after `RANK_ALL` returns.
+
+## Entry — Ranked prediction UI refresh and rule coverage pass
+
+Patch made:
+
+- Centered the opponent name/rank header in the `Ranked Prediction` window.
+- Centered both outcome halves: `Win` / `Loss` titles, large outcome labels, and wrapped explanation text.
+- Doubled the main outcome scale from `1.35x` to `2.7x`.
+- Added a vertical separator between the win and loss halves.
+- Removed explicit prediction-window size constraints and left only first-use default size `520x196`.
+- Added centered word wrapping so explanation text adapts when the user resizes the window.
+
+Rule coverage check:
+
+- Win prediction still mirrors `FUN_004be4b0`:
+  - internal `< 10`: fixed `+100`
+  - internal `10..23`: same/lower/higher formulas
+  - internal `24..39`: same-or-higher `+1024`, lower-rank halving formula
+  - internal `>= 35`: lower-rank wins cannot trigger threshold rank-up
+  - internal `39` cannot rank up past Ruler through the proven helper
+- Loss prediction still mirrors `FUN_004be320`:
+  - internal `< 10`: now correctly reports no LP loss
+  - internal `> 9`: halving formula loss amount, clamped to rank lower bound
+  - internal `> 19`: LP-floor demotion possible unless opponent rank is sentinel `0x28`
+  - internal `> 23`: demotion-counter demotion possible when opponent qualification rules match
+- Remaining hard boundary is still leaderboard-only named labels above internal `39`; `DAT_009DFFD0` has no proven rows for those labels, and `FUN_004be730` refuses normal increment past `0x27`.
+
+Verification:
+
+- Built `Debug|Win32` successfully with:
+
+```text
+"C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe" BBCF_IM.sln /m /p:Configuration=Debug /p:Platform=Win32 /p:PlatformToolset=v143
+```
+
+- Build result: success, 0 errors.
+- Existing warnings only: `FrameHistory.h` float truncation warnings while compiling `MainWindow.cpp`.

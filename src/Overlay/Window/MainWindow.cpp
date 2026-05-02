@@ -138,6 +138,18 @@ namespace
 		ImVec4 lpGainColor = ImVec4(0.31f, 0.92f, 0.41f, 1.0f);
 		// Color used for negative LP change text such as `-20`.
 		ImVec4 lpLossColor = ImVec4(0.97f, 0.32f, 0.32f, 1.0f);
+		// Ranked prediction column title color for wins.
+		ImVec4 predictionWinColor = ImVec4(0.31f, 0.92f, 0.41f, 1.0f);
+		// Ranked prediction column title color for losses.
+		ImVec4 predictionLossColor = ImVec4(0.97f, 0.32f, 0.32f, 1.0f);
+		// Ranked prediction `RANK UP` tag color.
+		ImVec4 predictionRankUpColor = ImVec4(1.0f, 0.35f, 0.78f, 1.0f);
+		// Ranked prediction `RANK DOWN` tag color.
+		ImVec4 predictionRankDownColor = ImVec4(0.30f, 0.62f, 1.0f, 1.0f);
+		// Ranked prediction `Nothing.` tag color.
+		ImVec4 predictionNothingColor = ImVec4(0.58f, 0.60f, 0.64f, 1.0f);
+		// Ranked prediction explanation text color.
+		ImVec4 predictionReasonColor = ImVec4(0.72f, 0.74f, 0.78f, 1.0f);
 	};
 
 	// Ranked progress visual tuning lives here.
@@ -179,6 +191,35 @@ namespace
 			uint32_t metadataNextRank = 0;
 			float progress = 0.0f;
 		};
+
+	enum class RankedPredictionResultKind
+	{
+		Unknown,
+		LpDelta,
+		RankUp,
+		RankDown,
+		Nothing,
+	};
+
+	struct RankedPredictionOutcome
+	{
+		RankedPredictionResultKind kind = RankedPredictionResultKind::Unknown;
+		int32_t lpDelta = 0;
+		uint32_t resultingVisibleRank = 0;
+		const char* reason = "";
+	};
+
+	struct RankedOpponentInfo
+	{
+		bool valid = false;
+		bool pending = false;
+		uint64_t steamId = 0;
+		std::string displayName;
+		uint32_t visibleRank = 0;
+		uint32_t internalRank = 0;
+		uint32_t subscore = 0;
+		int32_t globalRank = 0;
+	};
 
 	struct RankedProgressAnimationState
 	{
@@ -541,6 +582,184 @@ namespace
 		}
 
 		return g_rankedOverlayTuning.leaderRankColor;
+	}
+
+	int32_t HalvedRankedLpDelta(uint32_t rankGap)
+	{
+		const uint32_t shift = (std::min)(rankGap, 10u);
+		const int32_t delta = 1024 >> shift;
+		return delta > 0 ? delta : 1;
+	}
+
+	int32_t PredictWinRawLpDelta(uint32_t selfInternalRank, uint32_t opponentInternalRank)
+	{
+		if (selfInternalRank < 10u)
+		{
+			return 100;
+		}
+
+		if (opponentInternalRank >= selfInternalRank)
+		{
+			if (selfInternalRank < 24u)
+			{
+				const uint32_t gap = opponentInternalRank - selfInternalRank;
+				return 1024 + static_cast<int32_t>(gap * 256u);
+			}
+			return 1024;
+		}
+
+		return HalvedRankedLpDelta(selfInternalRank - opponentInternalRank);
+	}
+
+	int32_t PredictLossRawLpDelta(uint32_t selfInternalRank, uint32_t opponentInternalRank)
+	{
+		if (selfInternalRank <= 9u)
+		{
+			return 0;
+		}
+
+		const uint32_t gap = selfInternalRank > opponentInternalRank
+			? selfInternalRank - opponentInternalRank
+			: opponentInternalRank - selfInternalRank;
+		return -HalvedRankedLpDelta(gap);
+	}
+
+	bool RankedWinCanTriggerPromotionCounter(uint32_t selfInternalRank, uint32_t opponentInternalRank)
+	{
+		if (selfInternalRank < 10u || selfInternalRank >= 35u)
+		{
+			return false;
+		}
+
+		const uint32_t gap = selfInternalRank > opponentInternalRank
+			? selfInternalRank - opponentInternalRank
+			: opponentInternalRank - selfInternalRank;
+		return gap <= 2u;
+	}
+
+	bool RankedLossAddsDemotionCounter(uint32_t selfInternalRank, uint32_t opponentInternalRank)
+	{
+		if (selfInternalRank >= 24u && selfInternalRank < 29u)
+		{
+			return opponentInternalRank == selfInternalRank;
+		}
+		if (selfInternalRank >= 29u && selfInternalRank < 35u)
+		{
+			const uint32_t gap = selfInternalRank > opponentInternalRank
+				? selfInternalRank - opponentInternalRank
+				: opponentInternalRank - selfInternalRank;
+			return gap <= 2u;
+		}
+		if (selfInternalRank >= 35u && selfInternalRank < 37u)
+		{
+			return opponentInternalRank >= 29u;
+		}
+		if (selfInternalRank >= 37u)
+		{
+			return opponentInternalRank >= 24u;
+		}
+		return false;
+	}
+
+	RankedPredictionOutcome PredictRankedWin(const RankedProgressDisplayState& self, uint32_t opponentInternalRank)
+	{
+		RankedPredictionOutcome outcome{};
+		if (!self.valid || self.isUnranked || !self.thresholdKnown)
+		{
+			outcome.reason = "Current rank data unavailable";
+			return outcome;
+		}
+
+		const uint32_t selfInternalRank = VisibleRankToInternalRank(self.visibleRank);
+		const uint32_t rawSubscore = self.packedSubscore;
+		const int32_t rawDelta = PredictWinRawLpDelta(selfInternalRank, opponentInternalRank);
+		const bool highRankGateBlocksRankUp = selfInternalRank >= 35u && opponentInternalRank < selfInternalRank;
+		if (highRankGateBlocksRankUp && self.rawUpperThreshold != 0u && rawSubscore >= self.rawUpperThreshold)
+		{
+			outcome.kind = RankedPredictionResultKind::Nothing;
+			outcome.reason = "Can only rank up against your rank or higher.";
+			return outcome;
+		}
+
+		const uint32_t rawUpper = self.rawUpperThreshold;
+		const uint32_t afterRaw = rawUpper != 0u
+			? (std::min)(rawUpper, rawSubscore + static_cast<uint32_t>((std::max)(rawDelta, 0)))
+			: rawSubscore;
+		const uint32_t beforeProgress = rawSubscore > self.rawLowerThreshold ? rawSubscore - self.rawLowerThreshold : 0u;
+		const uint32_t afterProgress = afterRaw > self.rawLowerThreshold ? afterRaw - self.rawLowerThreshold : 0u;
+		outcome.lpDelta = static_cast<int32_t>(afterProgress) - static_cast<int32_t>(beforeProgress);
+
+		if (!highRankGateBlocksRankUp && rawUpper != 0u && afterRaw >= rawUpper && selfInternalRank < 39u)
+		{
+			outcome.kind = RankedPredictionResultKind::RankUp;
+			outcome.resultingVisibleRank = self.visibleRank + 1u;
+			outcome.reason = "LP Threshold Reached";
+			return outcome;
+		}
+
+		if (self.promotionCounterLimit > 0u &&
+			RankedWinCanTriggerPromotionCounter(selfInternalRank, opponentInternalRank) &&
+			self.promotionCounter + static_cast<uint32_t>((std::max)(rawDelta, 0)) >= self.promotionCounterLimit)
+		{
+			outcome.kind = RankedPredictionResultKind::RankUp;
+			outcome.resultingVisibleRank = self.visibleRank + 1u;
+			outcome.reason = "Automatic Promotion Reached";
+			return outcome;
+		}
+
+		outcome.kind = outcome.lpDelta != 0 ? RankedPredictionResultKind::LpDelta : RankedPredictionResultKind::Nothing;
+		outcome.reason = outcome.kind == RankedPredictionResultKind::Nothing ? "LP already capped for this opponent." : "";
+		return outcome;
+	}
+
+	RankedPredictionOutcome PredictRankedLoss(const RankedProgressDisplayState& self, uint32_t opponentInternalRank)
+	{
+		RankedPredictionOutcome outcome{};
+		if (!self.valid || self.isUnranked || !self.thresholdKnown)
+		{
+			outcome.reason = "Current rank data unavailable";
+			return outcome;
+		}
+
+		const uint32_t selfInternalRank = VisibleRankToInternalRank(self.visibleRank);
+		const int32_t rawDelta = PredictLossRawLpDelta(selfInternalRank, opponentInternalRank);
+		if (rawDelta == 0)
+		{
+			outcome.kind = RankedPredictionResultKind::Nothing;
+			outcome.reason = "LV1-LV10 losses do not change LP.";
+			return outcome;
+		}
+
+		const uint32_t rawLower = self.rawLowerThreshold;
+		const uint32_t rawSubscore = self.packedSubscore;
+		const uint32_t lossAmount = static_cast<uint32_t>(-rawDelta);
+		const uint32_t afterRaw = rawSubscore > rawLower + lossAmount ? rawSubscore - lossAmount : rawLower;
+		const uint32_t beforeProgress = rawSubscore > rawLower ? rawSubscore - rawLower : 0u;
+		const uint32_t afterProgress = afterRaw > rawLower ? afterRaw - rawLower : 0u;
+		outcome.lpDelta = static_cast<int32_t>(afterProgress) - static_cast<int32_t>(beforeProgress);
+
+		const bool canRankDown = selfInternalRank > 19u && opponentInternalRank != 40u;
+		if (canRankDown && afterRaw <= rawLower)
+		{
+			outcome.kind = RankedPredictionResultKind::RankDown;
+			outcome.resultingVisibleRank = self.visibleRank > 1u ? self.visibleRank - 1u : 0u;
+			outcome.reason = "LP Threshold Reached";
+			return outcome;
+		}
+
+		if (canRankDown &&
+			self.demotionCounterLimit > 0u &&
+			RankedLossAddsDemotionCounter(selfInternalRank, opponentInternalRank) &&
+			self.demotionCounter + 1u >= self.demotionCounterLimit)
+		{
+			outcome.kind = RankedPredictionResultKind::RankDown;
+			outcome.resultingVisibleRank = self.visibleRank > 1u ? self.visibleRank - 1u : 0u;
+			outcome.reason = "Automatic Demotion Reached";
+			return outcome;
+		}
+
+		outcome.kind = RankedPredictionResultKind::LpDelta;
+		return outcome;
 	}
 
 	const char* GetRankLeaderboardCode(uint32_t characterId)
@@ -1128,8 +1347,171 @@ namespace
 		CCallResult<RankedLeaderboardTracker, LeaderboardScoresDownloaded_t> m_characterPlacementResult;
 	};
 
+	class RankedOpponentLookup
+	{
+	public:
+		void Tick(uint64_t opponentSteamId)
+		{
+			if (opponentSteamId == 0u || !g_interfaces.pSteamUserStatsWrapper)
+			{
+				return;
+			}
+
+			const double now = ImGui::GetTime();
+			if (m_steamId != opponentSteamId)
+			{
+				m_steamId = opponentSteamId;
+				m_hasEntry = false;
+				m_entryPending = false;
+				m_findPending = false;
+				m_lastFindAttempt = -15.0;
+				m_lastEntryRequest = -30.0;
+				m_info = {};
+				m_info.steamId = opponentSteamId;
+			}
+
+			RefreshPersonaName();
+			EnsureLeaderboard(now);
+			RequestOpponentEntry(now);
+		}
+
+		bool GetInfo(RankedOpponentInfo* outInfo) const
+		{
+			if (!outInfo || m_steamId == 0u)
+			{
+				return false;
+			}
+
+			*outInfo = m_info;
+			outInfo->valid = m_hasEntry;
+			outInfo->pending = m_findPending || m_entryPending || (!m_hasEntry && m_globalLeaderboard != 0);
+			return true;
+		}
+
+	private:
+		void RefreshPersonaName()
+		{
+			if (!g_interfaces.pSteamFriendsWrapper || m_steamId == 0u)
+			{
+				return;
+			}
+
+			const CSteamID steamId(m_steamId);
+			const char* const name = g_interfaces.pSteamFriendsWrapper->GetFriendPersonaName(steamId);
+			if (name && name[0] != '\0')
+			{
+				m_info.displayName = name;
+			}
+			else
+			{
+				g_interfaces.pSteamFriendsWrapper->RequestUserInformation(steamId, true);
+			}
+		}
+
+		void EnsureLeaderboard(double now)
+		{
+			if (m_globalLeaderboard || m_findPending || now < m_lastFindAttempt + 15.0)
+			{
+				return;
+			}
+
+			SteamAPICall_t call = g_interfaces.pSteamUserStatsWrapper->FindLeaderboard("RANK_ALL");
+			if (call)
+			{
+				m_findPending = true;
+				m_lastFindAttempt = now;
+				m_findResult.Set(call, this, &RankedOpponentLookup::OnLeaderboardFound);
+			}
+		}
+
+		void RequestOpponentEntry(double now)
+		{
+			if (!m_globalLeaderboard || m_entryPending || m_hasEntry || now < m_lastEntryRequest + 30.0)
+			{
+				return;
+			}
+
+			CSteamID steamId(m_steamId);
+			SteamAPICall_t call = g_interfaces.pSteamUserStatsWrapper->DownloadLeaderboardEntriesForUsers(
+				m_globalLeaderboard,
+				&steamId,
+				1);
+			if (call)
+			{
+				m_entryPending = true;
+				m_lastEntryRequest = now;
+				m_entryResult.Set(call, this, &RankedOpponentLookup::OnEntryDownloaded);
+			}
+		}
+
+		void OnLeaderboardFound(LeaderboardFindResult_t* callback, bool ioFailure)
+		{
+			m_findPending = false;
+			if (ioFailure || !callback || !callback->m_bLeaderboardFound)
+			{
+				LOG(1, "[RANK][Prediction] failed to find RANK_ALL ioFailure=%d\n", ioFailure ? 1 : 0);
+				return;
+			}
+
+			m_globalLeaderboard = callback->m_hSteamLeaderboard;
+			LOG(1, "[RANK][Prediction] found RANK_ALL handle=%llu\n",
+				static_cast<unsigned long long>(m_globalLeaderboard));
+		}
+
+		void OnEntryDownloaded(LeaderboardScoresDownloaded_t* callback, bool ioFailure)
+		{
+			m_entryPending = false;
+			if (ioFailure || !callback || callback->m_cEntryCount <= 0 || !g_interfaces.pSteamUserStatsWrapper)
+			{
+				LOG(1, "[RANK][Prediction] opponent entry unavailable steamId=%llu ioFailure=%d count=%d\n",
+					static_cast<unsigned long long>(m_steamId),
+					ioFailure ? 1 : 0,
+					callback ? callback->m_cEntryCount : -1);
+				return;
+			}
+
+			LeaderboardEntry_t entry{};
+			int32_t details[4] = {};
+			if (!g_interfaces.pSteamUserStatsWrapper->GetDownloadedLeaderboardEntryQuiet(
+				callback->m_hSteamLeaderboardEntries,
+				0,
+				&entry,
+				details,
+				4))
+			{
+				return;
+			}
+
+			m_info.steamId = entry.m_steamIDUser.ConvertToUint64();
+			m_info.globalRank = entry.m_nGlobalRank;
+			m_info.internalRank = (static_cast<uint32_t>(entry.m_nScore) >> 16) & 0xFFFFu;
+			m_info.visibleRank = InternalRankToVisibleRank(m_info.internalRank, false);
+			m_info.subscore = static_cast<uint32_t>(entry.m_nScore) & 0xFFFFu;
+			m_hasEntry = true;
+			RefreshPersonaName();
+			LOG(1, "[RANK][Prediction] opponent steamId=%llu global=%d visible=%u internal=%u sub=%u\n",
+				static_cast<unsigned long long>(m_info.steamId),
+				m_info.globalRank,
+				static_cast<unsigned int>(m_info.visibleRank),
+				static_cast<unsigned int>(m_info.internalRank),
+				static_cast<unsigned int>(m_info.subscore));
+		}
+
+		uint64_t m_steamId = 0;
+		SteamLeaderboard_t m_globalLeaderboard = 0;
+		bool m_findPending = false;
+		bool m_entryPending = false;
+		bool m_hasEntry = false;
+		double m_lastFindAttempt = -15.0;
+		double m_lastEntryRequest = -30.0;
+		RankedOpponentInfo m_info{};
+		CCallResult<RankedOpponentLookup, LeaderboardFindResult_t> m_findResult;
+		CCallResult<RankedOpponentLookup, LeaderboardScoresDownloaded_t> m_entryResult;
+	};
+
 	RankedLeaderboardTracker g_rankedLeaderboardTracker{};
 	RankedDistributionSearch g_rankedDistributionSearch{};
+	RankedOpponentLookup g_rankedOpponentLookup{};
 
 	void DrawRankedLadderWindow()
 	{
@@ -2498,6 +2880,92 @@ namespace
 		drawList->AddText(ImVec2(pos.x + 0.85f, pos.y), color, text);
 	}
 
+	float CenteredTextOffsetX(float width, const char* text)
+	{
+		const float textWidth = ImGui::CalcTextSize(text ? text : "").x;
+		return textWidth < width ? (width - textWidth) * 0.5f : 0.0f;
+	}
+
+	void DrawCenteredBoldText(ImDrawList* drawList, const char* text, ImU32 color, float width)
+	{
+		const float offsetX = CenteredTextOffsetX(width, text);
+		const ImVec2 pos = ImGui::GetCursorScreenPos();
+		DrawBoldText(drawList, ImVec2(pos.x + offsetX, pos.y), color, text);
+		ImGui::Dummy(ImVec2(width, ImGui::GetTextLineHeight()));
+	}
+
+	std::vector<std::string> WrapTextToWidth(const char* text, float wrapWidth)
+	{
+		std::vector<std::string> lines;
+		if (!text || text[0] == '\0')
+		{
+			return lines;
+		}
+
+		const char* const textEnd = text + std::strlen(text);
+		const char* wordStart = text;
+		std::string line;
+		while (wordStart < textEnd)
+		{
+			while (wordStart < textEnd && (*wordStart == ' ' || *wordStart == '\n' || *wordStart == '\r' || *wordStart == '\t'))
+			{
+				++wordStart;
+			}
+			if (wordStart >= textEnd)
+			{
+				break;
+			}
+
+			const char* wordEnd = wordStart;
+			while (wordEnd < textEnd && *wordEnd != ' ' && *wordEnd != '\n' && *wordEnd != '\r' && *wordEnd != '\t')
+			{
+				++wordEnd;
+			}
+
+			const std::string word(wordStart, wordEnd);
+			const std::string candidate = line.empty() ? word : line + " " + word;
+			if (!line.empty() && ImGui::CalcTextSize(candidate.c_str()).x > wrapWidth)
+			{
+				lines.push_back(line);
+				line = word;
+			}
+			else
+			{
+				line = candidate;
+			}
+			wordStart = wordEnd;
+		}
+
+		if (!line.empty())
+		{
+			lines.push_back(line);
+		}
+
+		return lines;
+	}
+
+	float CalcCenteredWrappedTextHeight(const char* text, float wrapWidth)
+	{
+		const std::vector<std::string> lines = WrapTextToWidth(text, wrapWidth);
+		if (lines.empty())
+		{
+			return 0.0f;
+		}
+		const float lineHeight = ImGui::GetTextLineHeight();
+		return lineHeight * static_cast<float>(lines.size()) +
+			ImGui::GetStyle().ItemSpacing.y * static_cast<float>(lines.size() - 1u);
+	}
+
+	void DrawCenteredWrappedText(const char* text, float wrapWidth)
+	{
+		const std::vector<std::string> lines = WrapTextToWidth(text, wrapWidth);
+		for (const std::string& line : lines)
+		{
+			ImGui::SetCursorPosX(ImGui::GetCursorPosX() + CenteredTextOffsetX(wrapWidth, line.c_str()));
+			ImGui::TextUnformatted(line.c_str());
+		}
+	}
+
 	bool CaptureRankedProgressSnapshotInternal(RankedProgressOverlaySnapshot* outSnapshot)
 	{
 		if (!outSnapshot)
@@ -2816,6 +3284,218 @@ bool CaptureRankedProgressOverlaySnapshot(RankedProgressOverlaySnapshot* outSnap
 	return outSnapshot->active;
 }
 
+namespace
+{
+	bool TryGetRankedPredictionOpponent(uint64_t* outSteamId)
+	{
+		if (!outSteamId || !g_interfaces.pRoomManager || !g_interfaces.pRoomManager->IsRoomFunctional())
+		{
+			return false;
+		}
+
+		const std::vector<const RoomMemberEntry*> opponents =
+			g_interfaces.pRoomManager->GetOtherRoomMemberEntriesInCurrentMatch();
+		if (opponents.empty() || !opponents[0] || opponents[0]->steamId == 0u)
+		{
+			return false;
+		}
+
+		*outSteamId = opponents[0]->steamId;
+		return true;
+	}
+
+	bool IsRankedPredictionMenuState(const RankedNetworkLite& networkState)
+	{
+		if (networkState.state != 4)
+		{
+			return false;
+		}
+
+		return networkState.state1 >= 43 && networkState.state1 <= 48;
+	}
+
+	void LogRankedPredictionVisibility(
+		const char* reason,
+		const RankedNetworkLite& networkState,
+		bool rankedEntryActive,
+		bool inMatch,
+		uint64_t opponentSteamId)
+	{
+		static uint64_t s_lastSignature = 0;
+		const uint64_t signature =
+			(static_cast<uint64_t>(static_cast<uint32_t>(networkState.state & 0xFFFF)) << 48) ^
+			(static_cast<uint64_t>(static_cast<uint32_t>(networkState.state1 & 0xFFFF)) << 32) ^
+			(static_cast<uint64_t>(rankedEntryActive ? 1u : 0u) << 31) ^
+			(static_cast<uint64_t>(inMatch ? 1u : 0u) << 30) ^
+			(opponentSteamId & 0x3FFFFFFFull);
+		if (s_lastSignature == signature)
+		{
+			return;
+		}
+		s_lastSignature = signature;
+
+		LOG(1, "[RANK][PredictionUI] reason=%s state=%d/%d entry=%d inMatch=%d opponentSteam=%llu\n",
+			reason ? reason : "<null>",
+			networkState.state,
+			networkState.state1,
+			rankedEntryActive ? 1 : 0,
+			inMatch ? 1 : 0,
+			static_cast<unsigned long long>(opponentSteamId));
+	}
+
+	void DrawRankedPredictionOutcomeColumn(
+		const char* title,
+		const ImVec4& titleColor,
+		const RankedPredictionOutcome& outcome,
+		float width,
+		float height)
+	{
+		ImGui::BeginChild(title, ImVec2(width, height), false);
+		ImDrawList* const drawList = ImGui::GetWindowDrawList();
+		ImGui::PushStyleColor(ImGuiCol_Text, titleColor);
+		DrawCenteredBoldText(drawList, title, ImGui::GetColorU32(titleColor), ImGui::GetContentRegionAvail().x);
+		ImGui::PopStyleColor();
+
+		char mainText[64] = {};
+		ImVec4 mainColor = titleColor;
+		switch (outcome.kind)
+		{
+		case RankedPredictionResultKind::LpDelta:
+			std::snprintf(mainText, sizeof(mainText), "%+d LP", outcome.lpDelta);
+			mainColor = outcome.lpDelta >= 0 ? g_rankedOverlayTuning.lpGainColor : g_rankedOverlayTuning.lpLossColor;
+			break;
+		case RankedPredictionResultKind::RankUp:
+			std::snprintf(mainText, sizeof(mainText), "RANK UP");
+			mainColor = g_rankedOverlayTuning.predictionRankUpColor;
+			break;
+		case RankedPredictionResultKind::RankDown:
+			std::snprintf(mainText, sizeof(mainText), "RANK DOWN");
+			mainColor = g_rankedOverlayTuning.predictionRankDownColor;
+			break;
+		case RankedPredictionResultKind::Nothing:
+			std::snprintf(mainText, sizeof(mainText), "Nothing.");
+			mainColor = g_rankedOverlayTuning.predictionNothingColor;
+			break;
+		default:
+			std::snprintf(mainText, sizeof(mainText), "Unknown");
+			mainColor = g_rankedOverlayTuning.predictionNothingColor;
+			break;
+		}
+
+		ImGui::PushStyleColor(ImGuiCol_Text, mainColor);
+		ImGui::SetWindowFontScale(2.7f);
+		DrawCenteredBoldText(drawList, mainText, ImGui::GetColorU32(mainColor), ImGui::GetContentRegionAvail().x);
+		ImGui::SetWindowFontScale(1.0f);
+		ImGui::PopStyleColor();
+
+		if (outcome.reason && outcome.reason[0] != '\0')
+		{
+			const float wrapWidth = ImGui::GetContentRegionAvail().x;
+			const float reasonHeight = CalcCenteredWrappedTextHeight(outcome.reason, wrapWidth);
+			const float bottomY = height - reasonHeight;
+			if (bottomY > ImGui::GetCursorPosY())
+			{
+				ImGui::SetCursorPosY(bottomY);
+			}
+			ImGui::PushStyleColor(ImGuiCol_Text, g_rankedOverlayTuning.predictionReasonColor);
+			DrawCenteredWrappedText(outcome.reason, wrapWidth);
+			ImGui::PopStyleColor();
+		}
+		ImGui::EndChild();
+	}
+
+	void DrawRankedPredictionWindow(
+		const RankedProgressDisplayState& self,
+		const RankedNetworkLite& networkState,
+		bool rankedEntryActive,
+		bool inMatch)
+	{
+		if (!Settings::settingsIni.showRankedProgress || !Settings::settingsIni.showRankedPrediction)
+		{
+			LogRankedPredictionVisibility("setting_disabled", networkState, rankedEntryActive, inMatch, 0u);
+			return;
+		}
+		const bool predictionContext = rankedEntryActive || IsRankedPredictionMenuState(networkState);
+		if (inMatch || !predictionContext)
+		{
+			LogRankedPredictionVisibility("inactive_context", networkState, rankedEntryActive, inMatch, 0u);
+			return;
+		}
+
+		uint64_t opponentSteamId = 0;
+		const bool hasOpponentSteamId = TryGetRankedPredictionOpponent(&opponentSteamId);
+		if (hasOpponentSteamId)
+		{
+			g_rankedOpponentLookup.Tick(opponentSteamId);
+		}
+		LogRankedPredictionVisibility("draw", networkState, rankedEntryActive, inMatch, opponentSteamId);
+		RankedOpponentInfo opponent{};
+		const bool hasOpponentInfo = hasOpponentSteamId && g_rankedOpponentLookup.GetInfo(&opponent);
+
+		ImGui::SetNextWindowPos(ImVec2(360.0f, 150.0f), ImGuiCond_FirstUseEver);
+		ImGui::SetNextWindowSize(ImVec2(520.0f, 196.0f), ImGuiCond_FirstUseEver);
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowMinSize, ImVec2(0.0f, 0.0f));
+		if (!ImGui::Begin("Ranked Prediction###RankedPredictionOverlay", nullptr, ImGuiWindowFlags_NoCollapse))
+		{
+			ImGui::End();
+			ImGui::PopStyleVar();
+			return;
+		}
+
+		const std::string opponentName = opponent.displayName.empty() ? "Opponent" : opponent.displayName;
+		const bool opponentRankKnown = hasOpponentInfo && opponent.valid && opponent.visibleRank > 0u;
+		const std::string opponentRank = opponentRankKnown
+			? FormatVisibleRankLabel(opponent.visibleRank, false)
+			: std::string(!hasOpponentSteamId ? "Waiting for opponent..." : (opponent.pending ? "Loading rank..." : "Rank unavailable"));
+		const ImVec4 opponentRankColor = opponentRankKnown
+			? GetVisibleRankColor(opponent.visibleRank, false)
+			: g_rankedOverlayTuning.predictionNothingColor;
+		ImDrawList* const drawList = ImGui::GetWindowDrawList();
+		const float headerWidth = ImGui::GetContentRegionAvail().x;
+		const std::string headerPrefix = opponentName + " ";
+		const float headerTextWidth = ImGui::CalcTextSize(headerPrefix.c_str()).x + ImGui::CalcTextSize(opponentRank.c_str()).x;
+		ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (headerTextWidth < headerWidth ? (headerWidth - headerTextWidth) * 0.5f : 0.0f));
+		ImGui::TextUnformatted(headerPrefix.c_str());
+		ImGui::SameLine(0.0f, 0.0f);
+		DrawBoldText(drawList, ImGui::GetCursorScreenPos(), ImGui::GetColorU32(opponentRankColor), opponentRank.c_str());
+		ImGui::Dummy(ImVec2((std::min)(ImGui::CalcTextSize(opponentRank.c_str()).x + 2.0f, ImGui::GetContentRegionAvail().x), ImGui::GetTextLineHeight()));
+		ImGui::Separator();
+
+		RankedPredictionOutcome win{};
+		RankedPredictionOutcome loss{};
+		if (opponentRankKnown)
+		{
+			win = PredictRankedWin(self, opponent.internalRank);
+			loss = PredictRankedLoss(self, opponent.internalRank);
+		}
+		else
+		{
+			win.reason = !hasOpponentSteamId ? "Waiting for ranked opponent data." : (opponent.pending ? "Waiting for RANK_ALL lookup." : "Opponent RANK_ALL entry unavailable.");
+			loss.reason = win.reason;
+		}
+
+		const ImGuiStyle& style = ImGui::GetStyle();
+		const float separatorWidth = 1.0f;
+		const float contentWidth = ImGui::GetContentRegionAvail().x;
+		const float columnHeight = ImGui::GetContentRegionAvail().y;
+		const float columnWidth = (std::max)((contentWidth - separatorWidth - style.ItemSpacing.x * 2.0f) * 0.5f, 1.0f);
+		const ImVec2 separatorStart = ImVec2(
+			ImGui::GetCursorScreenPos().x + columnWidth + style.ItemSpacing.x,
+			ImGui::GetCursorScreenPos().y);
+		DrawRankedPredictionOutcomeColumn("Win", g_rankedOverlayTuning.predictionWinColor, win, columnWidth, columnHeight);
+		ImGui::SameLine();
+		drawList->AddLine(
+			separatorStart,
+			ImVec2(separatorStart.x, separatorStart.y + columnHeight),
+			ImGui::GetColorU32(ImGuiCol_Separator));
+		ImGui::Dummy(ImVec2(separatorWidth, columnHeight));
+		ImGui::SameLine();
+		DrawRankedPredictionOutcomeColumn("Loss", g_rankedOverlayTuning.predictionLossColor, loss, columnWidth, columnHeight);
+		ImGui::End();
+		ImGui::PopStyleVar();
+	}
+}
+
 MainWindow::MainWindow(const std::string& windowTitle, bool windowClosable, WindowContainer& windowContainer, ImGuiWindowFlags windowFlags)
 	: IWindow(windowTitle, windowClosable, windowFlags), m_pWindowContainer(&windowContainer)
 {
@@ -2881,6 +3561,16 @@ void MainWindow::Draw()
 	}
 	ImGui::SameLine();
 	ImGui::ShowHelpMarker(L("Shows a movable ranked progress window during ranked character select and ranked menu flow, and after a successful ranked LP upload even if the main mod menu is closed.").c_str());
+
+	ImGui::HorizontalSpacing();
+	bool showRankedPrediction = Settings::settingsIni.showRankedPrediction;
+	if (ImGui::Checkbox(L("Show ranked prediction").c_str(), &showRankedPrediction))
+	{
+		Settings::settingsIni.showRankedPrediction = showRankedPrediction;
+		Settings::changeSetting("ShowRankedPrediction", showRankedPrediction ? "1" : "0");
+	}
+	ImGui::SameLine();
+	ImGui::ShowHelpMarker(L("Shows win/loss ranked outcome predictions during ranked match confirmation when opponent rank data is available.").c_str());
 
 	ImGui::AlignTextToFramePadding();
 	ImGui::TextUnformatted("P$"); ImGui::SameLine();
@@ -3772,5 +4462,6 @@ void DrawRankedProgressOverlayStandalone()
 	ImGui::End();
 	ImGui::PopStyleVar();
 	ImGui::PopStyleColor();
+	DrawRankedPredictionWindow(renderedDisplay, networkState, rankedEntryActive, inMatch);
 	DrawRankedLadderWindow();
 }

@@ -263,6 +263,43 @@ On wins, demotion counter reset rules:
 - `29 <= rank_id < 38`: reset if opponent internal rank `>= 24` / visible `>= LV25`
 - `rank_id == 38 || rank_id == 39`: reset if opponent internal rank `>= 29` / visible `>= LV30`
 
+## Ranked Prediction UI
+
+Implementation:
+
+- setting: `ShowRankedPrediction`
+- draw path: `DrawRankedPredictionWindow` in `src/Overlay/Window/MainWindow.cpp`
+- data source for self: existing ranked row display state used by the ranked progress window
+- data source for opponent: current ranked room opponent SteamID, then `RANK_ALL`
+  lookup through `DownloadLeaderboardEntriesForUsers`
+
+Visibility rule:
+
+- `ShowRankedProgress = 1`
+- `ShowRankedPrediction = 1`
+- ranked entry/confirmation flag is active, or ranked network state is
+  `state == 4` with `state1` from `43` through `48`
+- game is not in match
+- if opponent data is not ready yet, draw a visible waiting/unavailable card
+  instead of silently hiding the window
+
+Prediction model:
+
+- win/loss raw LP deltas use the rank-difference rules documented above
+- current raw `row[1]` subscore is clamped to the rank bounds table
+- visible LP delta is converted through the cumulative UI LP model
+- `RANK UP` is shown for LP-threshold rank-up or promotion-counter rank-up
+- `RANK DOWN` is shown for LP-floor rank-down or demotion-counter rank-down
+- Leader+ lower-rank wins keep the documented gate: if current raw LP is already
+  capped and opponent rank is lower, the win side shows `Nothing.` because the
+  game returns before the threshold rank-up check
+
+Known limitation:
+
+- promotion-counter gain is estimated from the same raw LP win delta until
+  `FUN_004bde70` is fully named and mirrored. LP-threshold and demotion-counter
+  predictions are based on currently documented rules.
+
 ## Live Kokonoe Rankdown Proof
 
 Log:

@@ -36,9 +36,12 @@ Ranked system is solved enough for UI progress:
 
 Full predictive LP status:
 
-- not fully product-finished as a "predict exact next match gain/loss before result" feature
 - headless Ghidra now confirms the core LP update functions, bounds table, rank-up/rank-down helpers, and caller split between win/loss/draw-style paths
-- remaining work for a prediction feature is mostly integration/validation:
+- the mod prediction UI now mirrors the solved table-backed rules for internal ranks `0..39`:
+  - low ranks `< 10` gain `+100` on win and do not lose LP on loss
+  - mid ranks `10..23` use same/lower/higher opponent LP formulas
+  - high ranks `24..39` use capped same-or-higher win gains, lower-rank win gains, LP floor/ceiling checks, demotion counters, and the Leader+ lower-rank rank-up gate
+- remaining prediction risk is live validation and unsupported leaderboard-only named labels above internal rank `39`:
   - identify the exact opponent rank value passed at the match-result callsite in all online ranked result cases
   - verify `param_4 == 0` as win, `param_4 == 1` as loss, and `param_4 == 2` as draw/no-LP-update in live logs
   - validate high-rank proximity/counter fields against real Leader+ matches before exposing prediction as final user-facing truth
@@ -101,6 +104,7 @@ lossDelta = max(1, trunc(1024 * pow(0.5f, abs((uint16_t)rankA - (uint16_t)rankB)
 ```
 
 The loss caller subtracts this value from LP, then clamps to the current rank's bounds table row.
+For internal ranks `< 10`, the loss helper skips the subtraction path, so the prediction UI reports no LP change.
 
 Win gain logic:
 

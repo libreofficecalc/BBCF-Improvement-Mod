@@ -6,6 +6,28 @@ The short version: ranked is not just one LP number. The game also keeps hidden 
 
 Each character has separate ranked progress.
 
+## Ranked Prediction Window
+
+The mod can show a ranked prediction window during ranked match confirmation.
+This is the popup state after selecting a ranked opponent, before both players
+confirm with OK.
+
+The window shows the opponent name, opponent rank, and two outcomes:
+
+- **Win**: predicted LP gain, or `RANK UP` when the current rules predict a rank-up.
+- **Loss**: predicted LP loss, or `RANK DOWN` when the current rules predict a rank-down.
+
+When a rank change is predicted, the window explains which rule caused it:
+
+- `Automatic Promotion Reached`: hidden promotion counter reaches its limit.
+- `LP Threshold Reached`: raw LP reaches the rank's upper or lower bound.
+- `Automatic Demotion Reached`: hidden demotion counter reaches its limit.
+
+For Leader and higher ranks, a lower-ranked opponent can leave you capped at
+the top of the current rank without allowing a rank-up. In that case the win
+prediction says `Nothing.` and explains that you can only rank up against your
+rank or higher.
+
 ## Common Rules
 
 - A rank change resets LP to the middle of the new rank.
