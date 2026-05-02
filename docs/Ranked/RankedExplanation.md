@@ -16,6 +16,8 @@ The window shows the opponent name, opponent rank, and two outcomes:
 
 - **Win**: predicted LP gain, or `RANK UP` when the current rules predict a rank-up.
 - **Loss**: predicted LP loss, or `RANK DOWN` when the current rules predict a rank-down.
+- Small gray text under the main result shows counter movement when it applies,
+  such as `+459 Promotion Counter` or `+1 Demotion Counter`.
 
 When a rank change is predicted, the window explains which rule caused it:
 
@@ -27,6 +29,58 @@ For Leader and higher ranks, a lower-ranked opponent can leave you capped at
 the top of the current rank without allowing a rank-up. In that case the win
 prediction says `Nothing.` and explains that you can only rank up against your
 rank or higher.
+
+## Rank Rules Dialog
+
+Right-click the ranked progress window and choose **How does my rank work?** to
+open a modal explanation for the selected character's current rank.
+
+The dialog explains the rank in plain terms:
+
+- what LP total ranks you up, phrased as `If you get above ... LP`
+- what LP total can rank you down, phrased as `If you get below ... LP`
+- which opponent ranks can add demotion-counter strikes
+- which opponent ranks can add promotion-counter points
+- what the promotion/demotion counter limits are
+- which wins reset the demotion counter, when that counter exists
+- which losses reset the promotion counter, when that counter exists
+
+It also includes an opponent-rank table with one-match win/loss LP values. The
+table shows every opponent rank that changes LP by 1 or more, or can move a
+hidden counter. The last row is always the boundary rank that gives exactly
++1/-1 LP, so the table shows where the per-opponent-rank differences stop.
+When a match can add or reset a hidden counter, the table says so directly in
+the cell. Beginner ranks use one `ANY RANK` row because opponent rank does not
+change their known LP/counter rules. Ranks are colored with their native
+ranked-progress color, LP thresholds are gray like the ranked-progress
+threshold, and win/loss columns reuse the ranked prediction green/red colors.
+The column headers (`Opponent Rank`, `Win`, `Loss`) are centered both
+horizontally and vertically within their header cells, matching the data rows.
+
+Use **Check another rank's rules** to open a rank selector and inspect another
+known rank. The selector lists rank names directly, such as `LV1`, while the
+rules dialog title shows the selected rank and a gray subtitle explains when
+that same rules type applies to a wider range such as `LV1` through `LV10`.
+Selecting a rank updates the rules immediately and closes the selector.
+
+Use **Compare this with another rank** to choose a second rank and open a
+comparison dialog. The comparison only lists rules that differ: LP range,
+Leader+ rank-up gating, promotion-counter availability and range,
+demotion-counter availability and range, and counter reset ranges. Rank names
+in comparison bullets are colored the same way as in the rank rules dialog.
+Counter range and reset differences are only shown when both ranks have that
+counter enabled; if the counter enabled/disabled state already differs, the
+range comparison is skipped as redundant.
+
+The main mod menu has a **Ranked Matches** section for ranked features:
+
+- **Show ranked progress** toggles the automatic ranked progress overlay.
+- **Show ranked prediction** toggles win/loss predictions during ranked
+  confirmation.
+- **Ranked ladder** opens the ladder and population window.
+- **Ranked Progress** lets you choose a character and open a closable ranked
+  progress window.
+- **How does ranked work?** lets you choose any rank and open its rules.
 
 ## Common Rules
 

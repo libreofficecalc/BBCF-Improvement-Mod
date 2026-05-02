@@ -155,6 +155,11 @@ namespace
 		ImVec4 predictionReasonColor = ImVec4(0.72f, 0.74f, 0.78f, 1.0f);
 	};
 
+	ImVec4 GetRankedThresholdColor()
+	{
+		return ImVec4(0.62f, 0.64f, 0.69f, 1.0f);
+	}
+
 	// Ranked progress visual tuning lives here.
 	// Edit these values directly when you want to tweak colors or popup timing.
 	RankedOverlayTuning g_rankedOverlayTuning{};
@@ -264,6 +269,23 @@ namespace
 
 	RankedOverlayVisibilityState g_rankedOverlayVisibility{};
 	bool g_showRankedLadderWindow = false;
+
+	struct RankedRulesDialogState
+	{
+		bool requestOpenForCurrentRank = false;
+		bool openRequested = false;
+		bool selectorOpenRequested = false;
+		bool selectorOpenedFromMainMenu = false;
+		bool compareSelectorOpenRequested = false;
+		bool compareDialogOpenRequested = false;
+		uint32_t selectedInternalRank = 0;
+		uint32_t compareInternalRank = 0;
+	};
+
+	RankedRulesDialogState g_rankedRulesDialog{};
+	bool g_rankedProgressCharacterSelectorOpenRequested = false;
+	bool g_manualRankedProgressOpen = false;
+	uint32_t g_manualRankedProgressCharacterId = kInvalidRankedCharacterId;
 
 	struct RankedProgressTopRowOptions
 	{
@@ -701,6 +723,31 @@ namespace
 		return false;
 	}
 
+	bool RankedWinResetsDemotionCounter(uint32_t selfInternalRank, uint32_t opponentInternalRank)
+	{
+		if (selfInternalRank >= 24u && selfInternalRank < 29u)
+		{
+			return opponentInternalRank >= 22u;
+		}
+		if (selfInternalRank >= 29u && selfInternalRank < 38u)
+		{
+			return opponentInternalRank >= 24u;
+		}
+		if (selfInternalRank == 38u || selfInternalRank == 39u)
+		{
+			return opponentInternalRank >= 29u;
+		}
+		return false;
+	}
+
+	bool RankedLossResetsPromotionCounter(uint32_t selfInternalRank, uint32_t opponentInternalRank)
+	{
+		const uint32_t gap = selfInternalRank > opponentInternalRank
+			? selfInternalRank - opponentInternalRank
+			: opponentInternalRank - selfInternalRank;
+		return gap <= 2u;
+	}
+
 	RankedPredictionOutcome PredictRankedWin(const RankedProgressDisplayState& self, uint32_t opponentInternalRank)
 	{
 		RankedPredictionOutcome outcome{};
@@ -808,6 +855,1249 @@ namespace
 
 		outcome.kind = RankedPredictionResultKind::LpDelta;
 		return outcome;
+	}
+
+	void DrawBoldText(ImDrawList* drawList, const ImVec2& pos, ImU32 color, const char* text);
+	float CenteredTextOffsetX(float width, const char* text);
+	void DrawCenteredBoldText(ImDrawList* drawList, const char* text, ImU32 color, float width);
+
+	uint32_t GetKnownRankCount()
+	{
+		return static_cast<uint32_t>(sizeof(kRankedLpBoundsTable) / sizeof(kRankedLpBoundsTable[0]));
+	}
+
+	uint32_t ClampKnownInternalRank(uint32_t internalRank)
+	{
+		const uint32_t knownRankCount = GetKnownRankCount();
+		if (knownRankCount == 0u)
+		{
+			return 0u;
+		}
+		return (std::min)(internalRank, knownRankCount - 1u);
+	}
+
+	const char* GetRankRulesBucketLabel(uint32_t internalRank)
+	{
+		if (internalRank < 10u)
+		{
+			return L("LV1-LV10 rules").c_str();
+		}
+		if (internalRank < 14u)
+		{
+			return L("LV11-LV14 rules").c_str();
+		}
+		if (internalRank < 18u)
+		{
+			return L("LV15-LV18 rules").c_str();
+		}
+		if (internalRank < 23u)
+		{
+			return L("LV19-LV23 rules").c_str();
+		}
+		if (internalRank < 28u)
+		{
+			return L("LV24-LV28 rules").c_str();
+		}
+		if (internalRank < 33u)
+		{
+			return L("LV29-LV33 rules").c_str();
+		}
+		if (internalRank == 33u)
+		{
+			return L("LV34 rules").c_str();
+		}
+		if (internalRank == 34u)
+		{
+			return L("LV35 rules").c_str();
+		}
+		if (internalRank == 35u)
+		{
+			return L("Leader rules").c_str();
+		}
+		if (internalRank == 36u)
+		{
+			return L("Hero rules").c_str();
+		}
+		if (internalRank == 37u)
+		{
+			return L("Kisshin rules").c_str();
+		}
+		if (internalRank == 38u)
+		{
+			return L("Hades rules").c_str();
+		}
+		return L("Ruler rules").c_str();
+	}
+
+	bool TryGetRankRulesBucketRange(uint32_t internalRank, uint32_t* outMinInternalRank, uint32_t* outMaxInternalRank)
+	{
+		uint32_t minRank = internalRank;
+		uint32_t maxRank = internalRank;
+		if (internalRank < 10u)
+		{
+			minRank = 0u;
+			maxRank = 9u;
+		}
+		else if (internalRank < 14u)
+		{
+			minRank = 10u;
+			maxRank = 13u;
+		}
+		else if (internalRank < 18u)
+		{
+			minRank = 14u;
+			maxRank = 17u;
+		}
+		else if (internalRank < 23u)
+		{
+			minRank = 18u;
+			maxRank = 22u;
+		}
+		else if (internalRank < 28u)
+		{
+			minRank = 23u;
+			maxRank = 27u;
+		}
+		else if (internalRank < 33u)
+		{
+			minRank = 28u;
+			maxRank = 32u;
+		}
+
+		if (outMinInternalRank)
+		{
+			*outMinInternalRank = minRank;
+		}
+		if (outMaxInternalRank)
+		{
+			*outMaxInternalRank = maxRank;
+		}
+		return minRank != maxRank;
+	}
+
+	std::string FormatRankRulesRankName(uint32_t internalRank)
+	{
+		return FormatVisibleRankLabel(InternalRankToVisibleRank(ClampKnownInternalRank(internalRank), false), false);
+	}
+
+	std::string FormatRankRulesRange(uint32_t minInternalRank, uint32_t maxInternalRank)
+	{
+		if (minInternalRank == maxInternalRank)
+		{
+			return FormatRankRulesRankName(minInternalRank);
+		}
+		return FormatText(
+			L("%s - %s").c_str(),
+			FormatRankRulesRankName(minInternalRank).c_str(),
+			FormatRankRulesRankName(maxInternalRank).c_str());
+	}
+
+	std::string FormatRankRulesBucketSubtitle(uint32_t internalRank)
+	{
+		uint32_t minRank = 0u;
+		uint32_t maxRank = 0u;
+		if (!TryGetRankRulesBucketRange(internalRank, &minRank, &maxRank))
+		{
+			return std::string();
+		}
+
+		return FormatText(
+			L("The same type of rules as this rank apply from %s to %s.").c_str(),
+			FormatRankRulesRankName(minRank).c_str(),
+			FormatRankRulesRankName(maxRank).c_str());
+	}
+
+	void CenterNextRankedRulesPopup()
+	{
+		const ImVec2 displaySize = ImGui::GetIO().DisplaySize;
+		if (displaySize.x > 0.0f && displaySize.y > 0.0f)
+		{
+			ImGui::SetNextWindowPos(
+				ImVec2(displaySize.x * 0.5f, displaySize.y * 0.5f),
+				ImGuiCond_Appearing,
+				ImVec2(0.5f, 0.5f));
+		}
+	}
+
+	struct RankedRulesTextSpan
+	{
+		std::string text;
+		ImVec4 color;
+	};
+
+	void AppendTextSpan(std::vector<RankedRulesTextSpan>& spans, const std::string& text, const ImVec4& color)
+	{
+		if (!text.empty())
+		{
+			spans.push_back({ text, color });
+		}
+	}
+
+	void AppendRankNameSpan(std::vector<RankedRulesTextSpan>& spans, uint32_t internalRank)
+	{
+		const uint32_t visibleRank = InternalRankToVisibleRank(ClampKnownInternalRank(internalRank), false);
+		AppendTextSpan(spans, FormatVisibleRankLabel(visibleRank, false), GetVisibleRankColor(visibleRank, false));
+	}
+
+	void AppendRankRangeSpans(
+		std::vector<RankedRulesTextSpan>& spans,
+		uint32_t minInternalRank,
+		uint32_t maxInternalRank,
+		const ImVec4& normalText)
+	{
+		AppendTextSpan(spans, std::string(L("rank")) + " ", normalText);
+		AppendRankNameSpan(spans, minInternalRank);
+		if (minInternalRank != maxInternalRank)
+		{
+			AppendTextSpan(spans, std::string(" ") + L("to") + " ", normalText);
+			AppendRankNameSpan(spans, maxInternalRank);
+		}
+	}
+
+	std::vector<std::string> SplitRankedRulesTextTokens(const std::string& text)
+	{
+		std::vector<std::string> tokens;
+		size_t pos = 0u;
+		while (pos < text.size())
+		{
+			size_t next = pos;
+			while (next < text.size() && text[next] != ' ')
+			{
+				++next;
+			}
+			while (next < text.size() && text[next] == ' ')
+			{
+				++next;
+			}
+			tokens.push_back(text.substr(pos, next - pos));
+			pos = next;
+		}
+		return tokens;
+	}
+
+	struct RankedRulesWrappedLinePart
+	{
+		std::string text;
+		ImVec4 color;
+	};
+
+	struct RankedRulesWrappedLine
+	{
+		std::vector<RankedRulesWrappedLinePart> parts;
+		float width = 0.0f;
+	};
+
+	std::vector<RankedRulesWrappedLine> BuildRankedRulesWrappedLines(const std::vector<RankedRulesTextSpan>& spans, float wrapWidth)
+	{
+		std::vector<RankedRulesWrappedLine> lines;
+		RankedRulesWrappedLine currentLine{};
+		const float maxWidth = (std::max)(wrapWidth, 1.0f);
+		for (const RankedRulesTextSpan& span : spans)
+		{
+			const std::vector<std::string> tokens = SplitRankedRulesTextTokens(span.text);
+			for (const std::string& token : tokens)
+			{
+				if (token.empty())
+				{
+					continue;
+				}
+				const float tokenWidth = ImGui::CalcTextSize(token.c_str()).x;
+				if (!currentLine.parts.empty() && currentLine.width + tokenWidth > maxWidth)
+				{
+					lines.push_back(currentLine);
+					currentLine = {};
+				}
+				currentLine.parts.push_back({ token, span.color });
+				currentLine.width += tokenWidth;
+			}
+		}
+		if (!currentLine.parts.empty() || lines.empty())
+		{
+			lines.push_back(currentLine);
+		}
+		return lines;
+	}
+
+	float CalcRankedRulesWrappedSpansHeight(const std::vector<RankedRulesTextSpan>& spans, float wrapWidth)
+	{
+		const std::vector<RankedRulesWrappedLine> lines = BuildRankedRulesWrappedLines(spans, wrapWidth);
+		return static_cast<float>(lines.size()) * ImGui::GetTextLineHeight();
+	}
+
+	void DrawRankedRulesWrappedSpansEx(const std::vector<RankedRulesTextSpan>& spans, float wrapWidth, bool centerLines)
+	{
+		ImDrawList* const drawList = ImGui::GetWindowDrawList();
+		const ImVec2 start = ImGui::GetCursorScreenPos();
+		const float lineHeight = ImGui::GetTextLineHeight();
+		const std::vector<RankedRulesWrappedLine> lines = BuildRankedRulesWrappedLines(spans, wrapWidth);
+		float y = start.y;
+		for (const RankedRulesWrappedLine& line : lines)
+		{
+			float x = start.x;
+			if (centerLines && line.width < wrapWidth)
+			{
+				x += (wrapWidth - line.width) * 0.5f;
+			}
+			for (const RankedRulesWrappedLinePart& part : line.parts)
+			{
+				drawList->AddText(ImVec2(x, y), ImGui::GetColorU32(part.color), part.text.c_str());
+				x += ImGui::CalcTextSize(part.text.c_str()).x;
+			}
+			y += lineHeight;
+		}
+
+		ImGui::Dummy(ImVec2(wrapWidth, static_cast<float>(lines.size()) * lineHeight));
+	}
+
+	void DrawRankedRulesWrappedSpans(const std::vector<RankedRulesTextSpan>& spans, float wrapWidth)
+	{
+		DrawRankedRulesWrappedSpansEx(spans, wrapWidth, false);
+	}
+
+	void DrawRankedRulesCenteredCellSpans(const std::vector<RankedRulesTextSpan>& spans, float wrapWidth, float rowHeight)
+	{
+		const float textHeight = CalcRankedRulesWrappedSpansHeight(spans, wrapWidth);
+		const float cursorY = ImGui::GetCursorPosY();
+		if (rowHeight > textHeight)
+		{
+			ImGui::SetCursorPosY(cursorY + (rowHeight - textHeight) * 0.5f);
+		}
+		DrawRankedRulesWrappedSpansEx(spans, wrapWidth, true);
+	}
+
+	void DrawRankedRulesCenteredCellText(const char* text, const ImVec4& color, float cellWidth, float rowHeight)
+	{
+		const float textHeight = ImGui::GetTextLineHeight();
+		const float textWidth = ImGui::CalcTextSize(text ? text : "").x;
+		const float startY = ImGui::GetCursorPosY();
+		if (rowHeight > textHeight)
+		{
+			ImGui::SetCursorPosY(startY + (rowHeight - textHeight) * 0.5f);
+		}
+		if (cellWidth > textWidth)
+		{
+			ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (cellWidth - textWidth) * 0.5f);
+		}
+		ImGui::PushStyleColor(ImGuiCol_Text, color);
+		ImGui::TextUnformatted(text ? text : "");
+		ImGui::PopStyleColor();
+	}
+
+	bool TryGetQualifiedRankRange(
+		uint32_t selfInternalRank,
+		bool(*predicate)(uint32_t, uint32_t),
+		uint32_t* outMinInternalRank,
+		uint32_t* outMaxInternalRank)
+	{
+		bool found = false;
+		uint32_t minRank = 0u;
+		uint32_t maxRank = 0u;
+		const uint32_t knownRankCount = GetKnownRankCount();
+		for (uint32_t opponentRank = 0; opponentRank < knownRankCount; ++opponentRank)
+		{
+			if (!predicate(selfInternalRank, opponentRank))
+			{
+				continue;
+			}
+
+			if (!found)
+			{
+				minRank = opponentRank;
+				maxRank = opponentRank;
+				found = true;
+			}
+			else
+			{
+				minRank = (std::min)(minRank, opponentRank);
+				maxRank = (std::max)(maxRank, opponentRank);
+			}
+		}
+
+		if (!found)
+		{
+			return false;
+		}
+		if (outMinInternalRank)
+		{
+			*outMinInternalRank = minRank;
+		}
+		if (outMaxInternalRank)
+		{
+			*outMaxInternalRank = maxRank;
+		}
+		return true;
+	}
+
+	uint32_t GetCumulativeRankedLpForRaw(uint32_t internalRank, uint32_t rawLp)
+	{
+		uint32_t lowerBound = 0u;
+		uint32_t upperBound = 0u;
+		if (!TryGetRankedLpBounds(internalRank, &lowerBound, &upperBound, nullptr, nullptr))
+		{
+			return 0u;
+		}
+
+		const uint32_t base = GetCumulativeRankedLpBase(internalRank);
+		const uint32_t span = upperBound > lowerBound ? upperBound - lowerBound : 0u;
+		uint32_t progress = rawLp > lowerBound ? rawLp - lowerBound : 0u;
+		if (progress > span)
+		{
+			progress = span;
+		}
+		return base + progress;
+	}
+
+	std::vector<RankedRulesTextSpan> FormatRankRulesWinCellSpans(uint32_t selfInternalRank, uint32_t opponentInternalRank)
+	{
+		const int32_t lpDelta = PredictWinRawLpDelta(selfInternalRank, opponentInternalRank);
+		const int32_t promotionDelta = PredictPromotionCounterGain(selfInternalRank, opponentInternalRank);
+		int16_t demotionLimit = 0;
+		TryGetRankedLpBounds(selfInternalRank, nullptr, nullptr, nullptr, &demotionLimit);
+		std::vector<RankedRulesTextSpan> spans;
+		AppendTextSpan(spans, FormatText(L("%+d LP").c_str(), lpDelta), g_rankedOverlayTuning.predictionWinColor);
+		if (promotionDelta > 0)
+		{
+			AppendTextSpan(spans, " (", g_rankedOverlayTuning.predictionReasonColor);
+			AppendTextSpan(spans, FormatText(L("%+d Promotion Counter").c_str(), promotionDelta), g_rankedOverlayTuning.predictionReasonColor);
+			AppendTextSpan(spans, ")", g_rankedOverlayTuning.predictionReasonColor);
+		}
+		if (demotionLimit > 0 && RankedWinResetsDemotionCounter(selfInternalRank, opponentInternalRank))
+		{
+			AppendTextSpan(spans, " ", g_rankedOverlayTuning.predictionReasonColor);
+			AppendTextSpan(spans, L("(resets Demotion Counter)").c_str(), g_rankedOverlayTuning.predictionReasonColor);
+		}
+		return spans;
+	}
+
+	std::vector<RankedRulesTextSpan> FormatRankRulesLossCellSpans(uint32_t selfInternalRank, uint32_t opponentInternalRank)
+	{
+		const int32_t lpDelta = PredictLossRawLpDelta(selfInternalRank, opponentInternalRank);
+		int16_t promotionLimit = 0;
+		TryGetRankedLpBounds(selfInternalRank, nullptr, nullptr, &promotionLimit, nullptr);
+		std::vector<RankedRulesTextSpan> spans;
+		AppendTextSpan(spans, FormatText(L("%+d LP").c_str(), lpDelta), g_rankedOverlayTuning.predictionLossColor);
+		if (RankedLossAddsDemotionCounter(selfInternalRank, opponentInternalRank))
+		{
+			AppendTextSpan(spans, " (", g_rankedOverlayTuning.predictionReasonColor);
+			AppendTextSpan(spans, L("+1 Demotion Counter").c_str(), g_rankedOverlayTuning.predictionReasonColor);
+			AppendTextSpan(spans, ")", g_rankedOverlayTuning.predictionReasonColor);
+		}
+		if (promotionLimit > 0 && RankedLossResetsPromotionCounter(selfInternalRank, opponentInternalRank))
+		{
+			AppendTextSpan(spans, " ", g_rankedOverlayTuning.predictionReasonColor);
+			AppendTextSpan(spans, L("(resets Promotion Counter)").c_str(), g_rankedOverlayTuning.predictionReasonColor);
+		}
+		return spans;
+	}
+
+	bool RankRulesOpponentRankMatters(uint32_t selfInternalRank, uint32_t opponentInternalRank)
+	{
+		if (selfInternalRank < 10u)
+		{
+			return false;
+		}
+
+		int16_t promotionLimit = 0;
+		int16_t demotionLimit = 0;
+		TryGetRankedLpBounds(selfInternalRank, nullptr, nullptr, &promotionLimit, &demotionLimit);
+		const int32_t winDelta = PredictWinRawLpDelta(selfInternalRank, opponentInternalRank);
+		const int32_t lossDelta = PredictLossRawLpDelta(selfInternalRank, opponentInternalRank);
+		const int32_t lossMagnitude = lossDelta < 0 ? -lossDelta : lossDelta;
+
+		return winDelta >= 1 ||
+			lossMagnitude >= 1 ||
+			PredictPromotionCounterGain(selfInternalRank, opponentInternalRank) > 0 ||
+			(demotionLimit > 0 && RankedLossAddsDemotionCounter(selfInternalRank, opponentInternalRank)) ||
+			(demotionLimit > 0 && RankedWinResetsDemotionCounter(selfInternalRank, opponentInternalRank)) ||
+			(promotionLimit > 0 && RankedLossResetsPromotionCounter(selfInternalRank, opponentInternalRank));
+	}
+
+	struct RankedRulesLpTableRow
+	{
+		bool anyRank = false;
+		uint32_t opponentInternalRank = 0u;
+	};
+
+	std::vector<RankedRulesLpTableRow> BuildRankedRulesLpTableRows(uint32_t selfInternalRank)
+	{
+		std::vector<RankedRulesLpTableRow> rows;
+		if (selfInternalRank < 10u)
+		{
+			rows.push_back({ true, selfInternalRank });
+			return rows;
+		}
+
+		bool found = false;
+		uint32_t minRank = selfInternalRank;
+		uint32_t maxRank = selfInternalRank;
+		const uint32_t knownRankCount = GetKnownRankCount();
+		for (uint32_t opponentRank = 0u; opponentRank < knownRankCount; ++opponentRank)
+		{
+			if (!RankRulesOpponentRankMatters(selfInternalRank, opponentRank))
+			{
+				continue;
+			}
+
+			if (!found)
+			{
+				minRank = opponentRank;
+				maxRank = opponentRank;
+				found = true;
+			}
+			else
+			{
+				minRank = (std::min)(minRank, opponentRank);
+				maxRank = (std::max)(maxRank, opponentRank);
+			}
+		}
+
+		if (!found)
+		{
+			minRank = selfInternalRank;
+			maxRank = selfInternalRank;
+		}
+		for (int opponentRank = static_cast<int>(maxRank); opponentRank >= static_cast<int>(minRank); --opponentRank)
+		{
+			rows.push_back({ false, static_cast<uint32_t>(opponentRank) });
+		}
+		return rows;
+	}
+
+	std::string FormatRankRulesQualifiedRange(
+		uint32_t selfInternalRank,
+		bool(*predicate)(uint32_t, uint32_t))
+	{
+		uint32_t minRank = 0u;
+		uint32_t maxRank = 0u;
+		if (!TryGetQualifiedRankRange(selfInternalRank, predicate, &minRank, &maxRank))
+		{
+			return L("none").c_str();
+		}
+		return FormatRankRulesRange(minRank, maxRank);
+	}
+
+	bool RankHasHighRankGate(uint32_t internalRank)
+	{
+		return internalRank >= 35u;
+	}
+
+	bool TryGetRankedRuleFacts(
+		uint32_t internalRank,
+		uint32_t* lowerLp,
+		uint32_t* upperLp,
+		uint32_t* lpSpan,
+		int16_t* promotionLimit,
+		int16_t* demotionLimit)
+	{
+		uint32_t rawLower = 0u;
+		uint32_t rawUpper = 0u;
+		int16_t promotion = 0;
+		int16_t demotion = 0;
+		if (!TryGetRankedLpBounds(internalRank, &rawLower, &rawUpper, &promotion, &demotion))
+		{
+			return false;
+		}
+		const uint32_t lower = GetCumulativeRankedLpForRaw(internalRank, rawLower);
+		const uint32_t upper = GetCumulativeRankedLpForRaw(internalRank, rawUpper);
+		if (lowerLp)
+		{
+			*lowerLp = lower;
+		}
+		if (upperLp)
+		{
+			*upperLp = upper;
+		}
+		if (lpSpan)
+		{
+			*lpSpan = upper > lower ? upper - lower : 0u;
+		}
+		if (promotionLimit)
+		{
+			*promotionLimit = promotion;
+		}
+		if (demotionLimit)
+		{
+			*demotionLimit = demotion;
+		}
+		return true;
+	}
+
+	std::vector<std::vector<RankedRulesTextSpan>> BuildRankedRuleComparisonBullets(
+		uint32_t leftRank,
+		uint32_t rightRank,
+		const ImVec4& normalText,
+		const ImVec4& mutedText,
+		const ImVec4& thresholdText)
+	{
+		std::vector<std::vector<RankedRulesTextSpan>> bullets;
+		uint32_t leftLower = 0u;
+		uint32_t leftUpper = 0u;
+		uint32_t leftSpan = 0u;
+		uint32_t rightLower = 0u;
+		uint32_t rightUpper = 0u;
+		uint32_t rightSpan = 0u;
+		int16_t leftPromotion = 0;
+		int16_t leftDemotion = 0;
+		int16_t rightPromotion = 0;
+		int16_t rightDemotion = 0;
+		TryGetRankedRuleFacts(leftRank, &leftLower, &leftUpper, &leftSpan, &leftPromotion, &leftDemotion);
+		TryGetRankedRuleFacts(rightRank, &rightLower, &rightUpper, &rightSpan, &rightPromotion, &rightDemotion);
+
+		const auto appendRangeSpans = [&](std::vector<RankedRulesTextSpan>& spans, uint32_t rank, bool(*predicate)(uint32_t, uint32_t))
+		{
+			uint32_t minRank = 0u;
+			uint32_t maxRank = 0u;
+			if (!TryGetQualifiedRankRange(rank, predicate, &minRank, &maxRank))
+			{
+				AppendTextSpan(spans, L("none").c_str(), mutedText);
+				return;
+			}
+			AppendRankNameSpan(spans, minRank);
+			if (minRank != maxRank)
+			{
+				AppendTextSpan(spans, std::string(" ") + L("to") + " ", normalText);
+				AppendRankNameSpan(spans, maxRank);
+			}
+		};
+
+		if (leftLower != rightLower || leftUpper != rightUpper || leftSpan != rightSpan)
+		{
+			std::vector<RankedRulesTextSpan> spans;
+			AppendRankNameSpan(spans, leftRank);
+			AppendTextSpan(spans, std::string(" ") + L("LP range is").c_str() + " ", normalText);
+			AppendTextSpan(spans, FormatText("%u-%u LP", leftLower, leftUpper), thresholdText);
+			AppendTextSpan(spans, FormatText(" (%u LP). ", leftSpan), mutedText);
+			AppendRankNameSpan(spans, rightRank);
+			AppendTextSpan(spans, std::string(" ") + L("LP range is").c_str() + " ", normalText);
+			AppendTextSpan(spans, FormatText("%u-%u LP", rightLower, rightUpper), thresholdText);
+			AppendTextSpan(spans, FormatText(" (%u LP). ", rightSpan), mutedText);
+			if (leftSpan != rightSpan)
+			{
+				const uint32_t bigger = leftSpan > rightSpan ? leftSpan - rightSpan : rightSpan - leftSpan;
+				const uint32_t biggerRank = leftSpan > rightSpan ? leftRank : rightRank;
+				AppendRankNameSpan(spans, biggerRank);
+				AppendTextSpan(spans, " " + FormatText(L("has a bigger LP range by %u LP.").c_str(), bigger), normalText);
+			}
+			bullets.push_back(spans);
+		}
+
+		const bool leftGate = RankHasHighRankGate(leftRank);
+		const bool rightGate = RankHasHighRankGate(rightRank);
+		if (leftGate != rightGate)
+		{
+			std::vector<RankedRulesTextSpan> spans;
+			const uint32_t gateRank = leftGate ? leftRank : rightRank;
+			const uint32_t nonGateRank = leftGate ? rightRank : leftRank;
+			AppendRankNameSpan(spans, gateRank);
+			AppendTextSpan(spans, std::string(" ") + L("can fill its LP bar against lower ranks, but can only rank up by beating its own rank or higher.") + " ", normalText);
+			AppendRankNameSpan(spans, nonGateRank);
+			AppendTextSpan(spans, std::string(" ") + L("does not have this rule."), normalText);
+			bullets.push_back(spans);
+		}
+
+		if ((leftPromotion > 0) != (rightPromotion > 0) || leftPromotion != rightPromotion)
+		{
+			std::vector<RankedRulesTextSpan> spans;
+			AppendRankNameSpan(spans, leftRank);
+			AppendTextSpan(spans, std::string(" ") + L("promotion counter").c_str() + " ", normalText);
+			AppendTextSpan(spans, leftPromotion > 0 ? FormatText(L("is enabled at %d points").c_str(), static_cast<int>(leftPromotion)) : L("is disabled").c_str(), mutedText);
+			AppendTextSpan(spans, ". ", normalText);
+			AppendRankNameSpan(spans, rightRank);
+			AppendTextSpan(spans, std::string(" ") + L("promotion counter").c_str() + " ", normalText);
+			AppendTextSpan(spans, rightPromotion > 0 ? FormatText(L("is enabled at %d points").c_str(), static_cast<int>(rightPromotion)) : L("is disabled").c_str(), mutedText);
+			AppendTextSpan(spans, ".", normalText);
+			bullets.push_back(spans);
+		}
+
+		if (leftPromotion > 0 && rightPromotion > 0)
+		{
+			const std::string leftPromotionRange = FormatRankRulesQualifiedRange(leftRank, RankedWinCanTriggerPromotionCounter);
+			const std::string rightPromotionRange = FormatRankRulesQualifiedRange(rightRank, RankedWinCanTriggerPromotionCounter);
+			if (leftPromotionRange != rightPromotionRange)
+			{
+				std::vector<RankedRulesTextSpan> spans;
+				AppendRankNameSpan(spans, leftRank);
+				AppendTextSpan(spans, std::string(" ") + L("promotion counter gain applies against").c_str() + " ", normalText);
+				appendRangeSpans(spans, leftRank, RankedWinCanTriggerPromotionCounter);
+				AppendTextSpan(spans, ". ", normalText);
+				AppendRankNameSpan(spans, rightRank);
+				AppendTextSpan(spans, std::string(" ") + L("promotion counter gain applies against").c_str() + " ", normalText);
+				appendRangeSpans(spans, rightRank, RankedWinCanTriggerPromotionCounter);
+				AppendTextSpan(spans, ".", normalText);
+				bullets.push_back(spans);
+			}
+
+			const std::string leftPromotionResetRange = FormatRankRulesQualifiedRange(leftRank, RankedLossResetsPromotionCounter);
+			const std::string rightPromotionResetRange = FormatRankRulesQualifiedRange(rightRank, RankedLossResetsPromotionCounter);
+			if (leftPromotionResetRange != rightPromotionResetRange)
+			{
+				std::vector<RankedRulesTextSpan> spans;
+				AppendRankNameSpan(spans, leftRank);
+				AppendTextSpan(spans, std::string(" ") + L("resets promotion points by losing to").c_str() + " ", normalText);
+				appendRangeSpans(spans, leftRank, RankedLossResetsPromotionCounter);
+				AppendTextSpan(spans, ". ", normalText);
+				AppendRankNameSpan(spans, rightRank);
+				AppendTextSpan(spans, std::string(" ") + L("resets promotion points by losing to").c_str() + " ", normalText);
+				appendRangeSpans(spans, rightRank, RankedLossResetsPromotionCounter);
+				AppendTextSpan(spans, ".", normalText);
+				bullets.push_back(spans);
+			}
+		}
+
+		if ((leftDemotion > 0) != (rightDemotion > 0) || leftDemotion != rightDemotion)
+		{
+			std::vector<RankedRulesTextSpan> spans;
+			AppendRankNameSpan(spans, leftRank);
+			AppendTextSpan(spans, std::string(" ") + L("demotion counter").c_str() + " ", normalText);
+			AppendTextSpan(spans, leftDemotion > 0 ? FormatText(L("is enabled at %d strikes").c_str(), static_cast<int>(leftDemotion)) : L("is disabled").c_str(), mutedText);
+			AppendTextSpan(spans, ". ", normalText);
+			AppendRankNameSpan(spans, rightRank);
+			AppendTextSpan(spans, std::string(" ") + L("demotion counter").c_str() + " ", normalText);
+			AppendTextSpan(spans, rightDemotion > 0 ? FormatText(L("is enabled at %d strikes").c_str(), static_cast<int>(rightDemotion)) : L("is disabled").c_str(), mutedText);
+			AppendTextSpan(spans, ".", normalText);
+			bullets.push_back(spans);
+		}
+
+		if (leftDemotion > 0 && rightDemotion > 0)
+		{
+			const std::string leftDemotionRange = FormatRankRulesQualifiedRange(leftRank, RankedLossAddsDemotionCounter);
+			const std::string rightDemotionRange = FormatRankRulesQualifiedRange(rightRank, RankedLossAddsDemotionCounter);
+			if (leftDemotionRange != rightDemotionRange)
+			{
+				std::vector<RankedRulesTextSpan> spans;
+				AppendRankNameSpan(spans, leftRank);
+				AppendTextSpan(spans, std::string(" ") + L("adds demotion strikes when losing to").c_str() + " ", normalText);
+				appendRangeSpans(spans, leftRank, RankedLossAddsDemotionCounter);
+				AppendTextSpan(spans, ". ", normalText);
+				AppendRankNameSpan(spans, rightRank);
+				AppendTextSpan(spans, std::string(" ") + L("adds demotion strikes when losing to").c_str() + " ", normalText);
+				appendRangeSpans(spans, rightRank, RankedLossAddsDemotionCounter);
+				AppendTextSpan(spans, ".", normalText);
+				bullets.push_back(spans);
+			}
+
+			const std::string leftDemotionResetRange = FormatRankRulesQualifiedRange(leftRank, RankedWinResetsDemotionCounter);
+			const std::string rightDemotionResetRange = FormatRankRulesQualifiedRange(rightRank, RankedWinResetsDemotionCounter);
+			if (leftDemotionResetRange != rightDemotionResetRange)
+			{
+				std::vector<RankedRulesTextSpan> spans;
+				AppendRankNameSpan(spans, leftRank);
+				AppendTextSpan(spans, std::string(" ") + L("resets demotion strikes by winning against").c_str() + " ", normalText);
+				appendRangeSpans(spans, leftRank, RankedWinResetsDemotionCounter);
+				AppendTextSpan(spans, ". ", normalText);
+				AppendRankNameSpan(spans, rightRank);
+				AppendTextSpan(spans, std::string(" ") + L("resets demotion strikes by winning against").c_str() + " ", normalText);
+				appendRangeSpans(spans, rightRank, RankedWinResetsDemotionCounter);
+				AppendTextSpan(spans, ".", normalText);
+				bullets.push_back(spans);
+			}
+		}
+
+		if (bullets.empty())
+		{
+			std::vector<RankedRulesTextSpan> spans;
+			AppendTextSpan(spans, L("No rule differences were detected for these ranks.").c_str(), mutedText);
+			bullets.push_back(spans);
+		}
+		return bullets;
+	}
+
+	void DrawRankRulesBulletSpans(const std::vector<RankedRulesTextSpan>& spans);
+
+	void DrawRankRulesBullet(const std::string& text, const ImVec4& color)
+	{
+		ImGui::Bullet();
+		ImGui::SameLine();
+		ImGui::PushStyleColor(ImGuiCol_Text, color);
+		ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x);
+		ImGui::TextUnformatted(text.c_str());
+		ImGui::PopTextWrapPos();
+		ImGui::PopStyleColor();
+	}
+
+	void DrawRankRulesBulletSpans(const std::vector<RankedRulesTextSpan>& spans)
+	{
+		ImGui::Bullet();
+		ImGui::SameLine();
+		DrawRankedRulesWrappedSpans(spans, ImGui::GetContentRegionAvail().x);
+	}
+
+	void OpenRankedRulesDialogForRank(uint32_t internalRank)
+	{
+		g_rankedRulesDialog.selectedInternalRank = ClampKnownInternalRank(internalRank);
+		g_rankedRulesDialog.openRequested = true;
+	}
+
+	void DrawRankedRuleComparisonDialog()
+	{
+		if (g_rankedRulesDialog.compareDialogOpenRequested)
+		{
+			ImGui::OpenPopup(L("Rank comparison###RankedRulesComparison").c_str());
+			g_rankedRulesDialog.compareDialogOpenRequested = false;
+		}
+
+		CenterNextRankedRulesPopup();
+		ImGui::SetNextWindowSize(ImVec2(720.0f, 560.0f), ImGuiCond_Appearing);
+		bool comparisonOpen = true;
+		if (!ImGui::BeginPopupModal(L("Rank comparison###RankedRulesComparison").c_str(), &comparisonOpen, ImGuiWindowFlags_NoCollapse))
+		{
+			return;
+		}
+		if (!comparisonOpen)
+		{
+			ImGui::EndPopup();
+			return;
+		}
+
+		const uint32_t leftRank = ClampKnownInternalRank(g_rankedRulesDialog.selectedInternalRank);
+		const uint32_t rightRank = ClampKnownInternalRank(g_rankedRulesDialog.compareInternalRank);
+		const std::string leftName = FormatRankRulesRankName(leftRank);
+		const std::string rightName = FormatRankRulesRankName(rightRank);
+		const ImVec4 leftColor = GetVisibleRankColor(InternalRankToVisibleRank(leftRank, false), false);
+		const ImVec4 rightColor = GetVisibleRankColor(InternalRankToVisibleRank(rightRank, false), false);
+		ImDrawList* const drawList = ImGui::GetWindowDrawList();
+
+		std::vector<RankedRulesTextSpan> titleSpans;
+		AppendTextSpan(titleSpans, leftName, leftColor);
+		AppendTextSpan(titleSpans, std::string(" ") + L("vs") + " ", ImGui::GetStyleColorVec4(ImGuiCol_Text));
+		AppendTextSpan(titleSpans, rightName, rightColor);
+		DrawRankedRulesWrappedSpansEx(titleSpans, ImGui::GetContentRegionAvail().x, true);
+		ImGui::Separator();
+
+		ImGui::BeginChild("ranked_rules_comparison_scroll", ImVec2(0.0f, 0.0f), false);
+		const ImVec4 normalText = ImGui::GetStyleColorVec4(ImGuiCol_Text);
+		const ImVec4 mutedText = g_rankedOverlayTuning.predictionReasonColor;
+		const ImVec4 thresholdText = GetRankedThresholdColor();
+		const std::vector<std::vector<RankedRulesTextSpan>> bullets =
+			BuildRankedRuleComparisonBullets(leftRank, rightRank, normalText, mutedText, thresholdText);
+		DrawBoldText(drawList, ImGui::GetCursorScreenPos(), ImGui::GetColorU32(leftColor), L("Detected differences").c_str());
+		ImGui::Dummy(ImVec2(ImGui::CalcTextSize(L("Detected differences").c_str()).x, ImGui::GetTextLineHeight()));
+		for (const std::vector<RankedRulesTextSpan>& bullet : bullets)
+		{
+			DrawRankRulesBulletSpans(bullet);
+		}
+		ImGui::EndChild();
+		ImGui::EndPopup();
+	}
+
+	void DrawRankedRulesCompareSelectorDialog()
+	{
+		if (g_rankedRulesDialog.compareSelectorOpenRequested)
+		{
+			ImGui::OpenPopup(L("Compare this with another rank###RankedRulesCompareSelector").c_str());
+			g_rankedRulesDialog.compareSelectorOpenRequested = false;
+		}
+
+		CenterNextRankedRulesPopup();
+		ImGui::SetNextWindowSize(ImVec2(420.0f, 180.0f), ImGuiCond_Appearing);
+		bool selectorOpen = true;
+		if (!ImGui::BeginPopupModal(L("Compare this with another rank###RankedRulesCompareSelector").c_str(), &selectorOpen, ImGuiWindowFlags_AlwaysAutoResize))
+		{
+			return;
+		}
+		if (!selectorOpen)
+		{
+			ImGui::EndPopup();
+			return;
+		}
+
+		const std::string selectedLabel = FormatRankRulesRankName(g_rankedRulesDialog.compareInternalRank);
+		const ImVec4 selectedRankColor = GetVisibleRankColor(InternalRankToVisibleRank(g_rankedRulesDialog.compareInternalRank, false), false);
+		ImGui::PushStyleColor(ImGuiCol_Text, selectedRankColor);
+		if (ImGui::BeginCombo(L("Rank").c_str(), selectedLabel.c_str()))
+		{
+			ImGui::PopStyleColor();
+			const uint32_t knownRankCount = GetKnownRankCount();
+			for (uint32_t rank = 0; rank < knownRankCount; ++rank)
+			{
+				const std::string rankLabel = FormatRankRulesRankName(rank);
+				const bool selected = rank == g_rankedRulesDialog.compareInternalRank;
+				const ImVec4 rankColor = GetVisibleRankColor(InternalRankToVisibleRank(rank, false), false);
+				ImGui::PushStyleColor(ImGuiCol_Text, rankColor);
+				if (ImGui::Selectable(rankLabel.c_str(), selected))
+				{
+					g_rankedRulesDialog.compareInternalRank = rank;
+					g_rankedRulesDialog.compareDialogOpenRequested = true;
+					ImGui::CloseCurrentPopup();
+				}
+				ImGui::PopStyleColor();
+				if (selected)
+				{
+					ImGui::SetItemDefaultFocus();
+				}
+			}
+			ImGui::EndCombo();
+		}
+		else
+		{
+			ImGui::PopStyleColor();
+		}
+
+		ImGui::EndPopup();
+	}
+
+	void DrawRankedRulesSelectorDialog()
+	{
+		if (g_rankedRulesDialog.selectorOpenRequested)
+		{
+			const char* selectorTitle = g_rankedRulesDialog.selectorOpenedFromMainMenu
+				? L("Check a rank's rules###RankedRulesSelector").c_str()
+				: L("Check another rank's rules###RankedRulesSelector").c_str();
+			ImGui::OpenPopup(selectorTitle);
+			g_rankedRulesDialog.selectorOpenRequested = false;
+		}
+
+		const char* selectorTitle = g_rankedRulesDialog.selectorOpenedFromMainMenu
+			? L("Check a rank's rules###RankedRulesSelector").c_str()
+			: L("Check another rank's rules###RankedRulesSelector").c_str();
+		CenterNextRankedRulesPopup();
+		ImGui::SetNextWindowSize(ImVec2(420.0f, 180.0f), ImGuiCond_Appearing);
+		bool selectorOpen = true;
+		if (!ImGui::BeginPopupModal(selectorTitle, &selectorOpen, ImGuiWindowFlags_AlwaysAutoResize))
+		{
+			return;
+		}
+		if (!selectorOpen)
+		{
+			ImGui::EndPopup();
+			return;
+		}
+
+		const std::string selectedLabel = FormatRankRulesRankName(g_rankedRulesDialog.selectedInternalRank);
+		const ImVec4 selectedRankColor = GetVisibleRankColor(InternalRankToVisibleRank(g_rankedRulesDialog.selectedInternalRank, false), false);
+		bool closeSelectorAfterSelection = false;
+		ImGui::PushStyleColor(ImGuiCol_Text, selectedRankColor);
+		if (ImGui::BeginCombo(L("Rank").c_str(), selectedLabel.c_str()))
+		{
+			ImGui::PopStyleColor();
+			const uint32_t knownRankCount = GetKnownRankCount();
+			for (uint32_t rank = 0; rank < knownRankCount; ++rank)
+			{
+				const std::string rankLabel = FormatRankRulesRankName(rank);
+				const bool selected = rank == g_rankedRulesDialog.selectedInternalRank;
+				const ImVec4 rankColor = GetVisibleRankColor(InternalRankToVisibleRank(rank, false), false);
+				ImGui::PushStyleColor(ImGuiCol_Text, rankColor);
+				if (ImGui::Selectable(rankLabel.c_str(), selected))
+				{
+					g_rankedRulesDialog.selectedInternalRank = rank;
+					if (g_rankedRulesDialog.selectorOpenedFromMainMenu)
+					{
+						g_rankedRulesDialog.openRequested = true;
+					}
+					closeSelectorAfterSelection = true;
+				}
+				ImGui::PopStyleColor();
+				if (selected)
+				{
+					ImGui::SetItemDefaultFocus();
+				}
+			}
+			ImGui::EndCombo();
+		}
+		else
+		{
+			ImGui::PopStyleColor();
+		}
+		if (closeSelectorAfterSelection)
+		{
+			ImGui::CloseCurrentPopup();
+		}
+
+		ImGui::EndPopup();
+	}
+
+	void DrawRankedRulesDialog()
+	{
+		if (g_rankedRulesDialog.openRequested)
+		{
+			ImGui::OpenPopup(L("How does my rank work?###RankedRulesDialog").c_str());
+			g_rankedRulesDialog.openRequested = false;
+			g_rankedRulesDialog.selectorOpenedFromMainMenu = false;
+		}
+
+		CenterNextRankedRulesPopup();
+		ImGui::SetNextWindowSize(ImVec2(780.0f, 690.0f), ImGuiCond_Appearing);
+		bool dialogOpen = true;
+		if (!ImGui::BeginPopupModal(L("How does my rank work?###RankedRulesDialog").c_str(), &dialogOpen, ImGuiWindowFlags_NoCollapse))
+		{
+			DrawRankedRulesSelectorDialog();
+			DrawRankedRulesCompareSelectorDialog();
+			DrawRankedRuleComparisonDialog();
+			return;
+		}
+		if (!dialogOpen)
+		{
+			ImGui::EndPopup();
+			DrawRankedRulesSelectorDialog();
+			DrawRankedRulesCompareSelectorDialog();
+			DrawRankedRuleComparisonDialog();
+			return;
+		}
+
+		const uint32_t selfInternalRank = ClampKnownInternalRank(g_rankedRulesDialog.selectedInternalRank);
+		const uint32_t visibleRank = InternalRankToVisibleRank(selfInternalRank, false);
+		const std::string rankName = FormatVisibleRankLabel(visibleRank, false);
+		const std::string bucketSubtitle = FormatRankRulesBucketSubtitle(selfInternalRank);
+		uint32_t rawLower = 0u;
+		uint32_t rawUpper = 0u;
+		int16_t promotionLimit = 0;
+		int16_t demotionLimit = 0;
+		TryGetRankedLpBounds(selfInternalRank, &rawLower, &rawUpper, &promotionLimit, &demotionLimit);
+
+		ImDrawList* const drawList = ImGui::GetWindowDrawList();
+		const ImVec4 rankColor = GetVisibleRankColor(visibleRank, false);
+		DrawCenteredBoldText(drawList, rankName.c_str(), ImGui::GetColorU32(rankColor), ImGui::GetContentRegionAvail().x);
+		if (!bucketSubtitle.empty())
+		{
+			ImGui::SetCursorPosX(ImGui::GetCursorPosX() + CenteredTextOffsetX(ImGui::GetContentRegionAvail().x, bucketSubtitle.c_str()));
+			ImGui::PushStyleColor(ImGuiCol_Text, g_rankedOverlayTuning.predictionReasonColor);
+			ImGui::TextUnformatted(bucketSubtitle.c_str());
+			ImGui::PopStyleColor();
+		}
+		ImGui::Separator();
+
+		ImGui::BeginChild("ranked_rules_scroll", ImVec2(0.0f, 0.0f), false);
+		const ImVec4 normalText = ImGui::GetStyleColorVec4(ImGuiCol_Text);
+		const ImVec4 mutedText = g_rankedOverlayTuning.predictionReasonColor;
+		const ImVec4 thresholdText = GetRankedThresholdColor();
+		const std::string nextRankName = selfInternalRank + 1u < GetKnownRankCount()
+			? FormatRankRulesRankName(selfInternalRank + 1u)
+			: std::string();
+		const std::string previousRankName = selfInternalRank > 0u
+			? FormatRankRulesRankName(selfInternalRank - 1u)
+			: std::string();
+
+		ImGui::PushStyleColor(ImGuiCol_Text, rankColor);
+		DrawBoldText(drawList, ImGui::GetCursorScreenPos(), ImGui::GetColorU32(rankColor), L("Your rank rules").c_str());
+		ImGui::Dummy(ImVec2(ImGui::CalcTextSize(L("Your rank rules").c_str()).x, ImGui::GetTextLineHeight()));
+		ImGui::PopStyleColor();
+
+		if (!nextRankName.empty())
+		{
+			std::vector<RankedRulesTextSpan> spans;
+			AppendTextSpan(spans, std::string(L("If you get above")) + " ", normalText);
+			AppendTextSpan(spans, FormatText("%u LP", GetCumulativeRankedLpForRaw(selfInternalRank, rawUpper)), thresholdText);
+			AppendTextSpan(spans, std::string(L(", you'll rank up to")) + " ", normalText);
+			AppendRankNameSpan(spans, selfInternalRank + 1u);
+			AppendTextSpan(spans, ".", normalText);
+			DrawRankRulesBulletSpans(spans);
+			if (selfInternalRank >= 35u)
+			{
+				std::vector<RankedRulesTextSpan> gateSpans;
+				AppendTextSpan(gateSpans, std::string(L("At this rank, a win against a lower rank can fill the LP bar, but the rank-up only happens when you beat")) + " ", mutedText);
+				AppendRankNameSpan(gateSpans, selfInternalRank);
+				AppendTextSpan(gateSpans, std::string(" ") + L("or higher."), mutedText);
+				DrawRankRulesBulletSpans(gateSpans);
+			}
+		}
+		else
+		{
+			DrawRankRulesBullet(L("This is the highest rank covered by the current known rules.").c_str(), normalText);
+		}
+
+		if (selfInternalRank > 19u && !previousRankName.empty())
+		{
+			std::vector<RankedRulesTextSpan> spans;
+			AppendTextSpan(spans, std::string(L("If you get below")) + " ", normalText);
+			AppendTextSpan(spans, FormatText("%u LP", GetCumulativeRankedLpForRaw(selfInternalRank, rawLower)), thresholdText);
+			AppendTextSpan(spans, std::string(L(", you'll rank down to")) + " ", normalText);
+			AppendRankNameSpan(spans, selfInternalRank - 1u);
+			AppendTextSpan(spans, ".", normalText);
+			DrawRankRulesBulletSpans(spans);
+		}
+		else
+		{
+			DrawRankRulesBullet(L("LP losses do not directly rank you down in this rank.").c_str(), mutedText);
+		}
+
+		uint32_t demotionMin = 0u;
+		uint32_t demotionMax = 0u;
+		if (demotionLimit > 0 &&
+			TryGetQualifiedRankRange(selfInternalRank, RankedLossAddsDemotionCounter, &demotionMin, &demotionMax) &&
+			!previousRankName.empty())
+		{
+			std::vector<RankedRulesTextSpan> spans;
+			AppendTextSpan(spans, std::string(L("If you lose against anyone that is from")) + " ", normalText);
+			AppendRankRangeSpans(spans, demotionMin, demotionMax, normalText);
+			AppendTextSpan(spans, std::string(L(", you'll get")) + " ", normalText);
+			AppendTextSpan(spans, L("+1 Demotion Counter").c_str(), mutedText);
+			AppendTextSpan(spans, std::string(L(". At")) + " ", normalText);
+			AppendTextSpan(spans, FormatText("%d", static_cast<int>(demotionLimit)), mutedText);
+			AppendTextSpan(spans, std::string(L(", you'll rank down to")) + " ", normalText);
+			AppendRankNameSpan(spans, selfInternalRank - 1u);
+			AppendTextSpan(spans, ".", normalText);
+			DrawRankRulesBulletSpans(spans);
+
+			uint32_t demotionResetMin = 0u;
+			uint32_t demotionResetMax = 0u;
+			if (TryGetQualifiedRankRange(selfInternalRank, RankedWinResetsDemotionCounter, &demotionResetMin, &demotionResetMax))
+			{
+				std::vector<RankedRulesTextSpan> resetSpans;
+				AppendTextSpan(resetSpans, std::string(L("Your")) + " ", normalText);
+				AppendTextSpan(resetSpans, L("Demotion Counter").c_str(), mutedText);
+				AppendTextSpan(resetSpans, std::string(" ") + L("resets by winning a ranked match against anyone that is from") + " ", normalText);
+				AppendRankRangeSpans(resetSpans, demotionResetMin, demotionResetMax, normalText);
+				AppendTextSpan(resetSpans, ".", normalText);
+				DrawRankRulesBulletSpans(resetSpans);
+			}
+		}
+		else
+		{
+			DrawRankRulesBullet(L("This rank does not use a demotion counter.").c_str(), mutedText);
+		}
+
+		uint32_t promotionMin = 0u;
+		uint32_t promotionMax = 0u;
+		if (promotionLimit > 0 &&
+			TryGetQualifiedRankRange(selfInternalRank, RankedWinCanTriggerPromotionCounter, &promotionMin, &promotionMax) &&
+			!nextRankName.empty())
+		{
+			std::vector<RankedRulesTextSpan> spans;
+			AppendTextSpan(spans, std::string(L("If you win against anyone that is from")) + " ", normalText);
+			AppendRankRangeSpans(spans, promotionMin, promotionMax, normalText);
+			AppendTextSpan(spans, std::string(L(", you'll add points to your")) + " ", normalText);
+			AppendTextSpan(spans, L("Promotion Counter").c_str(), mutedText);
+			AppendTextSpan(spans, std::string(L(". At")) + " ", normalText);
+			AppendTextSpan(spans, FormatText("%d Promotion Points", static_cast<int>(promotionLimit)), mutedText);
+			AppendTextSpan(spans, std::string(L(", you'll rank up to")) + " ", normalText);
+			AppendRankNameSpan(spans, selfInternalRank + 1u);
+			AppendTextSpan(spans, ".", normalText);
+			DrawRankRulesBulletSpans(spans);
+
+			uint32_t promotionResetMin = 0u;
+			uint32_t promotionResetMax = 0u;
+			if (TryGetQualifiedRankRange(selfInternalRank, RankedLossResetsPromotionCounter, &promotionResetMin, &promotionResetMax))
+			{
+				std::vector<RankedRulesTextSpan> resetSpans;
+				AppendTextSpan(resetSpans, std::string(L("Your")) + " ", normalText);
+				AppendTextSpan(resetSpans, L("Promotion Counter").c_str(), mutedText);
+				AppendTextSpan(resetSpans, std::string(" ") + L("resets by losing against anyone that is from") + " ", normalText);
+				AppendRankRangeSpans(resetSpans, promotionResetMin, promotionResetMax, normalText);
+				AppendTextSpan(resetSpans, ".", normalText);
+				DrawRankRulesBulletSpans(resetSpans);
+			}
+		}
+		else
+		{
+			DrawRankRulesBullet(L("This rank does not use a promotion counter.").c_str(), mutedText);
+		}
+
+		ImGui::Spacing();
+		ImGui::Separator();
+		ImGui::Spacing();
+		DrawBoldText(drawList, ImGui::GetCursorScreenPos(), ImGui::GetColorU32(rankColor), L("LP table").c_str());
+		ImGui::Dummy(ImVec2(ImGui::CalcTextSize(L("LP table").c_str()).x, ImGui::GetTextLineHeight()));
+		ImGui::TextWrapped("%s", L("This table shows what the game predicts from one match at this rank. Counter notes only appear when that counter can move.").c_str());
+
+		const std::vector<RankedRulesLpTableRow> lpTableRows = BuildRankedRulesLpTableRows(selfInternalRank);
+		const float tableWidth = ImGui::GetContentRegionAvail().x;
+		const float opponentColumnWidth = (std::min)((std::max)(tableWidth * 0.28f, 120.0f), tableWidth * 0.40f);
+		const float outcomeColumnWidth = (std::max)((tableWidth - opponentColumnWidth) * 0.5f, 1.0f);
+		ImGui::Columns(3, "ranked_rules_lp_columns", false);
+		ImGui::SetColumnWidth(0, opponentColumnWidth);
+		ImGui::SetColumnWidth(1, outcomeColumnWidth);
+		ImGui::SetColumnWidth(2, outcomeColumnWidth);
+		{
+			const float itemSpacingX = ImGui::GetStyle().ItemSpacing.x;
+			const float headerOpponentCellWidth = opponentColumnWidth - itemSpacingX;
+			const float headerOutcomeCellWidth = outcomeColumnWidth - itemSpacingX;
+			const float headerRowHeight = ImGui::GetTextLineHeight() + 8.0f;
+			const float headerStartY = ImGui::GetCursorPosY();
+			DrawRankedRulesCenteredCellText(L("Opponent Rank").c_str(), normalText, headerOpponentCellWidth, headerRowHeight);
+			ImGui::SetCursorPosY(headerStartY);
+			ImGui::NextColumn();
+			DrawRankedRulesCenteredCellText(L("Win").c_str(), g_rankedOverlayTuning.predictionWinColor, headerOutcomeCellWidth, headerRowHeight);
+			ImGui::SetCursorPosY(headerStartY);
+			ImGui::NextColumn();
+			DrawRankedRulesCenteredCellText(L("Loss").c_str(), g_rankedOverlayTuning.predictionLossColor, headerOutcomeCellWidth, headerRowHeight);
+			ImGui::SetCursorPosY(headerStartY + headerRowHeight);
+			ImGui::NextColumn();
+		}
+		ImGui::Separator();
+		for (const RankedRulesLpTableRow& row : lpTableRows)
+		{
+			const uint32_t opponentRank = row.opponentInternalRank;
+			const bool currentRankRow = !row.anyRank && opponentRank == selfInternalRank;
+			const float rowTop = ImGui::GetCursorScreenPos().y - 2.0f;
+			const float rowStartCursorY = ImGui::GetCursorPosY();
+			const float opponentCellWidth = ImGui::GetColumnWidth() - ImGui::GetStyle().ItemSpacing.x;
+			const float winCellWidth = outcomeColumnWidth - ImGui::GetStyle().ItemSpacing.x;
+			const float lossCellWidth = outcomeColumnWidth - ImGui::GetStyle().ItemSpacing.x;
+			const std::vector<RankedRulesTextSpan> winSpans = FormatRankRulesWinCellSpans(selfInternalRank, opponentRank);
+			const std::vector<RankedRulesTextSpan> lossSpans = FormatRankRulesLossCellSpans(selfInternalRank, opponentRank);
+			const float rowHeight = (std::max)(
+				ImGui::GetTextLineHeight(),
+				(std::max)(
+					CalcRankedRulesWrappedSpansHeight(winSpans, winCellWidth),
+					CalcRankedRulesWrappedSpansHeight(lossSpans, lossCellWidth))) + 8.0f;
+			if (row.anyRank)
+			{
+				DrawRankedRulesCenteredCellText(
+					L("ANY RANK").c_str(),
+					g_rankedOverlayTuning.predictionReasonColor,
+					opponentCellWidth,
+					rowHeight);
+			}
+			else
+			{
+				const ImVec4 opponentRankColor = GetVisibleRankColor(InternalRankToVisibleRank(opponentRank, false), false);
+				DrawRankedRulesCenteredCellText(
+					FormatRankRulesRankName(opponentRank).c_str(),
+					opponentRankColor,
+					opponentCellWidth,
+					rowHeight);
+			}
+			ImGui::SetCursorPosY(rowStartCursorY);
+			ImGui::NextColumn();
+			DrawRankedRulesCenteredCellSpans(winSpans, winCellWidth, rowHeight);
+			ImGui::SetCursorPosY(rowStartCursorY);
+			ImGui::NextColumn();
+			DrawRankedRulesCenteredCellSpans(lossSpans, lossCellWidth, rowHeight);
+			ImGui::SetCursorPosY(rowStartCursorY + rowHeight);
+			ImGui::NextColumn();
+			if (currentRankRow)
+			{
+				const float rowBottom = rowTop + rowHeight + 1.0f;
+				const float rowLeft = ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMin().x;
+				const float rowRight = ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x;
+				drawList->AddRect(
+					ImVec2(rowLeft, rowTop),
+					ImVec2(rowRight, rowBottom),
+					ImGui::GetColorU32(rankColor),
+					2.0f,
+					0,
+					1.5f);
+			}
+		}
+		ImGui::Columns(1);
+
+		ImGui::Spacing();
+		ImGui::Separator();
+		std::vector<RankedRulesTextSpan> reminderSpans;
+		AppendTextSpan(reminderSpans, std::string(L("Remember that not every rank works exactly like this. These are only the rules for")) + " ", normalText);
+		AppendRankNameSpan(reminderSpans, selfInternalRank);
+		AppendTextSpan(reminderSpans, ".", normalText);
+		DrawRankedRulesWrappedSpans(reminderSpans, ImGui::GetContentRegionAvail().x);
+		if (ImGui::Button(L("Check another rank's rules").c_str()))
+		{
+			g_rankedRulesDialog.selectorOpenRequested = true;
+			g_rankedRulesDialog.selectorOpenedFromMainMenu = false;
+		}
+		ImGui::SameLine();
+		if (ImGui::Button(L("Compare this with another rank").c_str()))
+		{
+			g_rankedRulesDialog.compareInternalRank = selfInternalRank + 1u < GetKnownRankCount()
+				? selfInternalRank + 1u
+				: (selfInternalRank > 0u ? selfInternalRank - 1u : selfInternalRank);
+			g_rankedRulesDialog.compareSelectorOpenRequested = true;
+		}
+
+		ImGui::EndChild();
+
+		DrawRankedRulesSelectorDialog();
+		DrawRankedRulesCompareSelectorDialog();
+		DrawRankedRuleComparisonDialog();
+		ImGui::EndPopup();
 	}
 
 	const char* GetRankLeaderboardCode(uint32_t characterId)
@@ -1561,6 +2851,8 @@ namespace
 	RankedDistributionSearch g_rankedDistributionSearch{};
 	RankedOpponentLookup g_rankedOpponentLookup{};
 
+	void DrawRankedRulesDialog();
+
 	void DrawRankedLadderWindow()
 	{
 		if (!g_showRankedLadderWindow)
@@ -1590,25 +2882,25 @@ namespace
 			if (distStatus == RankedDistributionSearch::Status::Searching)
 			{
 				char probeInfo[64] = {};
-				std::snprintf(probeInfo, sizeof(probeInfo), "Scanning... %d probes fired",
+				std::snprintf(probeInfo, sizeof(probeInfo), L("Scanning... %d probes fired").c_str(),
 					g_rankedDistributionSearch.GetProbesFired());
 				ImGui::TextUnformatted(probeInfo);
 			}
 			else if (distStatus == RankedDistributionSearch::Status::Complete)
 			{
 				char totalInfo[64] = {};
-				std::snprintf(totalInfo, sizeof(totalInfo), "Total ranked players: %u  |  Samples: %u",
+				std::snprintf(totalInfo, sizeof(totalInfo), L("Total ranked players: %u  |  Samples: %u").c_str(),
 					g_rankedDistributionSearch.GetTotalPopulation(),
 					static_cast<unsigned int>(g_rankedDistributionSearch.GetProbeEntries().size()));
 				ImGui::TextUnformatted(totalInfo);
 			}
 			else if (distStatus == RankedDistributionSearch::Status::Failed)
 			{
-				ImGui::TextUnformatted("Distribution search failed.");
+				ImGui::TextUnformatted(L("Distribution search failed.").c_str());
 			}
 			else
 			{
-				ImGui::TextUnformatted(!globalHandle ? "Waiting for leaderboard handle..." : "Opening ladder begins scan.");
+				ImGui::TextUnformatted(!globalHandle ? L("Waiting for leaderboard handle...").c_str() : L("Opening ladder begins scan.").c_str());
 			}
 		}
 
@@ -1625,12 +2917,12 @@ namespace
 
 		ImGui::TextUnformatted("AUTH");
 		ImGui::NextColumn();
-		ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.62f, 0.64f, 0.69f, 1.0f));
+		ImGui::PushStyleColor(ImGuiCol_Text, GetRankedThresholdColor());
 		ImGui::TextUnformatted("0 LP");
 		ImGui::NextColumn();
 		ImGui::TextUnformatted("LV1");
 		ImGui::NextColumn();
-		ImGui::TextUnformatted("Ignored");
+		ImGui::TextUnformatted(L("Ignored").c_str());
 		ImGui::NextColumn();
 		ImGui::PopStyleColor();
 
@@ -1650,7 +2942,7 @@ namespace
 
 			char lpBuffer[32] = {};
 			std::snprintf(lpBuffer, sizeof(lpBuffer), "%u LP", static_cast<unsigned int>(requiredLp));
-			ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.62f, 0.64f, 0.69f, 1.0f));
+			ImGui::PushStyleColor(ImGuiCol_Text, GetRankedThresholdColor());
 			ImGui::TextUnformatted(lpBuffer);
 			ImGui::NextColumn();
 
@@ -1673,13 +2965,62 @@ namespace
 			}
 			else
 			{
-				ImGui::TextUnformatted(populationLoading ? "Loading" : "--");
+				ImGui::TextUnformatted(populationLoading ? L("Loading").c_str() : "--");
 			}
 			ImGui::NextColumn();
 		}
 
 		ImGui::Columns(1);
 		ImGui::End();
+	}
+
+	void DrawRankedProgressCharacterSelectorDialog()
+	{
+		if (g_rankedProgressCharacterSelectorOpenRequested)
+		{
+			ImGui::OpenPopup(L("Select ranked character###RankedProgressCharacterSelector").c_str());
+			g_rankedProgressCharacterSelectorOpenRequested = false;
+		}
+
+		CenterNextRankedRulesPopup();
+		ImGui::SetNextWindowSize(ImVec2(420.0f, 360.0f), ImGuiCond_Appearing);
+		bool selectorOpen = true;
+		if (!ImGui::BeginPopupModal(L("Select ranked character###RankedProgressCharacterSelector").c_str(), &selectorOpen, ImGuiWindowFlags_NoCollapse))
+		{
+			return;
+		}
+		if (!selectorOpen)
+		{
+			ImGui::EndPopup();
+			return;
+		}
+
+		ImGui::BeginChild("ranked_progress_character_selector_scroll", ImVec2(0.0f, 300.0f), false);
+		const int characterCount = getCharactersCount();
+		for (int characterIndex = 0; characterIndex < characterCount; ++characterIndex)
+		{
+			const bool selected = static_cast<uint32_t>(characterIndex) == g_manualRankedProgressCharacterId;
+			if (ImGui::Selectable(getCharacterNameByIndexA(characterIndex).c_str(), selected))
+			{
+				g_manualRankedProgressCharacterId = static_cast<uint32_t>(characterIndex);
+				g_manualRankedProgressOpen = true;
+				g_lastRankedOverlayCharacterId = g_manualRankedProgressCharacterId;
+				ImGui::CloseCurrentPopup();
+			}
+			if (selected)
+			{
+				ImGui::SetItemDefaultFocus();
+			}
+		}
+		ImGui::EndChild();
+		ImGui::EndPopup();
+	}
+
+	void DrawRankedGlobalDialogs()
+	{
+		DrawRankedProgressCharacterSelectorDialog();
+		DrawRankedRulesDialog();
+		DrawRankedLadderWindow();
 	}
 
 	bool IsRankAllOrigin(const char* origin)
@@ -3409,23 +4750,23 @@ namespace
 		switch (outcome.kind)
 		{
 		case RankedPredictionResultKind::LpDelta:
-			std::snprintf(mainText, sizeof(mainText), "%+d LP", outcome.lpDelta);
+			std::snprintf(mainText, sizeof(mainText), L("%+d LP").c_str(), outcome.lpDelta);
 			mainColor = outcome.lpDelta >= 0 ? g_rankedOverlayTuning.lpGainColor : g_rankedOverlayTuning.lpLossColor;
 			break;
 		case RankedPredictionResultKind::RankUp:
-			std::snprintf(mainText, sizeof(mainText), "RANK UP");
+			std::snprintf(mainText, sizeof(mainText), "%s", L("RANK UP").c_str());
 			mainColor = g_rankedOverlayTuning.predictionRankUpColor;
 			break;
 		case RankedPredictionResultKind::RankDown:
-			std::snprintf(mainText, sizeof(mainText), "RANK DOWN");
+			std::snprintf(mainText, sizeof(mainText), "%s", L("RANK DOWN").c_str());
 			mainColor = g_rankedOverlayTuning.predictionRankDownColor;
 			break;
 		case RankedPredictionResultKind::Nothing:
-			std::snprintf(mainText, sizeof(mainText), "Nothing.");
+			std::snprintf(mainText, sizeof(mainText), "%s", L("Nothing.").c_str());
 			mainColor = g_rankedOverlayTuning.predictionNothingColor;
 			break;
 		default:
-			std::snprintf(mainText, sizeof(mainText), "Unknown");
+			std::snprintf(mainText, sizeof(mainText), "%s", L("Unknown").c_str());
 			mainColor = g_rankedOverlayTuning.predictionNothingColor;
 			break;
 		}
@@ -3446,7 +4787,7 @@ namespace
 				std::snprintf(
 					counterText,
 					sizeof(counterText),
-					"%+d Promotion Counter",
+					L("%+d Promotion Counter").c_str(),
 					outcome.promotionCounterDelta);
 				ImGui::SetCursorPosX(ImGui::GetCursorPosX() + CenteredTextOffsetX(ImGui::GetContentRegionAvail().x, counterText));
 				ImGui::TextUnformatted(counterText);
@@ -3457,7 +4798,7 @@ namespace
 				std::snprintf(
 					counterText,
 					sizeof(counterText),
-					"%+d Demotion Counter",
+					L("%+d Demotion Counter").c_str(),
 					outcome.demotionCounterDelta);
 				ImGui::SetCursorPosX(ImGui::GetCursorPosX() + CenteredTextOffsetX(ImGui::GetContentRegionAvail().x, counterText));
 				ImGui::TextUnformatted(counterText);
@@ -3469,14 +4810,15 @@ namespace
 		if (outcome.reason && outcome.reason[0] != '\0')
 		{
 			const float wrapWidth = ImGui::GetContentRegionAvail().x;
-			const float reasonHeight = CalcCenteredWrappedTextHeight(outcome.reason, wrapWidth);
+			const std::string reasonText = L(outcome.reason);
+			const float reasonHeight = CalcCenteredWrappedTextHeight(reasonText.c_str(), wrapWidth);
 			const float bottomY = height - reasonHeight;
 			if (bottomY > ImGui::GetCursorPosY())
 			{
 				ImGui::SetCursorPosY(bottomY);
 			}
 			ImGui::PushStyleColor(ImGuiCol_Text, g_rankedOverlayTuning.predictionReasonColor);
-			DrawCenteredWrappedText(outcome.reason, wrapWidth);
+			DrawCenteredWrappedText(reasonText.c_str(), wrapWidth);
 			ImGui::PopStyleColor();
 		}
 		ImGui::EndChild();
@@ -3513,18 +4855,18 @@ namespace
 		ImGui::SetNextWindowPos(ImVec2(360.0f, 150.0f), ImGuiCond_FirstUseEver);
 		ImGui::SetNextWindowSize(ImVec2(520.0f, 196.0f), ImGuiCond_FirstUseEver);
 		ImGui::PushStyleVar(ImGuiStyleVar_WindowMinSize, ImVec2(0.0f, 0.0f));
-		if (!ImGui::Begin("Ranked Prediction###RankedPredictionOverlay", nullptr, ImGuiWindowFlags_NoCollapse))
+		if (!ImGui::Begin(L("Ranked Prediction###RankedPredictionOverlay").c_str(), nullptr, ImGuiWindowFlags_NoCollapse))
 		{
 			ImGui::End();
 			ImGui::PopStyleVar();
 			return;
 		}
 
-		const std::string opponentName = opponent.displayName.empty() ? "Opponent" : opponent.displayName;
+		const std::string opponentName = opponent.displayName.empty() ? L("Opponent") : opponent.displayName;
 		const bool opponentRankKnown = hasOpponentInfo && opponent.valid && opponent.visibleRank > 0u;
 		const std::string opponentRank = opponentRankKnown
 			? FormatVisibleRankLabel(opponent.visibleRank, false)
-			: std::string(!hasOpponentSteamId ? "Waiting for opponent..." : (opponent.pending ? "Loading rank..." : "Rank unavailable"));
+			: std::string(!hasOpponentSteamId ? L("Waiting for opponent...") : (opponent.pending ? L("Loading rank...") : L("Rank unavailable")));
 		const ImVec4 opponentRankColor = opponentRankKnown
 			? GetVisibleRankColor(opponent.visibleRank, false)
 			: g_rankedOverlayTuning.predictionNothingColor;
@@ -3560,7 +4902,7 @@ namespace
 		const ImVec2 separatorStart = ImVec2(
 			ImGui::GetCursorScreenPos().x + columnWidth + style.ItemSpacing.x,
 			ImGui::GetCursorScreenPos().y);
-		DrawRankedPredictionOutcomeColumn("Win", g_rankedOverlayTuning.predictionWinColor, win, columnWidth, columnHeight);
+		DrawRankedPredictionOutcomeColumn(L("Win").c_str(), g_rankedOverlayTuning.predictionWinColor, win, columnWidth, columnHeight);
 		ImGui::SameLine();
 		drawList->AddLine(
 			separatorStart,
@@ -3568,7 +4910,7 @@ namespace
 			ImGui::GetColorU32(ImGuiCol_Separator));
 		ImGui::Dummy(ImVec2(separatorWidth, columnHeight));
 		ImGui::SameLine();
-		DrawRankedPredictionOutcomeColumn("Loss", g_rankedOverlayTuning.predictionLossColor, loss, columnWidth, columnHeight);
+		DrawRankedPredictionOutcomeColumn(L("Loss").c_str(), g_rankedOverlayTuning.predictionLossColor, loss, columnWidth, columnHeight);
 		ImGui::End();
 		ImGui::PopStyleVar();
 	}
@@ -3630,26 +4972,6 @@ void MainWindow::Draw()
 	ImGui::SameLine();
 	ImGui::ShowHelpMarker(Messages.Debug_log_details());
 
-	ImGui::HorizontalSpacing();
-	bool showRankedProgress = Settings::settingsIni.showRankedProgress;
-	if (ImGui::Checkbox(L("Show ranked progress").c_str(), &showRankedProgress))
-	{
-		Settings::settingsIni.showRankedProgress = showRankedProgress;
-		Settings::changeSetting("ShowRankedProgress", showRankedProgress ? "1" : "0");
-	}
-	ImGui::SameLine();
-	ImGui::ShowHelpMarker(L("Shows a movable ranked progress window during ranked character select and ranked menu flow, and after a successful ranked LP upload even if the main mod menu is closed.").c_str());
-
-	ImGui::HorizontalSpacing();
-	bool showRankedPrediction = Settings::settingsIni.showRankedPrediction;
-	if (ImGui::Checkbox(L("Show ranked prediction").c_str(), &showRankedPrediction))
-	{
-		Settings::settingsIni.showRankedPrediction = showRankedPrediction;
-		Settings::changeSetting("ShowRankedPrediction", showRankedPrediction ? "1" : "0");
-	}
-	ImGui::SameLine();
-	ImGui::ShowHelpMarker(L("Shows win/loss ranked outcome predictions during ranked match confirmation when opponent rank data is available.").c_str());
-
 	ImGui::AlignTextToFramePadding();
 	ImGui::TextUnformatted("P$"); ImGui::SameLine();
 	if (g_gameVals.pGameMoney)
@@ -3667,6 +4989,7 @@ void MainWindow::Draw()
 	ImGui::VerticalSpacing(5);
 
 	DrawGameplaySettingSection();
+	DrawRankedMatchesSection();
 	DrawCustomPalettesSection();
 	DrawHitboxOverlaySection();
 	DrawFrameHistorySection();
@@ -4085,6 +5408,60 @@ void MainWindow::DrawGameplaySettingSection() const
 		ImGui::Checkbox(Messages.Hide_HUD_checkbox(), (bool*)g_gameVals.pIsHUDHidden);
 	}
 }
+
+void MainWindow::DrawRankedMatchesSection() const
+{
+	if (!ImGui::CollapsingHeader(L("Ranked Matches").c_str()))
+		return;
+
+	ImGui::HorizontalSpacing();
+	bool showRankedProgress = Settings::settingsIni.showRankedProgress;
+	if (ImGui::Checkbox(L("Show ranked progress").c_str(), &showRankedProgress))
+	{
+		Settings::settingsIni.showRankedProgress = showRankedProgress;
+		Settings::changeSetting("ShowRankedProgress", showRankedProgress ? "1" : "0");
+	}
+	ImGui::SameLine();
+	ImGui::ShowHelpMarker(L("Shows a movable ranked progress window during ranked character select, ranked menu flow, and after a successful ranked LP upload.").c_str());
+
+	ImGui::HorizontalSpacing();
+	bool showRankedPrediction = Settings::settingsIni.showRankedPrediction;
+	if (ImGui::Checkbox(L("Show ranked prediction").c_str(), &showRankedPrediction))
+	{
+		Settings::settingsIni.showRankedPrediction = showRankedPrediction;
+		Settings::changeSetting("ShowRankedPrediction", showRankedPrediction ? "1" : "0");
+	}
+	ImGui::SameLine();
+	ImGui::ShowHelpMarker(L("Shows win/loss ranked outcome predictions during ranked match confirmation when opponent rank data is available.").c_str());
+
+	ImGui::VerticalSpacing(8);
+	ImGui::HorizontalSpacing();
+	if (ImGui::Button(L("Ranked ladder").c_str()))
+	{
+		g_showRankedLadderWindow = true;
+	}
+	ImGui::SameLine();
+	ImGui::ShowHelpMarker(L("Opens the ranked ladder window, including known LP thresholds and population estimates.").c_str());
+
+	ImGui::HorizontalSpacing();
+	if (ImGui::Button(L("Ranked Progress").c_str()))
+	{
+		g_rankedProgressCharacterSelectorOpenRequested = true;
+	}
+	ImGui::SameLine();
+	ImGui::ShowHelpMarker(L("Choose a character and open a closable ranked progress window. Right-click the ranked progress window to configure the top label.").c_str());
+
+	ImGui::HorizontalSpacing();
+	if (ImGui::Button(L("How does ranked work?").c_str()))
+	{
+		g_rankedRulesDialog.selectedInternalRank = 0u;
+		g_rankedRulesDialog.selectorOpenedFromMainMenu = true;
+		g_rankedRulesDialog.selectorOpenRequested = true;
+	}
+	ImGui::SameLine();
+	ImGui::ShowHelpMarker(L("Choose any rank and open an explanation of its LP, promotion, and demotion rules.").c_str());
+}
+
 void MainWindow::DrawControllerSettingSection() const {
 	if (!ImGui::CollapsingHeader(Messages.Controller_Settings()))
 		return;
@@ -4145,20 +5522,22 @@ void MainWindow::DrawLoadedSettingsValuesSection() const
 
 void DrawRankedProgressOverlayStandalone()
 {
-	if (!Settings::settingsIni.showRankedProgress)
+	if (!Settings::settingsIni.showRankedProgress && !g_manualRankedProgressOpen)
 	{
 		ClearRankedProgressOverlaySnapshot("setting_disabled");
 		g_rankedProgressAnimation.active = false;
 		g_rankedProgressAnimationSnapshot = {};
 		g_rankedOverlayVisibility = {};
 		g_lastRankedOverlayCharacterId = kInvalidRankedCharacterId;
+		DrawRankedGlobalDialogs();
 		return;
 	}
 
 	RankedProgressOverlaySnapshot snapshot;
-	const bool hasLiveSnapshot = CaptureRankedProgressSnapshotInternal(&snapshot);
+	const bool hasLiveSnapshot = Settings::settingsIni.showRankedProgress && CaptureRankedProgressSnapshotInternal(&snapshot);
 	if (hasLiveSnapshot)
 	{
+		g_manualRankedProgressOpen = false;
 		PublishRankedProgressOverlaySnapshot(snapshot);
 		g_lastRankedOverlayCharacterId = snapshot.rowIndex;
 	}
@@ -4203,6 +5582,13 @@ void DrawRankedProgressOverlayStandalone()
 				hasNetworkState ? networkState.state : -1,
 				hasNetworkState ? networkState.state1 : -1);
 		}
+		else if (g_manualRankedProgressOpen && g_manualRankedProgressCharacterId != kInvalidRankedCharacterId)
+		{
+			publishedCachedSnapshot = TryPublishRankedProgressSnapshotForCharacter(
+				g_manualRankedProgressCharacterId,
+				hasNetworkState ? networkState.state : -1,
+				hasNetworkState ? networkState.state1 : -1);
+		}
 		else if (showUploadCard && hasUploadState && uploadState.characterId != kInvalidRankedCharacterId)
 		{
 			publishedCachedSnapshot = TryPublishRankedProgressSnapshotForCharacter(uploadState.characterId, -1, -1);
@@ -4216,10 +5602,10 @@ void DrawRankedProgressOverlayStandalone()
 		}
 	}
 
-	if (!hasLiveSnapshot && !g_rankedOverlayVisibility.stickyRankedSessionVisible && !showUploadCard)
+	if (!hasLiveSnapshot && !g_rankedOverlayVisibility.stickyRankedSessionVisible && !showUploadCard && !g_manualRankedProgressOpen)
 	{
 		g_rankedProgressAnimationSnapshot = {};
-		DrawRankedLadderWindow();
+		DrawRankedGlobalDialogs();
 		return;
 	}
 
@@ -4229,13 +5615,19 @@ void DrawRankedProgressOverlayStandalone()
 	const ImVec4 windowBgColor = ImVec4(0.06f, 0.06f, 0.08f, 0.92f * windowAlpha);
 	ImGui::PushStyleColor(ImGuiCol_WindowBg, windowBgColor);
 	ImGui::PushStyleVar(ImGuiStyleVar_Alpha, windowAlpha);
-	if (!ImGui::Begin(L("Ranked Progress###RankedProgressOverlay").c_str(), nullptr,
+	const bool manualRankedProgressWindow =
+		g_manualRankedProgressOpen &&
+		!hasLiveSnapshot &&
+		!g_rankedOverlayVisibility.stickyRankedSessionVisible &&
+		!showUploadCard;
+	bool* rankedProgressOpenPtr = manualRankedProgressWindow ? &g_manualRankedProgressOpen : nullptr;
+	if (!ImGui::Begin(L("Ranked Progress###RankedProgressOverlay").c_str(), rankedProgressOpenPtr,
 		ImGuiWindowFlags_NoCollapse))
 	{
 		ImGui::End();
 		ImGui::PopStyleVar();
 		ImGui::PopStyleColor();
-		DrawRankedLadderWindow();
+		DrawRankedGlobalDialogs();
 		return;
 	}
 
@@ -4246,13 +5638,17 @@ void DrawRankedProgressOverlayStandalone()
 		{
 			g_showRankedLadderWindow = true;
 		}
+		if (ImGui::MenuItem(L("How does my rank work?").c_str()))
+		{
+			g_rankedRulesDialog.requestOpenForCurrentRank = true;
+		}
 		ImGui::Separator();
 		ImGui::MenuItem(L("Show matches").c_str(), nullptr, &g_rankedProgressTopRowOptions.showMatches);
 		ImGui::MenuItem(L("Show wins").c_str(), nullptr, &g_rankedProgressTopRowOptions.showWins);
 		ImGui::MenuItem(L("Show losses").c_str(), nullptr, &g_rankedProgressTopRowOptions.showLosses);
 		ImGui::MenuItem(L("Show winrate %").c_str(), nullptr, &g_rankedProgressTopRowOptions.showWinrate);
-		ImGui::MenuItem(L("Show Character leaderboard Placement").c_str(), nullptr, &g_rankedProgressTopRowOptions.showCharacterLeaderboardPlacement);
-		ImGui::MenuItem(L("Show Global Leaderboard Placement").c_str(), nullptr, &g_rankedProgressTopRowOptions.showGlobalLeaderboardPlacement);
+		ImGui::MenuItem(L("Show character leaderboard placement").c_str(), nullptr, &g_rankedProgressTopRowOptions.showCharacterLeaderboardPlacement);
+		ImGui::MenuItem(L("Show global leaderboard placement").c_str(), nullptr, &g_rankedProgressTopRowOptions.showGlobalLeaderboardPlacement);
 		ImGui::EndPopup();
 	}
 
@@ -4287,6 +5683,16 @@ void DrawRankedProgressOverlayStandalone()
 			hasStatsSnapshot = true;
 		}
 	}
+	else if (manualRankedProgressWindow && g_manualRankedProgressCharacterId != kInvalidRankedCharacterId)
+	{
+		TryBuildDisplayStateForCharacter(g_manualRankedProgressCharacterId, nullptr, &baseDisplay);
+		if (g_rankedProgressOverlaySnapshot.active &&
+			g_rankedProgressOverlaySnapshot.rowIndex == g_manualRankedProgressCharacterId)
+		{
+			statsSnapshot = g_rankedProgressOverlaySnapshot;
+			hasStatsSnapshot = true;
+		}
+	}
 
 	if (!baseDisplay.valid)
 	{
@@ -4294,7 +5700,7 @@ void DrawRankedProgressOverlayStandalone()
 		ImGui::End();
 		ImGui::PopStyleVar();
 		ImGui::PopStyleColor();
-		DrawRankedLadderWindow();
+		DrawRankedGlobalDialogs();
 		return;
 	}
 
@@ -4311,6 +5717,11 @@ void DrawRankedProgressOverlayStandalone()
 	demotionDeltaAlpha = ComputeToastAlpha(&g_rankedDemotionToast, renderedDisplay, &demotionDelta);
 	RememberRankedDisplayState(renderedDisplay);
 	g_rankedLeaderboardTracker.Tick(renderedDisplay.characterId);
+	if (g_rankedRulesDialog.requestOpenForCurrentRank)
+	{
+		OpenRankedRulesDialogForRank(VisibleRankToInternalRank(renderedDisplay.visibleRank));
+		g_rankedRulesDialog.requestOpenForCurrentRank = false;
+	}
 
 	const std::string characterName = getCharacterNameByIndexA(static_cast<int>(renderedDisplay.characterId));
 	const std::string rankLabel = FormatVisibleRankLabel(renderedDisplay.visibleRank, renderedDisplay.isUnranked);
@@ -4339,19 +5750,19 @@ void DrawRankedProgressOverlayStandalone()
 	if (g_rankedProgressTopRowOptions.showMatches)
 	{
 		std::ostringstream part;
-		part << static_cast<unsigned int>(matches) << " Matches";
+		part << static_cast<unsigned int>(matches) << " " << L("Matches");
 		recordParts.push_back(part.str());
 	}
 	if (g_rankedProgressTopRowOptions.showWins)
 	{
 		std::ostringstream part;
-		part << static_cast<unsigned int>(wins) << " Wins";
+		part << static_cast<unsigned int>(wins) << " " << L("Wins");
 		recordParts.push_back(part.str());
 	}
 	if (g_rankedProgressTopRowOptions.showLosses)
 	{
 		std::ostringstream part;
-		part << static_cast<unsigned int>(losses) << " Losses";
+		part << static_cast<unsigned int>(losses) << " " << L("Losses");
 		recordParts.push_back(part.str());
 	}
 	if (!recordParts.empty())
@@ -4383,7 +5794,7 @@ void DrawRankedProgressOverlayStandalone()
 		int characterPlacement = 0;
 		if (g_rankedLeaderboardTracker.GetCharacterPlacement(renderedDisplay.characterId, &characterPlacement))
 		{
-			statsText << " - #" << characterPlacement << " in " << characterName << " Leaderboard";
+			statsText << " - #" << characterPlacement << " " << L("in") << " " << characterName << " " << L("Leaderboard");
 		}
 	}
 	if (g_rankedProgressTopRowOptions.showGlobalLeaderboardPlacement)
@@ -4391,7 +5802,7 @@ void DrawRankedProgressOverlayStandalone()
 		int globalPlacement = 0;
 		if (g_rankedLeaderboardTracker.GetGlobalPlacement(&globalPlacement))
 		{
-			statsText << " - #" << globalPlacement << " in Global Leaderboard";
+			statsText << " - #" << globalPlacement << " " << L("in Global Leaderboard");
 		}
 	}
 
@@ -4448,7 +5859,7 @@ void DrawRankedProgressOverlayStandalone()
 	}
 	const float rightTextOffset = fullWidth - ImGui::CalcTextSize(rightBuffer).x;
 	ImGui::SameLine(rightTextOffset > (thirdWidth * 2.0f) ? rightTextOffset : (thirdWidth * 2.0f));
-	ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.62f, 0.64f, 0.69f, 1.0f));
+	ImGui::PushStyleColor(ImGuiCol_Text, GetRankedThresholdColor());
 	ImGui::TextUnformatted(rightBuffer);
 	ImGui::PopStyleColor();
 
@@ -4465,7 +5876,7 @@ void DrawRankedProgressOverlayStandalone()
 			std::snprintf(
 				demotionBuffer,
 				sizeof(demotionBuffer),
-				"Demotion %u/%u",
+				L("Demotion %u/%u").c_str(),
 				static_cast<unsigned int>(renderedDisplay.demotionCounter),
 				static_cast<unsigned int>(renderedDisplay.demotionCounterLimit));
 		}
@@ -4474,7 +5885,7 @@ void DrawRankedProgressOverlayStandalone()
 			std::snprintf(
 				promotionBuffer,
 				sizeof(promotionBuffer),
-				"Promotion %u/%u",
+				L("Promotion %u/%u").c_str(),
 				static_cast<unsigned int>(renderedDisplay.promotionCounter),
 				static_cast<unsigned int>(renderedDisplay.promotionCounterLimit));
 		}
@@ -4484,7 +5895,7 @@ void DrawRankedProgressOverlayStandalone()
 			const bool nextLossMayDemote = renderedDisplay.demotionCounter + 1u >= renderedDisplay.demotionCounterLimit;
 			ImGui::PushStyleColor(
 				ImGuiCol_Text,
-				nextLossMayDemote ? g_rankedOverlayTuning.lpLossColor : ImVec4(0.62f, 0.64f, 0.69f, 1.0f));
+				nextLossMayDemote ? g_rankedOverlayTuning.lpLossColor : GetRankedThresholdColor());
 			ImGui::TextUnformatted(demotionBuffer);
 			ImGui::PopStyleColor();
 			if (demotionDelta != 0 && demotionDeltaAlpha > 0.0f)
@@ -4523,7 +5934,7 @@ void DrawRankedProgressOverlayStandalone()
 				ImGui::Dummy(ImVec2(ImGui::CalcTextSize(promotionDeltaBuffer).x + 2.0f, ImGui::GetTextLineHeight()));
 				ImGui::SameLine();
 			}
-			ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.62f, 0.64f, 0.69f, 1.0f));
+			ImGui::PushStyleColor(ImGuiCol_Text, GetRankedThresholdColor());
 			ImGui::TextUnformatted(promotionBuffer);
 			ImGui::PopStyleColor();
 		}
@@ -4541,5 +5952,5 @@ void DrawRankedProgressOverlayStandalone()
 	ImGui::PopStyleVar();
 	ImGui::PopStyleColor();
 	DrawRankedPredictionWindow(renderedDisplay, networkState, rankedEntryActive, inMatch);
-	DrawRankedLadderWindow();
+	DrawRankedGlobalDialogs();
 }

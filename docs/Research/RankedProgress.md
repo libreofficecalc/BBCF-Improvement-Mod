@@ -13171,3 +13171,192 @@ Verification:
 Next live validation:
 
 - In a real ranked confirmation, verify prediction around promotion counter for a two-ranks-lower opponent: LP should show `+256`, and automatic-promotion prediction should use hidden gain `+459`.
+
+## Entry — Ranked rules modal
+
+Feature request:
+
+- Add a right-click context-menu action to the ranked progress overlay named `How does my rank work?`.
+- Open an actual modal dialog, not a normal overlay window.
+- Explain the selected rank in plain user-facing terms.
+- Include an opponent-rank LP table with promotion/demotion counter notes.
+- Include a second modal rank selector through `Check another rank's rules`.
+- Keep logic shared with existing ranked prediction helpers so formula changes propagate automatically.
+
+Patch made:
+
+- Added `DrawRankedRulesDialog` and `DrawRankedRulesSelectorDialog` in `src/Overlay/Window/MainWindow.cpp`.
+- Added modal state under `RankedRulesDialogState`.
+- Added context-menu item to `Ranked Progress`.
+- Dialog content now pulls from shared ranked helpers:
+  - `TryGetRankedLpBounds`
+  - `GetCumulativeRankedLpForRaw`
+  - `PredictWinRawLpDelta`
+  - `PredictLossRawLpDelta`
+  - `PredictPromotionCounterGain`
+  - `RankedWinCanTriggerPromotionCounter`
+  - `RankedLossAddsDemotionCounter`
+- LP table uses old ImGui `Columns` API because the vendored ImGui version does not support `BeginTable`.
+- Added localization rows for new modal strings in `resource/localization/Localization.csv`; build regenerated `LocalizationKeys.autogen.h`.
+
+Verification:
+
+- Built `Debug|Win32` successfully.
+- Build result: 0 errors.
+- Existing warnings remain in unrelated files (`FrameHistory`, `ReplayDBPopupWindow`, `PaletteEditorWindow`, etc.).
+
+Next live validation:
+
+- Open ranked progress, right-click it, choose `How does my rank work?`.
+- Verify it opens as a modal.
+- On LV33, confirm same-rank row shows `+1024 LP` and `-1024 LP`, plus counter notes where applicable.
+- Use `Check another rank's rules` and verify the selector opens as a second modal.
+
+## Entry — Ranked rules modal visual polish
+
+Patch made:
+
+- Rank labels in the rules modal now use the same native rank colors as ranked progress.
+- LP thresholds in rules text reuse ranked progress threshold gray.
+- Counter-change notes reuse ranked prediction reason gray.
+- Section titles use the selected rank color.
+- LP table win/loss columns use ranked prediction green/red.
+- The selected/current opponent-rank row is highlighted by a rank-colored border.
+- The modal default size is larger and uses only the normal top-right close button.
+- The secondary rank selector no longer has `Show rules` / `Cancel`; selecting a rank updates the dialog and closes the selector.
+- Rule copy now uses the requested `If you get above/below ...` phrasing and includes known demotion/promotion counter reset conditions.
+
+Verification:
+
+- Regenerated `src/Core/LocalizationKeys.autogen.h`.
+- `git diff --check` is clean for the touched ranked UI/docs/localization files.
+- Built `Debug|Win32` successfully with 0 errors.
+- Existing warnings remain in unrelated files (`FrameHistory`, `ReplayDBPopupWindow`, `PaletteEditorWindow`, etc.).
+
+## Entry — Ranked rules modal selector/table fixes
+
+Patch made:
+
+- Closing `Check another rank's rules` now behaves as cancel and returns to the main `How does my rank work?` dialog.
+- Selecting a rank in the selector is treated as confirmation: it updates the main dialog and closes the selector modal.
+- Removed forced vertical scrollbar from the rules content child; scrollbar appears only when content overflows.
+- LP table columns are no longer manually resizable.
+- LP table column widths are recalculated every frame from the current dialog width so resize cycles cannot leave stale bad column ratios.
+
+Verification:
+
+- `git diff --check` is clean for touched ranked UI/docs files.
+- Built `Debug|Win32` successfully with 0 errors.
+- Existing warning remains in unrelated `FrameHistory.h`.
+
+## Entry — Ranked rules modal centering and LP table coverage
+
+Feature request:
+
+- Center both ranked-rules modal popups on screen when they appear.
+- In `Check another rank's rules`, show rank names directly (`LV1`) instead of
+  rank plus rules bucket (`LV1 (LV1-LV10 Rules)`).
+- In `How does my rank work?`, keep the selected rank as the title and show a
+  gray subtitle when the selected rank shares a rules bucket, e.g.
+  `The same type of rules as this rank apply from LV1 to LV10.`
+- Make the LP table show all opponent ranks that matter to the selected rank's
+  rules, not just a fixed `selected rank +/- 10` slice.
+
+Patch made:
+
+- Added `CenterNextRankedRulesPopup()` and applied it before both modal
+  `BeginPopupModal` calls.
+- Added bucket-range helpers so grouped ranks can render the gray subtitle
+  without putting bucket names in the selector entries.
+- Simplified selector labels to only `FormatRankRulesRankName(rank)`.
+- Replaced fixed LP-table bounds with `BuildRankedRulesLpTableRows()`.
+- LP-table row selection now keeps a rank when:
+  - win or loss LP delta is greater than `1`
+  - promotion counter can gain points
+  - demotion counter can gain a strike
+  - promotion or demotion counter can reset
+- LV1-LV10 now collapse to one `ANY RANK` row because opponent rank does not
+  change their currently known LP/counter behavior.
+- Added table-cell reset notes for hidden counters:
+  - ` (resets Demotion Counter)` on qualifying wins
+  - ` (resets Promotion Counter)` on qualifying losses
+- Added new localization rows in `resource/localization/Localization.csv`.
+- Updated `docs/Ranked/RankedExplanation.md` and
+  `docs/Ranked/RankedInternals.md` to match the new UI behavior.
+
+Expected rule coverage:
+
+- Ruler/Hades/Kisshin keep LV25+ visible in the LP table because losses against
+  those ranks can add a demotion strike even when distant LP deltas have already
+  fallen to `+/-1`.
+- Leader/Hero keep LV30+ visible for demotion-strike losses and LV25+ visible
+  for demotion-counter reset wins.
+- LV1-LV10 show one `ANY RANK` row because all known opponents use `+100 LP`
+  wins, `0 LP` losses, and no hidden counters.
+
+Verification still needed:
+
+- Build `Debug|Win32`.
+- In-game UI check:
+  - open `How does my rank work?` and confirm centered spawn
+  - open `Check another rank's rules` and confirm centered spawn
+  - confirm selector entries are plain rank labels
+  - check LV1 shows one `ANY RANK` LP-table row
+  - check Ruler/Hades table includes LV25+ rows with demotion-counter notes
+
+## Entry — Ranked Spanish coverage, LP cell alignment, comparison modal, and menu section
+
+Patch made:
+
+- Moved ranked controls out of the main top-level menu area and into a new
+  `Ranked Matches` collapsing section.
+- Added `Ranked Matches` buttons:
+  - `Ranked ladder`: opens the ranked ladder window.
+  - `Ranked Progress`: opens a character selector, then a closable ranked
+    progress window for that character.
+  - `How does ranked work?`: opens a rank selector titled `Check a rank's rules`,
+    then opens the normal ranked rules modal.
+- Added help markers for each ranked button and for the ranked toggles.
+- Added manual ranked-progress state:
+  - manual character selector uses all known characters
+  - live ranked/menu/upload overlay state overrides the manual closable window
+    and keeps the normal unclosable behavior
+- Added `Compare this with another rank` in `How does my rank work?`.
+- Added rank comparison selector and comparison modal.
+- Comparison bullets are generated only when a difference is detected:
+  - cumulative LP lower/upper/span
+  - Leader+ rank-up gate
+  - promotion-counter enabled state, limit, and qualifying range
+  - demotion-counter enabled state, limit, and qualifying range
+  - demotion-counter reset range
+  - promotion-counter reset range
+- Reworked LP-table cell rendering:
+  - wraps colored text by measured tokens
+  - centers wrapped lines horizontally in each cell
+  - computes row height from all cells
+  - centers opponent/win/loss content vertically in each row
+- Expanded Spanish localization for ranked progress, ranked ladder, ranked
+  prediction, ranked rules, rank comparison, and the new `Ranked Matches` menu.
+- Updated `docs/Ranked/RankedExplanation.md` and
+  `docs/Ranked/RankedInternals.md`.
+
+Verification:
+
+- `git diff --check` was clean before build.
+- Built `Debug|Win32` successfully with 0 errors.
+- Existing warning set remains unrelated (`FrameHistory`, `PaletteEditorWindow`,
+  `ReplayDBPopupWindow`, `ReplayRewindWindow`, `ScrWindow`, etc.).
+
+Next live validation:
+
+- Switch language to Spanish and inspect:
+  - `Ranked Matches`
+  - ranked progress context menu and top-row labels
+  - ranked ladder status/header/population text
+  - ranked prediction window
+  - `How does my rank work?`
+  - `Compare this with another rank`
+- Check LP-table cells at narrow and wide modal sizes to confirm centered
+  wrapping.
+- Open manual `Ranked Progress`, then enter a normal ranked context and confirm
+  the live unclosable overlay overrides the manual closable window.

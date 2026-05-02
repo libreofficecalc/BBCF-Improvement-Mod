@@ -609,6 +609,441 @@ struct LocalizationKeysAccessor
         // Ranked_search_warning
         inline const char* Ranked_search_warning() const { return Get("Ranked_search_warning"); }
 
+        // Ranked Matches
+        inline const char* Ranked_Matches() const { return Get("Ranked Matches"); }
+
+        // Show ranked progress
+        inline const char* Show_ranked_progress() const { return Get("Show ranked progress"); }
+
+        // Shows a movable ranked progress window during ranked character select, ranked menu flow, and after a successful ranked LP upload.
+        inline const char* Shows_a_movable_ranked_progress_window_during_ranked_character_select_ranked_menu_flow_and_after_a_successful_ranked_LP_upload() const { return Get("Shows a movable ranked progress window during ranked character select, ranked menu flow, and after a successful ranked LP upload."); }
+
+        // Show ranked prediction
+        inline const char* Show_ranked_prediction() const { return Get("Show ranked prediction"); }
+
+        // Shows win/loss ranked outcome predictions during ranked match confirmation when opponent rank data is available.
+        inline const char* Shows_win_loss_ranked_outcome_predictions_during_ranked_match_confirmation_when_opponent_rank_data_is_available() const { return Get("Shows win/loss ranked outcome predictions during ranked match confirmation when opponent rank data is available."); }
+
+        // Ranked ladder
+        inline const char* Ranked_ladder() const { return Get("Ranked ladder"); }
+
+        // Ranked ladder###RankedLadder
+        inline const char* Ranked_ladder_RankedLadder() const { return Get("Ranked ladder###RankedLadder"); }
+
+        // Opens the ranked ladder window, including known LP thresholds and population estimates.
+        inline const char* Opens_the_ranked_ladder_window_including_known_LP_thresholds_and_population_estimates() const { return Get("Opens the ranked ladder window, including known LP thresholds and population estimates."); }
+
+        // Ranked Progress
+        inline const char* Ranked_Progress() const { return Get("Ranked Progress"); }
+
+        // Ranked Progress###RankedProgressOverlay
+        inline const char* Ranked_Progress_RankedProgressOverlay() const { return Get("Ranked Progress###RankedProgressOverlay"); }
+
+        // Choose a character and open a closable ranked progress window. Right-click the ranked progress window to configure the top label.
+        inline const char* Choose_a_character_and_open_a_closable_ranked_progress_window_Right_click_the_ranked_progress_window_to_configure_the_top_label() const { return Get("Choose a character and open a closable ranked progress window. Right-click the ranked progress window to configure the top label."); }
+
+        // How does ranked work?
+        inline const char* How_does_ranked_work() const { return Get("How does ranked work?"); }
+
+        // Choose any rank and open an explanation of its LP, promotion, and demotion rules.
+        inline const char* Choose_any_rank_and_open_an_explanation_of_its_LP_promotion_and_demotion_rules() const { return Get("Choose any rank and open an explanation of its LP, promotion, and demotion rules."); }
+
+        // Select ranked character###RankedProgressCharacterSelector
+        inline const char* Select_ranked_character_RankedProgressCharacterSelector() const { return Get("Select ranked character###RankedProgressCharacterSelector"); }
+
+        // Ranked Prediction###RankedPredictionOverlay
+        inline const char* Ranked_Prediction_RankedPredictionOverlay() const { return Get("Ranked Prediction###RankedPredictionOverlay"); }
+
+        // Opponent
+        inline const char* Opponent() const { return Get("Opponent"); }
+
+        // Waiting for opponent...
+        inline const char* Waiting_for_opponent() const { return Get("Waiting for opponent..."); }
+
+        // Loading rank...
+        inline const char* Loading_rank() const { return Get("Loading rank..."); }
+
+        // Rank unavailable
+        inline const char* Rank_unavailable() const { return Get("Rank unavailable"); }
+
+        // RANK UP
+        inline const char* RANK_UP() const { return Get("RANK UP"); }
+
+        // RANK DOWN
+        inline const char* RANK_DOWN() const { return Get("RANK DOWN"); }
+
+        // Nothing.
+        inline const char* Nothing() const { return Get("Nothing."); }
+
+        // Unknown
+        inline const char* Unknown() const { return Get("Unknown"); }
+
+        // Current rank data unavailable
+        inline const char* Current_rank_data_unavailable() const { return Get("Current rank data unavailable"); }
+
+        // Can only rank up against your rank or higher.
+        inline const char* Can_only_rank_up_against_your_rank_or_higher() const { return Get("Can only rank up against your rank or higher."); }
+
+        // LP Threshold Reached
+        inline const char* LP_Threshold_Reached() const { return Get("LP Threshold Reached"); }
+
+        // Automatic Promotion Reached
+        inline const char* Automatic_Promotion_Reached() const { return Get("Automatic Promotion Reached"); }
+
+        // LP already capped for this opponent.
+        inline const char* LP_already_capped_for_this_opponent() const { return Get("LP already capped for this opponent."); }
+
+        // LV1-LV10 losses do not change LP.
+        inline const char* LV1_LV10_losses_do_not_change_LP() const { return Get("LV1-LV10 losses do not change LP."); }
+
+        // Automatic Demotion Reached
+        inline const char* Automatic_Demotion_Reached() const { return Get("Automatic Demotion Reached"); }
+
+        // Waiting for ranked opponent data.
+        inline const char* Waiting_for_ranked_opponent_data() const { return Get("Waiting for ranked opponent data."); }
+
+        // Waiting for RANK_ALL lookup.
+        inline const char* Waiting_for_RANK_ALL_lookup() const { return Get("Waiting for RANK_ALL lookup."); }
+
+        // Opponent RANK_ALL entry unavailable.
+        inline const char* Opponent_RANK_ALL_entry_unavailable() const { return Get("Opponent RANK_ALL entry unavailable."); }
+
+        // Scanning... %d probes fired
+        inline const char* Scanning_d_probes_fired() const { return Get("Scanning... %d probes fired"); }
+
+        // Total ranked players: %u  |  Samples: %u
+        inline const char* Total_ranked_players_u_Samples_u() const { return Get("Total ranked players: %u  |  Samples: %u"); }
+
+        // Distribution search failed.
+        inline const char* Distribution_search_failed() const { return Get("Distribution search failed."); }
+
+        // Waiting for leaderboard handle...
+        inline const char* Waiting_for_leaderboard_handle() const { return Get("Waiting for leaderboard handle..."); }
+
+        // Opening ladder begins scan.
+        inline const char* Opening_ladder_begins_scan() const { return Get("Opening ladder begins scan."); }
+
+        // Players
+        inline const char* Players() const { return Get("Players"); }
+
+        // Ignored
+        inline const char* Ignored() const { return Get("Ignored"); }
+
+        // Loading
+        inline const char* Loading() const { return Get("Loading"); }
+
+        // No ranked progress data available.
+        inline const char* No_ranked_progress_data_available() const { return Get("No ranked progress data available."); }
+
+        // Show matches
+        inline const char* Show_matches() const { return Get("Show matches"); }
+
+        // Show wins
+        inline const char* Show_wins() const { return Get("Show wins"); }
+
+        // Show losses
+        inline const char* Show_losses() const { return Get("Show losses"); }
+
+        // Show winrate %
+        inline const char* Show_winrate() const { return Get("Show winrate %"); }
+
+        // Show character leaderboard placement
+        inline const char* Show_character_leaderboard_placement() const { return Get("Show character leaderboard placement"); }
+
+        // Show global leaderboard placement
+        inline const char* Show_global_leaderboard_placement() const { return Get("Show global leaderboard placement"); }
+
+        // Matches
+        inline const char* Matches() const { return Get("Matches"); }
+
+        // Wins
+        inline const char* Wins() const { return Get("Wins"); }
+
+        // Losses
+        inline const char* Losses() const { return Get("Losses"); }
+
+        // in
+        inline const char* in() const { return Get("in"); }
+
+        // Leaderboard
+        inline const char* Leaderboard() const { return Get("Leaderboard"); }
+
+        // in Global Leaderboard
+        inline const char* in_Global_Leaderboard() const { return Get("in Global Leaderboard"); }
+
+        // Demotion %u/%u
+        inline const char* Demotion_u_u() const { return Get("Demotion %u/%u"); }
+
+        // Promotion %u/%u
+        inline const char* Promotion_u_u() const { return Get("Promotion %u/%u"); }
+
+        // How does my rank work?
+        inline const char* How_does_my_rank_work() const { return Get("How does my rank work?"); }
+
+        // How does my rank work?###RankedRulesDialog
+        inline const char* How_does_my_rank_work_RankedRulesDialog() const { return Get("How does my rank work?###RankedRulesDialog"); }
+
+        // Check another rank's rules
+        inline const char* Check_another_rank_s_rules() const { return Get("Check another rank's rules"); }
+
+        // Check another rank's rules###RankedRulesSelector
+        inline const char* Check_another_rank_s_rules_RankedRulesSelector() const { return Get("Check another rank's rules###RankedRulesSelector"); }
+
+        // Check a rank's rules###RankedRulesSelector
+        inline const char* Check_a_rank_s_rules_RankedRulesSelector() const { return Get("Check a rank's rules###RankedRulesSelector"); }
+
+        // Compare this with another rank
+        inline const char* Compare_this_with_another_rank() const { return Get("Compare this with another rank"); }
+
+        // Compare this with another rank###RankedRulesCompareSelector
+        inline const char* Compare_this_with_another_rank_RankedRulesCompareSelector() const { return Get("Compare this with another rank###RankedRulesCompareSelector"); }
+
+        // Rank comparison###RankedRulesComparison
+        inline const char* Rank_comparison_RankedRulesComparison() const { return Get("Rank comparison###RankedRulesComparison"); }
+
+        // Detected differences
+        inline const char* Detected_differences() const { return Get("Detected differences"); }
+
+        // vs
+        inline const char* vs() const { return Get("vs"); }
+
+        // Show rules
+        inline const char* Show_rules() const { return Get("Show rules"); }
+
+        // Rank
+        inline const char* Rank() const { return Get("Rank"); }
+
+        // Win
+        inline const char* Win() const { return Get("Win"); }
+
+        // Loss
+        inline const char* Loss() const { return Get("Loss"); }
+
+        // Opponent Rank
+        inline const char* Opponent_Rank() const { return Get("Opponent Rank"); }
+
+        // Your rank rules
+        inline const char* Your_rank_rules() const { return Get("Your rank rules"); }
+
+        // LP table
+        inline const char* LP_table() const { return Get("LP table"); }
+
+        // ANY RANK
+        inline const char* ANY_RANK() const { return Get("ANY RANK"); }
+
+        // The same type of rules as this rank apply from %s to %s.
+        inline const char* The_same_type_of_rules_as_this_rank_apply_from_s_to_s() const { return Get("The same type of rules as this rank apply from %s to %s."); }
+
+        // (resets Demotion Counter)
+        inline const char* resets_Demotion_Counter() const { return Get("(resets Demotion Counter)"); }
+
+        // (resets Promotion Counter)
+        inline const char* resets_Promotion_Counter() const { return Get("(resets Promotion Counter)"); }
+
+        // LV1-LV10 rules
+        inline const char* LV1_LV10_rules() const { return Get("LV1-LV10 rules"); }
+
+        // LV11-LV14 rules
+        inline const char* LV11_LV14_rules() const { return Get("LV11-LV14 rules"); }
+
+        // LV15-LV18 rules
+        inline const char* LV15_LV18_rules() const { return Get("LV15-LV18 rules"); }
+
+        // LV19-LV23 rules
+        inline const char* LV19_LV23_rules() const { return Get("LV19-LV23 rules"); }
+
+        // LV24-LV28 rules
+        inline const char* LV24_LV28_rules() const { return Get("LV24-LV28 rules"); }
+
+        // LV29-LV33 rules
+        inline const char* LV29_LV33_rules() const { return Get("LV29-LV33 rules"); }
+
+        // LV34 rules
+        inline const char* LV34_rules() const { return Get("LV34 rules"); }
+
+        // LV35 rules
+        inline const char* LV35_rules() const { return Get("LV35 rules"); }
+
+        // Leader rules
+        inline const char* Leader_rules() const { return Get("Leader rules"); }
+
+        // Hero rules
+        inline const char* Hero_rules() const { return Get("Hero rules"); }
+
+        // Kisshin rules
+        inline const char* Kisshin_rules() const { return Get("Kisshin rules"); }
+
+        // Hades rules
+        inline const char* Hades_rules() const { return Get("Hades rules"); }
+
+        // Ruler rules
+        inline const char* Ruler_rules() const { return Get("Ruler rules"); }
+
+        // %s - %s
+        inline const char* s_s() const { return Get("%s - %s"); }
+
+        // %s (%s)
+        inline const char* s_s_2() const { return Get("%s (%s)"); }
+
+        // %+d LP
+        inline const char* d_LP() const { return Get("%+d LP"); }
+
+        //  (%+d Promotion Counter)
+        inline const char* d_Promotion_Counter() const { return Get(" (%+d Promotion Counter)"); }
+
+        // %+d LP (%+d Promotion Counter)
+        inline const char* d_LP_d_Promotion_Counter() const { return Get("%+d LP (%+d Promotion Counter)"); }
+
+        // %+d LP (+1 Demotion Counter)
+        inline const char* d_LP_1_Demotion_Counter() const { return Get("%+d LP (+1 Demotion Counter)"); }
+
+        //  or higher.
+        inline const char* or_higher() const { return Get(" or higher."); }
+
+        // or higher.
+        inline const char* or_higher_2() const { return Get("or higher."); }
+
+        // If you reach %u LP, you'll rank up to %s.
+        inline const char* If_you_reach_u_LP_you_ll_rank_up_to_s() const { return Get("If you reach %u LP, you'll rank up to %s."); }
+
+        // At this rank, a win against a lower rank can fill the LP bar, but the rank-up only happens when you beat %s or higher.
+        inline const char* At_this_rank_a_win_against_a_lower_rank_can_fill_the_LP_bar_but_the_rank_up_only_happens_when_you_beat_s_or_higher() const { return Get("At this rank, a win against a lower rank can fill the LP bar, but the rank-up only happens when you beat %s or higher."); }
+
+        // This is the highest rank covered by the current known rules.
+        inline const char* This_is_the_highest_rank_covered_by_the_current_known_rules() const { return Get("This is the highest rank covered by the current known rules."); }
+
+        // If you fall to %u LP, you'll rank down to %s.
+        inline const char* If_you_fall_to_u_LP_you_ll_rank_down_to_s() const { return Get("If you fall to %u LP, you'll rank down to %s."); }
+
+        // LP losses do not directly rank you down in this rank.
+        inline const char* LP_losses_do_not_directly_rank_you_down_in_this_rank() const { return Get("LP losses do not directly rank you down in this rank."); }
+
+        // +1 Demotion Counter
+        inline const char* _1_Demotion_Counter() const { return Get("+1 Demotion Counter"); }
+
+        // If you lose against anyone in this range (%s), you'll get +1 Demotion Counter. At %d, you'll rank down to %s.
+        inline const char* If_you_lose_against_anyone_in_this_range_s_you_ll_get_1_Demotion_Counter_At_d_you_ll_rank_down_to_s() const { return Get("If you lose against anyone in this range (%s), you'll get +1 Demotion Counter. At %d, you'll rank down to %s."); }
+
+        // This rank does not use a demotion counter.
+        inline const char* This_rank_does_not_use_a_demotion_counter() const { return Get("This rank does not use a demotion counter."); }
+
+        // Demotion Counter
+        inline const char* Demotion_Counter() const { return Get("Demotion Counter"); }
+
+        // Promotion Counter
+        inline const char* Promotion_Counter() const { return Get("Promotion Counter"); }
+
+        // If you win against anyone in this range (%s), you'll add points to your Promotion Counter.
+        inline const char* If_you_win_against_anyone_in_this_range_s_you_ll_add_points_to_your_Promotion_Counter() const { return Get("If you win against anyone in this range (%s), you'll add points to your Promotion Counter."); }
+
+        // If your Promotion Counter reaches %d before the LP bar fills, you'll rank up to %s.
+        inline const char* If_your_Promotion_Counter_reaches_d_before_the_LP_bar_fills_you_ll_rank_up_to_s() const { return Get("If your Promotion Counter reaches %d before the LP bar fills, you'll rank up to %s."); }
+
+        // This rank does not use a promotion counter.
+        inline const char* This_rank_does_not_use_a_promotion_counter() const { return Get("This rank does not use a promotion counter."); }
+
+        // This table shows what the game predicts from one match at this rank. Counter notes only appear when that counter can move.
+        inline const char* This_table_shows_what_the_game_predicts_from_one_match_at_this_rank_Counter_notes_only_appear_when_that_counter_can_move() const { return Get("This table shows what the game predicts from one match at this rank. Counter notes only appear when that counter can move."); }
+
+        // Remember that not every rank works exactly like this. These are only the rules for %s.
+        inline const char* Remember_that_not_every_rank_works_exactly_like_this_These_are_only_the_rules_for_s() const { return Get("Remember that not every rank works exactly like this. These are only the rules for %s."); }
+
+        // rank
+        inline const char* rank_2() const { return Get("rank"); }
+
+        // to
+        inline const char* to() const { return Get("to"); }
+
+        // If you get above
+        inline const char* If_you_get_above() const { return Get("If you get above"); }
+
+        // , you'll rank up to
+        inline const char* you_ll_rank_up_to() const { return Get(", you'll rank up to"); }
+
+        // At this rank, a win against a lower rank can fill the LP bar, but the rank-up only happens when you beat
+        inline const char* At_this_rank_a_win_against_a_lower_rank_can_fill_the_LP_bar_but_the_rank_up_only_happens_when_you_beat() const { return Get("At this rank, a win against a lower rank can fill the LP bar, but the rank-up only happens when you beat"); }
+
+        // If you get below
+        inline const char* If_you_get_below() const { return Get("If you get below"); }
+
+        // , you'll rank down to
+        inline const char* you_ll_rank_down_to() const { return Get(", you'll rank down to"); }
+
+        // If you lose against anyone that is from
+        inline const char* If_you_lose_against_anyone_that_is_from() const { return Get("If you lose against anyone that is from"); }
+
+        // , you'll get
+        inline const char* you_ll_get() const { return Get(", you'll get"); }
+
+        // . At
+        inline const char* At() const { return Get(". At"); }
+
+        // Your
+        inline const char* Your() const { return Get("Your"); }
+
+        // resets by winning a ranked match against anyone that is from
+        inline const char* resets_by_winning_a_ranked_match_against_anyone_that_is_from() const { return Get("resets by winning a ranked match against anyone that is from"); }
+
+        // If you win against anyone that is from
+        inline const char* If_you_win_against_anyone_that_is_from() const { return Get("If you win against anyone that is from"); }
+
+        // , you'll add points to your
+        inline const char* you_ll_add_points_to_your() const { return Get(", you'll add points to your"); }
+
+        // resets by losing against anyone that is from
+        inline const char* resets_by_losing_against_anyone_that_is_from() const { return Get("resets by losing against anyone that is from"); }
+
+        // Remember that not every rank works exactly like this. These are only the rules for
+        inline const char* Remember_that_not_every_rank_works_exactly_like_this_These_are_only_the_rules_for() const { return Get("Remember that not every rank works exactly like this. These are only the rules for"); }
+
+        // none
+        inline const char* none() const { return Get("none"); }
+
+        // LP range is
+        inline const char* LP_range_is() const { return Get("LP range is"); }
+
+        // %s has a bigger LP range by %u LP.
+        inline const char* s_has_a_bigger_LP_range_by_u_LP() const { return Get("%s has a bigger LP range by %u LP."); }
+
+        // has a bigger LP range by %u LP.
+        inline const char* has_a_bigger_LP_range_by_u_LP() const { return Get("has a bigger LP range by %u LP."); }
+
+        // can fill its LP bar against lower ranks, but can only rank up by beating its own rank or higher.
+        inline const char* can_fill_its_LP_bar_against_lower_ranks_but_can_only_rank_up_by_beating_its_own_rank_or_higher() const { return Get("can fill its LP bar against lower ranks, but can only rank up by beating its own rank or higher."); }
+
+        // does not have this rule.
+        inline const char* does_not_have_this_rule() const { return Get("does not have this rule."); }
+
+        // promotion counter
+        inline const char* promotion_counter_2() const { return Get("promotion counter"); }
+
+        // demotion counter
+        inline const char* demotion_counter_2() const { return Get("demotion counter"); }
+
+        // is enabled at %d points
+        inline const char* is_enabled_at_d_points() const { return Get("is enabled at %d points"); }
+
+        // is enabled at %d strikes
+        inline const char* is_enabled_at_d_strikes() const { return Get("is enabled at %d strikes"); }
+
+        // is disabled
+        inline const char* is_disabled() const { return Get("is disabled"); }
+
+        // promotion counter gain applies against
+        inline const char* promotion_counter_gain_applies_against() const { return Get("promotion counter gain applies against"); }
+
+        // adds demotion strikes when losing to
+        inline const char* adds_demotion_strikes_when_losing_to() const { return Get("adds demotion strikes when losing to"); }
+
+        // resets demotion strikes by winning against
+        inline const char* resets_demotion_strikes_by_winning_against() const { return Get("resets demotion strikes by winning against"); }
+
+        // resets promotion points by losing to
+        inline const char* resets_promotion_points_by_losing_to() const { return Get("resets promotion points by losing to"); }
+
+        // No rule differences were detected for these ranks.
+        inline const char* No_rule_differences_were_detected_for_these_ranks() const { return Get("No rule differences were detected for these ranks."); }
+
         // YOU ARE NOT IN A ROOM OR ONLINE MATCH!
         inline const char* YOU_ARE_NOT_IN_A_ROOM_OR_ONLINE_MATCH() const { return Get("YOU ARE NOT IN A ROOM OR ONLINE MATCH!"); }
 
@@ -823,7 +1258,7 @@ struct LocalizationKeysAccessor
         inline const char* Key_Press() const { return Get("Key Press"); }
 
         // Unknown
-        inline const char* Unknown() const { return Get("Unknown"); }
+        inline const char* Unknown_2() const { return Get("Unknown"); }
 
         // Playback Trigger Type
         inline const char* Playback_Trigger_Type() const { return Get("Playback Trigger Type"); }

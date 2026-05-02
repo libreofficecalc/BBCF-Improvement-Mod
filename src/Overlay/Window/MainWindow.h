@@ -74,6 +74,7 @@ private:
         void DrawCustomPalettesSection() const;
         void DrawHitboxOverlaySection() const;
         void DrawGameplaySettingSection() const;
+        void DrawRankedMatchesSection() const;
         void DrawAvatarSection() const;
         void DrawFrameAdvantageSection() const;
         void DrawFrameHistorySection() const;

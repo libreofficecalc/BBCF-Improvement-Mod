@@ -339,6 +339,151 @@ Rewind pos: +%d,Rewind pos: +%d,Pos de rebobinado: +%d
 snap_apparatus snapshot_count: %d,snap_apparatus snapshot_count: %d,snap_apparatus snapshot_count: %d
 %d: Framecount:%d,%d: Framecount:%d,%d: Cuenta de Frames:%d
 Ranked_search_warning,You cannot use this feature while searching for a ranked match,No puedes utilizar esta funcionalidad mientras buscas una partida
+Ranked Matches,Ranked Matches,Partidas clasificatorias
+Show ranked progress,Show ranked progress,Mostrar progreso de rango
+"Shows a movable ranked progress window during ranked character select, ranked menu flow, and after a successful ranked LP upload.","Shows a movable ranked progress window during ranked character select, ranked menu flow, and after a successful ranked LP upload.","Muestra una ventana movible de progreso de rango durante la selección de personaje clasificatoria, el flujo de menú clasificatorio y después de una subida exitosa de LP."
+Show ranked prediction,Show ranked prediction,Mostrar predicción de rango
+Shows win/loss ranked outcome predictions during ranked match confirmation when opponent rank data is available.,Shows win/loss ranked outcome predictions during ranked match confirmation when opponent rank data is available.,Muestra predicciones de victoria y derrota durante la confirmación de partida clasificatoria cuando el rango del rival está disponible.
+Ranked ladder,Ranked ladder,Escalera clasificatoria
+Ranked ladder###RankedLadder,Ranked ladder###RankedLadder,Escalera clasificatoria###RankedLadder
+"Opens the ranked ladder window, including known LP thresholds and population estimates.","Opens the ranked ladder window, including known LP thresholds and population estimates.",Abre la ventana de escalera clasificatoria con umbrales de LP conocidos y estimaciones de población.
+Ranked Progress,Ranked Progress,Progreso de rango
+Ranked Progress###RankedProgressOverlay,Ranked Progress###RankedProgressOverlay,Progreso de rango###RankedProgressOverlay
+Choose a character and open a closable ranked progress window. Right-click the ranked progress window to configure the top label.,Choose a character and open a closable ranked progress window. Right-click the ranked progress window to configure the top label.,Elige un personaje y abre una ventana cerrable de progreso de rango. Haz clic derecho en la ventana de progreso para configurar la etiqueta superior.
+How does ranked work?,How does ranked work?,¿Cómo funciona el modo clasificatorio?
+"Choose any rank and open an explanation of its LP, promotion, and demotion rules.","Choose any rank and open an explanation of its LP, promotion, and demotion rules.","Elige cualquier rango y abre una explicación de sus reglas de LP, ascenso y descenso."
+Select ranked character###RankedProgressCharacterSelector,Select ranked character###RankedProgressCharacterSelector,Seleccionar personaje clasificatorio###RankedProgressCharacterSelector
+Ranked Prediction###RankedPredictionOverlay,Ranked Prediction###RankedPredictionOverlay,Predicción de rango###RankedPredictionOverlay
+Opponent,Opponent,Rival
+Waiting for opponent...,Waiting for opponent...,Esperando rival...
+Loading rank...,Loading rank...,Cargando rango...
+Rank unavailable,Rank unavailable,Rango no disponible
+RANK UP,RANK UP,SUBES DE RANGO
+RANK DOWN,RANK DOWN,BAJAS DE RANGO
+Nothing.,Nothing.,Nada.
+Unknown,Unknown,Desconocido
+Current rank data unavailable,Current rank data unavailable,Datos del rango actual no disponibles
+Can only rank up against your rank or higher.,Can only rank up against your rank or higher.,Solo puedes subir de rango contra tu mismo rango o superior.
+LP Threshold Reached,LP Threshold Reached,Umbral de LP alcanzado
+Automatic Promotion Reached,Automatic Promotion Reached,Ascenso automático alcanzado
+LP already capped for this opponent.,LP already capped for this opponent.,El LP ya está al máximo para este rival.
+LV1-LV10 losses do not change LP.,LV1-LV10 losses do not change LP.,Las derrotas en LV1-LV10 no cambian el LP.
+Automatic Demotion Reached,Automatic Demotion Reached,Descenso automático alcanzado
+Waiting for ranked opponent data.,Waiting for ranked opponent data.,Esperando datos del rival clasificatorio.
+Waiting for RANK_ALL lookup.,Waiting for RANK_ALL lookup.,Esperando consulta de RANK_ALL.
+Opponent RANK_ALL entry unavailable.,Opponent RANK_ALL entry unavailable.,La entrada RANK_ALL del rival no está disponible.
+Scanning... %d probes fired,Scanning... %d probes fired,Escaneando... %d consultas realizadas
+Total ranked players: %u  |  Samples: %u,Total ranked players: %u  |  Samples: %u,Jugadores clasificatorios totales: %u  |  Muestras: %u
+Distribution search failed.,Distribution search failed.,Falló la búsqueda de distribución.
+Waiting for leaderboard handle...,Waiting for leaderboard handle...,Esperando el identificador de la tabla...
+Opening ladder begins scan.,Opening ladder begins scan.,Abrir la escalera inicia el escaneo.
+Players,Players,Jugadores
+Ignored,Ignored,Ignorado
+Loading,Loading,Cargando
+No ranked progress data available.,No ranked progress data available.,No hay datos de progreso de rango disponibles.
+Show matches,Show matches,Mostrar partidas
+Show wins,Show wins,Mostrar victorias
+Show losses,Show losses,Mostrar derrotas
+Show winrate %,Show winrate %,Mostrar porcentaje de victorias
+Show character leaderboard placement,Show character leaderboard placement,Mostrar posición en tabla del personaje
+Show global leaderboard placement,Show global leaderboard placement,Mostrar posición en tabla global
+Matches,Matches,Partidas
+Wins,Wins,Victorias
+Losses,Losses,Derrotas
+in,in,en
+Leaderboard,Leaderboard,Tabla
+in Global Leaderboard,in Global Leaderboard,en la tabla global
+Demotion %u/%u,Demotion %u/%u,Descenso %u/%u
+Promotion %u/%u,Promotion %u/%u,Ascenso %u/%u
+How does my rank work?,How does my rank work?,¿Cómo funciona mi rango?
+How does my rank work?###RankedRulesDialog,How does my rank work?###RankedRulesDialog,¿Cómo funciona mi rango?###RankedRulesDialog
+Check another rank's rules,Check another rank's rules,Ver las reglas de otro rango
+Check another rank's rules###RankedRulesSelector,Check another rank's rules###RankedRulesSelector,Ver las reglas de otro rango###RankedRulesSelector
+Check a rank's rules###RankedRulesSelector,Check a rank's rules###RankedRulesSelector,Ver reglas de un rango###RankedRulesSelector
+Compare this with another rank,Compare this with another rank,Comparar con otro rango
+Compare this with another rank###RankedRulesCompareSelector,Compare this with another rank###RankedRulesCompareSelector,Comparar con otro rango###RankedRulesCompareSelector
+Rank comparison###RankedRulesComparison,Rank comparison###RankedRulesComparison,Comparación de rangos###RankedRulesComparison
+Detected differences,Detected differences,Diferencias detectadas
+vs,vs,vs
+Show rules,Show rules,Ver reglas
+Rank,Rank,Rango
+Win,Win,Victoria
+Loss,Loss,Derrota
+Opponent Rank,Opponent Rank,Rango rival
+Your rank rules,Your rank rules,Reglas de tu rango
+LP table,LP table,Tabla de LP
+ANY RANK,ANY RANK,CUALQUIER RANGO
+The same type of rules as this rank apply from %s to %s.,The same type of rules as this rank apply from %s to %s.,El mismo tipo de reglas que este rango aplica desde %s hasta %s.
+(resets Demotion Counter),(resets Demotion Counter),(reinicia el contador de descenso)
+(resets Promotion Counter),(resets Promotion Counter),(reinicia el contador de ascenso)
+LV1-LV10 rules,LV1-LV10 rules,Reglas LV1-LV10
+LV11-LV14 rules,LV11-LV14 rules,Reglas LV11-LV14
+LV15-LV18 rules,LV15-LV18 rules,Reglas LV15-LV18
+LV19-LV23 rules,LV19-LV23 rules,Reglas LV19-LV23
+LV24-LV28 rules,LV24-LV28 rules,Reglas LV24-LV28
+LV29-LV33 rules,LV29-LV33 rules,Reglas LV29-LV33
+LV34 rules,LV34 rules,Reglas LV34
+LV35 rules,LV35 rules,Reglas LV35
+Leader rules,Leader rules,Reglas Leader
+Hero rules,Hero rules,Reglas Hero
+Kisshin rules,Kisshin rules,Reglas Kisshin
+Hades rules,Hades rules,Reglas Hades
+Ruler rules,Ruler rules,Reglas Ruler
+"%s - %s","%s - %s","%s - %s"
+"%s (%s)","%s (%s)","%s (%s)"
+"%+d LP","%+d LP","%+d LP"
+" (%+d Promotion Counter)"," (%+d Promotion Counter)"," (%+d Contador de ascenso)"
+"%+d LP (%+d Promotion Counter)","%+d LP (%+d Promotion Counter)","%+d LP (%+d Contador de ascenso)"
+"%+d LP (+1 Demotion Counter)","%+d LP (+1 Demotion Counter)","%+d LP (+1 Contador de descenso)"
+" or higher."," or higher."," o superior."
+or higher.,or higher.,o superior.
+"If you reach %u LP, you'll rank up to %s.","If you reach %u LP, you'll rank up to %s.","Si llegas a %u LP, subirás a %s."
+"At this rank, a win against a lower rank can fill the LP bar, but the rank-up only happens when you beat %s or higher.","At this rank, a win against a lower rank can fill the LP bar, but the rank-up only happens when you beat %s or higher.","En este rango, ganar contra un rango más bajo puede llenar la barra de LP, pero solo subirás si le ganas a %s o superior."
+This is the highest rank covered by the current known rules.,This is the highest rank covered by the current known rules.,Este es el rango más alto cubierto por las reglas conocidas actuales.
+"If you fall to %u LP, you'll rank down to %s.","If you fall to %u LP, you'll rank down to %s.","Si bajas a %u LP, descenderás a %s."
+LP losses do not directly rank you down in this rank.,LP losses do not directly rank you down in this rank.,Las derrotas de LP no te hacen descender directamente en este rango.
++1 Demotion Counter,+1 Demotion Counter,+1 Contador de descenso
+"If you lose against anyone in this range (%s), you'll get +1 Demotion Counter. At %d, you'll rank down to %s.","If you lose against anyone in this range (%s), you'll get +1 Demotion Counter. At %d, you'll rank down to %s.","Si pierdes contra alguien en este rango (%s), recibirás +1 Contador de descenso. Al llegar a %d, descenderás a %s."
+This rank does not use a demotion counter.,This rank does not use a demotion counter.,Este rango no usa contador de descenso.
+Demotion Counter,Demotion Counter,Contador de descenso
+Promotion Counter,Promotion Counter,Contador de ascenso
+"If you win against anyone in this range (%s), you'll add points to your Promotion Counter.","If you win against anyone in this range (%s), you'll add points to your Promotion Counter.","Si ganas contra alguien en este rango (%s), sumarás puntos a tu Contador de ascenso."
+"If your Promotion Counter reaches %d before the LP bar fills, you'll rank up to %s.","If your Promotion Counter reaches %d before the LP bar fills, you'll rank up to %s.","Si tu Contador de ascenso llega a %d antes de llenar la barra de LP, subirás a %s."
+This rank does not use a promotion counter.,This rank does not use a promotion counter.,Este rango no usa contador de ascenso.
+This table shows what the game predicts from one match at this rank. Counter notes only appear when that counter can move.,This table shows what the game predicts from one match at this rank. Counter notes only appear when that counter can move.,Esta tabla muestra lo que el juego predice para una partida en este rango. Las notas de contador solo aparecen cuando ese contador puede cambiar.
+Remember that not every rank works exactly like this. These are only the rules for %s.,Remember that not every rank works exactly like this. These are only the rules for %s.,Recuerda que no todos los rangos funcionan exactamente así. Estas reglas son solo para %s.
+rank,rank,rango
+to,to,a
+If you get above,If you get above,Si superas
+", you'll rank up to",", you'll rank up to",", subirás a"
+"At this rank, a win against a lower rank can fill the LP bar, but the rank-up only happens when you beat","At this rank, a win against a lower rank can fill the LP bar, but the rank-up only happens when you beat","En este rango, ganar contra un rango más bajo puede llenar la barra de LP, pero solo subes si derrotas a"
+If you get below,If you get below,Si bajas de
+", you'll rank down to",", you'll rank down to",", descenderás a"
+If you lose against anyone that is from,If you lose against anyone that is from,Si pierdes contra alguien de
+", you'll get",", you'll get",", recibirás"
+. At,. At,. Al llegar a
+Your,Your,Tu
+resets by winning a ranked match against anyone that is from,resets by winning a ranked match against anyone that is from,se reinicia al ganar una partida clasificatoria contra alguien de
+If you win against anyone that is from,If you win against anyone that is from,Si ganas contra alguien de
+", you'll add points to your",", you'll add points to your",", sumarás puntos a tu"
+resets by losing against anyone that is from,resets by losing against anyone that is from,se reinicia al perder contra alguien de
+Remember that not every rank works exactly like this. These are only the rules for,Remember that not every rank works exactly like this. These are only the rules for,Recuerda que no todos los rangos funcionan exactamente igual. Estas reglas son solo para
+none,none,ninguno
+LP range is,LP range is,tiene un rango de LP de
+%s has a bigger LP range by %u LP.,%s has a bigger LP range by %u LP.,%s tiene un rango de LP mayor por %u LP.
+has a bigger LP range by %u LP.,has a bigger LP range by %u LP.,tiene un rango de LP mayor por %u LP.
+"can fill its LP bar against lower ranks, but can only rank up by beating its own rank or higher.","can fill its LP bar against lower ranks, but can only rank up by beating its own rank or higher.","puede llenar su barra de LP contra rangos inferiores, pero solo puede subir derrotando a su mismo rango o superior."
+does not have this rule.,does not have this rule.,no tiene esta regla.
+promotion counter,promotion counter,contador de ascenso
+demotion counter,demotion counter,contador de descenso
+is enabled at %d points,is enabled at %d points,está activado en %d puntos
+is enabled at %d strikes,is enabled at %d strikes,está activado en %d marcas
+is disabled,is disabled,está desactivado
+promotion counter gain applies against,promotion counter gain applies against,suma contador de ascenso contra
+adds demotion strikes when losing to,adds demotion strikes when losing to,suma marcas de descenso al perder contra
+resets demotion strikes by winning against,resets demotion strikes by winning against,reinicia marcas de descenso al ganar contra
+resets promotion points by losing to,resets promotion points by losing to,reinicia puntos de ascenso al perder contra
+No rule differences were detected for these ranks.,No rule differences were detected for these ranks.,No se detectaron diferencias de reglas para estos rangos.
 YOU ARE NOT IN A ROOM OR ONLINE MATCH!,YOU ARE NOT IN A ROOM OR ONLINE MATCH!,NO ESTAS EN UNA SALA O PARTIDA ONLINE!
 Online type: %s,Online type: %s,Tipo de Online: %s
 Improvement Mod users in Room:,Improvement Mod users in Room:,Usuarios de Improvement Mod en Sala:

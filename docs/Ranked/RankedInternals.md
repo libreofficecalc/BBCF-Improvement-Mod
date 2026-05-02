@@ -324,6 +324,111 @@ Prediction model now mirrors `FUN_004bde70` for promotion-counter gain.
 LP-threshold and demotion-counter predictions are based on currently documented
 rules.
 
+## Ranked Rules Dialog
+
+Implementation:
+
+- entry point: right-click `Ranked Progress` overlay, then choose
+  `How does my rank work?`
+- draw path: modal popup in `DrawRankedRulesDialog` in
+  `src/Overlay/Window/MainWindow.cpp`
+- rank selector: `Check another rank's rules` opens a second modal selector
+  listing all known internal ranks `0..39` by rank name only;
+  closing the selector cancels back to the rules dialog, while selecting a rank
+  immediately updates the rules dialog and closes the selector
+- both modal popups set their next-window position to the display center on
+  appearing, using a `0.5, 0.5` pivot
+- the rules dialog title is the selected rank name; grouped buckets show a gray
+  subtitle such as `The same type of rules as this rank apply from LV1 to LV10.`
+- `Compare this with another rank` opens a comparison selector and then a
+  comparison modal. It computes both ranks through the shared rule helpers and
+  only emits bullets for detected differences:
+  - cumulative LP lower/upper/span
+  - Leader+ lower-rank win gate
+  - promotion-counter enabled state and limit
+  - promotion-counter qualifying range and reset range (only when both ranks
+    have the promotion counter enabled — if the enabled/disabled state already
+    differs, these sub-bullets are suppressed as redundant)
+  - demotion-counter enabled state and limit
+  - demotion-counter qualifying range and reset range (only when both ranks
+    have the demotion counter enabled — same suppression rule)
+  - All rank names in comparison bullets use `AppendRankNameSpan` so they
+    render with their native rank color, matching the rules dialog style.
+- LP table column headers (`Opponent Rank`, `Win`, `Loss`) and data cells are
+  all horizontally and vertically centered. Header height matches the data row
+  height formula (`textLineHeight + 8px`) so visual rhythm is consistent.
+- localization: all user-facing labels and explanatory sentences are in
+  `resource/localization/Localization.csv`
+
+Data model:
+
+- The dialog pulls rank labels, LP bounds, rank-up/rank-down thresholds,
+  promotion-counter limits, demotion-counter limits, and win/loss/counter
+  deltas from the same helper functions used by the ranked progress and
+  prediction UI.
+- Do not add separate formula constants for this dialog. If ranked prediction
+  math changes, the dialog should update through shared helpers.
+- LP thresholds are displayed in the cumulative LP model used by the ranked
+  progress overlay.
+- Visual styling intentionally reuses ranked overlay colors:
+  - every rendered rank label uses `GetVisibleRankColor`
+  - LP thresholds use the same gray as ranked progress thresholds
+  - counter-change notes use ranked prediction reason gray
+  - LP table win/loss columns use ranked prediction win/loss colors
+  - the selected/current opponent-rank row is bordered with the selected rank
+    color instead of recoloring the row text
+- The opponent LP table is data-driven:
+  - LV1-LV10 use one `ANY RANK` row because opponent rank does not change known
+    LP/counter behavior there.
+  - Other ranks scan all known opponent ranks and keep the contiguous range that
+    matters to the rules. A row matters when win/loss LP is `>= 1`, a
+    promotion/demotion counter can increase, or a promotion/demotion counter can
+    reset. The bottom of the range is the boundary rank that yields exactly
+    `+1/-1 LP`, making the cutoff point explicit.
+  - This keeps Ruler/Hades-style edge cases visible: even when distant matches
+    are only `+/-1 LP`, LV25+ opponents still stay in the table because they can
+    add a demotion strike.
+
+User-facing content:
+
+- plain-language bullets explain:
+  - LP needed to rank up
+  - LP floor that can rank down, when applicable
+  - demotion-counter qualifying opponent range and limit, when applicable
+  - demotion-counter reset range, when applicable
+  - promotion-counter qualifying opponent range and limit, when applicable
+  - promotion-counter reset range, when applicable
+  - Leader+ lower-rank win gate, when applicable
+- the LP table columns are `Opponent Rank`, `Win`, and `Loss`
+- LP table columns are not user-resizable; widths are recalculated each frame
+  from the current dialog width so resize cannot preserve stale bad ratios
+- counter movement is appended to table cells only when it applies, e.g.
+  `+1024 LP (+1024 Promotion Counter)` or
+  `-1024 LP (+1 Demotion Counter)`
+- counter reset notes are also appended when they apply, e.g.
+  `+1024 LP (resets Demotion Counter)` or
+  `-1024 LP (resets Promotion Counter)`
+- dialog copy uses `If you get above ...`, `If you get below ...`, `If you
+  lose/win against anyone that is from rank ...`, and reset-rule bullets for
+  promotion/demotion counters
+
+## Ranked Main Menu Section
+
+The main mod menu keeps ranked controls under `Ranked Matches` instead of the
+top-level settings area.
+
+Controls:
+
+- `Show ranked progress`: persists `ShowRankedProgress`.
+- `Show ranked prediction`: persists `ShowRankedPrediction`.
+- `Ranked ladder`: sets `g_showRankedLadderWindow`.
+- `Ranked Progress`: opens `Select ranked character`; choosing a character sets
+  `g_manualRankedProgressOpen` and draws the normal ranked progress UI with a
+  close button. Live ranked/menu/upload contexts override this manual window and
+  use the normal unclosable overlay path.
+- `How does ranked work?`: opens the rank selector titled `Check a rank's rules`
+  and then opens the normal ranked rules modal for the selected rank.
+
 ## Live Kokonoe Rankdown Proof
 
 Log:
