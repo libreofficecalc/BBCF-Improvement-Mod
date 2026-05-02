@@ -7,6 +7,7 @@
 #include "Game/characters.h"
 #include "Game/gamestates.h"
 #include "Overlay/Window/MainWindow.h"
+#include "Overlay/Window/Ranked/RankedProgressWindow.h"
 #include "Overlay/WindowManager.h"
 
 #include <Windows.h>

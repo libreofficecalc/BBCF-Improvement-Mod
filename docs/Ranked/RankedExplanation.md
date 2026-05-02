@@ -78,9 +78,10 @@ The main mod menu has a **Ranked Matches** section for ranked features:
 - **Show ranked prediction** toggles win/loss predictions during ranked
   confirmation.
 - **Ranked ladder** opens the ladder and population window.
-- **Ranked Progress** lets you choose a character and open a closable ranked
-  progress window.
 - **How does ranked work?** lets you choose any rank and open its rules.
+
+Ranked progress opens automatically when ranked context is available, rather
+than from a standalone main-menu button.
 
 ## Common Rules
 

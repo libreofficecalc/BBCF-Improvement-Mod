@@ -294,7 +294,8 @@ On wins, demotion counter reset rules:
 Implementation:
 
 - setting: `ShowRankedPrediction`
-- draw path: `DrawRankedPredictionWindow` in `src/Overlay/Window/MainWindow.cpp`
+- draw path: `DrawRankedPredictionWindow` in
+  `src/Overlay/Window/Ranked/RankedProgressWindow.cpp`
 - data source for self: existing ranked row display state used by the ranked progress window
 - data source for opponent: current ranked room opponent SteamID, then `RANK_ALL`
   lookup through `DownloadLeaderboardEntriesForUsers`
@@ -331,7 +332,7 @@ Implementation:
 - entry point: right-click `Ranked Progress` overlay, then choose
   `How does my rank work?`
 - draw path: modal popup in `DrawRankedRulesDialog` in
-  `src/Overlay/Window/MainWindow.cpp`
+  `src/Overlay/Window/Ranked/RankedProgressWindow.cpp`
 - rank selector: `Check another rank's rules` opens a second modal selector
   listing all known internal ranks `0..39` by rank name only;
   closing the selector cancels back to the rules dialog, while selecting a rank
@@ -422,12 +423,15 @@ Controls:
 - `Show ranked progress`: persists `ShowRankedProgress`.
 - `Show ranked prediction`: persists `ShowRankedPrediction`.
 - `Ranked ladder`: sets `g_showRankedLadderWindow`.
-- `Ranked Progress`: opens `Select ranked character`; choosing a character sets
-  `g_manualRankedProgressOpen` and draws the normal ranked progress UI with a
-  close button. Live ranked/menu/upload contexts override this manual window and
-  use the normal unclosable overlay path.
 - `How does ranked work?`: opens the rank selector titled `Check a rank's rules`
   and then opens the normal ranked rules modal for the selected rank.
+
+The menu intentionally does not expose a standalone `Ranked Progress` button.
+That window depends on ranked flow context and is surfaced automatically when
+ranked progress data is meaningful.
+
+Ranked modal dialogs use stable ImGui IDs, center on open, and set default sizes
+only on first use so user-resized windows persist through ImGui layout storage.
 
 ## Live Kokonoe Rankdown Proof
 

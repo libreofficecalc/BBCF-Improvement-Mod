@@ -88,6 +88,9 @@
     <ClCompile Include="src\Overlay\Window\HitboxOverlay.cpp" />
     <ClCompile Include="src\Overlay\Window\LogWindow.cpp" />
     <ClCompile Include="src\Overlay\Window\MainWindow.cpp" />
+    <ClCompile Include="src\Overlay\Window\Ranked\RankedMainMenuSection.cpp" />
+    <ClCompile Include="src\Overlay\Window\Ranked\RankedModalWindow.cpp" />
+    <ClCompile Include="src\Overlay\Window\Ranked\RankedProgressWindow.cpp" />
     <ClCompile Include="src\Overlay\Window\WinePopupWindow.cpp" />
     <ClCompile Include="src\Overlay\Window\ControllerSettings\ControllerRefreshDrawer.cpp" />
     <ClCompile Include="src\Overlay\Window\ControllerSettings\ControllerSettingsSection.cpp" />
@@ -213,6 +216,9 @@
     <ClInclude Include="src\Overlay\Window\HitboxOverlay.h" />
     <ClInclude Include="src\Overlay\Window\LogWindow.h" />
     <ClInclude Include="src\Overlay\Window\MainWindow.h" />
+    <ClInclude Include="src\Overlay\Window\Ranked\RankedMainMenuSection.h" />
+    <ClInclude Include="src\Overlay\Window\Ranked\RankedModalWindow.h" />
+    <ClInclude Include="src\Overlay\Window\Ranked\RankedProgressWindow.h" />
     <ClInclude Include="src\Overlay\Window\WinePopupWindow.h" />
     <ClInclude Include="src\Overlay\Window\ControllerSettings\ControllerRefreshDrawer.h" />
     <ClInclude Include="src\Overlay\Window\ControllerSettings\ControllerSettingsSection.h" />

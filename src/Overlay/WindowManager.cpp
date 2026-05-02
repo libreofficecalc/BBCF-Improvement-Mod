@@ -5,6 +5,7 @@
 #include "WindowContainer/WindowContainer.h"
 #include "Window/LogWindow.h"
 #include "Window/MainWindow.h"
+#include "Window/Ranked/RankedProgressWindow.h"
 #include "Window/WinePopupWindow.h"
 
 #include "Core/info.h"

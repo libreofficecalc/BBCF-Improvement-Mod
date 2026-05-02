@@ -31,6 +31,9 @@
     <Filter Include="src\ImGui">
       <UniqueIdentifier>{6efb0560-dbe6-4ba8-b579-e08645068bf5}</UniqueIdentifier>
     </Filter>
+    <Filter Include="src\Overlay\Window\Ranked">
+      <UniqueIdentifier>{a7974380-835f-4aa8-a9cc-5233cf2400af}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\SteamApiWrapper\SteamMatchmakingWrapper.cpp">
@@ -113,6 +116,15 @@
     <ClCompile Include="src\Overlay\Window\DebugWindow.cpp" />
     <ClCompile Include="src\Overlay\Window\LogWindow.cpp" />
     <ClCompile Include="src\Overlay\Window\MainWindow.cpp" />
+    <ClCompile Include="src\Overlay\Window\Ranked\RankedMainMenuSection.cpp">
+      <Filter>src\Overlay\Window\Ranked</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Overlay\Window\Ranked\RankedModalWindow.cpp">
+      <Filter>src\Overlay\Window\Ranked</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Overlay\Window\Ranked\RankedProgressWindow.cpp">
+      <Filter>src\Overlay\Window\Ranked</Filter>
+    </ClCompile>
     <ClCompile Include="src\Overlay\Window\WinePopupWindow.cpp" />
     <ClCompile Include="src\Overlay\Window\ControllerSettings\ControllerRefreshDrawer.cpp" />
     <ClCompile Include="src\Overlay\Window\ControllerSettings\ControllerSettingsSection.cpp" />
@@ -269,6 +281,15 @@
     <ClInclude Include="src\Overlay\Window\DebugWindow.h" />
     <ClInclude Include="src\Overlay\Window\LogWindow.h" />
     <ClInclude Include="src\Overlay\Window\MainWindow.h" />
+    <ClInclude Include="src\Overlay\Window\Ranked\RankedMainMenuSection.h">
+      <Filter>src\Overlay\Window\Ranked</Filter>
+    </ClInclude>
+    <ClInclude Include="src\Overlay\Window\Ranked\RankedModalWindow.h">
+      <Filter>src\Overlay\Window\Ranked</Filter>
+    </ClInclude>
+    <ClInclude Include="src\Overlay\Window\Ranked\RankedProgressWindow.h">
+      <Filter>src\Overlay\Window\Ranked</Filter>
+    </ClInclude>
     <ClInclude Include="src\Overlay\Window\ControllerSettings\ControllerRefreshDrawer.h" />
     <ClInclude Include="src\Overlay\Window\ControllerSettings\ControllerSettingsSection.h" />
     <ClInclude Include="src\Overlay\Window\ControllerSettings\KeyboardSeparationDrawer.h" />
