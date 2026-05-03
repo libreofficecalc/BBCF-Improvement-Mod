@@ -621,8 +621,8 @@ struct LocalizationKeysAccessor
         // Show ranked prediction
         inline const char* Show_ranked_prediction() const { return Get("Show ranked prediction"); }
 
-        // Shows win/loss ranked outcome predictions during ranked match confirmation when opponent rank data is available.
-        inline const char* Shows_win_loss_ranked_outcome_predictions_during_ranked_match_confirmation_when_opponent_rank_data_is_available() const { return Get("Shows win/loss ranked outcome predictions during ranked match confirmation when opponent rank data is available."); }
+        // Shows win/loss ranked outcome predictions during ranked match confirmation and ranked rematch screens when opponent rank data is available.
+        inline const char* Shows_win_loss_ranked_outcome_predictions_during_ranked_match_confirmation_and_ranked_rematch_screens_when_opponent_rank_data_is_available() const { return Get("Shows win/loss ranked outcome predictions during ranked match confirmation and ranked rematch screens when opponent rank data is available."); }
 
         // Ranked ladder
         inline const char* Ranked_ladder() const { return Get("Ranked ladder"); }
@@ -1548,3 +1548,5 @@ struct LocalizationKeysAccessor
         // Replay %s
         inline const char* Replay_s() const { return Get("Replay %s"); }
 };
+
+

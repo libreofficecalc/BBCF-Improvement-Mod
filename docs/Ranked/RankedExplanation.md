@@ -8,9 +8,12 @@ Each character has separate ranked progress.
 
 ## Ranked Prediction Window
 
-The mod can show a ranked prediction window during ranked match confirmation.
-This is the popup state after selecting a ranked opponent, before both players
-confirm with OK.
+The mod can show a ranked prediction window during ranked match confirmation
+and on the ranked rematch screen. Confirmation is the popup state after
+selecting a ranked opponent, before both players confirm with OK. The rematch
+screen is the post-match screen where both players can choose to run it back;
+the window does not open on the earlier victory animation or after the ranked
+set has ended and rematch is no longer available.
 
 The window shows the opponent name, opponent rank, and two outcomes:
 
@@ -20,9 +23,14 @@ The window shows the opponent name, opponent rank, and two outcomes:
   such as `+459 Promotion Counter` or `+1 Demotion Counter`.
 
 Opponent rank is looked up for the character the opponent is currently playing,
-when the game exposes that character in time. The window does not display the
+when the game exposes that character in time. On the ranked rematch screen the
+mod waits for the ranked upload result, then asks Steam for that character rank
+again, so an opponent's rank-up or rank-down from the match can replace the
+earlier confirmation-screen rank when Steam has the updated leaderboard entry.
+The window does not display the
 opponent character name. If the mod cannot identify the opponent character yet,
-it shows the rank as unavailable instead of using the opponent's highest or
+it falls back to the latest ranked lobby rank when available; otherwise it
+shows the rank as unavailable instead of using the opponent's highest or
 overall rank.
 
 When a rank change is predicted, the window explains which rule caused it:
@@ -82,7 +90,7 @@ The main mod menu has a **Ranked Matches** section for ranked features:
 
 - **Show ranked progress** toggles the automatic ranked progress overlay.
 - **Show ranked prediction** toggles win/loss predictions during ranked
-  confirmation.
+  confirmation and ranked rematch screens.
 - **Ranked ladder** opens the ladder and population window.
 - **How does ranked work?** lets you choose any rank and open its rules.
 

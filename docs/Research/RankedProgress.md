@@ -13619,3 +13619,80 @@ Next live validation:
   - `[RANK][PredictionUI] reason=draw state=4/43..48 ... opponentSteam=76561198166605598`
 - Expected UI: prediction header shows JackWWily as LV28, not `Unknown` /
   `Rank unavailable`.
+
+## Entry — Ranked prediction on ranked rematch screen
+
+Change:
+
+- The ranked prediction window now treats the ranked post-match rematch/exit
+  choice as prediction context, but not every `GameState_VictoryScreen` frame.
+- The gate requires `GameState_VictoryScreen`, `MatchState_VictoryScreen`, a
+  ranked room, a current-match opponent, and a ranked upload result that belongs
+  to this victory-screen stint.
+- This delays the prediction until after the Steam ranked upload result and
+  avoids drawing during the earlier victory animation.
+- The current-match opponent requirement is the first guard against final
+  no-rematch set end screens.
+- On that screen, if the opponent character is still known through
+  `CharData::charIndex`, the opponent character leaderboard lookup is allowed
+  to refresh again after a short cooldown. This can replace the earlier
+  confirmation-screen rank when the opponent ranked up or down after the match.
+- If the character-specific refresh is not available, the window still uses the
+  latest cached `RANK_HOST_LEVEL` when present and otherwise shows a visible
+  unavailable state.
+
+Expected proof:
+
+- During a ranked rematch screen, expect
+  `[RANK][PredictionUI] reason=draw ... rematch=1 ...`.
+- Early victory animation and final set-end screens should log no rematch draw.
+- If a character-specific refresh is possible, expect a fresh
+  `[RANK][Prediction] opponent ... board=RANK_XX ... visible=...` line after
+  the post-match screen appears.
+- Player-match/rematch rooms should not draw this window because the room type
+  gate is ranked-only.
+
+## Entry — Fix ranked prediction not showing on rematch/mid-set victory screen
+
+Root-cause analysis:
+
+- Ghidra `BBCF.h` documents three victory-screen game states: `0x10` (16),
+  `0x11` (17), `0x12` (18). The existing `IsRankedPredictionRematchScreen` only
+  accepted state `0x10`, so whenever the game advanced to state `0x11` or `0x12`
+  (the actual rematch/exit choice screen), the function immediately returned false.
+- Additionally, the per-frame tracking code reset `s_victoryScreenEnteredAtMs` to
+  zero on any state transition that was not exactly `GameState_VictoryScreen (16)`.
+  Transitions from 16 → 17 → 18 therefore zeroed the timestamp on each step.
+- The 1000 ms timing tolerance in `g_rankedUploadCompletionTickMs + 1000u >=
+  victoryScreenEnteredAtMs` was too tight: the ranked upload callback fires via
+  `SteamAPI_RunCallbacks` while the game is still in `GameState_InMatch` (during
+  the win/lose animation), which can be 2–4 seconds before the game advances to
+  `GameState_VictoryScreen (16)`. In that scenario the timing check always failed.
+
+Changes:
+
+- Added `GameState_VictoryScreen1 = 17` and `GameState_VictoryScreen2 = 18` to
+  `src/Game/gamestates.h`.
+- `IsRankedPredictionRematchScreen` now accepts the full victory cluster
+  (states 16, 17, 18) instead of only 16.
+- Replaced the timestamp-based upload gate with a per-match upload serial check:
+  `g_uploadSerialAtMatchEntry` is captured from `g_rankedUploadCompletionSerial`
+  each time the game enters `GameState_InMatch`. The rematch check passes only
+  when `g_rankedUploadCompletionSerial > g_uploadSerialAtMatchEntry`, confirming
+  the upload belongs to the current match cycle.
+- `s_victoryScreenEnteredAtMs` now persists across in-cluster transitions
+  (16 → 17 → 18) and is only cleared when the game leaves the cluster entirely.
+- `LogRankedPredictionVisibility` now includes `gstate=N` so debug logs confirm
+  which victory sub-state triggered `rematch=1`.
+- Removed the now-unused `victoryScreenEnteredAtMs` parameter from
+  `IsRankedPredictionRematchScreen`; updated the single call site.
+
+Expected proof:
+
+- On the ranked rematch/exit choice screen expect
+  `[RANK][PredictionUI] reason=draw gstate=17 ... rematch=1 ...` or
+  `gstate=18`, confirming the fix covers the actual rematch UI state.
+- Early victory animation (gstate=16 with no upload yet) should log
+  `reason=inactive_context rematch=0`.
+- Final no-rematch screen (opponent left room) should also log `rematch=0`
+  because `HasCurrentRankedMatchOpponent()` returns empty.

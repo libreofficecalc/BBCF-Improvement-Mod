@@ -35,7 +35,7 @@ namespace RankedUi
 			Settings::changeSetting("ShowRankedPrediction", showRankedPrediction ? "1" : "0");
 		}
 		ImGui::SameLine();
-		ImGui::ShowHelpMarker(L("Shows win/loss ranked outcome predictions during ranked match confirmation when opponent rank data is available.").c_str());
+		ImGui::ShowHelpMarker(L("Shows win/loss ranked outcome predictions during ranked match confirmation and ranked rematch screens when opponent rank data is available.").c_str());
 
 		ImGui::VerticalSpacing(8);
 		ImGui::HorizontalSpacing();

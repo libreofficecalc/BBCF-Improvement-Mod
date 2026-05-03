@@ -302,6 +302,12 @@ Implementation:
 - confirmation-screen source: cached Steam lobby metadata `RANK_HOST_LEVEL`,
   keyed by lobby owner SteamID. This matches the rank shown by the game's own
   ranked-search/confirmation UI and avoids `RANK_ALL`
+- rematch-screen source: when the post-match screen is still in a ranked room,
+  the current match still has an opponent, and the ranked upload result for
+  this victory screen has arrived, the UI refreshes the opponent's character
+  leaderboard (`RANK_XX`) instead of reusing the earlier confirmation result.
+  This lets an opponent's rank-up or rank-down from the just-finished match
+  update the prediction when Steam has published the new entry
 - cache detail: search-result lobbies may not return a usable Steam lobby owner
   through `GetLobbyOwner`, so the cache falls back to the lobby metadata
   `ownerID` field before storing `RANK_HOST_LEVEL`
@@ -327,6 +333,15 @@ Visibility rule:
 - `ShowRankedPrediction = 1`
 - ranked entry/confirmation flag is active, or ranked network state is
   `state == 4` with `state1` from `43` through `48`
+- or the game is in the victory-screen cluster (`GameState_VictoryScreen` 0x10,
+  `GameState_VictoryScreen1` 0x11, or `GameState_VictoryScreen2` 0x12) AND
+  `MatchState_VictoryScreen`, the current room type is ranked, the current match
+  still has an opponent, AND a ranked upload with serial greater than
+  `g_uploadSerialAtMatchEntry` (captured on the most recent `GameState_InMatch`
+  entry) has completed. This covers the ranked rematch/exit choice screen across
+  all three victory sub-states without relying on a fragile fixed timestamp
+  window. The serial gate prevents stale uploads from a previous match from
+  triggering the window.
 - game is not in match
 - if opponent data is not ready yet, draw a visible waiting/unavailable card
   instead of silently hiding the window
@@ -336,6 +351,9 @@ Visibility rule:
 - opponent SteamID can briefly disappear while the confirmation popup moves
   through substates, so the prediction window keeps the last seen opponent for
   a short confirmation-screen grace period
+- on the ranked rematch screen, character-specific opponent lookup is allowed
+  to refresh again after a short cooldown even if the same opponent/character
+  was already queried before the match
 
 Prediction model:
 
