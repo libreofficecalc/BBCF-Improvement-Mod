@@ -8,6 +8,7 @@
 #include "Core/interfaces.h"
 #include "Core/utils.h"
 #include "Core/Localization.h"
+#include "Game/CharData.h"
 #include "Game/gamestates.h"
 #include "Game/characters.h"
 #include "Overlay/imgui_utils.h"
@@ -30,10 +31,19 @@ namespace
 {
 	constexpr uintptr_t kRankedNetworkStructRva = 0x008F7958;
 	constexpr uintptr_t kRankedEntryFlagRva = 0x008F7758;
+	// Network user data singleton returned by 004A0FE0. Disasm: 004A1038 mov eax,0CAD0C0h (Ghidra VA).
+	// RVA = 0x00CAD0C0 - 0x00400000 = 0x008AD0C0.
+	constexpr uintptr_t kNetworkUserDataRva = 0x008AD0C0;
+	// Disproven as opponent character: 004A1430 reads netUserData+0xD0+0x6800+index,
+	// but live Susanoo test returned Bullet (21) from +0x68D1.
+	constexpr uintptr_t kNetUserDataConfirmCharacterBaseOffset = 0x68D0;
 	constexpr uintptr_t kRankedCharSeleStaticRva = 0x00DAC9D8;
 	constexpr size_t kRankedCharSeleStaticSize = 0x1BC0;
 	constexpr uintptr_t kRankedTableBaseFnRva = 0x0009D5C0;
 	constexpr uint32_t kInvalidRankedCharacterId = 0xFFFFFFFFu;
+	// Special character ID for RANK_ALL. Prediction lookup deliberately rejects this value
+	// so unknown confirmation-screen characters fail visibly instead of overestimating strength.
+	constexpr uint32_t kRankAllCharacterId = 64u;
 	constexpr int32_t kRankedLpBase = 0x7FFF;
 	constexpr float kRankedPromotionCounterLowerMultiplier = 0.67f;
 	constexpr float kRankedPromotionCounterMidHigherMultiplier = 2.0f;
@@ -216,6 +226,7 @@ namespace
 		bool valid = false;
 		bool pending = false;
 		uint64_t steamId = 0;
+		uint32_t characterId = kInvalidRankedCharacterId;
 		std::string displayName;
 		uint32_t visibleRank = 0;
 		uint32_t internalRank = 0;
@@ -585,7 +596,7 @@ namespace
 			return g_rankedOverlayTuning.authColor;
 		}
 
-		if (visibleRank <= 16u)
+		if (visibleRank <= 19u)
 		{
 			return g_rankedOverlayTuning.lowRankColor;
 		}
@@ -2097,7 +2108,11 @@ namespace
 			"NT", "IZ", "SU", "ES", "MA", "JB",
 		};
 
-		return characterId < (sizeof(kCodes) / sizeof(kCodes[0])) ? kCodes[characterId] : nullptr;
+		if (characterId < (sizeof(kCodes) / sizeof(kCodes[0])))
+			return kCodes[characterId];
+		if (characterId == kRankAllCharacterId)
+			return "ALL";
+		return nullptr;
 	}
 
 	// All data extractable from a single RANK_ALL leaderboard entry.
@@ -2673,29 +2688,60 @@ namespace
 	class RankedOpponentLookup
 	{
 	public:
-		void Tick(uint64_t opponentSteamId)
+		void Tick(uint64_t opponentSteamId, uint32_t characterId)
 		{
-			if (opponentSteamId == 0u || !g_interfaces.pSteamUserStatsWrapper)
+			if (opponentSteamId == 0u || characterId >= kRankAllCharacterId || !g_interfaces.pSteamUserStatsWrapper)
 			{
 				return;
 			}
 
 			const double now = ImGui::GetTime();
-			if (m_steamId != opponentSteamId)
+			if (m_steamId != opponentSteamId || m_characterId != characterId)
 			{
+				// If only the steamId changed but character matches a prefetch, keep the leaderboard.
+				const bool keepLeaderboard = (m_characterId == characterId) && (m_characterLeaderboard != 0);
 				m_steamId = opponentSteamId;
+				m_characterId = characterId;
+				if (!keepLeaderboard)
+				{
+					m_characterLeaderboard = 0;
+					m_findPending = false;
+					m_lastFindAttempt = -15.0;
+				}
+				m_hasEntry = false;
+				m_entryPending = false;
+				m_lastEntryRequest = -30.0;
+				m_info = {};
+				m_info.steamId = opponentSteamId;
+				m_info.characterId = characterId;
+			}
+
+			RefreshPersonaName();
+			EnsureLeaderboard(now);
+			RequestOpponentEntry(now);
+		}
+
+		// Starts the leaderboard find before the opponent SteamID is available.
+		// When Tick() is later called with the matching characterId, the handle will already be ready.
+		void TickLeaderboardPrefetch(uint32_t characterId)
+		{
+			if (characterId >= kRankAllCharacterId || !g_interfaces.pSteamUserStatsWrapper)
+			{
+				return;
+			}
+			if (m_characterId != characterId)
+			{
+				m_characterId = characterId;
+				m_characterLeaderboard = 0;
 				m_hasEntry = false;
 				m_entryPending = false;
 				m_findPending = false;
 				m_lastFindAttempt = -15.0;
 				m_lastEntryRequest = -30.0;
 				m_info = {};
-				m_info.steamId = opponentSteamId;
+				m_info.characterId = characterId;
 			}
-
-			RefreshPersonaName();
-			EnsureLeaderboard(now);
-			RequestOpponentEntry(now);
+			EnsureLeaderboard(ImGui::GetTime());
 		}
 
 		bool GetInfo(RankedOpponentInfo* outInfo) const
@@ -2707,7 +2753,7 @@ namespace
 
 			*outInfo = m_info;
 			outInfo->valid = m_hasEntry;
-			outInfo->pending = m_findPending || m_entryPending || (!m_hasEntry && m_globalLeaderboard != 0);
+			outInfo->pending = m_findPending || m_entryPending || (!m_hasEntry && m_characterLeaderboard != 0);
 			return true;
 		}
 
@@ -2733,12 +2779,19 @@ namespace
 
 		void EnsureLeaderboard(double now)
 		{
-			if (m_globalLeaderboard || m_findPending || now < m_lastFindAttempt + 15.0)
+			if (m_characterLeaderboard || m_findPending || m_characterId >= kRankAllCharacterId || now < m_lastFindAttempt + 15.0)
 			{
 				return;
 			}
 
-			SteamAPICall_t call = g_interfaces.pSteamUserStatsWrapper->FindLeaderboard("RANK_ALL");
+			const char* const characterCode = GetRankLeaderboardCode(m_characterId);
+			if (!characterCode)
+			{
+				return;
+			}
+
+			m_leaderboardName = std::string("RANK_") + characterCode;
+			SteamAPICall_t call = g_interfaces.pSteamUserStatsWrapper->FindLeaderboard(m_leaderboardName.c_str());
 			if (call)
 			{
 				m_findPending = true;
@@ -2749,14 +2802,14 @@ namespace
 
 		void RequestOpponentEntry(double now)
 		{
-			if (!m_globalLeaderboard || m_entryPending || m_hasEntry || now < m_lastEntryRequest + 30.0)
+			if (!m_characterLeaderboard || m_entryPending || m_hasEntry || now < m_lastEntryRequest + 30.0)
 			{
 				return;
 			}
 
 			CSteamID steamId(m_steamId);
 			SteamAPICall_t call = g_interfaces.pSteamUserStatsWrapper->DownloadLeaderboardEntriesForUsers(
-				m_globalLeaderboard,
+				m_characterLeaderboard,
 				&steamId,
 				1);
 			if (call)
@@ -2772,13 +2825,18 @@ namespace
 			m_findPending = false;
 			if (ioFailure || !callback || !callback->m_bLeaderboardFound)
 			{
-				LOG(1, "[RANK][Prediction] failed to find RANK_ALL ioFailure=%d\n", ioFailure ? 1 : 0);
+				LOG(1, "[RANK][Prediction] failed to find %s char=%u ioFailure=%d\n",
+					m_leaderboardName.empty() ? "<unknown>" : m_leaderboardName.c_str(),
+					static_cast<unsigned int>(m_characterId),
+					ioFailure ? 1 : 0);
 				return;
 			}
 
-			m_globalLeaderboard = callback->m_hSteamLeaderboard;
-			LOG(1, "[RANK][Prediction] found RANK_ALL handle=%llu\n",
-				static_cast<unsigned long long>(m_globalLeaderboard));
+			m_characterLeaderboard = callback->m_hSteamLeaderboard;
+			LOG(1, "[RANK][Prediction] found %s char=%u handle=%llu\n",
+				m_leaderboardName.empty() ? "<unknown>" : m_leaderboardName.c_str(),
+				static_cast<unsigned int>(m_characterId),
+				static_cast<unsigned long long>(m_characterLeaderboard));
 		}
 
 		void OnEntryDownloaded(LeaderboardScoresDownloaded_t* callback, bool ioFailure)
@@ -2806,14 +2864,17 @@ namespace
 			}
 
 			m_info.steamId = entry.m_steamIDUser.ConvertToUint64();
+			m_info.characterId = m_characterId;
 			m_info.globalRank = entry.m_nGlobalRank;
 			m_info.internalRank = (static_cast<uint32_t>(entry.m_nScore) >> 16) & 0xFFFFu;
 			m_info.visibleRank = InternalRankToVisibleRank(m_info.internalRank, false);
 			m_info.subscore = static_cast<uint32_t>(entry.m_nScore) & 0xFFFFu;
 			m_hasEntry = true;
 			RefreshPersonaName();
-			LOG(1, "[RANK][Prediction] opponent steamId=%llu global=%d visible=%u internal=%u sub=%u\n",
+			LOG(1, "[RANK][Prediction] opponent steamId=%llu board=%s char=%u global=%d visible=%u internal=%u sub=%u\n",
 				static_cast<unsigned long long>(m_info.steamId),
+				m_leaderboardName.empty() ? "<unknown>" : m_leaderboardName.c_str(),
+				static_cast<unsigned int>(m_info.characterId),
 				m_info.globalRank,
 				static_cast<unsigned int>(m_info.visibleRank),
 				static_cast<unsigned int>(m_info.internalRank),
@@ -2821,12 +2882,14 @@ namespace
 		}
 
 		uint64_t m_steamId = 0;
-		SteamLeaderboard_t m_globalLeaderboard = 0;
+		uint32_t m_characterId = kInvalidRankedCharacterId;
+		SteamLeaderboard_t m_characterLeaderboard = 0;
 		bool m_findPending = false;
 		bool m_entryPending = false;
 		bool m_hasEntry = false;
 		double m_lastFindAttempt = -15.0;
 		double m_lastEntryRequest = -30.0;
+		std::string m_leaderboardName;
 		RankedOpponentInfo m_info{};
 		CCallResult<RankedOpponentLookup, LeaderboardFindResult_t> m_findResult;
 		CCallResult<RankedOpponentLookup, LeaderboardScoresDownloaded_t> m_entryResult;
@@ -2835,6 +2898,54 @@ namespace
 	RankedLeaderboardTracker g_rankedLeaderboardTracker{};
 	RankedDistributionSearch g_rankedDistributionSearch{};
 	RankedOpponentLookup g_rankedOpponentLookup{};
+
+	bool TryGetCachedLobbyOpponentInfo(uint64_t opponentSteamId, RankedOpponentInfo* outInfo)
+	{
+		if (!outInfo || opponentSteamId == 0u || !g_interfaces.pSteamMatchmakingWrapper)
+		{
+			return false;
+		}
+
+		uint32_t internalRank = 0;
+		if (!g_interfaces.pSteamMatchmakingWrapper->GetCachedRankedHostLevel(opponentSteamId, &internalRank))
+		{
+			return false;
+		}
+
+		outInfo->valid = true;
+		outInfo->pending = false;
+		outInfo->steamId = opponentSteamId;
+		outInfo->characterId = kInvalidRankedCharacterId;
+		outInfo->internalRank = internalRank;
+		outInfo->visibleRank = InternalRankToVisibleRank(internalRank, false);
+
+		if (g_interfaces.pSteamFriendsWrapper)
+		{
+			const CSteamID steamId(opponentSteamId);
+			const char* const name = g_interfaces.pSteamFriendsWrapper->GetFriendPersonaName(steamId);
+			if (name && name[0] != '\0')
+			{
+				outInfo->displayName = name;
+			}
+			else
+			{
+				g_interfaces.pSteamFriendsWrapper->RequestUserInformation(steamId, true);
+			}
+		}
+
+		static uint64_t s_lastLoggedSteamId = 0;
+		static uint32_t s_lastLoggedInternalRank = kInvalidRankedCharacterId;
+		if (s_lastLoggedSteamId != opponentSteamId || s_lastLoggedInternalRank != internalRank)
+		{
+			s_lastLoggedSteamId = opponentSteamId;
+			s_lastLoggedInternalRank = internalRank;
+			LOG(1, "[RANK][Prediction] opponent steamId=%llu source=RANK_HOST_LEVEL visible=%u internal=%u\n",
+				static_cast<unsigned long long>(opponentSteamId),
+				static_cast<unsigned int>(outInfo->visibleRank),
+				static_cast<unsigned int>(outInfo->internalRank));
+		}
+		return true;
+	}
 
 	void DrawRankedRulesDialog();
 
@@ -4660,12 +4771,15 @@ bool CaptureRankedProgressOverlaySnapshot(RankedProgressOverlaySnapshot* outSnap
 
 namespace
 {
-	bool TryGetRankedPredictionOpponent(uint64_t* outSteamId)
+	bool TryGetRankedPredictionOpponent(uint64_t* outSteamId, uint32_t* outCharacterId)
 	{
-		if (!outSteamId || !g_interfaces.pRoomManager || !g_interfaces.pRoomManager->IsRoomFunctional())
+		if (!outSteamId || !outCharacterId || !g_interfaces.pRoomManager || !g_interfaces.pRoomManager->IsRoomFunctional())
 		{
 			return false;
 		}
+
+		*outSteamId = 0u;
+		*outCharacterId = kInvalidRankedCharacterId;
 
 		const std::vector<const RoomMemberEntry*> opponents =
 			g_interfaces.pRoomManager->GetOtherRoomMemberEntriesInCurrentMatch();
@@ -4675,6 +4789,21 @@ namespace
 		}
 
 		*outSteamId = opponents[0]->steamId;
+		const uint8_t matchPlayerIndex = opponents[0]->matchPlayerIndex;
+
+		// Try CharData: available in-match. Not populated during the confirmation screen.
+		const CharData* opponentCharData = nullptr;
+		if (matchPlayerIndex == 0)
+			opponentCharData = g_interfaces.player1.IsCharDataNullPtr() ? nullptr : g_interfaces.player1.GetData();
+		else if (matchPlayerIndex == 1)
+			opponentCharData = g_interfaces.player2.IsCharDataNullPtr() ? nullptr : g_interfaces.player2.GetData();
+		if (opponentCharData && !IsBadReadPtr(opponentCharData, sizeof(CharData)) &&
+			opponentCharData->charIndex >= 0 && opponentCharData->charIndex < 64)
+		{
+			*outCharacterId = static_cast<uint32_t>(opponentCharData->charIndex);
+			LOG(2, "[RANK][PredictionOpp] char from CharData matchPlayer=%u charIndex=%d\n",
+				static_cast<unsigned int>(matchPlayerIndex), opponentCharData->charIndex);
+		}
 		return true;
 	}
 
@@ -4693,7 +4822,8 @@ namespace
 		const RankedNetworkLite& networkState,
 		bool rankedEntryActive,
 		bool inMatch,
-		uint64_t opponentSteamId)
+		uint64_t opponentSteamId,
+		uint32_t opponentCharacterId)
 	{
 		static uint64_t s_lastSignature = 0;
 		const uint64_t signature =
@@ -4701,6 +4831,7 @@ namespace
 			(static_cast<uint64_t>(static_cast<uint32_t>(networkState.state1 & 0xFFFF)) << 32) ^
 			(static_cast<uint64_t>(rankedEntryActive ? 1u : 0u) << 31) ^
 			(static_cast<uint64_t>(inMatch ? 1u : 0u) << 30) ^
+			(static_cast<uint64_t>(opponentCharacterId & 0x3Fu) << 24) ^
 			(opponentSteamId & 0x3FFFFFFFull);
 		if (s_lastSignature == signature)
 		{
@@ -4708,13 +4839,14 @@ namespace
 		}
 		s_lastSignature = signature;
 
-		LOG(1, "[RANK][PredictionUI] reason=%s state=%d/%d entry=%d inMatch=%d opponentSteam=%llu\n",
+		LOG(1, "[RANK][PredictionUI] reason=%s state=%d/%d entry=%d inMatch=%d opponentSteam=%llu opponentChar=%u\n",
 			reason ? reason : "<null>",
 			networkState.state,
 			networkState.state1,
 			rankedEntryActive ? 1 : 0,
 			inMatch ? 1 : 0,
-			static_cast<unsigned long long>(opponentSteamId));
+			static_cast<unsigned long long>(opponentSteamId),
+			static_cast<unsigned int>(opponentCharacterId));
 	}
 
 	void DrawRankedPredictionOutcomeColumn(
@@ -4809,33 +4941,180 @@ namespace
 		ImGui::EndChild();
 	}
 
+	void AppendByteMatches(
+		char* out,
+		size_t outSize,
+		const uint8_t* base,
+		uintptr_t start,
+		uintptr_t len,
+		uint8_t value)
+	{
+		if (!out || outSize == 0 || !base)
+		{
+			return;
+		}
+		size_t used = std::strlen(out);
+		for (uintptr_t i = 0; i < len && used + 9 < outSize; ++i)
+		{
+			if (base[start + i] == value)
+			{
+				const int written = std::snprintf(out + used, outSize - used, " +0x%04X", static_cast<unsigned int>(start + i));
+				if (written <= 0)
+				{
+					return;
+				}
+				used += static_cast<size_t>(written);
+			}
+		}
+	}
+
+	// Logs confirmation-screen candidate bytes once per new opponent.
+	// Used to RE the actual played-character byte location. No candidate here is trusted for lookup.
+	void LogConfirmationScreenCharProbe(
+		const RoomMemberEntry* opponent,
+		uint64_t steamId,
+		uint32_t localCharacterId)
+	{
+		const uintptr_t moduleBase = reinterpret_cast<uintptr_t>(GetBbcfBaseAdress());
+		if (!moduleBase) return;
+		const uint8_t* const netUserData = reinterpret_cast<const uint8_t*>(moduleBase + kNetworkUserDataRva);
+		constexpr uintptr_t kProbeStart = 0x6800u;
+		constexpr uintptr_t kProbeLen = 0x400u;
+		constexpr uintptr_t kChunkLen = 0x100u;
+		if (IsBadReadPtr(netUserData + kProbeStart, kProbeLen)) return;
+
+		char matches[512] = {};
+		if (localCharacterId < 64u)
+		{
+			AppendByteMatches(matches, sizeof(matches), netUserData, kProbeStart, kProbeLen, static_cast<uint8_t>(localCharacterId));
+		}
+
+		const uint8_t confirmStat0 = netUserData[kNetUserDataConfirmCharacterBaseOffset];
+		const uint8_t confirmStat1 = netUserData[kNetUserDataConfirmCharacterBaseOffset + 1];
+		LOG(1, "[RANK][ConfirmProbe] steamId=%llu localChar=%u netUD+0x68D0=%u netUD+0x68D1=%u localCharMatches=%s\n",
+			static_cast<unsigned long long>(steamId),
+			static_cast<unsigned int>(localCharacterId),
+			static_cast<unsigned int>(confirmStat0),
+			static_cast<unsigned int>(confirmStat1),
+			matches[0] ? matches : " none");
+
+		char buf[kChunkLen * 3 + 32];
+		for (uintptr_t chunk = 0; chunk < kProbeLen; chunk += kChunkLen)
+		{
+			char* p = buf;
+			for (uintptr_t i = 0; i < kChunkLen; ++i)
+				p += snprintf(p, 4, "%02X ", static_cast<unsigned int>(netUserData[kProbeStart + chunk + i]));
+			LOG(1, "[RANK][ConfirmProbe] steamId=%llu netUD+0x%04X..0x%04X = %s\n",
+				static_cast<unsigned long long>(steamId),
+				static_cast<unsigned int>(kProbeStart + chunk),
+				static_cast<unsigned int>(kProbeStart + chunk + kChunkLen),
+				buf);
+		}
+
+		if (!opponent || IsBadReadPtr(opponent, sizeof(RoomMemberEntry)))
+		{
+			return;
+		}
+
+		char memberMatches[256] = {};
+		const uint8_t* const memberBytes = reinterpret_cast<const uint8_t*>(opponent);
+		if (localCharacterId < 64u)
+		{
+			AppendByteMatches(memberMatches, sizeof(memberMatches), memberBytes, 0u, sizeof(RoomMemberEntry), static_cast<uint8_t>(localCharacterId));
+		}
+		LOG(1, "[RANK][ConfirmProbe] roomMember=%p memberIndex=%u matchId=%u matchPlayer=%u localCharMemberMatches=%s\n",
+			opponent,
+			static_cast<unsigned int>(opponent->memberIndex),
+			static_cast<unsigned int>(opponent->matchId),
+			static_cast<unsigned int>(opponent->matchPlayerIndex),
+			memberMatches[0] ? memberMatches : " none");
+
+		char memberBuf[sizeof(RoomMemberEntry) * 3 + 32] = {};
+		char* memberOut = memberBuf;
+		for (size_t i = 0; i < sizeof(RoomMemberEntry); ++i)
+		{
+			memberOut += std::snprintf(memberOut, 4, "%02X ", static_cast<unsigned int>(memberBytes[i]));
+		}
+		LOG(1, "[RANK][ConfirmProbe] roomMember+0x00..0x%02X = %s\n",
+			static_cast<unsigned int>(sizeof(RoomMemberEntry)),
+			memberBuf);
+	}
+
 	void DrawRankedPredictionWindow(
 		const RankedProgressDisplayState& self,
 		const RankedNetworkLite& networkState,
 		bool rankedEntryActive,
 		bool inMatch)
 	{
+		static uint64_t s_lastPredictionOpponentSteamId = 0;
+		static uint32_t s_lastPredictionOpponentCharacterId = kInvalidRankedCharacterId;
+		static double s_lastPredictionOpponentSeenAt = -30.0;
+
 		if (!Settings::settingsIni.showRankedProgress || !Settings::settingsIni.showRankedPrediction)
 		{
-			LogRankedPredictionVisibility("setting_disabled", networkState, rankedEntryActive, inMatch, 0u);
+			LogRankedPredictionVisibility("setting_disabled", networkState, rankedEntryActive, inMatch, 0u, kInvalidRankedCharacterId);
 			return;
 		}
 		const bool predictionContext = rankedEntryActive || IsRankedPredictionMenuState(networkState);
 		if (inMatch || !predictionContext)
 		{
-			LogRankedPredictionVisibility("inactive_context", networkState, rankedEntryActive, inMatch, 0u);
+			s_lastPredictionOpponentSteamId = 0;
+			s_lastPredictionOpponentCharacterId = kInvalidRankedCharacterId;
+			s_lastPredictionOpponentSeenAt = -30.0;
+			LogRankedPredictionVisibility("inactive_context", networkState, rankedEntryActive, inMatch, 0u, kInvalidRankedCharacterId);
 			return;
 		}
 
 		uint64_t opponentSteamId = 0;
-		const bool hasOpponentSteamId = TryGetRankedPredictionOpponent(&opponentSteamId);
+		uint32_t opponentCharacterId = kInvalidRankedCharacterId;
+		bool hasOpponentSteamId = TryGetRankedPredictionOpponent(&opponentSteamId, &opponentCharacterId);
+		const double now = ImGui::GetTime();
 		if (hasOpponentSteamId)
 		{
-			g_rankedOpponentLookup.Tick(opponentSteamId);
+			s_lastPredictionOpponentSteamId = opponentSteamId;
+			s_lastPredictionOpponentCharacterId = opponentCharacterId;
+			s_lastPredictionOpponentSeenAt = now;
 		}
-		LogRankedPredictionVisibility("draw", networkState, rankedEntryActive, inMatch, opponentSteamId);
+		else if (IsRankedPredictionMenuState(networkState) &&
+			s_lastPredictionOpponentSteamId != 0u &&
+			now < s_lastPredictionOpponentSeenAt + 15.0)
+		{
+			opponentSteamId = s_lastPredictionOpponentSteamId;
+			opponentCharacterId = s_lastPredictionOpponentCharacterId;
+			hasOpponentSteamId = true;
+		}
+
+		if (hasOpponentSteamId && opponentCharacterId == kInvalidRankedCharacterId)
+		{
+			// One-shot probe per new opponent to help RE the actual character byte location.
+			static uint64_t s_lastProbedSteamId = 0;
+			if (opponentSteamId != s_lastProbedSteamId && IsRankedPredictionMenuState(networkState))
+			{
+				s_lastProbedSteamId = opponentSteamId;
+				const std::vector<const RoomMemberEntry*> opponents =
+					g_interfaces.pRoomManager && g_interfaces.pRoomManager->IsRoomFunctional()
+					? g_interfaces.pRoomManager->GetOtherRoomMemberEntriesInCurrentMatch()
+					: std::vector<const RoomMemberEntry*>{};
+				LogConfirmationScreenCharProbe(opponents.empty() ? nullptr : opponents[0], opponentSteamId, self.characterId);
+			}
+		}
+
+		const bool hasOpponentCharacter = opponentCharacterId < kRankAllCharacterId;
+		if (hasOpponentSteamId && hasOpponentCharacter)
+		{
+			g_rankedOpponentLookup.Tick(opponentSteamId, opponentCharacterId);
+		}
+		LogRankedPredictionVisibility("draw", networkState, rankedEntryActive, inMatch, opponentSteamId, opponentCharacterId);
 		RankedOpponentInfo opponent{};
-		const bool hasOpponentInfo = hasOpponentSteamId && g_rankedOpponentLookup.GetInfo(&opponent);
+		bool hasOpponentInfo = false;
+		if (hasOpponentSteamId && hasOpponentCharacter)
+		{
+			hasOpponentInfo = g_rankedOpponentLookup.GetInfo(&opponent);
+		}
+		else if (hasOpponentSteamId)
+		{
+			hasOpponentInfo = TryGetCachedLobbyOpponentInfo(opponentSteamId, &opponent);
+		}
 
 		ImGui::SetNextWindowPos(ImVec2(360.0f, 150.0f), ImGuiCond_FirstUseEver);
 		ImGui::SetNextWindowSize(ImVec2(520.0f, 196.0f), ImGuiCond_FirstUseEver);
@@ -4875,7 +5154,9 @@ namespace
 		}
 		else
 		{
-			win.reason = !hasOpponentSteamId ? "Waiting for ranked opponent data." : (opponent.pending ? "Waiting for RANK_ALL lookup." : "Opponent RANK_ALL entry unavailable.");
+			win.reason = !hasOpponentSteamId
+				? "Waiting for ranked opponent data."
+				: (!hasOpponentCharacter ? "Opponent lobby rank unavailable." : (opponent.pending ? "Waiting for leaderboard lookup." : "Opponent leaderboard entry unavailable."));
 			loss.reason = win.reason;
 		}
 

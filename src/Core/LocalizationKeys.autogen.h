@@ -702,11 +702,14 @@ struct LocalizationKeysAccessor
         // Waiting for ranked opponent data.
         inline const char* Waiting_for_ranked_opponent_data() const { return Get("Waiting for ranked opponent data."); }
 
-        // Waiting for RANK_ALL lookup.
-        inline const char* Waiting_for_RANK_ALL_lookup() const { return Get("Waiting for RANK_ALL lookup."); }
+        // Waiting for character leaderboard lookup.
+        inline const char* Waiting_for_character_leaderboard_lookup() const { return Get("Waiting for character leaderboard lookup."); }
 
-        // Opponent RANK_ALL entry unavailable.
-        inline const char* Opponent_RANK_ALL_entry_unavailable() const { return Get("Opponent RANK_ALL entry unavailable."); }
+        // Opponent character leaderboard entry unavailable.
+        inline const char* Opponent_character_leaderboard_entry_unavailable() const { return Get("Opponent character leaderboard entry unavailable."); }
+
+        // Waiting for opponent character data.
+        inline const char* Waiting_for_opponent_character_data() const { return Get("Waiting for opponent character data."); }
 
         // Scanning... %d probes fired
         inline const char* Scanning_d_probes_fired() const { return Get("Scanning... %d probes fired"); }
@@ -1545,5 +1548,3 @@ struct LocalizationKeysAccessor
         // Replay %s
         inline const char* Replay_s() const { return Get("Replay %s"); }
 };
-
-

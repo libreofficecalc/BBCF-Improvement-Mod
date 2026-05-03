@@ -891,6 +891,165 @@ Verified runner command:
   - BBCF launch through Steam
   - wait for `[RankedAuto]` completion/failure sentinel in `BBCF_IM/DEBUG.txt`
 
+## 2026-05-02 Ranked Prediction Opponent Character Fix
+
+### Problem
+
+The ranked prediction window was showing the wrong rank for an opponent who was
+not playing their highest-ranked character. An opponent with visible LV34 was
+displayed as "Leader" because the code was looking up their `RANK_ALL` /
+highest-character leaderboard instead of the character they were actually playing.
+
+A guard added to prevent a crash during the confirmation screen (`IsBadReadPtr`
+on `CharData`) then caused the window to show "Rank unavailable" instead of the
+wrong rank, but the underlying lookup was still broken.
+
+Root cause: `CharData::charIndex` is not initialized during the ranked
+confirmation screen (network states 4/43-48). Reading it either returned stale
+data from a previous match (which pointed to the wrong character) or triggered
+a crash when the guard was absent.
+
+### Disassembly Findings
+
+**Network user data singleton** (`004A0FE0`):
+
+- Ghidra disasm at `004A1038`: `mov eax, 0CAD0C0h`
+- This is the Ghidra VA of the singleton pointer; RVA = `0x00CAD0C0 - 0x00400000 = 0x008AD0C0`
+- The prior `UiProbe` code used `0x004AD0C0` — wrong by `0x00400000`
+
+**Confirmation screen renderer** (`004A9DE0`):
+
+- `004A9E08: call 004A0FE0` — loads netUserData into eax/ebx
+- `004A9F06: movzx ebx, byte ptr [ebx+00006A69h]` — P1 character byte
+- `004A9F1C: movzx ebx, byte ptr [ebx+00006A79h]` — P2 character byte (alternate branch)
+- These offsets are active during the ranked confirmation screen; the game uses
+  them to render the opponent's character selection
+
+### Code Changes
+
+**`src/Overlay/Window/Ranked/RankedProgressWindow.cpp`**:
+
+- Added RVA constants:
+  - `kNetworkUserDataRva = 0x008AD0C0`
+  - `kNetUserDataP1CharByteOffset = 0x6A69`
+  - `kNetUserDataP2CharByteOffset = 0x6A79`
+- `TryGetRankedPredictionOpponent`: replaced `CharData`-only character lookup
+  with network user data as the primary source (available at confirmation screen)
+  and `CharData` as the in-match fallback
+- Added `RankedOpponentLookup::TickLeaderboardPrefetch`: starts the `RANK_XX`
+  `FindLeaderboard` call as soon as the character is known, even before the
+  opponent Steam ID is available, to hide async latency
+- Modified `RankedOpponentLookup::Tick`: preserves the leaderboard handle when
+  the Steam ID changes but the character stays the same (avoids redundant
+  `FindLeaderboard` round-trips)
+- `DrawRankedPredictionWindow`: calls `TickLeaderboardPrefetch` when character
+  is known but Steam ID is not yet resolved
+
+**`src/Hooks/hooks_bbcf.cpp`**:
+
+- Fixed `LogRankUiProbe` to use the correct RVA `0x008AD0C0` instead of the
+  previous wrong value `0x004AD0C0`
+- Updated probed character byte offsets to `+0x6A69` / `+0x6A79`
+
+### Validation Target
+
+- Build `Debug|Win32`
+- Enter a ranked match against an opponent whose current character differs from
+  their highest-ranked one
+- `DEBUG.txt` should log:
+  `[RANK][PredictionOpp] char from netUserData matchPlayer=... charByte=...`
+- Prediction window should show the correct rank for the played character, not
+  the opponent's overall highest rank
+
+## 2026-05-02 netUserData Character Byte Disproven — RANK_ALL Fallback
+
+### What the live test showed
+
+Opponent "Rachel Love<3" (overall rank LV30) was matched. The prediction showed
+**LV18** instead of LV30.
+
+`[RANK][UiProbe] p1Char=0 p2Char=1` was logged at the `RoomOne` state (before
+any match was found). The local player was Kokonoe (CharData `charIndex = 24`).
+`p1Char = 0 ≠ 24` conclusively proves the bytes at `netUserData + 0x6A69` /
+`+ 0x6A79` are **not** CharData character indices.
+
+These bytes consistently read `0` (local player slot) and `1` (opponent slot)
+regardless of the characters being played. They are player slot indices, not
+character IDs.
+
+`charByte = 1` triggered a `RANK_JN` (Jin) lookup. The opponent's Jin rank was
+LV18 (global position 1356). But the opponent's overall rank was LV30, which is
+what the lobby and the user expected.
+
+### Fix applied
+
+- Removed the `netUserData + 0x6A69` / `+ 0x6A79` character reads from
+  `TryGetRankedPredictionOpponent`
+- The `RANK_ALL` fallback was removed again after live testing showed it can
+  overestimate the opponent badly (example: Heythan lobby/current rank lower,
+  prediction showed LV35 from `RANK_ALL`)
+- `Tick`, `TickLeaderboardPrefetch`, and prediction `EnsureLeaderboard` reject
+  `charId >= 64`; prediction only queries character-specific `RANK_XX`
+  leaderboards
+- If CharData is unavailable during confirmation screen, prediction now shows a
+  clear opponent-character wait/unavailable state instead of using `RANK_ALL`
+- Added `LogConfirmationScreenCharProbe`: logs `netUserData + 0x6800..0x6C00`
+  in 0x100-byte chunks once per new confirmation screen opponent under tag
+  `[RANK][ConfirmProbe]`, plus offsets matching the local character ID, to help
+  find the actual character byte location
+
+### Follow-up RE: correct confirmation-screen character byte
+
+After the Heythan live test, prediction showed LV35 from `RANK_ALL` while the
+lobby/current rank was lower. That proved `RANK_ALL` must not be used as a
+prediction fallback at all.
+
+Focused Ghidra headless decompile of the confirmation renderer (`004A9DE0`) and
+helpers found the character getter:
+
+- `004A1430` returns `*(netUserData + 0xD0 + 0x6800 + playerIndex)`
+- effective offset is `netUserData + 0x68D0 + playerIndex`
+- the live `[RANK][ConfirmProbe]` dump matched this: local Kokonoe
+  (`charIndex 24`, `0x18`) appeared at `+0x68D0`; Heythan's likely played
+  character byte (`0x15`, Bullet) appeared at `+0x68D1`
+
+Initial patch result:
+
+- `TryGetRankedPredictionOpponent` now uses `CharData::charIndex` when available
+  and otherwise reads `netUserData + 0x68D0 + matchPlayerIndex`
+- prediction lookup still rejects `charId >= 64`, so `RANK_ALL` is never used
+  for opponent prediction
+- `[RANK][PredictionOpp] char from ConfirmData ... offset=0x68D0/0x68D1 ...`
+  logs the confirmation-screen source used for the next live validation
+- `[RANK][ConfirmProbe]` remains only as a diagnostic if the confirmation-screen
+  character byte is invalid
+
+Follow-up live test disproved this source:
+
+- Heythan was playing Susanoo (`charIndex 32`)
+- `netUserData + 0x68D1` returned `21` (Bullet), so prediction queried `RANK_BL`
+- Steam returned zero entries for Heythan on `RANK_BL`, producing the in-UI
+  unknown/unavailable state
+- Ghidra confirms `004A1430` reads the `0x68D0` array, but that array is not the
+  opponent's confirmation-screen character selection
+
+Current patch:
+
+- removed `netUserData + 0x68D0 + matchPlayerIndex` from prediction lookup
+- prediction no longer queries `RANK_ALL` or a guessed character board when
+  CharData is unavailable
+- confirmation-screen prediction now consumes cached Steam lobby metadata
+  `RANK_HOST_LEVEL` keyed by lobby owner SteamID. This is the rank value the
+  game already exposes for ranked lobbies, and live testing showed it matched a
+  random visible LV5 opponent as internal `4`
+- new expected logs:
+  - `[RANK][LobbyRankCache] ownerSteam=... lobby=... internal=... visible=...`
+  - `[RANK][Prediction] opponent steamId=... source=RANK_HOST_LEVEL ...`
+- expanded `[RANK][ConfirmProbe]` to log the opponent `RoomMemberEntry` bytes
+  (`0x00..0x98`) and the disproven `netUD+0x68D0/0x68D1` values, so the next
+  confirmation test can search for the known played character byte (for example
+  Susanoo `0x20`)
+
 Result meanings for wrapper output:
 
 - success:
@@ -13360,3 +13519,103 @@ Next live validation:
   wrapping.
 - Open manual `Ranked Progress`, then enter a normal ranked context and confirm
   the live unclosable overlay overrides the manual closable window.
+
+## Entry — Ranked prediction opponent rank source correction
+
+User found a real mismatch: the ranked prediction window showed an opponent as
+`Leader` while the confirmation screen showed the opponent playing a lower-rank
+character around LV34. Root cause in current mod code was the opponent lookup
+using `RANK_ALL`, which can represent the opponent's highest / aggregate ranked
+entry instead of the character currently being played.
+
+Patch made:
+
+- `RankedOpponentLookup` now resolves the opponent's matching character
+  leaderboard (`RANK_XX`) and calls `DownloadLeaderboardEntriesForUsers` there.
+- The lookup key is now opponent SteamID + opponent `CharData::charIndex`, read
+  from the opponent match-player side when available.
+- The prediction window does not display the opponent character name.
+- If the opponent SteamID is known but the current opponent character cannot be
+  read yet, the UI shows the opponent-character wait state. It must not fall
+  back to `RANK_ALL`.
+- Added Spanish localization for the new fallback/error text.
+
+Live validation needed:
+
+- Enter ranked confirmation against an opponent whose current character is not
+  their highest-ranked character.
+- Expected log after character is available:
+  - `[RANK][PredictionUI] reason=draw ... opponentChar=...`
+  - `[RANK][Prediction] found RANK_XX char=...`
+  - `[RANK][Prediction] opponent ... board=RANK_XX char=... visible=...`
+- Expected UI: opponent rank matches the currently played character, with no
+  character name shown in the prediction window.
+- If the confirmation state does not expose `CharData::charIndex` early enough,
+  expected UI is opponent-character wait/unavailable; next RE target is the
+  game's own played-character byte/source on the confirmation screen.
+
+Crash follow-up from latest installed `DEBUG.txt`:
+
+- The log reached confirmation substates `4/43` and `4/44` with
+  `opponentSteam=0 opponentChar=4294967295`.
+- After `GetRoomTwo` / `RoomManager::JoinRoom`, the log reached
+  `[RANK][OverlayProgress] ... state=4/46`, then crashed before the next
+  `[RANK][PredictionUI]` line.
+- That points at the prediction opponent discovery path entering room/member
+  and match-side character reads while confirmation is still materializing.
+- Patch: guard `player1/player2.GetData()` with `IsCharDataNullPtr()` and
+  `IsBadReadPtr(...)` before reading `CharData::charIndex`. If the match-side
+  character is not safe to read yet, keep `opponentChar` invalid and show rank
+  unavailable instead of touching unsafe character memory.
+
+## Entry — Ranked prediction lobby-rank cache miss for JackWWily
+
+Latest installed log:
+
+```text
+D:\SteamLibrary\steamapps\common\BlazBlue Centralfiction\BBCF_IM\DEBUG.txt
+```
+
+Observed:
+
+- Opponent was JackWWily. Game UI showed LV28.
+- Log enumerated JackWWily's lobby metadata:
+  - `ownerID` = `76561198166605598`
+  - `ownerName` = `JackWWily`
+  - `RANK_HOST_LEVEL` = `27`
+- `RANK_HOST_LEVEL=27` is internal rank 27, visible LV28, matching the game UI.
+- Prediction window drew in the confirmation popup but did not find a rank:
+  - `[RANK][PredictionUI] reason=draw state=4/46 ... opponentSteam=76561198166605598 opponentChar=4294967295`
+  - no `[RANK][LobbyRankCache] ownerSteam=76561198166605598 ... visible=28`
+  - no `[RANK][Prediction] opponent steamId=76561198166605598 source=RANK_HOST_LEVEL visible=28 internal=27`
+
+Root cause:
+
+- `CacheRankedHostLevel` keyed `RANK_HOST_LEVEL` through
+  `ISteamMatchmaking::GetLobbyOwner`.
+- Ranked-search result lobbies can expose `ownerID` metadata while
+  `GetLobbyOwner` is not usable for caching, so `RANK_HOST_LEVEL` was observed
+  by the wrapper but not stored under the opponent SteamID.
+- The opponent SteamID also flickered to zero in adjacent confirmation substates,
+  so the window could lose the only frame that identified the opponent.
+
+Patch:
+
+- `SteamMatchmakingWrapper::CacheRankedHostLevel` now falls back to lobby
+  metadata key `ownerID` when `GetLobbyOwner` returns zero.
+- `DrawRankedPredictionWindow` keeps the last seen opponent SteamID for a short
+  confirmation-screen grace period when state `4/43..48` flickers through
+  frames where room data temporarily reports no opponent.
+- Missing lobby cache now reports as `Opponent lobby rank unavailable.` instead
+  of implying the character leaderboard source failed.
+
+Next live validation:
+
+- Enter ranked confirmation against JackWWily or another visible ranked-search
+  opponent.
+- Expected proof lines:
+  - `[RANK][LobbyRankCache] ownerSteam=76561198166605598 ... internal=27 visible=28`
+  - `[RANK][Prediction] opponent steamId=76561198166605598 source=RANK_HOST_LEVEL visible=28 internal=27`
+  - `[RANK][PredictionUI] reason=draw state=4/43..48 ... opponentSteam=76561198166605598`
+- Expected UI: prediction header shows JackWWily as LV28, not `Unknown` /
+  `Rank unavailable`.

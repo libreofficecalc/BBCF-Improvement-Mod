@@ -8,6 +8,9 @@
 #include "Hooks/RankedAutomationHarness.h"
 
 #include <algorithm>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <intrin.h>
 #include <sstream>
 #include <string>
@@ -133,6 +136,89 @@ SteamMatchmakingWrapper::SteamMatchmakingWrapper(ISteamMatchmaking** pSteamMatch
 
 SteamMatchmakingWrapper::~SteamMatchmakingWrapper()
 {
+}
+
+void SteamMatchmakingWrapper::CacheRankedHostLevel(CSteamID steamIDLobby, const char* value)
+{
+	if (!value || value[0] == '\0' || !m_SteamMatchmaking)
+	{
+		return;
+	}
+
+	char* end = nullptr;
+	const long parsed = std::strtol(value, &end, 10);
+	if (end == value || parsed < 0 || parsed > 63)
+	{
+		return;
+	}
+
+	const CSteamID owner = m_SteamMatchmaking->GetLobbyOwner(steamIDLobby);
+	uint64_t ownerId = owner.ConvertToUint64();
+	if (ownerId == 0u)
+	{
+		const char* const ownerIdText = m_SteamMatchmaking->GetLobbyData(steamIDLobby, "ownerID");
+		if (ownerIdText && ownerIdText[0] != '\0')
+		{
+			char* ownerEnd = nullptr;
+			const unsigned long long parsedOwner = std::strtoull(ownerIdText, &ownerEnd, 10);
+			if (ownerEnd != ownerIdText)
+			{
+				ownerId = static_cast<uint64_t>(parsedOwner);
+			}
+		}
+	}
+	if (ownerId == 0u)
+	{
+		LOG(1, "[RANK][LobbyRankCache] missing owner lobby=%llu internal=%u visible=%u\n",
+			static_cast<unsigned long long>(steamIDLobby.ConvertToUint64()),
+			static_cast<unsigned int>(parsed),
+			static_cast<unsigned int>(parsed + 1));
+		return;
+	}
+
+	const uint64_t lobbyId = steamIDLobby.ConvertToUint64();
+	const uint32_t internalRank = static_cast<uint32_t>(parsed);
+	auto it = std::find_if(m_rankedHostLevelCache.begin(), m_rankedHostLevelCache.end(),
+		[ownerId](const RankedHostLevelCacheEntry& entry) { return entry.steamId == ownerId; });
+	if (it == m_rankedHostLevelCache.end())
+	{
+		if (m_rankedHostLevelCache.size() >= 32u)
+		{
+			m_rankedHostLevelCache.erase(m_rankedHostLevelCache.begin());
+		}
+		m_rankedHostLevelCache.push_back({});
+		it = m_rankedHostLevelCache.end() - 1;
+	}
+
+	it->steamId = ownerId;
+	it->lobbyId = lobbyId;
+	it->internalRank = internalRank;
+	it->tick = GetTickCount();
+
+	LOG(1, "[RANK][LobbyRankCache] ownerSteam=%llu lobby=%llu internal=%u visible=%u\n",
+		static_cast<unsigned long long>(ownerId),
+		static_cast<unsigned long long>(lobbyId),
+		static_cast<unsigned int>(internalRank),
+		static_cast<unsigned int>(internalRank + 1u));
+}
+
+bool SteamMatchmakingWrapper::GetCachedRankedHostLevel(uint64_t steamId, uint32_t* outInternalRank) const
+{
+	if (!outInternalRank || steamId == 0u)
+	{
+		return false;
+	}
+
+	for (auto it = m_rankedHostLevelCache.rbegin(); it != m_rankedHostLevelCache.rend(); ++it)
+	{
+		if (it->steamId == steamId)
+		{
+			*outInternalRank = it->internalRank;
+			return true;
+		}
+	}
+
+	return false;
 }
 
 int SteamMatchmakingWrapper::GetFavoriteGameCount()
@@ -264,6 +350,10 @@ const char* SteamMatchmakingWrapper::GetLobbyData(CSteamID steamIDLobby, const c
 
 	LOG(2, "%s GetLobbyData steamIDLobby=%llu key='%s' ret='%s'\n",
 		GetLobbyTag(pchKey), steamIDLobby.ConvertToUint64(), pchKey ? pchKey : "<null>", ret ? ret : "<null>");
+	if (ret && pchKey && std::strcmp(pchKey, "RANK_HOST_LEVEL") == 0)
+	{
+		CacheRankedHostLevel(steamIDLobby, ret);
+	}
 
 	return ret;
 }
@@ -288,6 +378,10 @@ bool SteamMatchmakingWrapper::GetLobbyDataByIndex(CSteamID steamIDLobby, int iLo
 		(result && pchKey) ? pchKey : "<null>", (result && pchValue) ? pchValue : "<null>");
 	if (result)
 	{
+		if (pchKey && std::strcmp(pchKey, "RANK_HOST_LEVEL") == 0)
+		{
+			CacheRankedHostLevel(steamIDLobby, pchValue);
+		}
 		if (IsRankLobbyKey(pchKey))
 		{
 			LogRankLobbyCallerContext(pchKey, iLobbyData);

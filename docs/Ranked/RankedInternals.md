@@ -297,8 +297,29 @@ Implementation:
 - draw path: `DrawRankedPredictionWindow` in
   `src/Overlay/Window/Ranked/RankedProgressWindow.cpp`
 - data source for self: existing ranked row display state used by the ranked progress window
-- data source for opponent: current ranked room opponent SteamID, then `RANK_ALL`
-  lookup through `DownloadLeaderboardEntriesForUsers`
+- data source for opponent: current ranked room opponent SteamID plus the best
+  rank source available for that screen
+- confirmation-screen source: cached Steam lobby metadata `RANK_HOST_LEVEL`,
+  keyed by lobby owner SteamID. This matches the rank shown by the game's own
+  ranked-search/confirmation UI and avoids `RANK_ALL`
+- cache detail: search-result lobbies may not return a usable Steam lobby owner
+  through `GetLobbyOwner`, so the cache falls back to the lobby metadata
+  `ownerID` field before storing `RANK_HOST_LEVEL`
+- character-specific source: when a real opponent character is known
+  (`CharData::charIndex`, currently in-match), prediction can query the matching
+  character leaderboard (`RANK_XX`) through `DownloadLeaderboardEntriesForUsers`
+- disproven source: `netUserData + 0x68D0 + matchPlayerIndex`. Ghidra confirms
+  `004A1430` reads `netUserData + 0xD0 + 0x6800 + index`, but live Susanoo test
+  returned Bullet (`21`) from `+0x68D1`
+- disproven source: `netUserData + 0x6A69` and `netUserData + 0x6A79`
+  (disasm `004A9F06` / `004A9F1C`) are player slot indices (0 and 1), not
+  character IDs — live evidence: `p1Char=0` while local player was Kokonoe
+  (charIndex 24)
+- `[RANK][ConfirmProbe]` log entries remain as a fallback diagnostic when the
+  confirmation-screen character byte is invalid
+- the prediction UI does not display the character name; it uses the character
+  only to avoid showing a highest-character / `RANK_ALL` rank when the opponent
+  is playing a lower-ranked character
 
 Visibility rule:
 
@@ -309,6 +330,12 @@ Visibility rule:
 - game is not in match
 - if opponent data is not ready yet, draw a visible waiting/unavailable card
   instead of silently hiding the window
+- if opponent SteamID is known but no character-specific source is available,
+  use cached `RANK_HOST_LEVEL` when present. If that cache is missing, show a
+  visible lobby-rank wait/unavailable state. Do not use `RANK_ALL`
+- opponent SteamID can briefly disappear while the confirmation popup moves
+  through substates, so the prediction window keeps the last seen opponent for
+  a short confirmation-screen grace period
 
 Prediction model:
 

@@ -3,6 +3,17 @@
 
 #include <Windows.h>
 
+#include <cstdint>
+#include <vector>
+
+struct RankedHostLevelCacheEntry
+{
+	uint64_t steamId = 0;
+	uint64_t lobbyId = 0;
+	uint32_t internalRank = 0;
+	DWORD tick = 0;
+};
+
 interface SteamMatchmakingWrapper : public ISteamMatchmaking
 {
 public:
@@ -10,6 +21,10 @@ public:
 	~SteamMatchmakingWrapper();
 	
 	ISteamMatchmaking* m_SteamMatchmaking;
+	std::vector<RankedHostLevelCacheEntry> m_rankedHostLevelCache;
+
+	void CacheRankedHostLevel(CSteamID steamIDLobby, const char* value);
+	bool GetCachedRankedHostLevel(uint64_t steamId, uint32_t* outInternalRank) const;
 
 	int GetFavoriteGameCount();
 	bool GetFavoriteGame(int iGame, AppId_t *pnAppID, uint32 *pnIP, uint16 *pnConnPort, uint16 *pnQueryPort, uint32 *punFlags, uint32 *pRTime32LastPlayedOnServer);

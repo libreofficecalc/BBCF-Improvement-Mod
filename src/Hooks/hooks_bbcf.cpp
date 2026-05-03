@@ -1416,8 +1416,9 @@ void LogRankUiProbe(const char* tag)
 		return;
 	}
 
-	uint8_t* const netUserData = base + 0x004AD0C0;
-	if (IsBadReadPtr(netUserData, 0x1C2C0))
+	// Correct RVA from disasm: 004A1038 mov eax,0CAD0C0h -> RVA = 0x00CAD0C0 - 0x00400000 = 0x008AD0C0
+	uint8_t* const netUserData = base + 0x008AD0C0;
+	if (IsBadReadPtr(netUserData, 0x6A80))
 	{
 		LOG(2, "[RANK][UiProbe] tag=%s netUserData=0x%p unreadable\n",
 			tag ? tag : "(null)",
@@ -1427,32 +1428,24 @@ void LogRankUiProbe(const char* tag)
 	}
 
 	const uint32_t searchFlag = *reinterpret_cast<uint32_t*>(base + 0x008F7758);
-	const uint32_t net22d10 = *reinterpret_cast<uint32_t*>(netUserData + 0x22D10);
-	const uint32_t net23218Raw = *reinterpret_cast<uint32_t*>(netUserData + 0x23218);
-	const uint32_t off6a1c = *reinterpret_cast<uint32_t*>(netUserData + 0x6A1C);
-	const uint32_t off6a20 = *reinterpret_cast<uint32_t*>(netUserData + 0x6A20);
-	const uint32_t off6a24 = *reinterpret_cast<uint32_t*>(netUserData + 0x6A24);
-	const uint32_t off6a28 = *reinterpret_cast<uint32_t*>(netUserData + 0x6A28);
-	const uint32_t off1c2ac = *reinterpret_cast<uint32_t*>(netUserData + 0x1C2AC);
-	const uint32_t off1c2b0 = *reinterpret_cast<uint32_t*>(netUserData + 0x1C2B0);
-	const uint32_t off1c2b4 = *reinterpret_cast<uint32_t*>(netUserData + 0x1C2B4);
-	const uint32_t off1c2b8 = *reinterpret_cast<uint32_t*>(netUserData + 0x1C2B8);
+	// Bytes at +0x6A69 / +0x6A79 are player slot indices (0, 1), not character IDs.
+	// Kept here as probes; correct character byte offsets are still under investigation.
+	const uint8_t p1CharByte = *reinterpret_cast<const uint8_t*>(netUserData + 0x6A69);
+	const uint8_t p2CharByte = *reinterpret_cast<const uint8_t*>(netUserData + 0x6A79);
+	const uint32_t net22d10 = !IsBadReadPtr(netUserData + 0x22D10, 4)
+		? *reinterpret_cast<uint32_t*>(netUserData + 0x22D10) : 0;
+	const uint32_t net23218Raw = !IsBadReadPtr(netUserData + 0x23218, 4)
+		? *reinterpret_cast<uint32_t*>(netUserData + 0x23218) : 0;
 
-	LOG(2, "[RANK][UiProbe] tag=%s netUserData=0x%p searchFlag=0x%08X roomPtr=0x%p\n",
+	LOG(2, "[RANK][UiProbe] tag=%s netUserData=0x%p searchFlag=0x%08X roomPtr=0x%p p1Char=%u p2Char=%u\n",
 		tag ? tag : "(null)",
 		netUserData,
 		static_cast<unsigned int>(searchFlag),
-		g_gameVals.pRoom);
+		g_gameVals.pRoom,
+		static_cast<unsigned int>(p1CharByte),
+		static_cast<unsigned int>(p2CharByte));
 	LogRankUiProbeDword("net_22d10", net22d10);
 	LogRankUiProbeDword("net_23218_raw", net23218Raw);
-	LogRankUiProbeDword("net_6a1c", off6a1c);
-	LogRankUiProbeDword("net_6a20", off6a20);
-	LogRankUiProbeDword("net_6a24", off6a24);
-	LogRankUiProbeDword("net_6a28", off6a28);
-	LogRankUiProbeDword("net_1c2ac", off1c2ac);
-	LogRankUiProbeDword("net_1c2b0", off1c2b0);
-	LogRankUiProbeDword("net_1c2b4", off1c2b4);
-	LogRankUiProbeDword("net_1c2b8", off1c2b8);
 	--s_budget;
 }
 

@@ -370,8 +370,9 @@ LP already capped for this opponent.,LP already capped for this opponent.,El LP 
 LV1-LV10 losses do not change LP.,LV1-LV10 losses do not change LP.,Las derrotas en LV1-LV10 no cambian el LP.
 Automatic Demotion Reached,Automatic Demotion Reached,Descenso automático alcanzado
 Waiting for ranked opponent data.,Waiting for ranked opponent data.,Esperando datos del rival clasificatorio.
-Waiting for RANK_ALL lookup.,Waiting for RANK_ALL lookup.,Esperando consulta de RANK_ALL.
-Opponent RANK_ALL entry unavailable.,Opponent RANK_ALL entry unavailable.,La entrada RANK_ALL del rival no está disponible.
+Waiting for character leaderboard lookup.,Waiting for character leaderboard lookup.,Esperando consulta del ranking del personaje.
+Opponent character leaderboard entry unavailable.,Opponent character leaderboard entry unavailable.,La entrada del ranking del personaje del rival no está disponible.
+Waiting for opponent character data.,Waiting for opponent character data.,Esperando datos del personaje del rival.
 Scanning... %d probes fired,Scanning... %d probes fired,Escaneando... %d consultas realizadas
 Total ranked players: %u  |  Samples: %u,Total ranked players: %u  |  Samples: %u,Jugadores clasificatorios totales: %u  |  Muestras: %u
 Distribution search failed.,Distribution search failed.,Falló la búsqueda de distribución.

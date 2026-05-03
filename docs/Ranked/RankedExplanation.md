@@ -19,6 +19,12 @@ The window shows the opponent name, opponent rank, and two outcomes:
 - Small gray text under the main result shows counter movement when it applies,
   such as `+459 Promotion Counter` or `+1 Demotion Counter`.
 
+Opponent rank is looked up for the character the opponent is currently playing,
+when the game exposes that character in time. The window does not display the
+opponent character name. If the mod cannot identify the opponent character yet,
+it shows the rank as unavailable instead of using the opponent's highest or
+overall rank.
+
 When a rank change is predicted, the window explains which rule caused it:
 
 - `Automatic Promotion Reached`: hidden promotion counter reaches its limit.
