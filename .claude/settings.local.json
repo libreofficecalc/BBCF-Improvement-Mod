@@ -31,7 +31,8 @@
       "Bash(grep -E \"^  [0-9A-F]+:.*mov.*[0-9A-Fa-f]{5,}h$\" tools/bbcf_disasm_ascii.txt)",
       "Bash(grep -En \"\\\\[.*\\\\+[0-9A-F]{4,}h\\\\]\" tools/bbcf_disasm_ascii.txt)",
       "Bash(grep -v \"charByte=1$\")",
-      "Bash(\"/mnt/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe\" \"C:\\\\\\\\Users\\\\\\\\Usuario\\\\\\\\source\\\\\\\\repos\\\\\\\\HaiKamDesu\\\\\\\\BBCF-Improvement-Mod\\\\\\\\BBCF_IM.sln\" /m /p:Configuration=Debug /p:Platform=Win32 /p:PlatformToolset=v143)"
+      "Bash(\"/mnt/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe\" \"C:\\\\\\\\Users\\\\\\\\Usuario\\\\\\\\source\\\\\\\\repos\\\\\\\\HaiKamDesu\\\\\\\\BBCF-Improvement-Mod\\\\\\\\BBCF_IM.sln\" /m /p:Configuration=Debug /p:Platform=Win32 /p:PlatformToolset=v143)",
+      "Bash(cmd.exe /c \"C:\\\\Users\\\\Usuario\\\\source\\\\repos\\\\HaiKamDesu\\\\BBCF-Improvement-Mod\\\\docs\\\\Research\\\\run_ghidra_ranked_victory.cmd\")"
     ]
   }
 }

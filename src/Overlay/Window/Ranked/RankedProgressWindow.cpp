@@ -31,6 +31,7 @@ namespace
 {
 	constexpr uintptr_t kRankedNetworkStructRva = 0x008F7958;
 	constexpr uintptr_t kRankedEntryFlagRva = 0x008F7758;
+	constexpr uintptr_t kRankedStepStructRva = kRankedEntryFlagRva; // 004A40A0 returns VA 00CF7758.
 	// Network user data singleton returned by 004A0FE0. Disasm: 004A1038 mov eax,0CAD0C0h (Ghidra VA).
 	// RVA = 0x00CAD0C0 - 0x00400000 = 0x008AD0C0.
 	constexpr uintptr_t kNetworkUserDataRva = 0x008AD0C0;
@@ -3143,6 +3144,23 @@ namespace
 	{
 		int state = -1;
 		int state1 = -1;
+		// Extra fields captured for victory-screen research; offsets from kRankedNetworkStructRva.
+		int x08 = -1;
+		int x0c = -1;
+		int x10 = -1;
+		int x14 = -1;
+		int xe0 = -1;   // read in RankedStep fn at 004a47c0 — may indicate lobby-closed
+		int xf4 = -1;   // read in RankedStep case 9 — checked == 3 (set format?)
+	};
+
+	struct RankedVictoryStepLite
+	{
+		int step = -1;             // 004A47C0 logs this as "RankedStep %d" from +0x08.
+		int rematchPending = -1;   // +0x20; set to 1 after local confirm.
+		int initialSelection = -1; // +0x24.
+		int rematchMode = -1;      // +0x28; 1=selectable, 2=confirmed, 3=waiting.
+		int inputDelay = -1;       // +0x34; confirm is polled only after this reaches 0.
+		int opponentDelay = -1;    // +0x38.
 	};
 
 	bool CaptureRankedNetworkLite(RankedNetworkLite* outState)
@@ -3163,13 +3181,55 @@ namespace
 		}
 
 		const uint8_t* const network = reinterpret_cast<const uint8_t*>(moduleBase + kRankedNetworkStructRva);
-		if (IsBadReadPtr(network, 8))
+		if (IsBadReadPtr(network, 0xf8))
 		{
 			return false;
 		}
 
-		outState->state = *reinterpret_cast<const int*>(network + 0x0);
-		outState->state1 = *reinterpret_cast<const int*>(network + 0x4);
+		outState->state  = *reinterpret_cast<const int*>(network + 0x00);
+		outState->state1 = *reinterpret_cast<const int*>(network + 0x04);
+		outState->x08    = *reinterpret_cast<const int*>(network + 0x08);
+		outState->x0c    = *reinterpret_cast<const int*>(network + 0x0c);
+		outState->x10    = *reinterpret_cast<const int*>(network + 0x10);
+		outState->x14    = *reinterpret_cast<const int*>(network + 0x14);
+		outState->xe0    = *reinterpret_cast<const int*>(network + 0xe0);
+		outState->xf4    = *reinterpret_cast<const int*>(network + 0xf4);
+		return true;
+	}
+
+	bool CaptureRankedVictoryStepLite(RankedVictoryStepLite* outState)
+	{
+		if (!outState)
+		{
+			return false;
+		}
+
+		*outState = {};
+		outState->step = -1;
+		outState->rematchPending = -1;
+		outState->initialSelection = -1;
+		outState->rematchMode = -1;
+		outState->inputDelay = -1;
+		outState->opponentDelay = -1;
+
+		const uintptr_t moduleBase = reinterpret_cast<uintptr_t>(GetBbcfBaseAdress());
+		if (moduleBase == 0)
+		{
+			return false;
+		}
+
+		const uint8_t* const rankedStep = reinterpret_cast<const uint8_t*>(moduleBase + kRankedStepStructRva);
+		if (IsBadReadPtr(rankedStep, 0x3c))
+		{
+			return false;
+		}
+
+		outState->step = *reinterpret_cast<const int*>(rankedStep + 0x08);
+		outState->rematchPending = *reinterpret_cast<const int*>(rankedStep + 0x20);
+		outState->initialSelection = *reinterpret_cast<const int*>(rankedStep + 0x24);
+		outState->rematchMode = *reinterpret_cast<const int*>(rankedStep + 0x28);
+		outState->inputDelay = *reinterpret_cast<const int*>(rankedStep + 0x34);
+		outState->opponentDelay = *reinterpret_cast<const int*>(rankedStep + 0x38);
 		return true;
 	}
 
@@ -4837,24 +4897,29 @@ namespace
 			!g_interfaces.pRoomManager->GetOtherRoomMemberEntriesInCurrentMatch().empty();
 	}
 
-	bool IsRankedPredictionRematchScreen(int currentGameState)
+	bool IsRankedPredictionRematchScreen(
+		int currentGameState,
+		const RankedNetworkLite& networkState,
+		const RankedVictoryStepLite& victoryStep,
+		bool sawState58ThisVictoryCycle)
 	{
-		// Must be on the victory screen (state 16; 17/18 not observed in ranked online).
-		const bool inVictoryCluster =
-			currentGameState == GameState_VictoryScreen ||
-			currentGameState == GameState_VictoryScreen1 ||
-			currentGameState == GameState_VictoryScreen2;
-		if (!inVictoryCluster)
+		// The network state1 sequence only distinguishes mid-set from final set.
+		// The actual rematch menu lives in the ranked step object updated by 004A47C0:
+		// step 9 is the post-match/rematch menu, mode 1 is selectable, mode 2 is
+		// after local confirm, and inputDelay blocks confirm polling until it expires.
+		if (currentGameState != GameState_VictoryScreen ||
+			networkState.state != 5 ||
+			!sawState58ThisVictoryCycle ||
+			victoryStep.step != 9 ||
+			victoryStep.rematchMode != 1 ||
+			victoryStep.rematchPending != 0 ||
+			victoryStep.inputDelay > 0)
 		{
 			return false;
 		}
 
-		// Mid-set rematches stay at networkState.state=5 for the entire victory screen and
-		// jump directly back to InMatch (never transition to state=4).  Only the final game
-		// of a set transitions to state=4 before returning to the lobby.  Gating on state==4
-		// therefore misses all mid-set games.  The serial check alone is sufficient:
 		// g_rankedUploadCompletionSerial is only incremented by a ranked leaderboard upload,
-		// so serial>entry means a ranked match just finished.
+		// so serial>entry means the just-finished ranked match has completed upload.
 		return g_rankedUploadCompletionSerial > g_uploadSerialAtMatchEntry;
 	}
 
@@ -4862,9 +4927,11 @@ namespace
 		const char* reason,
 		int gameState,
 		const RankedNetworkLite& networkState,
+		const RankedVictoryStepLite& victoryStep,
 		bool rankedEntryActive,
 		bool inMatch,
 		bool rankedRematchScreen,
+		bool sawState58ThisVictoryCycle,
 		uint64_t opponentSteamId,
 		uint32_t opponentCharacterId)
 	{
@@ -4875,22 +4942,44 @@ namespace
 			(static_cast<uint64_t>(rankedEntryActive ? 1u : 0u) << 31) ^
 			(static_cast<uint64_t>(inMatch ? 1u : 0u) << 30) ^
 			(static_cast<uint64_t>(rankedRematchScreen ? 1u : 0u) << 29) ^
+			(static_cast<uint64_t>(sawState58ThisVictoryCycle ? 1u : 0u) << 28) ^
 			(static_cast<uint64_t>(opponentCharacterId & 0x3Fu) << 24) ^
-			(opponentSteamId & 0x3FFFFFFFull);
+			(opponentSteamId & 0x3FFFFFFFull) ^
+			(static_cast<uint64_t>(static_cast<uint32_t>(networkState.x08)) * 0x100000007ULL) ^
+			(static_cast<uint64_t>(static_cast<uint32_t>(networkState.x0c)) * 0x10000000003ULL) ^
+			(static_cast<uint64_t>(static_cast<uint32_t>(networkState.xe0)) * 0x1000000000009ULL) ^
+			(static_cast<uint64_t>(static_cast<uint32_t>(networkState.xf4)) * 0x100000000002bULL) ^
+			(static_cast<uint64_t>(static_cast<uint32_t>(victoryStep.step)) * 0x1000000000063ULL) ^
+			(static_cast<uint64_t>(static_cast<uint32_t>(victoryStep.rematchMode)) * 0x1000000000099ULL) ^
+			(static_cast<uint64_t>(static_cast<uint32_t>(victoryStep.rematchPending)) * 0x10000000000f5ULL) ^
+			(static_cast<uint64_t>(static_cast<uint32_t>(victoryStep.inputDelay)) * 0x100000000013bULL);
 		if (s_lastSignature == signature)
 		{
 			return;
 		}
 		s_lastSignature = signature;
 
-		LOG(1, "[RANK][PredictionUI] reason=%s gstate=%d state=%d/%d entry=%d inMatch=%d rematch=%d opponentSteam=%llu opponentChar=%u\n",
+		LOG(1, "[RANK][PredictionUI] reason=%s gstate=%d state=%d/%d x08=%d x0c=%d x10=%d x14=%d xe0=%d xf4=%d rstep=%d rpend=%d rsel=%d rmode=%d rdelay=%d roppDelay=%d entry=%d inMatch=%d rematch=%d seen58=%d opponentSteam=%llu opponentChar=%u\n",
 			reason ? reason : "<null>",
 			gameState,
 			networkState.state,
 			networkState.state1,
+			networkState.x08,
+			networkState.x0c,
+			networkState.x10,
+			networkState.x14,
+			networkState.xe0,
+			networkState.xf4,
+			victoryStep.step,
+			victoryStep.rematchPending,
+			victoryStep.initialSelection,
+			victoryStep.rematchMode,
+			victoryStep.inputDelay,
+			victoryStep.opponentDelay,
 			rankedEntryActive ? 1 : 0,
 			inMatch ? 1 : 0,
 			rankedRematchScreen ? 1 : 0,
+			sawState58ThisVictoryCycle ? 1 : 0,
 			static_cast<unsigned long long>(opponentSteamId),
 			static_cast<unsigned int>(opponentCharacterId));
 	}
@@ -5090,9 +5179,11 @@ namespace
 		const RankedProgressDisplayState& self,
 		int gameState,
 		const RankedNetworkLite& networkState,
+		const RankedVictoryStepLite& victoryStep,
 		bool rankedEntryActive,
 		bool inMatch,
-		bool rankedRematchScreen)
+		bool rankedRematchScreen,
+		bool sawState58ThisVictoryCycle)
 	{
 		static uint64_t s_lastPredictionOpponentSteamId = 0;
 		static uint32_t s_lastPredictionOpponentCharacterId = kInvalidRankedCharacterId;
@@ -5100,7 +5191,7 @@ namespace
 
 		if (!Settings::settingsIni.showRankedProgress || !Settings::settingsIni.showRankedPrediction)
 		{
-			LogRankedPredictionVisibility("setting_disabled", gameState, networkState, rankedEntryActive, inMatch, rankedRematchScreen, 0u, kInvalidRankedCharacterId);
+			LogRankedPredictionVisibility("setting_disabled", gameState, networkState, victoryStep, rankedEntryActive, inMatch, rankedRematchScreen, sawState58ThisVictoryCycle, 0u, kInvalidRankedCharacterId);
 			return;
 		}
 		const bool predictionContext = rankedEntryActive || IsRankedPredictionMenuState(networkState) || rankedRematchScreen;
@@ -5109,7 +5200,7 @@ namespace
 			s_lastPredictionOpponentSteamId = 0;
 			s_lastPredictionOpponentCharacterId = kInvalidRankedCharacterId;
 			s_lastPredictionOpponentSeenAt = -30.0;
-			LogRankedPredictionVisibility("inactive_context", gameState, networkState, rankedEntryActive, inMatch, rankedRematchScreen, 0u, kInvalidRankedCharacterId);
+			LogRankedPredictionVisibility("inactive_context", gameState, networkState, victoryStep, rankedEntryActive, inMatch, rankedRematchScreen, sawState58ThisVictoryCycle, 0u, kInvalidRankedCharacterId);
 			return;
 		}
 
@@ -5152,7 +5243,7 @@ namespace
 		{
 			g_rankedOpponentLookup.Tick(opponentSteamId, opponentCharacterId, rankedRematchScreen);
 		}
-		LogRankedPredictionVisibility("draw", gameState, networkState, rankedEntryActive, inMatch, rankedRematchScreen, opponentSteamId, opponentCharacterId);
+		LogRankedPredictionVisibility("draw", gameState, networkState, victoryStep, rankedEntryActive, inMatch, rankedRematchScreen, sawState58ThisVictoryCycle, opponentSteamId, opponentCharacterId);
 		RankedOpponentInfo opponent{};
 		bool hasOpponentInfo = false;
 		if (hasOpponentSteamId && hasOpponentCharacter)
@@ -5277,10 +5368,13 @@ void DrawRankedProgressOverlayStandalone()
 	TryStartObservedRankedUploadAnimation();
 	RankedNetworkLite networkState;
 	const bool hasNetworkState = CaptureRankedNetworkLite(&networkState);
+	RankedVictoryStepLite victoryStep;
+	const bool hasVictoryStep = CaptureRankedVictoryStepLite(&victoryStep);
 	const int currentGameState = g_gameVals.pGameState ? *g_gameVals.pGameState : -1;
 	const int currentMatchState = g_gameVals.pMatchState ? *g_gameVals.pMatchState : -1;
 	static int s_lastPredictionGameState = -1;
 	static ULONGLONG s_victoryScreenEnteredAtMs = 0;
+	static bool s_sawState58ThisVictoryCycle = false;
 	if (currentGameState != s_lastPredictionGameState)
 	{
 		s_lastPredictionGameState = currentGameState;
@@ -5292,19 +5386,28 @@ void DrawRankedProgressOverlayStandalone()
 		if (currentGameState == GameState_VictoryScreen)
 		{
 			s_victoryScreenEnteredAtMs = GetTickCount64();
+			s_sawState58ThisVictoryCycle = false;
 		}
 		else if (currentGameState != GameState_VictoryScreen1 &&
 		         currentGameState != GameState_VictoryScreen2)
 		{
 			// Leaving the victory cluster — clear the timestamp.
 			s_victoryScreenEnteredAtMs = 0;
+			s_sawState58ThisVictoryCycle = false;
 		}
 		// Transitioning within the cluster (16→17, 17→18): keep s_victoryScreenEnteredAtMs.
+	}
+	if (currentGameState == GameState_VictoryScreen &&
+		hasNetworkState &&
+		networkState.state1 == 58)
+	{
+		s_sawState58ThisVictoryCycle = true;
 	}
 	const bool inMatch = currentGameState == GameState_InMatch;
 	const bool rankedEntryActive = ReadRankedEntryFlag() != 0u;
 	const bool rankedRematchScreen = hasNetworkState &&
-		IsRankedPredictionRematchScreen(currentGameState);
+		hasVictoryStep &&
+		IsRankedPredictionRematchScreen(currentGameState, networkState, victoryStep, s_sawState58ThisVictoryCycle);
 	if (hasLiveSnapshot || rankedRematchScreen)
 	{
 		g_rankedOverlayVisibility.stickyRankedSessionVisible = true;
@@ -5702,6 +5805,6 @@ void DrawRankedProgressOverlayStandalone()
 	ImGui::End();
 	ImGui::PopStyleVar();
 	ImGui::PopStyleColor();
-	DrawRankedPredictionWindow(renderedDisplay, currentGameState, networkState, rankedEntryActive, inMatch, rankedRematchScreen);
+	DrawRankedPredictionWindow(renderedDisplay, currentGameState, networkState, victoryStep, rankedEntryActive, inMatch, rankedRematchScreen, s_sawState58ThisVictoryCycle);
 	DrawRankedGlobalDialogs();
 }

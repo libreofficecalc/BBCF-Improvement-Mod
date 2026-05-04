@@ -333,15 +333,21 @@ Visibility rule:
 - `ShowRankedPrediction = 1`
 - ranked entry/confirmation flag is active, or ranked network state is
   `state == 4` with `state1` from `43` through `48`
-- or the game is in the victory-screen cluster (`GameState_VictoryScreen` 0x10,
-  `GameState_VictoryScreen1` 0x11, or `GameState_VictoryScreen2` 0x12) AND
-  `MatchState_VictoryScreen`, the current room type is ranked, the current match
-  still has an opponent, AND a ranked upload with serial greater than
-  `g_uploadSerialAtMatchEntry` (captured on the most recent `GameState_InMatch`
-  entry) has completed. This covers the ranked rematch/exit choice screen across
-  all three victory sub-states without relying on a fragile fixed timestamp
-  window. The serial gate prevents stale uploads from a previous match from
-  triggering the window.
+- or the game is in `GameState_VictoryScreen` (0x10), the current
+  victory-screen cycle is still in ranked network `state == 5` and previously
+  observed ranked network `state1 == 58`, a ranked upload with serial greater
+  than `g_uploadSerialAtMatchEntry`
+  (captured on the most recent `GameState_InMatch` entry) has completed, and
+  the internal ranked-step object returned by BBCF function `004A40A0`
+  (`0x00CF7758`, RVA `0x008F7758`) is in post-match step `9` with rematch mode
+  `1`, rematch pending `0`, and input delay expired.
+  Mid-set rematchable flow is `58 -> 59 -> 60 -> 57`; final set end skips `58`
+  and goes `57 -> 63 -> 64 -> lobby`, so the per-cycle `seen58` flag prevents
+  the prediction UI from appearing at final set end. `state1` alone is not a
+  sufficient timing gate: live logs showed both `state1 == 57` and `state1 == 60`
+  only after local rematch confirm. The ranked-step mode hides the UI once local
+  confirm changes mode `1` to mode `2`. The serial gate prevents stale uploads
+  from a previous match from triggering the window.
 - game is not in match
 - if opponent data is not ready yet, draw a visible waiting/unavailable card
   instead of silently hiding the window
