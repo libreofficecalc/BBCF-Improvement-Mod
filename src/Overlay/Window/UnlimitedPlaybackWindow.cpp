@@ -519,6 +519,10 @@ void UnlimitedPlaybackWindow::Draw() {
                 mgr.GetTrigger(UnlimitedPlaybackManager::Trigger_KeyPress).keyCode = mapped;
                 Settings::settingsIni.unlimitedPlaybackTriggerKeyCode = mapped;
                 Settings::changeSetting("UnlimitedPlaybackTriggerKeyCode", std::to_string(mapped));
+                // Sync edge state so the key press used for assignment doesn't immediately
+                // fire the trigger. ForceResetTriggers clears m_keyPressTriggerArmed and
+                // calls SyncKeyEdgeState, requiring a full release cycle before triggering.
+                mgr.ForceResetTriggers("");
                 keyCaptureMode = false;
                 mgr.PushToast(FormatText(L("Mapped playback bind: %s").c_str(), BindingName(mapped)));
             }
