@@ -183,7 +183,7 @@ private:
     bool m_prevOnHitCondition = false;
     bool m_prevThrowTechCondition = false;
     std::array<bool, 256> m_prevKeyDown = {};
-    std::array<bool, 14> m_prevControllerBindDown = {};
+    std::array<bool, 16> m_prevControllerBindDown = {};
     bool m_keyPressTriggerArmed = false;
     bool m_triggerRuntimeEnabled = true;
     bool m_profileRuntimeSuppressedUntilReset = false;

@@ -1,6 +1,7 @@
 #include "UnlimitedPlaybackManager.h"
 
 #include "Core/Localization.h"
+#include "Core/Settings.h"
 #include "Core/interfaces.h"
 #include "Core/logger.h"
 #include "Core/utils.h"
@@ -34,24 +35,28 @@ constexpr int kControllerBindBase = 0x1000;
 
 struct ControllerBindingDef {
     int code;
-    WORD mask;
+    WORD mask;         // 0 for analog triggers (L2/R2)
+    bool isLeftTrigger;
+    bool isRightTrigger;
 };
 
 const ControllerBindingDef kControllerBindings[] = {
-    { kControllerBindBase + 0, XINPUT_GAMEPAD_A },
-    { kControllerBindBase + 1, XINPUT_GAMEPAD_B },
-    { kControllerBindBase + 2, XINPUT_GAMEPAD_X },
-    { kControllerBindBase + 3, XINPUT_GAMEPAD_Y },
-    { kControllerBindBase + 4, XINPUT_GAMEPAD_LEFT_SHOULDER },
-    { kControllerBindBase + 5, XINPUT_GAMEPAD_RIGHT_SHOULDER },
-    { kControllerBindBase + 6, XINPUT_GAMEPAD_BACK },
-    { kControllerBindBase + 7, XINPUT_GAMEPAD_START },
-    { kControllerBindBase + 8, XINPUT_GAMEPAD_LEFT_THUMB },
-    { kControllerBindBase + 9, XINPUT_GAMEPAD_RIGHT_THUMB },
-    { kControllerBindBase + 10, XINPUT_GAMEPAD_DPAD_UP },
-    { kControllerBindBase + 11, XINPUT_GAMEPAD_DPAD_DOWN },
-    { kControllerBindBase + 12, XINPUT_GAMEPAD_DPAD_LEFT },
-    { kControllerBindBase + 13, XINPUT_GAMEPAD_DPAD_RIGHT },
+    { kControllerBindBase + 0,  XINPUT_GAMEPAD_A,              false, false },
+    { kControllerBindBase + 1,  XINPUT_GAMEPAD_B,              false, false },
+    { kControllerBindBase + 2,  XINPUT_GAMEPAD_X,              false, false },
+    { kControllerBindBase + 3,  XINPUT_GAMEPAD_Y,              false, false },
+    { kControllerBindBase + 4,  XINPUT_GAMEPAD_LEFT_SHOULDER,  false, false },
+    { kControllerBindBase + 5,  XINPUT_GAMEPAD_RIGHT_SHOULDER, false, false },
+    { kControllerBindBase + 6,  XINPUT_GAMEPAD_BACK,           false, false },
+    { kControllerBindBase + 7,  XINPUT_GAMEPAD_START,          false, false },
+    { kControllerBindBase + 8,  XINPUT_GAMEPAD_LEFT_THUMB,     false, false },
+    { kControllerBindBase + 9,  XINPUT_GAMEPAD_RIGHT_THUMB,    false, false },
+    { kControllerBindBase + 10, XINPUT_GAMEPAD_DPAD_UP,        false, false },
+    { kControllerBindBase + 11, XINPUT_GAMEPAD_DPAD_DOWN,      false, false },
+    { kControllerBindBase + 12, XINPUT_GAMEPAD_DPAD_LEFT,      false, false },
+    { kControllerBindBase + 13, XINPUT_GAMEPAD_DPAD_RIGHT,     false, false },
+    { kControllerBindBase + 14, 0,                             true,  false }, // L2 / LT
+    { kControllerBindBase + 15, 0,                             false, true  }, // R2 / RT
 };
 
 std::string FormatLocalized(const char* key, ...) {
@@ -82,8 +87,14 @@ bool IsControllerBindCode(int code) {
 bool IsControllerBindingDown(const ControllerBindingDef& binding) {
     for (DWORD userIndex = 0; userIndex < XUSER_MAX_COUNT; ++userIndex) {
         XINPUT_STATE state = {};
-        if (XInputGetState(userIndex, &state) == ERROR_SUCCESS &&
-            (state.Gamepad.wButtons & binding.mask) != 0) {
+        if (XInputGetState(userIndex, &state) != ERROR_SUCCESS) {
+            continue;
+        }
+        if (binding.isLeftTrigger) {
+            if (state.Gamepad.bLeftTrigger > 128) return true;
+        } else if (binding.isRightTrigger) {
+            if (state.Gamepad.bRightTrigger > 128) return true;
+        } else if ((state.Gamepad.wButtons & binding.mask) != 0) {
             return true;
         }
     }
@@ -458,6 +469,11 @@ void UnlimitedPlaybackManager::InitializeIfNeeded() {
 
     m_activeProfilePath.clear();
     m_lastLoadedProfileFolder.clear();
+    // Trigger keybind lives in user settings, not in profiles.
+    const int savedKeyCode = Settings::settingsIni.unlimitedPlaybackTriggerKeyCode;
+    if (savedKeyCode != 0) {
+        m_triggers[Trigger_KeyPress].keyCode = savedKeyCode;
+    }
     m_initialized = true;
 }
 
@@ -1188,7 +1204,7 @@ bool UnlimitedPlaybackManager::SaveProfile(const std::string& profilePath) {
     for (int i = 0; i < Trigger_Count; ++i) {
         out << "trigger." << TriggerKeyName(static_cast<TriggerType>(i)) << ".enabled=" << (m_triggers[i].enabled ? 1 : 0) << "\n";
         out << "trigger." << TriggerKeyName(static_cast<TriggerType>(i)) << ".cooldown=" << m_triggers[i].cooldownFrames << "\n";
-        out << "trigger." << TriggerKeyName(static_cast<TriggerType>(i)) << ".key=" << m_triggers[i].keyCode << "\n";
+        // keyCode is stored in settings.ini, not in profile files.
     }
 
     for (const auto& e : m_entries) {
@@ -1333,7 +1349,7 @@ bool UnlimitedPlaybackManager::LoadProfile(const std::string& profilePath, bool 
             } else if (parts[2] == "cooldown") {
                 parsedTriggers[t].cooldownFrames = (std::max)(1, std::atoi(value.c_str()));
             } else if (parts[2] == "key") {
-                parsedTriggers[t].keyCode = std::atoi(value.c_str());
+                // keyCode lives in settings.ini; silently ignore legacy .key fields in profiles.
             }
             continue;
         }
@@ -1710,6 +1726,10 @@ bool UnlimitedPlaybackManager::TryFireTrigger(TriggerType trigger, int currentFr
         return false;
     }
 
+    if (m_runtimeSlotBackupValid || m_runtimeSlotRestorePending) {
+        return false;
+    }
+
     bool shouldFire = false;
     switch (trigger) {
     case Trigger_KeyPress: shouldFire = IsKeyPressedEdge(config.keyCode); break;
@@ -1788,8 +1808,11 @@ void UnlimitedPlaybackManager::BackupRuntimeSlotIfNeeded() {
         m_runtimePlaybackTypeBackupValid = true;
     }
     m_runtimeSlotNumber = kDedicatedRuntimePlaybackSlot;
-    m_runtimeSlotBackupFrames.clear();
-    m_runtimeSlotBackupFacingLeft = false;
+    {
+        PlaybackSlot pslot(kDedicatedRuntimePlaybackSlot);
+        m_runtimeSlotBackupFrames = pslot.get_slot_buffer_raw();
+        m_runtimeSlotBackupFacingLeft = pslot.get_facing_direction() != 0;
+    }
     m_runtimeSlotBackupValid = true;
 }
 
@@ -1815,6 +1838,10 @@ void UnlimitedPlaybackManager::TryRestoreRuntimeSlotAfterPlayback() {
         m_runtimePlaybackManager.set_playback_control(0);
     }
     m_runtimePlaybackManager.set_playback_position(0);
+    m_runtimePlaybackManager.load_raw_into_slot(
+        m_runtimeSlotBackupFrames,
+        m_runtimeSlotBackupFacingLeft ? 1 : 0,
+        m_runtimeSlotNumber);
     if (m_runtimeActiveSlotBackupValid) {
         const int restoredSlot = m_runtimeActiveSlotBackup + 1;
         if (restoredSlot >= 1 && restoredSlot <= 4) {
@@ -1962,7 +1989,9 @@ std::vector<size_t> UnlimitedPlaybackManager::BuildCandidatesForTrigger(TriggerT
         if (!e.enabled || e.weight <= 0.0f) {
             continue;
         }
-
+        if (!e.triggerEnabled[static_cast<size_t>(trigger)]) {
+            continue;
+        }
         auto cacheIt = m_cache.find(e.id);
         if (cacheIt == m_cache.end() || !cacheIt->second.loaded) {
             continue;
@@ -2059,10 +2088,11 @@ bool UnlimitedPlaybackManager::ShouldTriggerOnBlock() {
         return false;
     }
 
-    const std::string currentAction = g_interfaces.player2.GetData()->currentAction;
-    const bool cond = currentAction.find("GuardLoop") != std::string::npos;
+    // Fire on the first frame after blockstun ends so the dummy can act immediately.
+    const auto* p2 = g_interfaces.player2.GetData();
+    const bool cond = p2->blockstun > 0;
 
-    const bool edge = (cond && !m_prevOnBlockCondition);
+    const bool edge = (!cond && m_prevOnBlockCondition);
     m_prevOnBlockCondition = cond;
     return edge;
 }
@@ -2072,24 +2102,11 @@ bool UnlimitedPlaybackManager::ShouldTriggerOnHit() {
         return false;
     }
 
+    // Fire on the first frame after hitstun ends so the dummy can act immediately.
     const auto* p2 = g_interfaces.player2.GetData();
-    const std::string currentAction = p2->currentAction;
-    static const std::array<const char*, 8> tokens = {
-        "CmnActHit", "CmnActBDown", "CmnActFDown", "CmnActVDown",
-        "CmnActStaggerLoop", "CmnActSlideAir", "CmnActSkeleton", "CmnActBlowoff"
-    };
+    const bool cond = p2->hitstun > 0;
 
-    bool containsAny = false;
-    for (const auto token : tokens) {
-        if (currentAction.find(token) != std::string::npos) {
-            containsAny = true;
-            break;
-        }
-    }
-
-    const bool cond = (p2->hitstun > 0 && containsAny);
-
-    const bool edge = (cond && !m_prevOnHitCondition);
+    const bool edge = (!cond && m_prevOnHitCondition);
     m_prevOnHitCondition = cond;
     return edge;
 }

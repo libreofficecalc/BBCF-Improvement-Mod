@@ -1,6 +1,7 @@
 #include "UnlimitedPlaybackWindow.h"
 
 #include "Core/Localization.h"
+#include "Core/Settings.h"
 #include "Core/interfaces.h"
 #include "Core/logger.h"
 #include "Core/utils.h"
@@ -31,25 +32,29 @@ constexpr int kControllerBindBase = 0x1000;
 
 struct ControllerBindingDef {
     int code;
-    WORD mask;
+    WORD mask;          // 0 for analog triggers (L2/R2)
     const char* name;
+    bool isLeftTrigger;
+    bool isRightTrigger;
 };
 
 const ControllerBindingDef kControllerBindings[] = {
-    { kControllerBindBase + 0, XINPUT_GAMEPAD_A, "Pad A" },
-    { kControllerBindBase + 1, XINPUT_GAMEPAD_B, "Pad B" },
-    { kControllerBindBase + 2, XINPUT_GAMEPAD_X, "Pad X" },
-    { kControllerBindBase + 3, XINPUT_GAMEPAD_Y, "Pad Y" },
-    { kControllerBindBase + 4, XINPUT_GAMEPAD_LEFT_SHOULDER, "Pad LB" },
-    { kControllerBindBase + 5, XINPUT_GAMEPAD_RIGHT_SHOULDER, "Pad RB" },
-    { kControllerBindBase + 6, XINPUT_GAMEPAD_BACK, "Pad Back" },
-    { kControllerBindBase + 7, XINPUT_GAMEPAD_START, "Pad Start" },
-    { kControllerBindBase + 8, XINPUT_GAMEPAD_LEFT_THUMB, "Pad LS" },
-    { kControllerBindBase + 9, XINPUT_GAMEPAD_RIGHT_THUMB, "Pad RS" },
-    { kControllerBindBase + 10, XINPUT_GAMEPAD_DPAD_UP, "Pad Up" },
-    { kControllerBindBase + 11, XINPUT_GAMEPAD_DPAD_DOWN, "Pad Down" },
-    { kControllerBindBase + 12, XINPUT_GAMEPAD_DPAD_LEFT, "Pad Left" },
-    { kControllerBindBase + 13, XINPUT_GAMEPAD_DPAD_RIGHT, "Pad Right" },
+    { kControllerBindBase + 0,  XINPUT_GAMEPAD_A,              "Pad A",     false, false },
+    { kControllerBindBase + 1,  XINPUT_GAMEPAD_B,              "Pad B",     false, false },
+    { kControllerBindBase + 2,  XINPUT_GAMEPAD_X,              "Pad X",     false, false },
+    { kControllerBindBase + 3,  XINPUT_GAMEPAD_Y,              "Pad Y",     false, false },
+    { kControllerBindBase + 4,  XINPUT_GAMEPAD_LEFT_SHOULDER,  "Pad LB",    false, false },
+    { kControllerBindBase + 5,  XINPUT_GAMEPAD_RIGHT_SHOULDER, "Pad RB",    false, false },
+    { kControllerBindBase + 6,  XINPUT_GAMEPAD_BACK,           "Pad Back",  false, false },
+    { kControllerBindBase + 7,  XINPUT_GAMEPAD_START,          "Pad Start", false, false },
+    { kControllerBindBase + 8,  XINPUT_GAMEPAD_LEFT_THUMB,     "Pad LS",    false, false },
+    { kControllerBindBase + 9,  XINPUT_GAMEPAD_RIGHT_THUMB,    "Pad RS",    false, false },
+    { kControllerBindBase + 10, XINPUT_GAMEPAD_DPAD_UP,        "Pad Up",    false, false },
+    { kControllerBindBase + 11, XINPUT_GAMEPAD_DPAD_DOWN,      "Pad Down",  false, false },
+    { kControllerBindBase + 12, XINPUT_GAMEPAD_DPAD_LEFT,      "Pad Left",  false, false },
+    { kControllerBindBase + 13, XINPUT_GAMEPAD_DPAD_RIGHT,     "Pad Right", false, false },
+    { kControllerBindBase + 14, 0,                             "Pad L2",    true,  false },
+    { kControllerBindBase + 15, 0,                             "Pad R2",    false, true  },
 };
 
 std::string NormalizePlaybackFileName(const char* input) {
@@ -282,8 +287,14 @@ int CaptureNextPressedVirtualKey() {
     for (const auto& binding : kControllerBindings) {
         for (DWORD userIndex = 0; userIndex < XUSER_MAX_COUNT; ++userIndex) {
             XINPUT_STATE state = {};
-            if (XInputGetState(userIndex, &state) == ERROR_SUCCESS &&
-                (state.Gamepad.wButtons & binding.mask) != 0) {
+            if (XInputGetState(userIndex, &state) != ERROR_SUCCESS) {
+                continue;
+            }
+            if (binding.isLeftTrigger) {
+                if (state.Gamepad.bLeftTrigger > 128) return binding.code;
+            } else if (binding.isRightTrigger) {
+                if (state.Gamepad.bRightTrigger > 128) return binding.code;
+            } else if ((state.Gamepad.wButtons & binding.mask) != 0) {
                 return binding.code;
             }
         }
@@ -303,8 +314,14 @@ bool AnyBindableKeyCurrentlyDown() {
     for (const auto& binding : kControllerBindings) {
         for (DWORD userIndex = 0; userIndex < XUSER_MAX_COUNT; ++userIndex) {
             XINPUT_STATE state = {};
-            if (XInputGetState(userIndex, &state) == ERROR_SUCCESS &&
-                (state.Gamepad.wButtons & binding.mask) != 0) {
+            if (XInputGetState(userIndex, &state) != ERROR_SUCCESS) {
+                continue;
+            }
+            if (binding.isLeftTrigger) {
+                if (state.Gamepad.bLeftTrigger > 128) return true;
+            } else if (binding.isRightTrigger) {
+                if (state.Gamepad.bRightTrigger > 128) return true;
+            } else if ((state.Gamepad.wButtons & binding.mask) != 0) {
                 return true;
             }
         }
@@ -500,6 +517,8 @@ void UnlimitedPlaybackWindow::Draw() {
             const int mapped = CaptureNextPressedVirtualKey();
             if (mapped != 0) {
                 mgr.GetTrigger(UnlimitedPlaybackManager::Trigger_KeyPress).keyCode = mapped;
+                Settings::settingsIni.unlimitedPlaybackTriggerKeyCode = mapped;
+                Settings::changeSetting("UnlimitedPlaybackTriggerKeyCode", std::to_string(mapped));
                 keyCaptureMode = false;
                 mgr.PushToast(FormatText(L("Mapped playback bind: %s").c_str(), BindingName(mapped)));
             }
