@@ -331,23 +331,57 @@ Visibility rule:
 
 - `ShowRankedProgress = 1`
 - `ShowRankedPrediction = 1`
-- ranked entry/confirmation flag is active, or ranked network state is
-  `state == 4` with `state1` from `43` through `48`
-- or the game is in `GameState_VictoryScreen` (0x10), the current
-  victory-screen cycle is still in ranked network `state == 5` and previously
-  observed ranked network `state1 == 58`, a ranked upload with serial greater
-  than `g_uploadSerialAtMatchEntry`
-  (captured on the most recent `GameState_InMatch` entry) has completed, and
-  the internal ranked-step object returned by BBCF function `004A40A0`
-  (`0x00CF7758`, RVA `0x008F7758`) is in post-match step `9` with rematch mode
-  `1`, rematch pending `0`, and input delay expired.
-  Mid-set rematchable flow is `58 -> 59 -> 60 -> 57`; final set end skips `58`
-  and goes `57 -> 63 -> 64 -> lobby`, so the per-cycle `seen58` flag prevents
-  the prediction UI from appearing at final set end. `state1` alone is not a
-  sufficient timing gate: live logs showed both `state1 == 57` and `state1 == 60`
-  only after local rematch confirm. The ranked-step mode hides the UI once local
-  confirm changes mode `1` to mode `2`. The serial gate prevents stale uploads
-  from a previous match from triggering the window.
+- One of two predictionContext conditions must be true (checked in
+  `DrawRankedPredictionWindow`):
+
+  **Confirmation screen** (`IsRankedPredictionMenuState`):
+  `networkState.state == 4` AND `state1` in `[43, 48]`.
+  This is the character-select / "OK to start" screen. gstate is typically 27
+  (lobby) at this point.
+
+  **Victory window** (`IsRankedVictoryWindowState`):
+  `gstate` in `[16, 17, 18]` (victory cluster still on screen) AND either:
+  - `networkState.state == 5` (any state1): covers mid-set auto-continue
+    (state1 57-60) and post-set transition (state1 63-64)
+  - `networkState.state == 4` AND `state1 >= 1`: post-set rematch lobby
+  Because gstate is the distinguishing factor, this is **false** in the
+  pre-match lobby (gstate==27) even when state/state1 values overlap.
+
+  **Ranked step machine** (`rankedRematchScreen` / `IsRankedPredictionRematchScreen`):
+  kept for completeness; observed at 0 in practice (see FUN_004AE6D0).
+
+**IMPORTANT — what NOT to do:**
+
+- Do NOT gate on `state1 >= 1` (or any broad lobby-state range) without also
+  checking gstate. That causes the prediction to appear whenever the player
+  opens the ranked menu, not only during confirmation/rematch windows.
+  Mistake made 2026-05-05 and reverted same day.
+- Do NOT add `rankedEntryActive` to `predictionContext`. The entry flag is set
+  from the moment the player hits "Entry" in the ranked menu (search phase),
+  which is long before an opponent is found — prediction should not show then.
+  Mistake made 2026-05-05, reverted same day.
+- Do NOT rely on `seen58` or `gstate==16` alone for mid-set detection. State1
+  `58` is the mid-set signal but mid-set auto-continues within ~330 ms; the
+  proper check is `IsRankedVictoryWindowState` (state==5 AND victory gstate).
+
+**Sticky flag (`stickyRankedSessionVisible`) lifetime:**
+Set to true when `hasLiveSnapshot` (in match), `rankedRematchScreen`, or
+`inPostMatchRematch` (= `IsRankedVictoryWindowState`, which now covers both
+mid-set state==5 and post-set lobby state==4). Kept alive while
+`inPostMatchTransition` (state==5 AND gstate in victory cluster — now
+overlaps with `inPostMatchRematch`; both conditions kept for safety) or while
+`networkState.state == 4` (pre-match ranked lobby still active). Clears as
+soon as none of those conditions holds.
+
+**Opponent cache across match boundary:**
+During `inMatch`, `DrawRankedPredictionWindow` calls
+`TryGetRankedPredictionOpponent` each frame and writes the result to the
+short-lived `s_lastPredictionOpponentSteamId / CharacterId / SeenAt` statics.
+This keeps the cache timestamp fresh so the 15-second fallback window starts
+from the last in-match frame, not from the pre-match confirmation screen
+(which may be many minutes earlier). Without this, the fallback expires before
+the post-match rematch lobby appears.
+
 - game is not in match
 - if opponent data is not ready yet, draw a visible waiting/unavailable card
   instead of silently hiding the window

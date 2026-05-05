@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "name": "grep-and-read",
+  "owner": "cowwoc",
+  "repo": "claude-code-cat",
+  "path": "plugin/skills/grep-and-read",
+  "branch": "main",
+  "sha": "3f15618034722715c8ff70b564c6a9bad6af7d40",
+  "source": "manual"
+}

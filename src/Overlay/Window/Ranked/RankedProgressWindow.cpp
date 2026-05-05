@@ -4883,6 +4883,19 @@ namespace
 		return networkState.state1 >= 43 && networkState.state1 <= 48;
 	}
 
+	// Returns true whenever the victory screen (gstate 16/17/18) is showing AND ranked
+	// network state indicates a live ranked session: either still transitioning mid-set
+	// (state==5, state1=57-60) or in the post-set lobby waiting for rematch decision
+	// (state==4, state1>=1). Does NOT fire during the pre-match lobby (gstate==27).
+	bool IsRankedVictoryWindowState(int gameState, const RankedNetworkLite& networkState)
+	{
+		if (gameState < GameState_VictoryScreen || gameState > GameState_VictoryScreen2)
+			return false;
+		if (networkState.state == 5)
+			return true;  // mid-set (57-60) or post-set transition (63-64)
+		return networkState.state == 4 && networkState.state1 >= 1;  // post-set rematch lobby
+	}
+
 	bool IsRankedRoomActive()
 	{
 		return g_interfaces.pRoomManager &&
@@ -4898,18 +4911,15 @@ namespace
 	}
 
 	bool IsRankedPredictionRematchScreen(
-		int currentGameState,
 		const RankedNetworkLite& networkState,
-		const RankedVictoryStepLite& victoryStep,
-		bool sawState58ThisVictoryCycle)
+		const RankedVictoryStepLite& victoryStep)
 	{
-		// The network state1 sequence only distinguishes mid-set from final set.
-		// The actual rematch menu lives in the ranked step object updated by 004A47C0:
-		// step 9 is the post-match/rematch menu, mode 1 is selectable, mode 2 is
-		// after local confirm, and inputDelay blocks confirm polling until it expires.
-		if (currentGameState != GameState_VictoryScreen ||
-			networkState.state != 5 ||
-			!sawState58ThisVictoryCycle ||
+		// The ranked step machine (FUN_004A47C0 on struct at RVA 0x8F7758) only activates
+		// in the post-set lobby rematch flow, not mid-set (mid-set is fully automatic with
+		// no user decision). Step 9 / mode 1 is the window where both sides have confirmed
+		// and inputDelay has expired. The gstate can be 16, 31, or any transitional state
+		// depending on where in the post-set flow the network subsystem is called.
+		if (networkState.state != 5 ||
 			victoryStep.step != 9 ||
 			victoryStep.rematchMode != 1 ||
 			victoryStep.rematchPending != 0 ||
@@ -5194,8 +5204,23 @@ namespace
 			LogRankedPredictionVisibility("setting_disabled", gameState, networkState, victoryStep, rankedEntryActive, inMatch, rankedRematchScreen, sawState58ThisVictoryCycle, 0u, kInvalidRankedCharacterId);
 			return;
 		}
-		const bool predictionContext = rankedEntryActive || IsRankedPredictionMenuState(networkState) || rankedRematchScreen;
-		if (inMatch || !predictionContext)
+		const bool inPostMatchRematch = IsRankedVictoryWindowState(gameState, networkState);
+		const bool predictionContext = IsRankedPredictionMenuState(networkState) || rankedRematchScreen || inPostMatchRematch;
+		if (inMatch)
+		{
+			// Keep the cache warm with in-match opponent data so it's immediately valid
+			// when the match ends and the post-match rematch lobby appears.
+			uint64_t inMatchSteamId = 0;
+			uint32_t inMatchCharId = kInvalidRankedCharacterId;
+			if (TryGetRankedPredictionOpponent(&inMatchSteamId, &inMatchCharId) && inMatchSteamId != 0u)
+			{
+				s_lastPredictionOpponentSteamId = inMatchSteamId;
+				s_lastPredictionOpponentCharacterId = inMatchCharId;
+				s_lastPredictionOpponentSeenAt = ImGui::GetTime();
+			}
+			return;
+		}
+		if (!predictionContext)
 		{
 			s_lastPredictionOpponentSteamId = 0;
 			s_lastPredictionOpponentCharacterId = kInvalidRankedCharacterId;
@@ -5214,7 +5239,7 @@ namespace
 			s_lastPredictionOpponentCharacterId = opponentCharacterId;
 			s_lastPredictionOpponentSeenAt = now;
 		}
-		else if (IsRankedPredictionMenuState(networkState) &&
+		else if ((IsRankedPredictionMenuState(networkState) || rankedRematchScreen || inPostMatchRematch) &&
 			s_lastPredictionOpponentSteamId != 0u &&
 			now < s_lastPredictionOpponentSeenAt + 15.0)
 		{
@@ -5407,16 +5432,26 @@ void DrawRankedProgressOverlayStandalone()
 	const bool rankedEntryActive = ReadRankedEntryFlag() != 0u;
 	const bool rankedRematchScreen = hasNetworkState &&
 		hasVictoryStep &&
-		IsRankedPredictionRematchScreen(currentGameState, networkState, victoryStep, s_sawState58ThisVictoryCycle);
-	if (hasLiveSnapshot || rankedRematchScreen)
+		IsRankedPredictionRematchScreen(networkState, victoryStep);
+	const bool inPostMatchRematch = hasNetworkState &&
+		IsRankedVictoryWindowState(currentGameState, networkState);
+	if (hasLiveSnapshot || rankedRematchScreen || inPostMatchRematch)
 	{
 		g_rankedOverlayVisibility.stickyRankedSessionVisible = true;
 	}
 	else if (g_rankedOverlayVisibility.stickyRankedSessionVisible)
 	{
+		// Keep the progress window visible while transitioning from match (state==5)
+		// to the post-match lobby (state==4), as long as the victory screen is up.
+		const bool inPostMatchTransition =
+			hasNetworkState &&
+			networkState.state == 5 &&
+			currentGameState >= GameState_VictoryScreen &&
+			currentGameState <= GameState_VictoryScreen2;
 		const bool rankedSessionStillActive =
 			!inMatch &&
-			(rankedEntryActive || rankedRematchScreen || (hasNetworkState && networkState.state == 4));
+			(rankedEntryActive || rankedRematchScreen || inPostMatchRematch || inPostMatchTransition ||
+			 (hasNetworkState && networkState.state == 4));
 		if (!rankedSessionStillActive)
 		{
 			g_rankedOverlayVisibility.stickyRankedSessionVisible = false;
