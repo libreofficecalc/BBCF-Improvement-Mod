@@ -19,6 +19,7 @@ SETTING(bool, vsync, "V-sync", "0");
 SETTING(int, menusize, "MenuSize", "2");
 SETTING(bool, notifications, "Notifications", "1");
 SETTING(bool, checkupdates, "CheckUpdates", "1");
+SETTING(bool, autoopenrewind, "AutoOpenRewind", "1");
 SETTING(bool, loadforeignpalettes, "LoadForeignPalettesToggleDefault", "1");
 SETTING(int, uploadReplayData, "UploadReplayData", "-1");
 SETTING(std::string, uploadReplayDataHost, "UploadReplayDataHost", "50.118.225.175");

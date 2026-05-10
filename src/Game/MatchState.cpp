@@ -111,7 +111,7 @@ void MatchState::OnIntroPlaying()
 {
 	LOG(7, "MatchState::OnIntroPlaying\n");
 
-	if (*g_gameVals.pGameMode == GameMode_ReplayTheater) {
+	if (*g_gameVals.pGameMode == GameMode_ReplayTheater && Settings::settingsIni.autoopenrewind) {
 		WindowManager::GetInstance().GetWindowContainer()->GetWindow<ReplayRewindWindow>(WindowType_ReplayRewind)->Open();
 	}
 }
