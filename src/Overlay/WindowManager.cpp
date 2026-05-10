@@ -12,6 +12,7 @@
 #include "Core/interfaces.h"
 #include "Core/Localization.h"
 #include "Core/logger.h"
+#include "Core/RuntimePlatform.h"
 #include "Core/Settings.h"
 #include "Core/WineCheck.h"
 #include "Core/utils.h"
@@ -73,7 +74,7 @@ bool WindowManager::Initialize(void* hwnd, IDirect3DDevice9* device)
         m_windowContainer = new WindowContainer();
 
         const bool wineLikely = WineCheck();
-        if (wineLikely)
+        if (wineLikely || !IsSafeToUseControllerHooks())
         {
                 if (!Settings::settingsIni.ForceEnableControllerSettingHooks && Settings::settingsIni.EnableControllerHooks)
                 {

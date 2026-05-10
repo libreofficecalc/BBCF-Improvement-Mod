@@ -2,6 +2,7 @@
 
 #include "Core/ControllerOverrideManager.h"
 #include "Core/Localization.h"
+#include "Core/RuntimePlatform.h"
 #include "Core/Settings.h"
 #include "Overlay/imgui_utils.h"
 #include "Overlay/Window/ControllerSettings/ControllerRefreshDrawer.h"
@@ -16,12 +17,8 @@ namespace ControllerSettings
 {
         void DrawSection()
         {
-                auto& controllerManager = ControllerOverrideManager::GetInstance();
-                controllerManager.TickAutoRefresh();
                 const bool inDevelopmentFeaturesEnabled = Settings::settingsIni.enableInDevelopmentFeatures;
-                const bool steamInputLikely = inDevelopmentFeaturesEnabled ? controllerManager.IsSteamInputLikelyActive() : false;
-
-                const bool controllerHooksEnabled = Settings::settingsIni.ForceEnableControllerSettingHooks || Settings::settingsIni.EnableControllerHooks;
+                const bool controllerHooksEnabled = IsControllerHooksRuntimeAllowed();
 
                 if (!controllerHooksEnabled)
                 {
@@ -36,6 +33,10 @@ namespace ControllerSettings
                         ImGui::PopStyleColor();
                         return;
                 }
+
+                auto& controllerManager = ControllerOverrideManager::GetInstance();
+                controllerManager.TickAutoRefresh();
+                const bool steamInputLikely = inDevelopmentFeaturesEnabled ? controllerManager.IsSteamInputLikelyActive() : false;
 
                 DrawSteamInputWarning(steamInputLikely, inDevelopmentFeaturesEnabled);
                 DrawKeyboardSeparation(controllerManager);

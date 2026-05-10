@@ -1,18 +1,15 @@
 #include "WineCheck.h"
 
 #include "logger.h"
-
-#include <Windows.h>
+#include "RuntimePlatform.h"
 
 bool WineCheck()
 {
-    HKEY hKey;
-    LONG lRes = RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\WINE", 0, KEY_READ, &hKey);
-    bool WineLikely = (lRes == ERROR_SUCCESS);
+    bool WineLikely = IsWineOrProton();
 
     if (WineLikely)
     {
-        LOG(1, "Wine is Most Likely Being Used.\n");
+        LOG(1, "Wine/Proton is most likely being used.\n");
     }
     else
     {

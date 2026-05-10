@@ -5,6 +5,7 @@
 #include "Core/interfaces.h"
 #include "Core/logger.h"
 #include "Core/utils.h"
+#include "Core/XInputRuntime.h"
 #include "Game/Playbacks/UnlimitedPlaybackManager.h"
 #include "Game/gamestates.h"
 #include "Overlay/imgui_utils.h"
@@ -13,7 +14,6 @@
 #include "Overlay/WindowContainer/WindowType.h"
 
 #include <Windows.h>
-#include <Xinput.h>
 #include <commdlg.h>
 
 #include <cstdio>
@@ -287,7 +287,7 @@ int CaptureNextPressedVirtualKey() {
     for (const auto& binding : kControllerBindings) {
         for (DWORD userIndex = 0; userIndex < XUSER_MAX_COUNT; ++userIndex) {
             XINPUT_STATE state = {};
-            if (XInputGetState(userIndex, &state) != ERROR_SUCCESS) {
+            if (XInputRuntime::GetState(userIndex, &state) != ERROR_SUCCESS) {
                 continue;
             }
             if (binding.isLeftTrigger) {
@@ -314,7 +314,7 @@ bool AnyBindableKeyCurrentlyDown() {
     for (const auto& binding : kControllerBindings) {
         for (DWORD userIndex = 0; userIndex < XUSER_MAX_COUNT; ++userIndex) {
             XINPUT_STATE state = {};
-            if (XInputGetState(userIndex, &state) != ERROR_SUCCESS) {
+            if (XInputRuntime::GetState(userIndex, &state) != ERROR_SUCCESS) {
                 continue;
             }
             if (binding.isLeftTrigger) {

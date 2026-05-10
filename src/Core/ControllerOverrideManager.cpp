@@ -5,6 +5,7 @@
 #include "Settings.h"
 #include "Core/utils.h"
 #include "Core/interfaces.h"
+#include "Core/RuntimePlatform.h"
 #include "Hooks/hooks_battle_input.h"
 #include "Game/gamestates.h"
 
@@ -71,7 +72,7 @@ namespace
 {
     bool ControllerHooksEnabled()
     {
-        return Settings::settingsIni.ForceEnableControllerSettingHooks || Settings::settingsIni.EnableControllerHooks;
+        return IsControllerHooksRuntimeAllowed();
     }
 
     struct SteamInputEnvInfo
@@ -266,6 +267,11 @@ namespace
 
     bool TryResolveDevInfoForInterface(const std::wstring& interfacePath, HDEVINFO& outDevInfo, SP_DEVINFO_DATA& outDevInfoData)
     {
+            if (!ControllerHooksEnabled())
+            {
+                    return false;
+            }
+
             outDevInfo = INVALID_HANDLE_VALUE;
             ZeroMemory(&outDevInfoData, sizeof(outDevInfoData));
             outDevInfoData.cbSize = sizeof(outDevInfoData);
@@ -380,6 +386,11 @@ namespace
 
     std::string TryReadHidSerialString(const std::wstring& rawName)
     {
+            if (!ControllerHooksEnabled())
+            {
+                    return {};
+            }
+
             HANDLE handle = CreateFileW(rawName.c_str(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
             if (handle == INVALID_HANDLE_VALUE)
             {
@@ -1114,6 +1125,9 @@ namespace
 
     std::string TryReadRegistryDeviceName(const std::wstring& rawName)
     {
+            if (!ControllerHooksEnabled())
+                    return {};
+
             std::wstring instance = NormalizeRawDeviceInstance(rawName);
             if (instance.empty())
                     return {};
@@ -1144,6 +1158,9 @@ namespace
 
     std::wstring TryReadRegistryContainerId(const std::wstring& rawName)
     {
+            if (!ControllerHooksEnabled())
+                    return {};
+
             std::wstring instance = NormalizeRawDeviceInstance(rawName);
             if (instance.empty())
                     return {};
@@ -1183,6 +1200,9 @@ namespace
 
     std::string TryReadHidProductString(const std::wstring& rawName)
     {
+            if (!ControllerHooksEnabled())
+                    return {};
+
             HANDLE handle = CreateFileW(rawName.c_str(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
             if (handle == INVALID_HANDLE_VALUE)
             {
@@ -1235,6 +1255,11 @@ namespace
 
     MMRESULT SafeJoyGetPosEx(UINT deviceId, JOYINFOEX* state, DWORD* exceptionCode)
     {
+            if (!ControllerHooksEnabled())
+            {
+                    return JOYERR_UNPLUGGED;
+            }
+
             if (exceptionCode)
             {
                     *exceptionCode = 0;
@@ -1313,6 +1338,9 @@ namespace
     std::vector<KeyboardDeviceInfo> EnumerateKeyboardDevices()
     {
             std::vector<KeyboardDeviceInfo> devices;
+            if (!ControllerHooksEnabled())
+                    return devices;
+
             std::unordered_set<std::string> canonicalIds;
 
             UINT deviceCount = 0;
@@ -1660,6 +1688,8 @@ namespace
         std::vector<RawInputDeviceInfo> EnumerateRawInputDevices()
         {
                 std::vector<RawInputDeviceInfo> devices;
+                if (!ControllerHooksEnabled())
+                        return devices;
 
                 UINT deviceCount = 0;
                 if (GetRawInputDeviceList(nullptr, &deviceCount, sizeof(RAWINPUTDEVICELIST)) != 0 || deviceCount == 0)
@@ -1885,6 +1915,11 @@ std::string ControllerOverrideManager::VirtualKeyToLabel(uint32_t virtualKey)
 
 extern "C" void HandleControllerWndProcMessage(UINT msg, WPARAM wParam, LPARAM lParam)
 {
+        if (!IsControllerHooksRuntimeAllowed())
+        {
+                return;
+        }
+
         ControllerOverrideManager::GetInstance().HandleWindowMessage(msg, wParam, lParam);
 }
 
@@ -1902,6 +1937,12 @@ ControllerOverrideManager::ControllerOverrideManager()
         m_multipleKeyboardOverrideEnabled = false;
         m_p1KeyboardDeviceIds = DeduplicateList(SplitList(Settings::settingsIni.primaryKeyboardDeviceId));
         LoadKeyboardPreferences();
+        if (!ControllerHooksEnabled())
+        {
+                LOG(1, "ControllerOverrideManager::ControllerOverrideManager - runtime gate disabled controller initialization\n");
+                return;
+        }
+
         LOG(1, "ControllerOverrideManager::ControllerOverrideManager - initializing device list\n");
         RefreshDevices();
         RefreshKeyboardDevices();
@@ -2575,6 +2616,13 @@ std::vector<KeyboardDeviceInfo> ControllerOverrideManager::GetIgnoredKeyboardSna
 
 bool ControllerOverrideManager::RefreshDevices()
 {
+        if (!ControllerHooksEnabled())
+        {
+                m_devices.clear();
+                m_devices.push_back({ GUID_SysKeyboard, "Keyboard", true, false, WINMM_INVALID_ID });
+                return false;
+        }
+
         LOG(1, "ControllerOverrideManager::RefreshDevices - begin (override=%d)\n", m_overrideEnabled ? 1 : 0);
         const size_t previousHash = m_lastDeviceHash;
         CollectDevices();
@@ -2722,6 +2770,11 @@ void ControllerOverrideManager::TickAutoRefresh()
 
 void ControllerOverrideManager::RegisterCreatedDevice(IDirectInputDevice8A* device)
 {
+        if (!ControllerHooksEnabled())
+        {
+                return;
+        }
+
         if (!device)
         {
                 return;
@@ -2735,6 +2788,11 @@ void ControllerOverrideManager::RegisterCreatedDevice(IDirectInputDevice8A* devi
 
 void ControllerOverrideManager::RegisterCreatedDevice(IDirectInputDevice8W* device)
 {
+        if (!ControllerHooksEnabled())
+        {
+                return;
+        }
+
         if (!device)
         {
                 return;
@@ -2894,6 +2952,11 @@ bool ControllerOverrideManager::IsSafeToRefreshGameInputsNow() const
 
 void ControllerOverrideManager::ProcessRawInput(HRAWINPUT rawInput)
 {
+        if (!ControllerHooksEnabled())
+        {
+                return;
+        }
+
         if (!rawInput)
         {
                 return;
@@ -2983,6 +3046,11 @@ bool ControllerOverrideManager::GetFilteredKeyboardState(BYTE* keyStateOut)
         if (!keyStateOut)
         {
                 return false;
+        }
+
+        if (!ControllerHooksEnabled())
+        {
+                return ::GetKeyboardState(keyStateOut) == TRUE;
         }
 
         if (!m_multipleKeyboardOverrideEnabled)
@@ -3322,6 +3390,9 @@ bool ControllerOverrideManager::IsDeviceAllowed(const GUID& guid) const
 
 void ControllerOverrideManager::OpenControllerControlPanel() const
 {
+    if (!ControllerHooksEnabled())
+        return;
+
     // Let the shell resolve joy.cpl the same way Win+R or Search does.
     HINSTANCE res = ShellExecuteW(nullptr, L"open", L"joy.cpl", nullptr, nullptr, SW_SHOWNORMAL);
 
@@ -3339,6 +3410,9 @@ void ControllerOverrideManager::OpenControllerControlPanel() const
 
 bool ControllerOverrideManager::OpenDeviceProperties(const GUID& guid) const
 {
+    if (!ControllerHooksEnabled())
+        return false;
+
     // No device / keyboard / no DI - nothing to do
     if (guid == GUID_NULL || guid == GUID_SysKeyboard || !orig_DirectInput8Create)
         return false;
@@ -3512,6 +3586,13 @@ void ControllerOverrideManager::EnsureP1KeyboardsValid()
 
 bool ControllerOverrideManager::CollectDevices()
 {
+        if (!ControllerHooksEnabled())
+        {
+                m_devices.clear();
+                m_devices.push_back({ GUID_SysKeyboard, "Keyboard", true, false, WINMM_INVALID_ID });
+                return false;
+        }
+
         LOG(1, "ControllerOverrideManager::CollectDevices - begin\n");
         auto envInfo = GetSteamInputEnvInfo();
         const bool envLikely = envInfo.anyEnvHit && envInfo.ignoreListLooksLikeSteamInput;
@@ -3662,6 +3743,11 @@ bool ControllerOverrideManager::TryEnumerateDevicesA(std::vector<ControllerDevic
 
 void ControllerOverrideManager::TryEnumerateWinmmDevices(std::vector<ControllerDeviceInfo>& outDevices) const
 {
+        if (!ControllerHooksEnabled())
+        {
+                return;
+        }
+
         UINT deviceCount = joyGetNumDevs();
         LOG(1, "ControllerOverrideManager::TryEnumerateWinmmDevices - begin count=%u\n", deviceCount);
 

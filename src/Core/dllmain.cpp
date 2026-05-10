@@ -6,6 +6,7 @@
 #include "ControllerOverrideManager.h"
 #include "DirectInputWrapper.h"
 #include "Localization.h"
+#include "RuntimePlatform.h"
 #include "WineCheck.h"
 #include "Game/ReplayTakeover/ReplayTakeoverFeatureFlags.h"
 
@@ -55,7 +56,7 @@ HRESULT WINAPI DirectInput8Create(HINSTANCE hinstHandle, DWORD version, const II
 
 	ForceLog("[Init] Returned from orig_DirectInput8Create (hr=0x%08X)", ret);
 
-	if (SUCCEEDED(ret) && outWrapper && *outWrapper)
+	if (IsControllerHooksRuntimeAllowed() && SUCCEEDED(ret) && outWrapper && *outWrapper)
 	{
 		if (r_iid == IID_IDirectInput8A)
 		{
@@ -136,7 +137,20 @@ DWORD WINAPI BBCF_IM_Start(HMODULE hModule)
 	ForceLog("[Init] Wine check starting");
 	const bool wineLikely = WineCheck();
 	ForceLog("[Init] Wine check finished");
-	if (wineLikely && !Settings::settingsIni.ForceEnableControllerSettingHooks && Settings::settingsIni.EnableControllerHooks)
+	const bool controllerSettingEnabled = Settings::settingsIni.EnableControllerHooks;
+	const bool controllerForceEnabled = Settings::settingsIni.ForceEnableControllerSettingHooks;
+	const bool controllerPlatformSafe = IsSafeToUseControllerHooks();
+	const bool controllerRuntimeAllowed = IsControllerHooksRuntimeAllowed();
+	const char* controllerGateReason = !controllerPlatformSafe
+		? "blocked: Wine/Proton detected"
+		: (controllerRuntimeAllowed ? "allowed: Windows/native platform and setting enabled" : "blocked: controller setting disabled");
+	ForceLog("[Init] Controller gate: wineOrProton=%d EnableControllerHooks=%d ForceEnableControllerSettingHooks=%d allowed=%d reason=%s\n",
+		wineLikely ? 1 : 0,
+		controllerSettingEnabled ? 1 : 0,
+		controllerForceEnabled ? 1 : 0,
+		controllerRuntimeAllowed ? 1 : 0,
+		controllerGateReason);
+	if (!IsSafeToUseControllerHooks() && Settings::settingsIni.EnableControllerHooks)
 	{
 	LOG(1, "Wine/Proton detected; disabling controller hooks before initialization.\n");
 	Settings::changeSetting("EnableControllerHooks", "0");
@@ -198,7 +212,7 @@ DWORD WINAPI BBCF_IM_Start(HMODULE hModule)
 
 	ForceLog("[Init] Detours hooks placed OK");
 	// Install battle input hook (P1/P2 input write site)
-	if (!Hook_BattleInput())
+	if (IsControllerHooksRuntimeAllowed() && !Hook_BattleInput())
 	{
 	// For now, don't hard-fail the entire mod - just log it.
 	// If you prefer, you can pop a MessageBox+ExitProcess instead.
@@ -206,7 +220,7 @@ DWORD WINAPI BBCF_IM_Start(HMODULE hModule)
 	ForceLog("[Init] Hook_BattleInput failed; continuing without P2 input hook.\n");
 }
 
-	if (!InstallSystemInputHook())
+	if (IsControllerHooksRuntimeAllowed() && !InstallSystemInputHook())
 	{
 	LOG(2, "BBCF_IM_Start: InstallSystemInputHook failed; system input override disabled.\n");
 	ForceLog("[Init] InstallSystemInputHook failed; continuing without system input override.\n");

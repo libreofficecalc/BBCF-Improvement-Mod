@@ -104,9 +104,17 @@ static bool HookOptionalDetour(PBYTE addr, const char* funcName)
 HRESULT __stdcall hook_Direct3DCreate9Ex(UINT sdkVers, IDirect3D9Ex** pD3DEx)
 {
 	LOG(1, "Direct3DCreate9EX pD3DEx: 0x%p\n", pD3DEx);
+	if (!orig_Direct3DCreate9Ex)
+	{
+		LOG(0, "Direct3DCreate9Ex hook called without original function\n");
+		return E_FAIL;
+	}
 	HRESULT retval = orig_Direct3DCreate9Ex(sdkVers, pD3DEx); // real one
 
-	Direct3D9ExWrapper* ret = new Direct3D9ExWrapper(&*pD3DEx);
+	if (SUCCEEDED(retval) && pD3DEx && *pD3DEx)
+	{
+		Direct3D9ExWrapper* ret = new Direct3D9ExWrapper(&*pD3DEx);
+	}
 	return retval;
 }
 
@@ -115,8 +123,12 @@ HRESULT APIENTRY hook_D3DXCreateEffect(LPDIRECT3DDEVICE9 pDevice, LPCVOID pSrcDa
 	LPD3DXBUFFER* ppCompilationErrors)
 {
 	LOG(7, "D3DXCreateEffect\n");
+	if (!orig_D3DXCreateEffect)
+	{
+		return E_FAIL;
+	}
 	HRESULT hR = orig_D3DXCreateEffect(pDevice, pSrcData, SrcDataLen, pDefines, pInclude, Flags, pPool, ppEffect, ppCompilationErrors);
-	if (SUCCEEDED(hR))
+	if (SUCCEEDED(hR) && ppEffect && *ppEffect)
 	{
 		ID3DXEffectWrapper* ret = new ID3DXEffectWrapper(&ppEffect);
 	}
@@ -127,8 +139,12 @@ HRESULT APIENTRY hook_D3DXCreateEffect(LPDIRECT3DDEVICE9 pDevice, LPCVOID pSrcDa
 HRESULT WINAPI hook_D3DXCreateSprite(LPDIRECT3DDEVICE9 pDevice, LPD3DXSPRITE* ppSprite)
 {
 	LOG(7, "D3DXCreateSprite\n");
+	if (!orig_D3DXCreateSprite)
+	{
+		return E_FAIL;
+	}
 	HRESULT hR = orig_D3DXCreateSprite(pDevice, ppSprite);
-	if (SUCCEEDED(hR))
+	if (SUCCEEDED(hR) && ppSprite && *ppSprite)
 	{
 		ID3DXSpriteWrapper* ret = new ID3DXSpriteWrapper(&ppSprite);
 	}
@@ -361,6 +377,12 @@ bool WINAPI hook_SteamAPI_Init()
 {
 	LOG(1, "SteamAPI_Init\n");
 
+	if (!orig_SteamAPI_Init)
+	{
+		LOG(2, "SteamAPI_Init hook called without original function\n");
+		return false;
+	}
+
 	bool ret = orig_SteamAPI_Init();
 
 	SteamMatchmakingFuncJmpBackAddr = HookManager::SetHook("SteamMatchmaking", "\xff\x50\x28\x89\x46\x10\x85\xc0", "xxxxxxxx", 6, GetSteamMatchmaking);
@@ -382,6 +404,11 @@ HWND WINAPI hook_CreateWindowExW(DWORD dwExStyle, LPCWSTR lpClassName, LPCWSTR l
 	DWORD dwStyle, int X, int Y, int nWidth, int nHeight, HWND hWndParent, HMENU hMenu, HINSTANCE hInstance, LPVOID lpParam)
 {
 	LOG(7, "CreateWindowExW\n");
+	if (!orig_CreateWindowExW)
+	{
+		LOG(2, "CreateWindowExW hook called without original function\n");
+		return nullptr;
+	}
 	static int counter = 1;
 	HWND hWnd = orig_CreateWindowExW(dwExStyle, lpClassName, lpWindowName, dwStyle, X, Y, nWidth, nHeight, hWndParent, hMenu, hInstance, lpParam);
 	if (SUCCEEDED(hWnd))
@@ -406,10 +433,10 @@ bool placeHooks_detours()
 	HMODULE hM_steam_api = GetModuleHandleA("steam_api.dll");
 	HMODULE hM_user32 = GetModuleHandleA("user32.dll");
 
-	PBYTE pDirect3DCreate9Ex = (PBYTE)GetProcAddress(hM_d3d9, "Direct3DCreate9Ex");
-	PBYTE pD3DXCreateEffect = (PBYTE)GetProcAddress(hM_d3dx9_43, "D3DXCreateEffect");
-	PBYTE pD3DXCreateSprite = (PBYTE)GetProcAddress(hM_d3dx9_43, "D3DXCreateSprite");
-	PBYTE pSteamAPI_Init = (PBYTE)GetProcAddress(hM_steam_api, "SteamAPI_Init");
+	PBYTE pDirect3DCreate9Ex = hM_d3d9 ? (PBYTE)GetProcAddress(hM_d3d9, "Direct3DCreate9Ex") : nullptr;
+	PBYTE pD3DXCreateEffect = hM_d3dx9_43 ? (PBYTE)GetProcAddress(hM_d3dx9_43, "D3DXCreateEffect") : nullptr;
+	PBYTE pD3DXCreateSprite = hM_d3dx9_43 ? (PBYTE)GetProcAddress(hM_d3dx9_43, "D3DXCreateSprite") : nullptr;
+	PBYTE pSteamAPI_Init = hM_steam_api ? (PBYTE)GetProcAddress(hM_steam_api, "SteamAPI_Init") : nullptr;
 	// [DISABLED: Steam acquisition diagnostics - sections 58-65; all paths confirmed installed but zero calls observed; removing reduces injection surface]
 	// PBYTE pSteamInternal_CreateInterface = (PBYTE)GetProcAddress(hM_steam_api, "SteamInternal_CreateInterface");
 	// PBYTE pSteamClient = (PBYTE)GetProcAddress(hM_steam_api, "SteamClient");
@@ -418,17 +445,13 @@ bool placeHooks_detours()
 	// PBYTE pSteamAPI_ISteamUserStats_StoreStats = (PBYTE)GetProcAddress(hM_steam_api, "SteamAPI_ISteamUserStats_StoreStats");
 	// PBYTE pSteamAPI_ISteamUserStats_FindOrCreateLeaderboard = (PBYTE)GetProcAddress(hM_steam_api, "SteamAPI_ISteamUserStats_FindOrCreateLeaderboard");
 	// PBYTE pSteamAPI_ISteamUserStats_FindLeaderboard = (PBYTE)GetProcAddress(hM_steam_api, "SteamAPI_ISteamUserStats_FindLeaderboard");
-	PBYTE pSteamAPI_ISteamUserStats_UploadLeaderboardScore = (PBYTE)GetProcAddress(hM_steam_api, "SteamAPI_ISteamUserStats_UploadLeaderboardScore");
-	PBYTE pCreateWindowExW = (PBYTE)GetProcAddress(hM_user32, "CreateWindowExW");
+	PBYTE pSteamAPI_ISteamUserStats_UploadLeaderboardScore = hM_steam_api ? (PBYTE)GetProcAddress(hM_steam_api, "SteamAPI_ISteamUserStats_UploadLeaderboardScore") : nullptr;
+	PBYTE pCreateWindowExW = hM_user32 ? (PBYTE)GetProcAddress(hM_user32, "CreateWindowExW") : nullptr;
 
-	if (!hookSucceeded((PBYTE)pDirect3DCreate9Ex, "Direct3DCreate9Ex"))
-		return false;
-	if (!hookSucceeded((PBYTE)pD3DXCreateEffect, "D3DXCreateEffect"))
-		return false;
-	if (!hookSucceeded((PBYTE)pD3DXCreateSprite, "D3DXCreateSprite"))
-		return false;
-	if (!hookSucceeded((PBYTE)pSteamAPI_Init, "SteamAPI_Init"))
-		return false;
+	HookOptionalDetour((PBYTE)pDirect3DCreate9Ex, "Direct3DCreate9Ex");
+	HookOptionalDetour((PBYTE)pD3DXCreateEffect, "D3DXCreateEffect");
+	HookOptionalDetour((PBYTE)pD3DXCreateSprite, "D3DXCreateSprite");
+	HookOptionalDetour((PBYTE)pSteamAPI_Init, "SteamAPI_Init");
 	// [DISABLED: acquisition diagnostic HookOptionalDetour calls - sections 58-65]
 	// if (!HookOptionalDetour((PBYTE)pSteamInternal_CreateInterface, "SteamInternal_CreateInterface")) return false;
 	// if (!HookOptionalDetour((PBYTE)pSteamClient, "SteamClient")) return false;
@@ -437,15 +460,17 @@ bool placeHooks_detours()
 	// if (!HookOptionalDetour((PBYTE)pSteamAPI_ISteamUserStats_StoreStats, "SteamAPI_ISteamUserStats_StoreStats")) return false;
 	// if (!HookOptionalDetour((PBYTE)pSteamAPI_ISteamUserStats_FindOrCreateLeaderboard, "SteamAPI_ISteamUserStats_FindOrCreateLeaderboard")) return false;
 	// if (!HookOptionalDetour((PBYTE)pSteamAPI_ISteamUserStats_FindLeaderboard, "SteamAPI_ISteamUserStats_FindLeaderboard")) return false;
-	if (!HookOptionalDetour((PBYTE)pSteamAPI_ISteamUserStats_UploadLeaderboardScore, "SteamAPI_ISteamUserStats_UploadLeaderboardScore"))
-		return false;
-	if (!hookSucceeded((PBYTE)pCreateWindowExW, "CreateWindowExW"))
-		return false;
+	HookOptionalDetour((PBYTE)pSteamAPI_ISteamUserStats_UploadLeaderboardScore, "SteamAPI_ISteamUserStats_UploadLeaderboardScore");
+	HookOptionalDetour((PBYTE)pCreateWindowExW, "CreateWindowExW");
 
-	orig_Direct3DCreate9Ex = (Direct3DCreate9Ex_t)DetourFunction(pDirect3DCreate9Ex, (LPBYTE)hook_Direct3DCreate9Ex);
-	orig_D3DXCreateEffect = (D3DXCreateEffect_t)DetourFunction(pD3DXCreateEffect, (LPBYTE)hook_D3DXCreateEffect);
-	orig_D3DXCreateSprite = (D3DXCreateSprite_t)DetourFunction(pD3DXCreateSprite, (LPBYTE)hook_D3DXCreateSprite);
-	orig_SteamAPI_Init = (SteamAPI_Init_t)DetourFunction(pSteamAPI_Init, (LPBYTE)hook_SteamAPI_Init);
+	if (pDirect3DCreate9Ex)
+		orig_Direct3DCreate9Ex = (Direct3DCreate9Ex_t)DetourFunction(pDirect3DCreate9Ex, (LPBYTE)hook_Direct3DCreate9Ex);
+	if (pD3DXCreateEffect)
+		orig_D3DXCreateEffect = (D3DXCreateEffect_t)DetourFunction(pD3DXCreateEffect, (LPBYTE)hook_D3DXCreateEffect);
+	if (pD3DXCreateSprite)
+		orig_D3DXCreateSprite = (D3DXCreateSprite_t)DetourFunction(pD3DXCreateSprite, (LPBYTE)hook_D3DXCreateSprite);
+	if (pSteamAPI_Init)
+		orig_SteamAPI_Init = (SteamAPI_Init_t)DetourFunction(pSteamAPI_Init, (LPBYTE)hook_SteamAPI_Init);
 	// [DISABLED: acquisition diagnostic DetourFunction installs - sections 58-65]
 	// if (pSteamInternal_CreateInterface) orig_SteamInternal_CreateInterface = ...
 	// if (pSteamClient) orig_SteamClient = ...
@@ -456,7 +481,8 @@ bool placeHooks_detours()
 	// if (pSteamAPI_ISteamUserStats_FindLeaderboard) orig_SteamAPI_ISteamUserStats_FindLeaderboard = ...
 	if (pSteamAPI_ISteamUserStats_UploadLeaderboardScore)
 		orig_SteamAPI_ISteamUserStats_UploadLeaderboardScore = (SteamAPI_ISteamUserStats_UploadLeaderboardScore_t)DetourFunction(pSteamAPI_ISteamUserStats_UploadLeaderboardScore, (LPBYTE)hook_SteamAPI_ISteamUserStats_UploadLeaderboardScore);
-	orig_CreateWindowExW = (CreateWindowExW_t)DetourFunction(pCreateWindowExW, (LPBYTE)hook_CreateWindowExW);
+	if (pCreateWindowExW)
+		orig_CreateWindowExW = (CreateWindowExW_t)DetourFunction(pCreateWindowExW, (LPBYTE)hook_CreateWindowExW);
 
 	return true;
 }

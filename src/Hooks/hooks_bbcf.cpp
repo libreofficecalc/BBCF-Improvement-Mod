@@ -13,6 +13,7 @@
 #include "SteamApiWrapper/steamApiWrappers.h"
 #include "Core/info.h"
 #include "Core/ControllerOverrideManager.h"
+#include "Core/RuntimePlatform.h"
 #include <string>
 #include "Web/update_check.h"
 #include "Game/ReplayFiles/ReplayFileManager.h"
@@ -8527,6 +8528,11 @@ int PassKeyboardInputToGame()
 
 extern "C" BOOL __stdcall GetKeyboardStateFiltered(PBYTE lpKeyState)
 {
+	if (!IsControllerHooksRuntimeAllowed())
+	{
+		return GetKeyboardState(lpKeyState);
+	}
+
 	return ControllerOverrideManager::GetInstance().GetFilteredKeyboardState(lpKeyState) ? TRUE : FALSE;
 }
 
@@ -8875,7 +8881,10 @@ void __declspec(naked)GetFrameCounter()
 	}
 
 	__asm pushad
-	ControllerOverrideManager::GetInstance().TickAutoRefresh();
+	if (IsControllerHooksRuntimeAllowed())
+	{
+		ControllerOverrideManager::GetInstance().TickAutoRefresh();
+	}
 	UnlimitedPlaybackManager::Instance().Tick();
 	RankedProbeTickFrameState();
 	RankedAutomationHarness::Tick();

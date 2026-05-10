@@ -73,7 +73,9 @@
     <ClCompile Include="src\Core\interfaces.cpp" />
     <ClCompile Include="src\Core\crashdump.cpp" />
     <ClCompile Include="src\Core\ControllerOverrideManager.cpp" />
+    <ClCompile Include="src\Core\RuntimePlatform.cpp" />
     <ClCompile Include="src\Core\WineCheck.cpp" />
+    <ClCompile Include="src\Core\XInputRuntime.cpp" />
     <ClCompile Include="src\Core\DirectInputWrapper.cpp" />
     <ClCompile Include="src\Core\Localization.cpp" />
     <ClCompile Include="src\Network\NetworkManager.cpp" />
@@ -198,7 +200,9 @@
     <ClInclude Include="src\Core\crashdump.h" />
     <ClInclude Include="src\Core\ControllerOverrideManager.h" />
     <ClInclude Include="src\Core\DirectInputWrapper.h" />
+    <ClInclude Include="src\Core\RuntimePlatform.h" />
     <ClInclude Include="src\Core\WineCheck.h" />
+    <ClInclude Include="src\Core\XInputRuntime.h" />
     <ClInclude Include="src\Core\dllmain.h" />
     <ClInclude Include="src\Core\Localization.h" />
     <ClInclude Include="src\Network\NetworkManager.h" />
@@ -397,7 +401,8 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>DebugFull</GenerateDebugInformation>
-      <AdditionalDependencies>dinput8.lib;dxguid.lib;comsuppw.lib;winmm.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>dinput8.lib;dxguid.lib;comsuppw.lib;winmm.lib;delayimp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <DelayLoadDLLs>hid.dll;setupapi.dll;cfgmgr32.dll;shlwapi.dll;winmm.dll;d3dx9_43.dll;steam_api.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
       <ModuleDefinitionFile>export/dinput8.def</ModuleDefinitionFile>
     </Link>
   </ItemDefinitionGroup>
@@ -420,7 +425,8 @@
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>DebugFull</GenerateDebugInformation>
       <ImageHasSafeExceptionHandlers>false</ImageHasSafeExceptionHandlers>
-      <AdditionalDependencies>dinput8.lib;dxguid.lib;comsuppw.lib;winmm.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>dinput8.lib;dxguid.lib;comsuppw.lib;winmm.lib;delayimp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <DelayLoadDLLs>hid.dll;setupapi.dll;cfgmgr32.dll;shlwapi.dll;winmm.dll;d3dx9_43.dll;steam_api.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
       <ModuleDefinitionFile>export/dinput8.def</ModuleDefinitionFile>
     </Link>
   </ItemDefinitionGroup>
@@ -452,7 +458,8 @@
       <ModuleDefinitionFile>export/dinput8.def</ModuleDefinitionFile>
       <AdditionalLibraryDirectories>
       </AdditionalLibraryDirectories>
-      <AdditionalDependencies>dinput8.lib;dxguid.lib;comsuppw.lib;winmm.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>dinput8.lib;dxguid.lib;comsuppw.lib;winmm.lib;delayimp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <DelayLoadDLLs>hid.dll;setupapi.dll;cfgmgr32.dll;shlwapi.dll;winmm.dll;d3dx9_43.dll;steam_api.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseDeploy|Win32'">
@@ -483,7 +490,8 @@
       <ModuleDefinitionFile>export/dinput8.def</ModuleDefinitionFile>
       <AdditionalLibraryDirectories>
       </AdditionalLibraryDirectories>
-      <AdditionalDependencies>dinput8.lib;dxguid.lib;comsuppw.lib;winmm.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>dinput8.lib;dxguid.lib;comsuppw.lib;winmm.lib;delayimp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <DelayLoadDLLs>hid.dll;setupapi.dll;cfgmgr32.dll;shlwapi.dll;winmm.dll;d3dx9_43.dll;steam_api.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
     </Link>
   </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

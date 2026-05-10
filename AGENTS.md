@@ -4,6 +4,7 @@ Keep this file small. It is always loaded; deeper context is opt-in.
 
 ## Token Budget Rules
 - Use caveman skill by default for user-facing replies in this repo. Stop only if user asks for normal mode.
+- Use grep-and-read skill by default for repo exploration and cross-file searches.
 - Start from the narrowest relevant directory when possible, e.g. `src/Overlay`, `src/Game/ReplayTakeover`, `docs/replay_takeover`.
 - Prefer targeted `rg` symbol search and small file reads. Do not broad-read `src/`, `depends/`, or long research logs.
 - Make smallest safe diff. No unrelated cleanup, formatting churn, or source behavior edits unless requested.

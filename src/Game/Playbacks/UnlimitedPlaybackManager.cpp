@@ -5,10 +5,10 @@
 #include "Core/interfaces.h"
 #include "Core/logger.h"
 #include "Core/utils.h"
+#include "Core/XInputRuntime.h"
 #include "Game/gamestates.h"
 
 #include <Windows.h>
-#include <Xinput.h>
 
 #include <algorithm>
 #include <array>
@@ -20,8 +20,6 @@
 #include <fstream>
 #include <random>
 #include <sstream>
-
-#pragma comment(lib, "Xinput9_1_0.lib")
 
 namespace {
 const char* kDefaultProfileName = "default.upl";
@@ -87,7 +85,7 @@ bool IsControllerBindCode(int code) {
 bool IsControllerBindingDown(const ControllerBindingDef& binding) {
     for (DWORD userIndex = 0; userIndex < XUSER_MAX_COUNT; ++userIndex) {
         XINPUT_STATE state = {};
-        if (XInputGetState(userIndex, &state) != ERROR_SUCCESS) {
+        if (XInputRuntime::GetState(userIndex, &state) != ERROR_SUCCESS) {
             continue;
         }
         if (binding.isLeftTrigger) {

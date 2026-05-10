@@ -1,6 +1,7 @@
 #include "hooks_battle_input.h"
 #include "HookManager.h"
 #include "Core/logger.h"
+#include "Core/RuntimePlatform.h"
 
 #include <array>
 
@@ -229,6 +230,11 @@ void __declspec(naked) BattleInputWrite_Hook()
 
 bool Hook_BattleInput()
 {
+    if (!IsControllerHooksRuntimeAllowed()) {
+        LOG(1, "Hook_BattleInput skipped by runtime controller gate\n");
+        return false;
+    }
+
     // Pattern from the confirmed CE hook:
     // 0F B7 F8 66 89 3E E9 ?? ?? ?? ??
     battleInputWrite_JmpBack = HookManager::SetHook(

@@ -6,6 +6,7 @@
 #include "Core/ControllerOverrideManager.h"
 #include "Core/interfaces.h"
 #include "Core/logger.h"
+#include "Core/RuntimePlatform.h"
 #include "Core/utils.h"
 
 namespace
@@ -30,6 +31,11 @@ namespace
 
         uint32_t __stdcall SystemInputHookInternal(void* controllerPtr, uint32_t currentWord)
         {
+            if (!IsControllerHooksRuntimeAllowed())
+            {
+                return currentWord;
+            }
+
             auto& mgr = ControllerOverrideManager::GetInstance();
             const auto slot = mgr.ResolveSystemSlotFromControllerPtr(controllerPtr);
             uint32_t automationWord = 0;
@@ -98,6 +104,12 @@ namespace
 
 bool InstallSystemInputHook()
 {
+        if (!IsControllerHooksRuntimeAllowed())
+        {
+                LOG(1, "InstallSystemInputHook skipped by runtime controller gate\n");
+                return false;
+        }
+
         const uintptr_t base = reinterpret_cast<uintptr_t>(GetBbcfBaseAdress());
         systemInputWrite_JmpBack = HookManager::SetHook(
                 "SystemInputWrite",
