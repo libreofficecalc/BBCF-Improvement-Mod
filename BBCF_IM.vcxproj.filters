@@ -34,6 +34,9 @@
     <Filter Include="src\Overlay\Window\Ranked">
       <UniqueIdentifier>{a7974380-835f-4aa8-a9cc-5233cf2400af}</UniqueIdentifier>
     </Filter>
+    <Filter Include="src\Updater">
+      <UniqueIdentifier>{55f57dda-feb4-4f47-8216-e4bd0ed6bd57}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\SteamApiWrapper\SteamMatchmakingWrapper.cpp">
@@ -189,6 +192,15 @@
     <ClCompile Include="src\Hooks\hooks_battle_input.cpp" />
     <ClCompile Include="src\Hooks\RankedAutomationHarness.cpp" />
     <ClCompile Include="src\Core\Localization.cpp" />
+    <ClCompile Include="src\Updater\SemVersion.cpp">
+      <Filter>src\Updater</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Updater\UpdateManifest.cpp">
+      <Filter>src\Updater</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Updater\UpdateStateStore.cpp">
+      <Filter>src\Updater</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="depends\imgui\imgui.h" />
@@ -371,6 +383,18 @@
     <ClInclude Include="src\Hooks\RankedAutomationHarness.h" />
     <ClInclude Include="src\Core\Localization.h" />
     <ClInclude Include="src\Palette\impl_templates.h" />
+    <ClInclude Include="src\Updater\SemVersion.h">
+      <Filter>src\Updater</Filter>
+    </ClInclude>
+    <ClInclude Include="src\Updater\UpdateManifest.h">
+      <Filter>src\Updater</Filter>
+    </ClInclude>
+    <ClInclude Include="src\Updater\UpdateState.h">
+      <Filter>src\Updater</Filter>
+    </ClInclude>
+    <ClInclude Include="src\Updater\UpdateStateStore.h">
+      <Filter>src\Updater</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="export\dinput8.def">

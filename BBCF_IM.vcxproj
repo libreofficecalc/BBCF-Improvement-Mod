@@ -121,6 +121,9 @@
     <ClCompile Include="src\SteamApiWrapper\SteamUserStatsWrapper.cpp" />
     <ClCompile Include="src\SteamApiWrapper\SteamUserWrapper.cpp" />
     <ClCompile Include="src\SteamApiWrapper\SteamUtilsWrapper.cpp" />
+    <ClCompile Include="src\Updater\SemVersion.cpp" />
+    <ClCompile Include="src\Updater\UpdateManifest.cpp" />
+    <ClCompile Include="src\Updater\UpdateStateStore.cpp" />
     <ClCompile Include="src\Web\update_check.cpp" />
     <ClCompile Include="src\Core\utils.cpp" />
     <ClCompile Include="src\Web\url_downloader.cpp" />
@@ -245,6 +248,10 @@
     <ClInclude Include="src\Core\Settings.h" />
     <ClInclude Include="src\Game\gamestates.h" />
     <ClInclude Include="src\Palette\PaletteManager.h" />
+    <ClInclude Include="src\Updater\SemVersion.h" />
+    <ClInclude Include="src\Updater\UpdateManifest.h" />
+    <ClInclude Include="src\Updater\UpdateState.h" />
+    <ClInclude Include="src\Updater\UpdateStateStore.h" />
     <ClInclude Include="src\SteamApiWrapper\SteamApiHelper.h" />
     <ClInclude Include="src\SteamApiWrapper\SteamFriendsWrapper.h" />
     <ClInclude Include="src\SteamApiWrapper\SteamMatchmakingWrapper.h" />
