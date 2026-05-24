@@ -20,7 +20,7 @@ void UpdateNotifierWindow::Draw()
 
 	const ImVec2 buttonSize = ImVec2(120, 23);
 	ImGui::AlignItemHorizontalCenter(buttonSize.x);
-	if (ImGui::ButtonUrl("Download", MOD_LINK_GITHUB, buttonSize))
+	if (ImGui::ButtonUrl("Download", GetNewVersionReleaseUrl(), buttonSize))
 	{
 		Close();
 	}

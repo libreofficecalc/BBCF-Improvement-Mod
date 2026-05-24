@@ -70,12 +70,16 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="updater_phase1_manual_test.cpp" />
+    <ClCompile Include="$(RootDir)src\Updater\JsonValue.cpp" />
     <ClCompile Include="$(RootDir)src\Updater\SemVersion.cpp" />
+    <ClCompile Include="$(RootDir)src\Updater\UpdateModels.cpp" />
     <ClCompile Include="$(RootDir)src\Updater\UpdateManifest.cpp" />
     <ClCompile Include="$(RootDir)src\Updater\UpdateStateStore.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="$(RootDir)src\Updater\JsonValue.h" />
     <ClInclude Include="$(RootDir)src\Updater\SemVersion.h" />
+    <ClInclude Include="$(RootDir)src\Updater\UpdateModels.h" />
     <ClInclude Include="$(RootDir)src\Updater\UpdateManifest.h" />
     <ClInclude Include="$(RootDir)src\Updater\UpdateState.h" />
     <ClInclude Include="$(RootDir)src\Updater\UpdateStateStore.h" />

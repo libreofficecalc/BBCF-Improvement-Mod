@@ -1,5 +1,6 @@
 #include "../../src/Updater/SemVersion.h"
 #include "../../src/Updater/UpdateManifest.h"
+#include "../../src/Updater/UpdateModels.h"
 #include "../../src/Updater/UpdateStateStore.h"
 
 #include <Windows.h>
@@ -95,6 +96,150 @@ namespace
 
 		DeleteFileW(path.c_str());
 	}
+
+	std::string MakeManifestJson(const char* tag, const char* version, const char* sha256)
+	{
+		std::string json = "{";
+		json += "\"schemaVersion\":1,";
+		json += "\"version\":\"";
+		json += version;
+		json += "\",";
+		json += "\"tag\":\"";
+		json += tag;
+		json += "\",";
+		json += "\"channel\":\"stable\",";
+		json += "\"os\":\"win\",";
+		json += "\"arch\":\"x86\",";
+		json += "\"assetName\":\"BBCF.IM.win-x86.";
+		json += tag;
+		json += ".zip\",";
+		json += "\"sha256\":\"";
+		json += sha256;
+		json += "\",";
+		json += "\"entryDll\":\"dinput8.dll\",";
+		json += "\"minimumSupportedVersion\":\"v3.110\"";
+		json += "}";
+		return json;
+	}
+
+	std::string MakeReleaseJson(const char* tag, bool draft, bool prerelease, bool includeManifest, const char* packageName)
+	{
+		std::string json = "{";
+		json += "\"tag_name\":\"";
+		json += tag;
+		json += "\",";
+		json += "\"name\":\"";
+		json += tag;
+		json += "\",";
+		json += "\"body\":\"release notes\",";
+		json += "\"html_url\":\"https://github.com/HaiKamDesu/BBCF-Improvement-Mod/releases/tag/";
+		json += tag;
+		json += "\",";
+		json += "\"published_at\":\"2026-05-24T00:00:00Z\",";
+		json += "\"draft\":";
+		json += draft ? "true" : "false";
+		json += ",";
+		json += "\"prerelease\":";
+		json += prerelease ? "true" : "false";
+		json += ",";
+		json += "\"assets\":[";
+		if (includeManifest)
+		{
+			json += "{\"name\":\"update-manifest.json\",\"browser_download_url\":\"https://github.com/HaiKamDesu/BBCF-Improvement-Mod/releases/download/";
+			json += tag;
+			json += "/update-manifest.json\",\"size\":512}";
+			if (packageName)
+				json += ",";
+		}
+		if (packageName)
+		{
+			json += "{\"name\":\"";
+			json += packageName;
+			json += "\",\"browser_download_url\":\"https://github.com/HaiKamDesu/BBCF-Improvement-Mod/releases/download/";
+			json += tag;
+			json += "/";
+			json += packageName;
+			json += "\",\"size\":4096}";
+		}
+		json += "]}";
+		return json;
+	}
+
+	bool EvaluateReleaseJson(
+		const std::string& releaseJson,
+		const std::string& manifestJson,
+		const char* currentVersion,
+		Updater::UpdateCheckResult& result)
+	{
+		Updater::GitHubRelease release;
+		std::string error;
+		if (!Updater::ParseGitHubReleaseJson(releaseJson, release, error))
+			return false;
+
+		Updater::SemVersion current;
+		if (!Updater::TryParseSemVersion(currentVersion, current))
+			return false;
+
+		return Updater::EvaluateGitHubReleaseForUpdate(release, manifestJson, current, result);
+	}
+
+	void TestReleaseEvaluation()
+	{
+		const char* hash = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+		Updater::UpdateCheckResult result;
+
+		Check(EvaluateReleaseJson(
+			MakeReleaseJson("v5.0", false, false, true, "BBCF.IM.win-x86.v5.0.zip"),
+			MakeManifestJson("v5.0", "5.0", hash),
+			"v3.110",
+			result), "valid release evaluates");
+		Check(result.status == Updater::UpdateCheckStatus_UpdateAvailable, "valid release update available");
+
+		Check(!EvaluateReleaseJson(
+			MakeReleaseJson("v5.0", false, true, true, "BBCF.IM.win-x86.v5.0.zip"),
+			MakeManifestJson("v5.0", "5.0", hash),
+			"v3.110",
+			result), "prerelease rejected");
+		Check(result.status == Updater::UpdateCheckStatus_InvalidRelease, "prerelease status invalid release");
+
+		Check(!EvaluateReleaseJson(
+			MakeReleaseJson("v5.0", true, false, true, "BBCF.IM.win-x86.v5.0.zip"),
+			MakeManifestJson("v5.0", "5.0", hash),
+			"v3.110",
+			result), "draft rejected");
+
+		Check(!EvaluateReleaseJson(
+			MakeReleaseJson("v3.099-ainda-vivo", false, false, true, "BBCF.IM.win-x86.v3.099-ainda-vivo.zip"),
+			MakeManifestJson("v3.099-ainda-vivo", "3.099", hash),
+			"v3.110",
+			result), "non-semver release rejected");
+
+		Check(EvaluateReleaseJson(
+			MakeReleaseJson("v3.110", false, false, true, "BBCF.IM.win-x86.v3.110.zip"),
+			MakeManifestJson("v3.110", "3.110", hash),
+			"v3.110",
+			result), "equal version evaluates as no update");
+		Check(result.status == Updater::UpdateCheckStatus_NoUpdate, "equal version no update");
+
+		Check(!EvaluateReleaseJson(
+			MakeReleaseJson("v5.0", false, false, false, "BBCF.IM.win-x86.v5.0.zip"),
+			MakeManifestJson("v5.0", "5.0", hash),
+			"v3.110",
+			result), "missing manifest rejected");
+
+		Check(!EvaluateReleaseJson(
+			MakeReleaseJson("v5.0", false, false, true, "BBCF.IM.win-x86.v5.0.zip"),
+			MakeManifestJson("v5.0", "5.0", "not-a-sha"),
+			"v3.110",
+			result), "bad sha rejected");
+
+		Check(EvaluateReleaseJson(
+			MakeReleaseJson("v5.0", false, false, true, "BBCF.IM.win-x86.v5.0.zip"),
+			MakeManifestJson("v5.0", "5.0", hash),
+			"v3.110",
+			result), "v5.0 greater than v3.110 accepted");
+		Check(result.status == Updater::UpdateCheckStatus_UpdateAvailable, "v5.0 update status");
+	}
 }
 
 int main()
@@ -102,6 +247,7 @@ int main()
 	TestSemVersion();
 	TestManifest();
 	TestStateStore();
+	TestReleaseEvaluation();
 
 	if (g_failures != 0)
 	{
@@ -109,6 +255,6 @@ int main()
 		return 1;
 	}
 
-	std::printf("All updater phase 1 manual tests passed.\n");
+	std::printf("All updater phase 1/2 manual tests passed.\n");
 	return 0;
 }

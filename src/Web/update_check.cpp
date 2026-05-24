@@ -7,12 +7,13 @@
 #include "Core/interfaces.h"
 #include "Overlay/Logger/ImGuiLogger.h"
 #include "Overlay/WindowManager.h"
+#include "Updater/GitHubReleaseClient.h"
 
 #include <handleapi.h>
 #include <processthreadsapi.h>
-#include <regex>
 
 std::string newVersionNum = "";
+std::wstring newVersionReleaseUrl = Updater::GetGitHubReleasesPageUrl();
 
 std::string GetNewVersionNum()
 {
@@ -24,51 +25,53 @@ std::string GetNewVersionNum()
 	return "";
 }
 
+const wchar_t* GetNewVersionReleaseUrl()
+{
+	if (!newVersionReleaseUrl.empty())
+		return newVersionReleaseUrl.c_str();
+
+	return Updater::GetGitHubReleasesPageUrl();
+}
+
 void CheckUpdate()
 {
-
-    std::wstring wUrl = MOD_LINK_API_GITHUB_RELEASE;
-	std::string data = DownloadUrl(wUrl);
-
-	if (strcmp(data.c_str(), "") == 0)
+	Updater::SemVersion currentVersion;
+	if (!Updater::TryParseSemVersion(MOD_VERSION, currentVersion))
 	{
-		g_imGuiLogger->Log("[error] Update check failed. No data downloaded.\n");
-		LOG(2, "Update check failed.No data downloaded.\n");
+		LOG(2, "Update check skipped. Current version is not semantic version text: %s\n", MOD_VERSION);
 		return;
 	}
 
-
-	data = data.c_str();
-
-	std::regex r("\"name\"\\s*:\\s*\"(v[\\d \.]+)\\s");
-	std::smatch m;
-	std::regex_search(data, m, r);
-
-	if (m[1].str() == "")
+	Updater::GitHubReleaseClient client;
+	Updater::UpdateCheckResult result = client.CheckLatestRelease(currentVersion);
+	if (result.status == Updater::UpdateCheckStatus_UpdateAvailable)
 	{
-		
-		g_imGuiLogger->Log("[error] Update check failed. Regex no match.\n");
-		return;
-	}
+		newVersionNum = result.update.release.tagName;
+		newVersionReleaseUrl.assign(
+			result.update.release.htmlUrl.begin(),
+			result.update.release.htmlUrl.end());
+		if (newVersionReleaseUrl.empty())
+			newVersionReleaseUrl = Updater::GetGitHubReleasesPageUrl();
 
-    if(std::string(MOD_VERSION_NUM).find(m[1].str()) == std::string::npos)
-	{
-		newVersionNum = m[1].str();
-
-	  
 		LOG(2, "New version found: %s\n", newVersionNum.c_str());
 		g_imGuiLogger->Log("[system] Update available: BBCF Improvement Mod %s has been released!(current: %s)\n",
-			newVersionNum.c_str(),MOD_VERSION_NUM);
+			newVersionNum.c_str(), MOD_VERSION_NUM);
 
 		WindowManager::GetInstance().GetWindowContainer()->GetWindow(WindowType_UpdateNotifier)->Open();
+		return;
 	}
-	else
+
+	if (result.status == Updater::UpdateCheckStatus_NoUpdate)
 	{
-		newVersionNum = m[1].str();
+		if (!result.update.release.tagName.empty())
+			newVersionNum = result.update.release.tagName;
+
 		g_imGuiLogger->Log("[system] BBCF Improvement Mod is up-to-date, current: %s, latest: %s\n",
-		   MOD_VERSION_NUM,newVersionNum.c_str()
-			);
+		   MOD_VERSION_NUM, newVersionNum.c_str());
+		return;
 	}
+
+	LOG(2, "Update check failed silently. Status: %d, message: %s\n", result.status, result.message.c_str());
 }
 
 void StartAsyncUpdateCheck()
