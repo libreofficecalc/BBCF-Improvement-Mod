@@ -2,6 +2,7 @@
 
 #include "Core/interfaces.h"
 #include "Core/logger.h"
+#include "Core/Localization.h"
 #include "Game/gamestates.h"
 #include "Overlay/imgui_utils.h"
 #include "Overlay/Logger/ImGuiLogger.h"
@@ -221,7 +222,7 @@ void PaletteEditorWindow::ShowAllPaletteSelections(const std::string& windowID)
 
 void PaletteEditorWindow::ShowReloadAllPalettesButton()
 {
-	if (ImGui::Button("Reload custom palettes"))
+	if (ImGui::Button(Messages.Reload_custom_palettes()))
 	{
 		g_interfaces.pPaletteManager->ReloadAllPalettes();
 	}
@@ -290,7 +291,7 @@ void PaletteEditorWindow::CharacterSelection()
 {
 	LOG(7, "PaletteEditorWindow CharacterSelection\n");
 
-	if (ImGui::Button("Select character"))
+	if (ImGui::Button(Messages.Select_character()))
 	{
 		ImGui::OpenPopup("select_char_pal");
 	}
@@ -329,7 +330,7 @@ void PaletteEditorWindow::PaletteSelection()
 {
 	LOG(7, "PaletteEditorWindow PaletteSelection\n");
 
-	if (ImGui::Button("Select palette  "))
+	if (ImGui::Button(Messages.Select_palette()))
 	{
 		ImGui::OpenPopup("select_custom_pal");
 	}
@@ -344,7 +345,7 @@ void PaletteEditorWindow::FileSelection()
 {
 	LOG(7, "PaletteEditorWindow FileSelection\n");
 
-	if (ImGui::Button("Select file     "))
+	if (ImGui::Button(Messages.Select_file()))
 	{
 		ImGui::OpenPopup("select_file_pal");
 	}
@@ -404,7 +405,7 @@ void PaletteEditorWindow::EditingModesSelection()
 		}
 	}
 
-	if (ImGui::Button("Gradient generator"))
+	if (ImGui::Button(Messages.Gradient_generator()))
 	{
 		ImGui::OpenPopup("gradient");
 	}
@@ -496,9 +497,9 @@ void PaletteEditorWindow::ShowUndoAndRedo()
 
 	if (m_history.cursor == 0)
 	{
-		ImGui::Text("Undo");
+		ImGui::Text(Messages.Undo());
 	}
-	else if (ImGui::Button("Undo"))
+	else if (ImGui::Button(Messages.Undo()))
 	{
 		Undo();
 		g_interfaces.pPaletteManager->ReplacePaletteFile(m_paletteEditorArray, m_selectedFile, *m_selectedCharPalHandle);
@@ -508,9 +509,9 @@ void PaletteEditorWindow::ShowUndoAndRedo()
 
 	if (m_history.cursor >= m_history.entries.size())
 	{
-		ImGui::Text("Redo");
+		ImGui::Text(Messages.Redo());
 	}
-	else if (ImGui::Button("Redo"))
+	else if (ImGui::Button(Messages.Redo()))
 	{
 		Redo();
 		g_interfaces.pPaletteManager->ReplacePaletteFile(m_paletteEditorArray, m_selectedFile, *m_selectedCharPalHandle);
@@ -532,43 +533,43 @@ void PaletteEditorWindow::SavePaletteToFile()
 
 	if (m_highlightMode)
 	{
-		ImGui::TextDisabled("Cannot save with Highlight mode on!");
+		ImGui::TextDisabled(Messages.Cannot_save_with_Highlight_mode_on());
 		return;
 	}
 
-	struct TextFilters 
+	struct TextFilters
 	{
-		static int FilterAllowedChars(ImGuiTextEditCallbackData* data) 
+		static int FilterAllowedChars(ImGuiTextEditCallbackData* data)
 		{
 			if (data->EventChar < 256 && strchr(" qwertzuiopasdfghjklyxcvbnmQWERTZUIOPASDFGHJKLYXCVBNM0123456789_.()[]!@&+-'^,;{}$=", (char)data->EventChar))
 				return 0;
-			return 1; 
-		} 
+			return 1;
+		}
 	};
 
 
-	ImGui::Checkbox("Save with bloom effect", &palBoolEffect);
-	ImGui::HoverTooltip("Bloom effects cannot be changed until a new round is started");
+	ImGui::Checkbox(Messages.Save_with_bloom_effect(), &palBoolEffect);
+	ImGui::HoverTooltip(Messages.Bloom_effects_cannot_be_changed_until_a_new_round_is_started());
 	ImGui::Spacing();
 
-	ImGui::Text("Palette name:");
+	ImGui::Text(Messages.Palette_name());
 	ImGui::PushItemWidth(250);
 	ImGui::InputText("##palName", palNameBuf, IMPL_PALNAME_LENGTH, ImGuiInputTextFlags_CallbackCharFilter, TextFilters::FilterAllowedChars);
 	ImGui::PopItemWidth();
 
-	ImGui::Text("Creator (optional):");
+	ImGui::Text(Messages.Creator_optional());
 	ImGui::PushItemWidth(250);
 	ImGui::InputText("##palcreator", palCreatorBuf, IMPL_CREATOR_LENGTH, ImGuiInputTextFlags_CallbackCharFilter, TextFilters::FilterAllowedChars);
 	ImGui::PopItemWidth();
 
-	ImGui::Text("Palette description (optional):");
+	ImGui::Text(Messages.Palette_description_optional());
 	ImGui::PushItemWidth(250);
 	ImGui::InputText("##palDesc", palDescBuf, IMPL_DESC_LENGTH, ImGuiInputTextFlags_CallbackCharFilter, TextFilters::FilterAllowedChars);
 	ImGui::PopItemWidth();
 
 	ImGui::Spacing();
 
-	bool pressed = ImGui::Button("Save palette", ImVec2(125, 25));
+	bool pressed = ImGui::Button(Messages.Save_palette(), ImVec2(125, 25));
 	ImGui::Text(message);
 
 	static bool show_overwrite_popup = false;
@@ -578,7 +579,7 @@ void PaletteEditorWindow::SavePaletteToFile()
 
 	if (strncmp(palNameBuf, "", IMPL_PALNAME_LENGTH) == 0)
 	{
-		std::string errorMsg = "Error, no filename given";
+		std::string errorMsg = Messages.Error_no_filename_given();
 		memcpy_s(message, sizeof(message), errorMsg.c_str(), errorMsg.length());
 		g_imGuiLogger->Log("[error] Could not save custom palette, no filename was given\n");
 		return;
@@ -586,7 +587,7 @@ void PaletteEditorWindow::SavePaletteToFile()
 
 	if (strncmp(palNameBuf, "Default", IMPL_PALNAME_LENGTH) == 0 || strncmp(palNameBuf, "Random", IMPL_PALNAME_LENGTH) == 0)
 	{
-		std::string errorMsg = "Error, not a valid filename";
+		std::string errorMsg = Messages.Error_not_a_valid_filename();
 		memcpy_s(message, sizeof(message), errorMsg.c_str(), errorMsg.length());
 		g_imGuiLogger->Log("[error] Could not save custom palette: not a valid filename\n");
 		return;
@@ -621,24 +622,22 @@ void PaletteEditorWindow::SavePaletteToFile()
 		strncpy(curPalData.palInfo.desc, palDescBuf, IMPL_DESC_LENGTH);
 		curPalData.palInfo.hasBloom = palBoolEffect;
 
-		std::string messageText = "'";
-		messageText += filenameTemp.c_str();
+		std::string messageText = FormatText(Messages.s_saved_successfully(), filenameTemp.c_str());
 
 		if (g_interfaces.pPaletteManager->WritePaletteToFile(m_selectedCharIndex, &curPalData))
 		{
 			std::string fullPath(wFullPath.begin(), wFullPath.end());
 			g_imGuiLogger->Log("[system] Custom palette '%s' successfully saved to:\n'%s'\n", filenameTemp.c_str(), fullPath.c_str());
-			messageText += "' saved successfully";
+			memcpy(message, messageText.c_str(), messageText.length() + 1);
 
 			ReloadSavedPalette(palNameBuf);
 		}
 		else
 		{
 			g_imGuiLogger->Log("[error] Custom palette '%s' failed to be saved.\n", filenameTemp.c_str());
-			messageText += "' save failed";
+			std::string failureText = FormatText(Messages.s_save_failed(), filenameTemp.c_str());
+			memcpy(message, failureText.c_str(), failureText.length() + 1);
 		}
-
-		memcpy(message, messageText.c_str(), messageText.length() + 1);
 	}
 }
 
@@ -673,10 +672,10 @@ bool PaletteEditorWindow::ShowOverwritePopup(bool* p_open, const wchar_t* wFullP
 
 	if (ImGui::BeginPopupModal("Overwrite?", NULL, ImGuiWindowFlags_AlwaysAutoResize))
 	{
-		ImGui::Text("'%s' already exists.\nAre you sure you want to overwrite it?\n\n", filename);
+ImGui::Text(Messages.Overwrite_confirmation_prompt(), filename);
 		ImGui::Separator();
 
-		if (ImGui::Button("OK", ImVec2(120, 0)))
+		if (ImGui::Button(Messages.OK(), ImVec2(120, 0)))
 		{
 			ImGui::CloseCurrentPopup();
 			ImGui::EndPopup();
@@ -686,7 +685,7 @@ bool PaletteEditorWindow::ShowOverwritePopup(bool* p_open, const wchar_t* wFullP
 		}
 
 		ImGui::SameLine();
-		if (ImGui::Button("Cancel", ImVec2(120, 0)))
+		if (ImGui::Button(Messages.Cancel(), ImVec2(120, 0)))
 		{
 			ImGui::CloseCurrentPopup();
 			*p_open = false;
@@ -723,7 +722,7 @@ void PaletteEditorWindow::ShowOnlinePaletteResetButton(Player& playerHandle, uin
 		g_interfaces.pPaletteManager->RestoreOrigPal(charPalHandle);
 	}
 
-	ImGui::HoverTooltip("Reset palette");
+	ImGui::HoverTooltip(Messages.Reset_palette());
 
 	// Dummy button
 	ImGui::SameLine();
@@ -747,7 +746,7 @@ void PaletteEditorWindow::ShowPaletteSelectButton(Player& playerHandle, const ch
 
 	if (charIndex >= getCharactersCount() || m_customPaletteVector[charIndex].size() <= selected_pal_index)
 	{
-		ImGui::TextUnformatted("Out of bounds");
+		ImGui::TextUnformatted(Messages.Out_of_bounds());
 		return;
 	}
 
@@ -847,16 +846,16 @@ void PaletteEditorWindow::ShowHoveredPaletteInfoToolTip(const IMPL_info_t& palIn
 		ImGui::PushTextWrapPos(300.0f);
 
 		if (isOnlinePal)
-			ImGui::TextColored(COLOR_ONLINE, "ONLINE PALETTE");
+			ImGui::TextColored(COLOR_ONLINE, Messages.ONLINE_PALETTE());
 
 		if (creatorLen)
-			ImGui::Text("Creator: %s", creatorText);
+			ImGui::Text(Messages.Creator_s(), creatorText);
 
 		if (descLen)
-			ImGui::Text("Description: %s", descText);
+			ImGui::Text(Messages.Description_s(), descText);
 
 		if (hasBloom)
-			ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "Has bloom effect");
+			ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), Messages.Has_bloom_effect());
 
 		ImGui::PopTextWrapPos();
 		ImGui::EndTooltip();
@@ -924,7 +923,7 @@ void PaletteEditorWindow::ShowPaletteRandomizerButton(const char* btnID, Player&
 		}
 	}
 
-	ImGui::HoverTooltip("Random selection");
+	ImGui::HoverTooltip(Messages.Random_selection());
 }
 
 void PaletteEditorWindow::CopyToEditorArray(const char* pSrc)
@@ -936,6 +935,11 @@ void PaletteEditorWindow::CopyToEditorArray(const char* pSrc)
 void PaletteEditorWindow::CopyPalFileToEditorArray(PaletteFile palFile, CharPaletteHandle& charPalHandle)
 {
 	const char* fileAddr = g_interfaces.pPaletteManager->GetCurPalFileAddr(palFile, charPalHandle);
+	if (fileAddr == nullptr)
+	{
+		LOG(1, "PaletteEditorWindow::CopyPalFileToEditorArray skipped because palette file %d is not readable\n", (int)palFile);
+		return;
+	}
 	CopyToEditorArray(fileAddr);
 }
 
@@ -975,7 +979,7 @@ void PaletteEditorWindow::ShowGradientPopup()
 {
 	if (ImGui::BeginPopup("gradient"))
 	{
-		ImGui::TextUnformatted("Gradient generator");
+		ImGui::TextUnformatted(Messages.Gradient_generator());
 
 		static int idx1 = 1;
 		static int idx2 = 2;
@@ -986,24 +990,24 @@ void PaletteEditorWindow::ShowGradientPopup()
 			idx2 = minVal_idx2;
 		}
 
-		ImGui::SliderInt("Start index", &idx1, 1, NUMBER_OF_COLOR_BOXES - 1);
-		ImGui::SliderInt("End index", &idx2, minVal_idx2, NUMBER_OF_COLOR_BOXES);
+		ImGui::SliderInt(Messages.Start_index(), &idx1, 1, NUMBER_OF_COLOR_BOXES - 1);
+		ImGui::SliderInt(Messages.End_index(), &idx2, minVal_idx2, NUMBER_OF_COLOR_BOXES);
 
 		static int color1 = 0xFFFFFFFF;
 		static int color2 = 0xFFFFFFFF;
 		int alpha_flag = m_colorEditFlags & ImGuiColorEditFlags_NoAlpha;
 
-		ImGui::ColorEdit4On32Bit("Start color", NULL, (unsigned char*)&color1, alpha_flag);
-		ImGui::ColorEdit4On32Bit("End color", NULL, (unsigned char*)&color2, alpha_flag);
+		ImGui::ColorEdit4On32Bit(Messages.Start_color(), NULL, (unsigned char*)&color1, alpha_flag);
+		ImGui::ColorEdit4On32Bit(Messages.End_color(), NULL, (unsigned char*)&color2, alpha_flag);
 
-		if (ImGui::Button("Swap colors"))
+		if (ImGui::Button(Messages.Swap_colors()))
 		{
 			int temp = color2;
 			color2 = color1;
 			color1 = temp;
 		}
 
-		if (ImGui::Button("Generate gradient"))
+		if (ImGui::Button(Messages.Generate_gradient()))
 		{
 			DisableHighlightModes();
 			GenerateGradient(idx1, idx2, color1, color2);

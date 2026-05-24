@@ -2,8 +2,9 @@
 
 #include "Overlay/Window/DebugWindow.h"
 
-#include <string>
+#include <functional>
 #include <queue>
+#include <string>
 
 class NotificationBar;
 
@@ -12,14 +13,21 @@ extern NotificationBar* g_notificationBar;
 class NotificationBar
 {
 public:
-	void DrawNotifications();
-	void AddNotification(const char* text, ...);
-	void ClearNotifications();
+        void DrawNotifications();
+        void AddNotification(const char* text, ...);
+        void AddLocalizedNotification(std::function<std::string()> formatter);
+        void ClearNotifications();
 
 private:
-	void CalculateTextStartingOffset(const std::string& text);
+        void CalculateTextStartingOffset(const std::string& text);
 
-	std::queue<std::string> m_notifications;
+        struct NotificationEntry
+        {
+                std::function<std::string()> formatter;
+                std::string text;
+        };
+
+        std::queue<NotificationEntry> m_notifications;
 
 	bool m_isTextOffsetInitialized = false;
 	float m_textOffset = 0;

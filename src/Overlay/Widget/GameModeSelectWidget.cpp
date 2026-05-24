@@ -1,6 +1,7 @@
 #include "GameModeSelectWidget.h"
 
 #include "Core/interfaces.h"
+#include "Core/Localization.h"
 
 #include <imgui.h>
 
@@ -8,10 +9,10 @@ void GameModeSelectWidget()
 {
 	ImGui::BeginGroup();
 
-	ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 5.0f);
-	ImGui::BeginChild("GameModeSelection", ImVec2(200, 210), true);
+ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 5.0f);
+ImGui::BeginChild("GameModeSelection", ImVec2(200, 210), true);
 
-	ImGui::TextUnformatted("Select game mode:");
+ImGui::TextUnformatted(Messages.Select_game_mode());
 	for (int i = 0; i < g_interfaces.pGameModeManager->GetGameModesCount(); i++)
 	{
 		std::string gameModeName = g_interfaces.pGameModeManager->GetGameModeName((CustomGameMode)i);

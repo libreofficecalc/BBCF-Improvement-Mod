@@ -1,0 +1,684 @@
+﻿MethodName,en,es
+_LanguageCode,en,es
+_DisplayName,English,Español
+Toggle me with %s,Toggle me with %s,Activa la ventana con %s
+Toggle Online with %s,Toggle Online with %s,Abrir en línea con %s
+Toggle HUD with %s,Toggle HUD with %s,Ocultar HUD con %s
+Generate Debug Logs,Generate Debug Logs,Generar registros de DEBUG
+Debug_log_details,Write DEBUG.txt with detailed runtime information. Saved to settings.ini for future sessions.,Escribe DEBUG.txt con información detallada de ejecución. Se guarda en settings.ini para futuras sesiones.
+Online,Online,Online
+Gameplay settings,Gameplay settings,Opciones de juego
+Custom palettes,Custom palettes,Paletas personalizadas
+Hitbox overlay,Hitbox overlay,Superposición de hitbox
+FrameHistory,FrameHistory,Historial de Frames
+Framedata,Framedata,Datos de Frames
+Avatar settings,Avatar settings,Opciones de avatar
+Controller Settings,Controller Settings,Opciones de control
+Local Controller Override,Local Controller Override,Anulación de mandos local
+Controller_override_help,Choose which connected controller or the keyboard should be Player 1 and Player 2. Use Refresh when devices change.,"Elige qué controlador o teclado deben ser Jugador 1 y Jugador 2. Utiliza el boton ""Actualizar"" cuando cambien los dispositivos."
+Refresh controllers,Refresh controllers,Actualizar Mandos
+Controller_refresh_help,Reload the controller list and reinitialize input slots to match connected devices.,Recarga la lista de controladores y reinicializa las ranuras de entrada para coincidir con los dispositivos conectados.
+Open Joy.cpl,Open Joy.cpl,Abrir Joy.cpl
+Auto-refresh,Auto-refresh,Actualización automática
+Auto_refresh_warning,"Automatically refresh controller slots when devices change. The internal call to refresh controllers may freeze the game for a few moments, so only enable this if you are okay with short pauses.","Actualiza automáticamente los mandos cuando cambian los dispositivos. La llamada interna para actualizarlos puede congelar el juego por unos momentos, así que actívalo solo si aceptas pausas cortas."
+No input devices detected.,No input devices detected.,No se detectaron dispositivos de entrada.
+STEAM INPUT: %s,STEAM INPUT: %s,STEAM INPUT: %s
+ON,ON,ACTIVADO
+OFF,OFF,DESACTIVADO
+Steam_input_active_notice,"Steam Input appears to be active.
+This will disable some of this section's features.","Steam Input parece estar activo.
+Esto deshabilitará algunas funciones de esta sección."
+Steam_input_limitations,"The internal behavior of Steam Input hides some controllers from the game's process, thus making some controller related features impossible/work in unintended ways.
+
+The disabled features include:
+- Local Controller Override
+- Opening Joy.cpl","El comportamiento interno de Steam Input oculta algunos controladores del proceso del juego, lo que hace que ciertas funciones relacionadas con controladores sean imposibles o funcionen de forma inesperada.
+
+Las funciones deshabilitadas incluyen:
+- Anulación de controlador local
+- Abrir Joy.cpl"
+Swap P1 Controller to P2,Swap P1 Controller to P2,Cambiar el controlador de P1 a P2
+Controller_swap_hint,"Changes P1 Controller's assignment so it is recognized as P2. Internally, this is just swapping p1 with p2's game controllers.",Cambia la asignación del controlador de P1 para que se reconozca como P2. Internamente solo intercambia los controladores de juego de P1 con los de P2.
+Multiple keyboards override,Multiple keyboards override,Reasignación de múltiples teclados
+Keyboard_player1_help,Choose which physical keyboards should be treated as Player 1 when multiple keyboards are connected. All other keyboards will drive Player 2 using their saved mappings (defaults to WASD/JIKL).,Elige qué teclados físicos deben ser el Jugador 1 cuando haya varios conectados. El resto controlará al Jugador 2 usando sus asignaciones guardadas (por defecto WASD/JIKL).
+No keyboards selected,No keyboards selected,No hay teclados seleccionados
+No keyboards detected.,No keyboards detected.,No se detectaron teclados.
+P1 Keyboards,P1 Keyboards,Teclados de P1
+Map,Map,Asignar
+Rename,Rename,Renombrar
+Ignore,Ignore,Ignorar
+Rename keyboard,Rename keyboard,Renombrar teclado
+Set a custom name for this keyboard.,Set a custom name for this keyboard.,Define un nombre personalizado para este teclado.
+Save,Save,Guardar
+Cancel,Cancel,Cancelar
+Clear,Clear,Borrar
+Configure keyboard mapping,Configure keyboard mapping,Configurar asignación de teclado
+Unbound,Unbound,Sin asignar
+Press a key...,Press a key...,Pulsa una tecla...
+Select game mode:,Select game mode:,Seleccionar Modo de Juego:
+Stage,Stage,Stage
+Player 1,Player 1,Player 1
+Gap:,Gap:,Gap:
+Advantage:,Advantage:,Ventaja:
+Player 2,Player 2,Player 2
+Player 1:,Player 1:,Player 1:
+Player 2:,Player 2:,Player 2:
+Copy to clipboard,Copy to clipboard,Copiar al portapapeles
+Search,Search,Buscar
+System_log_copied,"[system] Log has been copied to clipboard
+","[system] Log fue copiado al clipboard
+"
+Reload custom palettes,Reload custom palettes,Actualizar paletas personalizadas
+Select character,Select character,Seleccionar Personaje
+Select palette,Select palette,Seleccionar Paleta
+Select file,Select file,Seleccionar Archivo
+Gradient generator,Gradient generator,Generador de Gradiente
+Undo,Undo,Deshacer
+Redo,Redo,Rehacer
+Cannot save with Highlight mode on!,Cannot save with Highlight mode on!,No se puede guardar con modo Highlight prendido!
+Save with bloom effect,Save with bloom effect,Guardar con efecto bloom
+Bloom effects cannot be changed until a new round is started,Bloom effects cannot be changed until a new round is started,Efectos de Bloom no pueden ser cambiados hasta que empiece un nuevo round
+Palette name:,Palette name:,Nombre de Paleta:
+Creator (optional):,Creator (optional):,Creador (opcional):
+Palette description (optional):,Palette description (optional):,Descripcion (opcional):
+Save palette,Save palette,Guardar paleta
+"Error, no filename given","Error, no filename given","Error, no se dio nombre de archivo"
+"Error, not a valid filename","Error, not a valid filename","Error, el nombre del archivo no es valido"
+'%s' saved successfully,'%s' saved successfully,%s' se guardo correctamente
+'%s' save failed,'%s' save failed,%s' tuvo un error al guardar
+Overwrite_confirmation_prompt,"'%s' already exists.
+Are you sure you want to overwrite it?
+
+","%s' ya existe.
+Estas seguro que quieres sobreescribirlo?
+
+"
+OK,OK,OK
+Reset palette,Reset palette,Reiniciar paleta
+Out of bounds,Out of bounds,Fuera de limite
+ONLINE PALETTE,ONLINE PALETTE,PALETA ONLINE
+Creator: %s,Creator: %s,Creador: %s
+Description: %s,Description: %s,Descripcion: %s
+Has bloom effect,Has bloom effect,Tiene efecto Bloom
+Random selection,Random selection,Selección Aleatoria
+Start index,Start index,Index de inicio
+End index,End index,Index final
+Start color,Start color,Color de inicio
+End color,End color,Color final
+Swap colors,Swap colors,Intercambiar colores
+Generate gradient,Generate gradient,Generar gradiente
+Refresh,Refresh,Refrescar
+Recording side: %c,Recording side: %c,Lado de grabacion: %c
+Switch recording side,Switch recording side,Cambiar lado de grabacion
+Add/Remove,Add/Remove,Añadir/Remover
+Frame,Frame,Frame
+Literal,Literal,Literal
+Command,Command,Comando
+Edit Input,Edit Input,Editar Input
+Direction,Direction,Direccion
+Bind,Bind,Vincular
+Menu action,Menu action,Acción de menú
+Battle action,Battle action,Acción en combate
+Close,Close,Cerrar
+Set all to default,Set all to default,Restablecer todo a los valores predeterminados
+Ignored keyboards,Ignored keyboards,Teclados ignorados
+No ignored keyboards.,No ignored keyboards.,No hay teclados ignorados.
+Unignore,Unignore,Dejar de ignorar
+(connected),(connected),(conectado)
+(not connected),(not connected),(desconectado)
+Mapping for %s,Mapping for %s,Asignación para %s
+Test,Test,Probar
+Player 1 Controller,Player 1 Controller,Controlador del Jugador 1
+Player 2 Controller,Player 2 Controller,Controlador del Jugador 2
+Loaded settings.ini values,Loaded settings.ini values,Valores cargados de settings.ini
+Current online players:,Current online players:,Jugadores en línea actuales:
+<No data>,<No data>,<Sin datos>
+Avatar,Avatar,Avatar
+Color,Color,Color
+Accessory 1,Accessory 1,Accesorio 1
+Accessory 2,Accessory 2,Accesorio 2
+CONNECT TO NETWORK MODE FIRST,CONNECT TO NETWORK MODE FIRST,CONECTA AL MODO EN LÍNEA PRIMERO
+FrameHistory help,"For each non-idle frame, display a column of rectangles with info about it. 
+ 
+For each player : 
+ = The first row displays player state. 
+ - Startup->green 
+ - Active->red 
+ - Recovery->blue 
+ - Blockstun->yellow 
+ - Hitstun->purple 
+ - Hard landing recovery->blush 
+ - Special: hard to classify states(e.g.dashes)->Aquamarine 
+
+ = Second row is for invul/armor. The position of the line segments indicates the attributes, and its color if invul or armor: 
+ - Invul->white 
+ - Armor->brown 
+ - H->top segment 
+ - B->middle segment 
+ - F->bottom segment 
+ - T->left segment 
+ - P->right segment 
+","Para cada cuadro no inactivo, muestra una columna de rectángulos con información. 
+ 
+Para cada jugador: 
+ = La primera fila muestra el estado del jugador. 
+ - Inicio->verde 
+ - Activo->rojo 
+ - Recuperación->azul 
+ - Aturdimiento por bloqueo->amarillo 
+ - Aturdimiento por golpe->morado 
+ - Recuperación por caída dura->rosa 
+ - Especial: estados difíciles de clasificar (p.ej. dashes)->aguamarina 
+
+ = La segunda fila es para invulnerabilidad/armadura. La posición de los segmentos indica los atributos y su color si hay invul o armadura: 
+ - Invul->blanco 
+ - Armadura->marrón 
+ - H->segmento superior 
+ - B->segmento medio 
+ - F->segmento inferior 
+ - T->segmento izquierdo 
+ - P->segmento derecho 
+"
+FrameHistory auto reset help,block auto-reset on an idle frame: Do not overwrite automatically after an idle frame.,Bloquear el reinicio automático en un cuadro inactivo: no sobrescribir automáticamente después de un cuadro inactivo.
+Box width,Box width,Ancho de caja
+Box height,Box height,Alto de caja
+spacing,spacing,Espaciado
+Enable##framehistory_section,Enable##framehistory_section,Activar##framehistory_section
+Auto Reset##Reset after each idle frame,Auto Reset##Reset after each idle frame,Reinicio automático##Reset after each idle frame
+Enable##framedata_section,Enable##framedata_section,Activar##framedata_section
+Advantage on stagger hit,Advantage on stagger hit,Ventaja en golpe tambaleante
+YOU ARE NOT IN MATCH!,YOU ARE NOT IN MATCH!,¡NO ESTÁS EN UNA PARTIDA!
+YOU ARE NOT IN TRAINING MODE OR REPLAY THEATER!,YOU ARE NOT IN TRAINING MODE OR REPLAY THEATER!,¡NO ESTÁS EN ENTRENAMIENTO NI EN REPLAY THEATER!
+"YOU ARE NOT IN A MATCH, IN TRAINING MODE OR REPLAY THEATER!","YOU ARE NOT IN A MATCH, IN TRAINING MODE OR REPLAY THEATER!","¡NO ESTÁS EN PARTIDA, ENTRENAMIENTO NI REPLAY THEATER!"
+THERE WAS AN ERROR LOADING ONE/BOTH OF THE CHARACTERS,THERE WAS AN ERROR LOADING ONE/BOTH OF THE CHARACTERS,HUBO UN ERROR AL CARGAR UNO O AMBOS PERSONAJES
+Palette editor,Palette editor,Editor de paletas
+YOU ARE NOT IN MATCH! (Replay),YOU ARE NOT IN MATCH!,¡NO ESTÁS EN UNA PARTIDA!
+YOU ARE NOT IN REPLAY MENU!,YOU ARE NOT IN REPLAY MENU!,¡NO ESTÁS EN EL MENÚ DE REPLAY!
+YOU ARE NOT IN CHARACTER SELECTION!,YOU ARE NOT IN CHARACTER SELECTION!,¡NO ESTÁS EN LA SELECCIÓN DE PERSONAJE!
+Hide HUD,Hide HUD,Ocultar HUD
+Toggle Rewind,Toggle Rewind,Alternar rebobinado
+Replay Database,Replay Database,Base de datos de repeticiones
+Enable/Disable Automatic Replay Uploads?,Enable/Disable Automatic Replay Uploads?,¿Activar/Desactivar las cargas automáticas de repeticiones?
+Main window notification format,%s (Press %s to open the main window),%s (Pulsa %s para abrir la ventana principal)
+Replay_uploads_description,"IM BOBLEIS can automatically upload your replays to a public central repository.
+
+This feature allows:
+- Easy sharing: Facilitates sharing of replays between players.
+- Community sharing: Contribute to a collection of matches for learning and analysis.
+- Cataloging: Easily search by characters for matchups.
+- Storage: Keep your replays backed up automatically after the 100 limit.
+
+You can access the database using the Replay Database button on the IM main menu.
+
+If you disable it your replays won't be uploaded even if matched with someone with it enabled.
+
+If you wish to turn it off/on again you can access this menu using the button on the IM main menu or using settings.ini.
+
+This has no impact on performance or stability.
+
+Would you like to leave automatic replay uploads on or turn it off?","IM BOBLEIS puede subir automáticamente tus repeticiones a un repositorio público central.
+
+Esta función permite:
+- Uso compartido sencillo: facilita compartir repeticiones entre jugadores.
+- Compartir con la comunidad: contribuye a una colección de partidas para aprender y analizar.
+- Catalogación: busca fácilmente por personajes para estudiar emparejamientos.
+- Almacenamiento: mantiene tus repeticiones respaldadas automáticamente después del límite de 100.
+
+Puedes acceder a la base de datos mediante el botón Replay Database en el menú principal de IM.
+
+Si la desactivas tus repeticiones no se subirán incluso si juegas contra alguien que la tenga activada.
+
+Si deseas volver a activarla o desactivarla puedes abrir este menú con el botón en el menú principal de IM o con settings.ini.
+
+Esto no tiene impacto en el rendimiento ni en la estabilidad.
+
+¿Quieres dejar activadas las cargas automáticas de repeticiones o desactivarlas?"
+Enable/Disable Upload,Enable/Disable Upload,Activar/Desactivar subida
+Discord,Discord,Discord
+Forum,Forum,Foro
+GitHub,GitHub,GitHub
+Player1,Player1,Jugador 1
+Player2,Player2,Jugador 2
+Draw hitbox/hurtbox,Draw hitbox/hurtbox,Dibujar hitbox/hurtbox
+Draw origin,Draw origin,Dibujar origen
+Draw collision,Draw collision,Dibujar colisión
+Draw throw/range boxes,Draw throw/range boxes,Dibujar cajas de agarre/rango
+Origin_point_note,"The point in space where your character resides. 
+Important!: This is a single point, the render is composed of two lines to facilitate viewing, the actual point is where the two lines touch.","El punto en el espacio donde reside tu personaje. 
+Importante: es un único punto; el renderizado muestra dos líneas para facilitar la vista, el punto real está donde se cruzan."
+Collision_box_note,Defines collision between objects/characters. Also used for throw range checks.,Define la colisión entre objetos/personajes. También se usa para comprobar el alcance de agarres.
+Throw range help,"Throw Range Box(yellow): All throws require the throw range check. In order to pass this check the throw range box must overlap target's  collision box.
+
+Move Range Box(green): All throws and some moves require the move range check. In order to pass this check the move range box must overlap the target's origin point.
+
+
+
+How do throws connect?
+
+In order for a throw to connect you must have satisfy the following conditions:
+1: Both players must be on the ground or in the air. This is decided by their origin position, not sprite.
+2: You must pass the move range check.
+3: You must pass the throw range check.
+4: The hitbox of the throw must overlap the hurtbox of the target.
+5: The target must not be throw immune.
+","Caja de rango de agarre (amarillo): todos los agarres requieren superar esta comprobación; la caja debe solaparse con la caja de colisión del objetivo.
+
+Caja de rango de movimiento (verde): todos los agarres y algunos movimientos requieren esta comprobación; la caja debe solaparse con el punto de origen del objetivo.
+
+
+
+¿Cómo conecta un agarre?
+
+Para que conecte debes cumplir: 
+1: Ambos jugadores en tierra o aire (según su origen, no el sprite).
+2: Pasar la comprobación de rango de movimiento.
+3: Pasar la comprobación de rango de agarre.
+4: La hitbox del agarre debe solapar la hurtbox del objetivo.
+5: El objetivo no debe ser inmune a agarres.
+"
+Freeze frame:,Freeze frame:,Congelar cuadro:
+Frame Count,Frame Count,Contador de cuadros
+Reset,Reset,Reiniciar
+Freeze animation,Freeze animation,Congelar animación
+Stop timer,Stop timer,Detener temporizador
+Step frames,Step frames,Avanzar cuadros
+"YOU ARE NOT IN TRAINING, VERSUS, OR REPLAY!","YOU ARE NOT IN TRAINING, VERSUS, OR REPLAY!","¡NO ESTÁS EN ENTRENAMIENTO, VERSUS O REPLAY!"
+Game Mode,Game Mode,Modo de juego
+Enable##hitbox_overlay_section,Enable##hitbox_overlay_section,Activar##hitbox_overlay_section
+Custom palette reload,Reload all palettes,Recargar todas las paletas
+Enable##framehistory_section checkbox,Enable##framehistory_section,Activar
+Draw hitbox/hurtbox##hitbox_overlay_section,Draw hitbox/hurtbox,Dibujar hitbox/hurtbox
+Draw origin##hitbox_overlay_section,Draw origin,Dibujar origen
+Draw collision##hitbox_overlay_section,Draw collision,Dibujar colisión
+Step frames##hitbox_overlay_section,Step frames,Avanzar cuadros
+Gameplay settings header,Gameplay settings,Opciones de juego
+Hide HUD checkbox,Hide HUD,Ocultar HUD
+States,States,Estados
+Log,Log,Registro
+Replay Rewind,Replay Rewind,Rebobinado de repetición
+Replay Upload,Replay Upload,Subida de repetición
+Enable##framehistory_section label,Enable,Activar
+Auto Reset label,Auto Reset,Reinicio automático
+FrameHistory width label,Box width,Ancho de caja
+FrameHistory height label,Box height,Alto de caja
+FrameHistory spacing label,spacing,Espaciado
+FrameHistory not enabled message,"YOU ARE NOT IN A MATCH, IN TRAINING MODE OR REPLAY THEATER!","¡NO ESTÁS EN UNA PARTIDA, ENTRENAMIENTO NI REPLAY THEATER!"
+FrameHistory character load error,THERE WAS AN ERROR LOADING ONE/BOTH OF THE CHARACTERS,HUBO UN ERROR AL CARGAR UNO O AMBOS PERSONAJES
+Language,Language,Idioma
+Language incomplete label, (Incomplete), (Incompleto)
+Language selection help,Select a language for all UI text. Requires full dictionary coverage.,Selecciona un idioma para todo el texto de la interfaz. Requiere cobertura completa del diccionario.
+Active entities: %d,Active entities: %d,Activar entidades: %d
+Active entities with unk_status2 = 2: %d,Active entities with unk_status2 = 2: %d,Activar entidades con unk_status2 = 2: %d
+Only works during a running replay,Only works during a running replay,Solo funciona durante una replay
+Rewind,Rewind,Retroceder
+Replay rewind help tooltip,"Replay rewind can currently hold up to 10 ""checkpoints"" at a time to rewind to. These checkpoints are saved as the replay progresses at defined intervals(1s,3s or 9s). With replay interval set to 9s for example you will save checkpoints at second 0,9,18...,90.
+
+You can also change them during the replay itself to refine the rewind, say for example you found something interesting at second 16 while having rewind interval as 9s:
+
+ - Rewind until you reach the checkpoint at second 9
+ - Change the rewind interval to 1s or 3s
+ - Now as it reaches the desired position it will have recorded the previous checkpoints in smaller intervals, allowing you to wait less to reach the desired part / analyze the lead up to it.
+
+You can see the frames of all saved checkpoints and more advanced info on the ""Saved Checkpoints Advanced Info"" section above.","El rebobinado de la repetición puede almacenar actualmente hasta 10 “checkpoints” al mismo tiempo a los que puedes volver atrás. Estos checkpoints se guardan automáticamente mientras avanza la repetición, en intervalos definidos (1 s, 3 s o 9 s).
+Por ejemplo, si el intervalo de repetición está configurado en 9 s, se guardarán checkpoints en los segundos 0, 9, 18…, 90.
+
+También puedes cambiar estos intervalos durante la propia repetición para afinar el rebobinado. Por ejemplo, imagina que encuentras algo interesante en el segundo 16 mientras tienes el intervalo de rebobinado configurado en 9 s:
+
+-Rebobina hasta llegar al checkpoint del segundo 9
+-Cambia el intervalo de rebobinado a 1 s o 3 s
+-A medida que la repetición avance hasta la posición deseada, se habrán registrado checkpoints previos en intervalos más pequeños, lo que te permitirá esperar menos para llegar a la parte que te interesa o analizar mejor lo que ocurrió antes.
+
+Puedes ver los fotogramas de todos los checkpoints guardados y más información avanzada en la sección “Saved Checkpoints Advanced Info” que aparece arriba."
+Rewind Interval,Rewind Interval,Intervalo de Rebobinado
+Rewind interval help tooltip,"Defines the interval to save the rewind ""checkpoint"". For more info see the help bar on ""Rewind"" button","Define el intervalo en el que se guarda el “checkpoint” de rebobinado. Para más información, consulta la barra de ayuda del botón “Rewind”."
+1s,1s,1s
+3s,3s,3s
+9s,9s,9s
+Saved Checkpoints Adv. Info,Saved Checkpoints Adv. Info,Saved Checkpoints Adv. Info
+Rewind pos: +%d,Rewind pos: +%d,Pos de rebobinado: +%d
+snap_apparatus snapshot_count: %d,snap_apparatus snapshot_count: %d,snap_apparatus snapshot_count: %d
+%d: Framecount:%d,%d: Framecount:%d,%d: Cuenta de Frames:%d
+Ranked_search_warning,You cannot use this feature while searching for a ranked match,No puedes utilizar esta funcionalidad mientras buscas una partida
+Ranked Matches,Ranked Matches,Partidas clasificatorias
+Show ranked progress,Show ranked progress,Mostrar progreso de rango
+"Shows a movable ranked progress window during ranked character select, ranked menu flow, and after a successful ranked LP upload.","Shows a movable ranked progress window during ranked character select, ranked menu flow, and after a successful ranked LP upload.","Muestra una ventana movible de progreso de rango durante la selección de personaje clasificatoria, el flujo de menú clasificatorio y después de una subida exitosa de LP."
+Show ranked prediction,Show ranked prediction,Mostrar predicción de rango
+Shows win/loss ranked outcome predictions during ranked match confirmation and ranked rematch screens when opponent rank data is available.,Shows win/loss ranked outcome predictions during ranked match confirmation and ranked rematch screens when opponent rank data is available.,Muestra predicciones de victoria y derrota durante la confirmación y la revancha clasificatoria cuando el rango del rival está disponible.
+Ranked ladder,Ranked ladder,Escalera clasificatoria
+Ranked ladder###RankedLadder,Ranked ladder###RankedLadder,Escalera clasificatoria###RankedLadder
+"Opens the ranked ladder window, including known LP thresholds and population estimates.","Opens the ranked ladder window, including known LP thresholds and population estimates.",Abre la ventana de escalera clasificatoria con umbrales de LP conocidos y estimaciones de población.
+Ranked Progress,Ranked Progress,Progreso de rango
+Ranked Progress###RankedProgressOverlay,Ranked Progress###RankedProgressOverlay,Progreso de rango###RankedProgressOverlay
+Choose a character and open a closable ranked progress window. Right-click the ranked progress window to configure the top label.,Choose a character and open a closable ranked progress window. Right-click the ranked progress window to configure the top label.,Elige un personaje y abre una ventana cerrable de progreso de rango. Haz clic derecho en la ventana de progreso para configurar la etiqueta superior.
+How does ranked work?,How does ranked work?,¿Cómo funciona el modo clasificatorio?
+"Choose any rank and open an explanation of its LP, promotion, and demotion rules.","Choose any rank and open an explanation of its LP, promotion, and demotion rules.","Elige cualquier rango y abre una explicación de sus reglas de LP, ascenso y descenso."
+Select ranked character###RankedProgressCharacterSelector,Select ranked character###RankedProgressCharacterSelector,Seleccionar personaje clasificatorio###RankedProgressCharacterSelector
+Ranked Prediction###RankedPredictionOverlay,Ranked Prediction###RankedPredictionOverlay,Predicción de rango###RankedPredictionOverlay
+Opponent,Opponent,Rival
+Waiting for opponent...,Waiting for opponent...,Esperando rival...
+Loading rank...,Loading rank...,Cargando rango...
+Rank unavailable,Rank unavailable,Rango no disponible
+RANK UP,RANK UP,SUBES DE RANGO
+RANK DOWN,RANK DOWN,BAJAS DE RANGO
+Nothing.,Nothing.,Nada.
+Unknown,Unknown,Desconocido
+Current rank data unavailable,Current rank data unavailable,Datos del rango actual no disponibles
+Can only rank up against your rank or higher.,Can only rank up against your rank or higher.,Solo puedes subir de rango contra tu mismo rango o superior.
+LP Threshold Reached,LP Threshold Reached,Umbral de LP alcanzado
+Automatic Promotion Reached,Automatic Promotion Reached,Ascenso automático alcanzado
+LP already capped for this opponent.,LP already capped for this opponent.,El LP ya está al máximo para este rival.
+LV1-LV10 losses do not change LP.,LV1-LV10 losses do not change LP.,Las derrotas en LV1-LV10 no cambian el LP.
+Automatic Demotion Reached,Automatic Demotion Reached,Descenso automático alcanzado
+Waiting for ranked opponent data.,Waiting for ranked opponent data.,Esperando datos del rival clasificatorio.
+Waiting for character leaderboard lookup.,Waiting for character leaderboard lookup.,Esperando consulta del ranking del personaje.
+Opponent character leaderboard entry unavailable.,Opponent character leaderboard entry unavailable.,La entrada del ranking del personaje del rival no está disponible.
+Waiting for opponent character data.,Waiting for opponent character data.,Esperando datos del personaje del rival.
+Scanning... %d probes fired,Scanning... %d probes fired,Escaneando... %d consultas realizadas
+Total ranked players: %u  |  Samples: %u,Total ranked players: %u  |  Samples: %u,Jugadores clasificatorios totales: %u  |  Muestras: %u
+Distribution search failed.,Distribution search failed.,Falló la búsqueda de distribución.
+Waiting for leaderboard handle...,Waiting for leaderboard handle...,Esperando el identificador de la tabla...
+Opening ladder begins scan.,Opening ladder begins scan.,Abrir la escalera inicia el escaneo.
+Players,Players,Jugadores
+Ignored,Ignored,Ignorado
+Loading,Loading,Cargando
+No ranked progress data available.,No ranked progress data available.,No hay datos de progreso de rango disponibles.
+Show matches,Show matches,Mostrar partidas
+Show wins,Show wins,Mostrar victorias
+Show losses,Show losses,Mostrar derrotas
+Show winrate %,Show winrate %,Mostrar porcentaje de victorias
+Show character leaderboard placement,Show character leaderboard placement,Mostrar posición en tabla del personaje
+Show global leaderboard placement,Show global leaderboard placement,Mostrar posición en tabla global
+Matches,Matches,Partidas
+Wins,Wins,Victorias
+Losses,Losses,Derrotas
+in,in,en
+Leaderboard,Leaderboard,Tabla
+in Global Leaderboard,in Global Leaderboard,en la tabla global
+Demotion %u/%u,Demotion %u/%u,Descenso %u/%u
+Promotion %u/%u,Promotion %u/%u,Ascenso %u/%u
+How does my rank work?,How does my rank work?,¿Cómo funciona mi rango?
+How does my rank work?###RankedRulesDialog,How does my rank work?###RankedRulesDialog,¿Cómo funciona mi rango?###RankedRulesDialog
+Check another rank's rules,Check another rank's rules,Ver las reglas de otro rango
+Check another rank's rules###RankedRulesSelector,Check another rank's rules###RankedRulesSelector,Ver las reglas de otro rango###RankedRulesSelector
+Check a rank's rules###RankedRulesSelector,Check a rank's rules###RankedRulesSelector,Ver reglas de un rango###RankedRulesSelector
+Compare this with another rank,Compare this with another rank,Comparar con otro rango
+Compare this with another rank###RankedRulesCompareSelector,Compare this with another rank###RankedRulesCompareSelector,Comparar con otro rango###RankedRulesCompareSelector
+Rank comparison###RankedRulesComparison,Rank comparison###RankedRulesComparison,Comparación de rangos###RankedRulesComparison
+Detected differences,Detected differences,Diferencias detectadas
+vs,vs,vs
+Show rules,Show rules,Ver reglas
+Rank,Rank,Rango
+Win,Win,Victoria
+Loss,Loss,Derrota
+Opponent Rank,Opponent Rank,Rango rival
+Your rank rules,Your rank rules,Reglas de tu rango
+LP table,LP table,Tabla de LP
+ANY RANK,ANY RANK,CUALQUIER RANGO
+The same type of rules as this rank apply from %s to %s.,The same type of rules as this rank apply from %s to %s.,El mismo tipo de reglas que este rango aplica desde %s hasta %s.
+(resets Demotion Counter),(resets Demotion Counter),(reinicia el contador de descenso)
+(resets Promotion Counter),(resets Promotion Counter),(reinicia el contador de ascenso)
+LV1-LV10 rules,LV1-LV10 rules,Reglas LV1-LV10
+LV11-LV14 rules,LV11-LV14 rules,Reglas LV11-LV14
+LV15-LV18 rules,LV15-LV18 rules,Reglas LV15-LV18
+LV19-LV23 rules,LV19-LV23 rules,Reglas LV19-LV23
+LV24-LV28 rules,LV24-LV28 rules,Reglas LV24-LV28
+LV29-LV33 rules,LV29-LV33 rules,Reglas LV29-LV33
+LV34 rules,LV34 rules,Reglas LV34
+LV35 rules,LV35 rules,Reglas LV35
+Leader rules,Leader rules,Reglas Leader
+Hero rules,Hero rules,Reglas Hero
+Kisshin rules,Kisshin rules,Reglas Kisshin
+Hades rules,Hades rules,Reglas Hades
+Ruler rules,Ruler rules,Reglas Ruler
+"%s - %s","%s - %s","%s - %s"
+"%s (%s)","%s (%s)","%s (%s)"
+"%+d LP","%+d LP","%+d LP"
+" (%+d Promotion Counter)"," (%+d Promotion Counter)"," (%+d Contador de ascenso)"
+"%+d LP (%+d Promotion Counter)","%+d LP (%+d Promotion Counter)","%+d LP (%+d Contador de ascenso)"
+"%+d LP (+1 Demotion Counter)","%+d LP (+1 Demotion Counter)","%+d LP (+1 Contador de descenso)"
+" or higher."," or higher."," o superior."
+or higher.,or higher.,o superior.
+"If you reach %u LP, you'll rank up to %s.","If you reach %u LP, you'll rank up to %s.","Si llegas a %u LP, subirás a %s."
+"At this rank, a win against a lower rank can fill the LP bar, but the rank-up only happens when you beat %s or higher.","At this rank, a win against a lower rank can fill the LP bar, but the rank-up only happens when you beat %s or higher.","En este rango, ganar contra un rango más bajo puede llenar la barra de LP, pero solo subirás si le ganas a %s o superior."
+This is the highest rank covered by the current known rules.,This is the highest rank covered by the current known rules.,Este es el rango más alto cubierto por las reglas conocidas actuales.
+"If you fall to %u LP, you'll rank down to %s.","If you fall to %u LP, you'll rank down to %s.","Si bajas a %u LP, descenderás a %s."
+LP losses do not directly rank you down in this rank.,LP losses do not directly rank you down in this rank.,Las derrotas de LP no te hacen descender directamente en este rango.
++1 Demotion Counter,+1 Demotion Counter,+1 Contador de descenso
+"If you lose against anyone in this range (%s), you'll get +1 Demotion Counter. At %d, you'll rank down to %s.","If you lose against anyone in this range (%s), you'll get +1 Demotion Counter. At %d, you'll rank down to %s.","Si pierdes contra alguien en este rango (%s), recibirás +1 Contador de descenso. Al llegar a %d, descenderás a %s."
+This rank does not use a demotion counter.,This rank does not use a demotion counter.,Este rango no usa contador de descenso.
+Demotion Counter,Demotion Counter,Contador de descenso
+Promotion Counter,Promotion Counter,Contador de ascenso
+"If you win against anyone in this range (%s), you'll add points to your Promotion Counter.","If you win against anyone in this range (%s), you'll add points to your Promotion Counter.","Si ganas contra alguien en este rango (%s), sumarás puntos a tu Contador de ascenso."
+"If your Promotion Counter reaches %d before the LP bar fills, you'll rank up to %s.","If your Promotion Counter reaches %d before the LP bar fills, you'll rank up to %s.","Si tu Contador de ascenso llega a %d antes de llenar la barra de LP, subirás a %s."
+This rank does not use a promotion counter.,This rank does not use a promotion counter.,Este rango no usa contador de ascenso.
+This table shows what the game predicts from one match at this rank. Counter notes only appear when that counter can move.,This table shows what the game predicts from one match at this rank. Counter notes only appear when that counter can move.,Esta tabla muestra lo que el juego predice para una partida en este rango. Las notas de contador solo aparecen cuando ese contador puede cambiar.
+Remember that not every rank works exactly like this. These are only the rules for %s.,Remember that not every rank works exactly like this. These are only the rules for %s.,Recuerda que no todos los rangos funcionan exactamente así. Estas reglas son solo para %s.
+rank,rank,rango
+to,to,a
+If you get above,If you get above,Si superas
+", you'll rank up to",", you'll rank up to",", subirás a"
+"At this rank, a win against a lower rank can fill the LP bar, but the rank-up only happens when you beat","At this rank, a win against a lower rank can fill the LP bar, but the rank-up only happens when you beat","En este rango, ganar contra un rango más bajo puede llenar la barra de LP, pero solo subes si derrotas a"
+If you get below,If you get below,Si bajas de
+", you'll rank down to",", you'll rank down to",", descenderás a"
+If you lose against anyone that is from,If you lose against anyone that is from,Si pierdes contra alguien de
+", you'll get",", you'll get",", recibirás"
+. At,. At,. Al llegar a
+Your,Your,Tu
+resets by winning a ranked match against anyone that is from,resets by winning a ranked match against anyone that is from,se reinicia al ganar una partida clasificatoria contra alguien de
+If you win against anyone that is from,If you win against anyone that is from,Si ganas contra alguien de
+", you'll add points to your",", you'll add points to your",", sumarás puntos a tu"
+resets by losing against anyone that is from,resets by losing against anyone that is from,se reinicia al perder contra alguien de
+Remember that not every rank works exactly like this. These are only the rules for,Remember that not every rank works exactly like this. These are only the rules for,Recuerda que no todos los rangos funcionan exactamente igual. Estas reglas son solo para
+none,none,ninguno
+LP range is,LP range is,tiene un rango de LP de
+%s has a bigger LP range by %u LP.,%s has a bigger LP range by %u LP.,%s tiene un rango de LP mayor por %u LP.
+has a bigger LP range by %u LP.,has a bigger LP range by %u LP.,tiene un rango de LP mayor por %u LP.
+"can fill its LP bar against lower ranks, but can only rank up by beating its own rank or higher.","can fill its LP bar against lower ranks, but can only rank up by beating its own rank or higher.","puede llenar su barra de LP contra rangos inferiores, pero solo puede subir derrotando a su mismo rango o superior."
+does not have this rule.,does not have this rule.,no tiene esta regla.
+promotion counter,promotion counter,contador de ascenso
+demotion counter,demotion counter,contador de descenso
+is enabled at %d points,is enabled at %d points,está activado en %d puntos
+is enabled at %d strikes,is enabled at %d strikes,está activado en %d marcas
+is disabled,is disabled,está desactivado
+promotion counter gain applies against,promotion counter gain applies against,suma contador de ascenso contra
+adds demotion strikes when losing to,adds demotion strikes when losing to,suma marcas de descenso al perder contra
+resets demotion strikes by winning against,resets demotion strikes by winning against,reinicia marcas de descenso al ganar contra
+resets promotion points by losing to,resets promotion points by losing to,reinicia puntos de ascenso al perder contra
+No rule differences were detected for these ranks.,No rule differences were detected for these ranks.,No se detectaron diferencias de reglas para estos rangos.
+YOU ARE NOT IN A ROOM OR ONLINE MATCH!,YOU ARE NOT IN A ROOM OR ONLINE MATCH!,NO ESTAS EN UNA SALA O PARTIDA ONLINE!
+Online type: %s,Online type: %s,Tipo de Online: %s
+Improvement Mod users in Room:,Improvement Mod users in Room:,Usuarios de Improvement Mod en Sala:
+Improvement Mod users in match:,Improvement Mod users in match:,Usuarios de Improvement Mod en Partida:
+Click to open Steam profile,Click to open Steam profile,Click para abrir perfil de Steam
+Spectator,Spectator,Espectador
+Online room window title format,%s - %s###Room,%s - %s###Room
+Wine or Proton detected,Wine or Proton detected,Wine o Proton detectado
+Wine/Proton detected. Controller hooks were disabled to prevent startup crashes. Enable below or set ForceEnableControllerSettingHooks to 1 in settings.ini to override detection.,Wine/Proton detected. Controller hooks were disabled to prevent startup crashes. Enable below or set ForceEnableControllerSettingHooks to 1 in settings.ini to override detection.,Se detectó Wine/Proton. Los ganchos de control se desactivaron para evitar fallos al iniciar. Actívalos abajo o pon ForceEnableControllerSettingHooks en 1 en settings.ini para omitir la detección.
+Enable anyway,Enable anyway,Activar de todos modos
+Keep disabled,Keep disabled,Mantener desactivado
+Controller hooks are disabled because EnableControllerHooks is set to 0.,Controller hooks are disabled because EnableControllerHooks is set to 0.,Los ganchos de control están desactivados porque EnableControllerHooks está en 0.
+This might have been set manually or after detecting Wine/Proton.,This might have been set manually or after detecting Wine/Proton.,Esto se estableció manualmente o automáticamente tras detectar Wine/Proton.
+"To force enable these hooks, set ForceEnableControllerSettingHooks to 1 at your own risk.","To force enable these hooks, set ForceEnableControllerSettingHooks to 1 at your own risk.",Pon ForceEnableControllerSettingHooks en 1 para reactivar las funcionalidades bajo tu propio riesgo.
+Unlimited Playback (BETA),Unlimited Playback (BETA),Playback ilimitado (BETA)
+Popup is always available. Runtime actions only work in the right context.,Popup is always available. Runtime actions only work in the right context.,La ventana siempre abre. Las acciones solo funcionan en el contexto correcto.
+Loop current playback,Loop current playback,Repetir playback actual
+This will continuously loop the current recording slot, subject to absolute positioning.,This will continuously loop the current recording slot, subject to absolute positioning.,Repite continuamente la ranura actual, sujeto al posicionamiento absoluto.
+A native file dialog is already open.,A native file dialog is already open.,Ya hay un selector de archivos nativo abierto.
+Mapped playback bind: %s,Mapped playback bind: %s,Asignado el botón de playback: %s
+Profile Compatibility,Profile Compatibility,Compatibilidad de perfil
+"Profile version mismatch.
+
+File version: %s
+Code version: %s
+
+%s","Profile version mismatch.
+
+File version: %s
+Code version: %s
+
+%s","La versión del perfil no coincide.
+
+Versión del archivo: %s
+Versión del código: %s
+
+%s"
+Load Anyway,Load Anyway,Cargar igual
+Playback Compatibility,Playback Compatibility,Compatibilidad de playback
+"Playback version mismatch.
+
+File version: %s
+Code version: %s
+
+%s","Playback version mismatch.
+
+File version: %s
+Code version: %s
+
+%s","La versión del playback no coincide.
+
+Versión del archivo: %s
+Versión del código: %s
+
+%s"
+Import Anyway,Import Anyway,Importar igual
+Add from CF Slot,Add from CF Slot,Añadir desde ranura CF
+Add from file,Add from file,Añadir desde archivo
+Add from replay,Add from replay,Añadir desde replay
+Capture a playback from one of the 4 CF slots,Capture a playback from one of the 4 CF slots,Captura un playback de una de las 4 ranuras CF
+Import a playback file into the library,Import a playback file into the library,Importa un archivo de playback a la biblioteca
+Record a new playback entry from a replay,Record a new playback entry from a replay,Graba una nueva entrada desde un replay
+Library (%d),Library (%d),Biblioteca (%d)
+Send to CF Slot,Send to CF Slot,Enviar a ranura CF
+Save to File,Save to File,Guardar en archivo
+Export playback entry file dialog open...,Export playback entry file dialog open...,Selector para exportar playback abierto...
+Play,Play,Reproducir
+Play (Disabled due to not being in lab),Play (Disabled due to not being in lab),Reproducir (desactivado fuera del lab)
+Edit,Edit,Editar
+Delete,Delete,Eliminar
+Default,Default,Por defecto
+Load a library profile,Load a library profile,Cargar un perfil de biblioteca
+Save the current library as a profile,Save the current library as a profile,Guardar la biblioteca actual como perfil
+Reset the current library,Reset the current library,Restablecer la biblioteca actual
+Load profile file dialog open...,Load profile file dialog open...,Selector para cargar perfil abierto...
+Save profile file dialog open...,Save profile file dialog open...,Selector para guardar perfil abierto...
+Add Playback Entry,Add Playback Entry,Añadir entrada de playback
+Add from replay is only available while a replay match is active in Replay Theater.,Add from replay is only available while a replay match is active in Replay Theater.,Añadir desde replay solo funciona con una repetición activa en Replay Theater.
+Import playback file dialog open...,Import playback file dialog open...,Selector para importar playback abierto...
+Add from Replay,Add from Replay,Añadir desde replay
+Capture from replay,Capture from replay,Capturar desde replay
+Recording %s inputs (start frame %d),Recording %s inputs (start frame %d),Grabando inputs de %s (frame inicial %d)
+Name,Name,Nombre
+Stop and Save,Stop and Save,Detener y guardar
+Record P1 Inputs,Record P1 Inputs,Grabar inputs P1
+Record P2 Inputs,Record P2 Inputs,Grabar inputs P2
+Replay capture only starts while a replay match is active.,Replay capture only starts while a replay match is active.,La captura solo empieza con una repetición activa.
+Library Settings,Library Settings,Ajustes de biblioteca
+Random,Random,Aleatorio
+Sequential,Sequential,Secuencial
+Non-repeating Random,Non-repeating Random,Aleatorio sin repetir
+Playback Mode,Playback Mode,Modo de playback
+How the library chooses the next enabled entry when playback is triggered.,How the library chooses the next enabled entry when playback is triggered.,Cómo la biblioteca elige la siguiente entrada activa al dispararse.
+Playback mode: %s,Playback mode: %s,Modo de playback: %s
+Auto-mirror on side swap,Auto-mirror on side swap,Autoespejo al cambiar lado
+Mirrors directional inputs when the recorded side and current side differ.,Mirrors directional inputs when the recorded side and current side differ.,Espeja las direcciones si el lado grabado y el actual difieren.
+Wakeup,Wakeup,Wakeup
+On Block,On Block,En bloqueo
+On Hit,On Hit,Al golpear
+Throw Tech,Throw Tech,Tech de throw
+Key Press,Key Press,Pulsación de tecla
+Unknown,Unknown,Desconocido
+Playback Trigger Type,Playback Trigger Type,Tipo de disparador
+Selects the single trigger type that can fire library playback.,Selects the single trigger type that can fire library playback.,Selecciona el único disparador que puede activar la biblioteca.
+Playback trigger: %s,Playback trigger: %s,Disparador de playback: %s
+%s Config,%s Config,Config. de %s
+Cooldown Frames,Cooldown Frames,Frames de cooldown
+Blocks the same trigger from firing again for this many frames after it activates.,Blocks the same trigger from firing again for this many frames after it activates.,Impide que el mismo disparador vuelva a activarse durante estos frames.
+Maps the button or key used by the Key Press trigger.,Maps the button or key used by the Key Press trigger.,Asigna el botón o tecla usada por el disparador de tecla.
+Map Playback Bind,Map Playback Bind,Asignar botón playback
+Fix Triggers,Fix Triggers,Arreglar disparadores
+Use this after Training reset if triggers temporarily stop firing. It clears trigger cooldown and edge state.,Use this after Training reset if triggers temporarily stop firing. It clears trigger cooldown and edge state.,Úsalo tras reiniciar Training si los disparadores dejan de activarse. Limpia cooldown y estado de borde.
+Activity,Activity,Actividad
+Reset Library?,Reset Library?,¿Restablecer biblioteca?
+Reset the current library and clear all loaded entries?,Reset the current library and clear all loaded entries?,¿Restablecer la biblioteca actual y borrar todas las entradas cargadas?
+Reset,Reset,Restablecer
+Delete Entry?,Delete Entry?,¿Eliminar entrada?
+Delete this playback entry from the library?,Delete this playback entry from the library?,¿Eliminar esta entrada de playback de la biblioteca?
+Capture Slot,Capture Slot,Ranura de captura
+Edit Library Entry,Edit Library Entry,Editar entrada de biblioteca
+Weight,Weight,Peso
+Edit Playback,Edit Playback,Editar playback
+Entry updated.,Entry updated.,Entrada actualizada.
+Edit Entry Playback,Edit Entry Playback,Editar playback de entrada
+Playback editor is unavailable.,Playback editor is unavailable.,El editor de playback no está disponible.
+Entry no longer exists.,Entry no longer exists.,La entrada ya no existe.
+CF Slot,CF Slot,Ranura CF
+Send,Send,Enviar
+Load unlimited playback profile,Load unlimited playback profile,Cargar perfil de playback ilimitado
+Save unlimited playback profile,Save unlimited playback profile,Guardar perfil de playback ilimitado
+Import unlimited playback entry,Import unlimited playback entry,Importar entrada de playback ilimitado
+Export unlimited playback entry,Export unlimited playback entry,Exportar entrada de playback ilimitado
+Pad A,Pad A,Pad A
+Pad B,Pad B,Pad B
+Pad X,Pad X,Pad X
+Pad Y,Pad Y,Pad Y
+Pad LB,Pad LB,Pad LB
+Pad RB,Pad RB,Pad RB
+Pad Back,Pad Back,Pad Back
+Pad Start,Pad Start,Pad Start
+Pad LS,Pad LS,Pad LS
+Pad RS,Pad RS,Pad RS
+Pad Up,Pad Up,Pad Arriba
+Pad Down,Pad Down,Pad Abajo
+Pad Left,Pad Left,Pad Izquierda
+Pad Right,Pad Right,Pad Derecha
+VK_%d,VK_%d,VK_%d
+Invalid playback destination.,Invalid playback destination.,Destino de playback inválido.
+Playback payload was too small.,Playback payload was too small.,Los datos del playback eran demasiado pequeños.
+"Playback rejected: file v%s, code v%s.","Playback rejected: file v%s, code v%s.","Playback rechazado: archivo v%s, código v%s."
+Playback file header is missing.,Playback file header is missing.,Falta la cabecera del archivo de playback.
+Trigger runtime state reset.,Trigger runtime state reset.,Estado de disparadores restablecido.
+Trigger runtime resynced after training reset.,Trigger runtime resynced after training reset.,Disparadores resincronizados tras el reinicio de Training.
+Could not read playback file.,Could not read playback file.,No se pudo leer el archivo de playback.
+File not found.,File not found.,Archivo no encontrado.
+Invalid playback file.,Invalid playback file.,Archivo de playback inválido.
+Playback imported.,Playback imported.,Playback importado.
+Slot must be between 1 and 4.,Slot must be between 1 and 4.,La ranura debe estar entre 1 y 4.
+Captured slot to library.,Captured slot to library.,Ranura capturada en la biblioteca.
+Start replay recording only while a replay match is active.,Start replay recording only while a replay match is active.,La grabación solo empieza con una repetición activa.
+Replay recording started: %s.,Replay recording started: %s.,Grabación de replay iniciada: %s.
+No replay recording in progress.,No replay recording in progress.,No hay una grabación de replay en curso.
+Replay recording cancelled (left replay match).,Replay recording cancelled (left replay match).,Grabación cancelada (saliste del replay).
+Replay recording cancelled (too short).,Replay recording cancelled (too short).,Grabación cancelada (demasiado corta).
+Replay recording cancelled (failed reading replay frames).,Replay recording cancelled (failed reading replay frames).,Grabación cancelada (falló la lectura de frames).
+Replay recording saved to library.,Replay recording saved to library.,Grabación de replay guardada en la biblioteca.
+Entry removed.,Entry removed.,Entrada eliminada.
+Entry renamed.,Entry renamed.,Entrada renombrada.
+Sending to a CF slot works only during a training match.,Sending to a CF slot works only during a training match.,Enviar a una ranura CF solo funciona en Training.
+Failed loading entry.,Failed loading entry.,Error al cargar la entrada.
+Entry loaded into slot.,Entry loaded into slot.,Entrada cargada en la ranura.
+Entry overwritten from slot.,Entry overwritten from slot.,Entrada sobrescrita desde la ranura.
+Entry saved.,Entry saved.,Entrada guardada.
+Failed saving entry to file.,Failed saving entry to file.,Error al guardar la entrada en archivo.
+Entry saved to file.,Entry saved to file.,Entrada guardada en archivo.
+Play now works only during a training match.,Play now works only during a training match.,Reproducir ahora solo funciona en Training.
+Played: %s%s,Played: %s%s,Reproducido: %s%s
+ (mirrored), (mirrored), (espejado)
+Unlimited playback config cleared.,Unlimited playback config cleared.,Configuración de playback ilimitado borrada.
+Failed to save profile.,Failed to save profile.,Error al guardar el perfil.
+Profile save failed: entry data missing for '%s'.,Profile save failed: entry data missing for '%s'.,Error al guardar el perfil: faltan datos de '%s'.
+Profile saved.,Profile saved.,Perfil guardado.
+Could not read profile file.,Could not read profile file.,No se pudo leer el archivo de perfil.
+Failed to open profile.,Failed to open profile.,Error al abrir el perfil.
+"Playback rejected (newer format): file v%s, code v%s.","Playback rejected (newer format): file v%s, code v%s.","Playback rechazado (formato más nuevo): archivo v%s, código v%s."
+"Profile compatibility rejected (file v%s, code v%s).","Profile compatibility rejected (file v%s, code v%s).","Compatibilidad del perfil rechazada (archivo v%s, código v%s)."
+"Profile version mismatch requires confirmation (file v%s, code v%s).","Profile version mismatch requires confirmation (file v%s, code v%s).","La diferencia de versión del perfil requiere confirmación (archivo v%s, código v%s)."
+Profile load failed: embedded playback missing for '%s'.,Profile load failed: embedded playback missing for '%s'.,Error al cargar el perfil: falta el playback embebido de '%s'.
+Profile load failed for '%s': %s,Profile load failed for '%s': %s,Error al cargar el perfil de '%s': %s
+Profile load failed for '%s'.,Profile load failed for '%s'.,Error al cargar el perfil de '%s'.
+Profile loaded. Trigger runtime synced.,Profile loaded. Trigger runtime synced.,Perfil cargado. Disparadores resincronizados.
+Trigger detected: %s,Trigger detected: %s,Disparador detectado: %s
+No eligible playback in current trigger selection.,No eligible playback in current trigger selection.,No hay playback válido para el disparador actual.
+Selected playback cache missing.,Selected playback cache missing.,Falta la caché del playback seleccionado.
+Triggered [%s]: %s%s,Triggered [%s]: %s%s,Activado [%s]: %s%s
+Slot %d,Slot %d,Ranura %d
+Replay %s,Replay %s,Replay %s

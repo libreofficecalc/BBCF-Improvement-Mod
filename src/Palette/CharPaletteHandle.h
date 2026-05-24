@@ -35,8 +35,9 @@ class CharPaletteHandle
 public:
 	void SetPointerPalIndex(int* pPalIdx);
 	void SetPointerBasePal(char* pPalBaseAddr);
-	bool IsNullPointerPalBasePtr();
-	bool IsNullPointerPalIndex();
+	bool IsNullPointerPalBasePtr() const;
+	bool IsNullPointerPalIndex() const;
+	bool IsPaletteDataReady() const;
 	int& GetPalIndexRef();
 	int GetOrigPalIndex() const;
 	bool IsCurrentPalWithBloom() const;
@@ -56,6 +57,8 @@ private:
 	void SetCurrentPalInfo(IMPL_info_t* pPalInfo);
 	const IMPL_data_t& GetCurrentPalData();
 	char* GetPalFileAddr(const char* base, int palIdx, int fileIdx);
+	bool TryGetPalFileAddr(int palIdx, int fileIdx, char** ppPalFileAddr) const;
+	bool CanResolvePalFileAddr(int palIdx, int fileIdx) const;
 	void ReplacePalArrayInMemory(char* Dst, const void* Src);
 	void ReplaceSinglePalFile(const char* newPalData, PaletteFile palFile);
 	void ReplaceAllPalFiles(IMPL_data_t* newPaletteData, int palIdx);

@@ -791,7 +791,7 @@ void DebugWindow::DrawSettingsSection() {
 		return;
 	if (ImGui::Button("Disable UploadReplayData")) {
 		Settings::changeSetting("UploadReplayData", std::to_string(0));
-		Settings::loadSettingsFile();
+		Settings::settingsIni.uploadReplayData = 0;
 
 	}
 	

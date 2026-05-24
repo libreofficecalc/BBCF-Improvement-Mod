@@ -7,12 +7,16 @@
 #include <fstream>
 #include "Core/utils.h"
 
+namespace {
+using SetTrainingPlaybackControlFn = void(__thiscall*)(void* trainingState, int playbackControl, int arg2);
+}
 
 
 PlaybackManager::PlaybackManager()
 {
     this->slots = std::vector<PlaybackSlot>{ PlaybackSlot(1), PlaybackSlot(2), PlaybackSlot(3), PlaybackSlot(4) };
     this->bbcf_base_adress = GetBbcfBaseAdress();
+    this->training_state_p = this->bbcf_base_adress + this->training_state_offset;
     this->playback_control_p = this->bbcf_base_adress + this->playback_control_offset;
     this->active_slot_p = this->bbcf_base_adress + this->active_slot_offset;
 }
@@ -82,8 +86,15 @@ void PlaybackManager::load_into_slot(std::vector<char> trimmed_playback, int slo
 //this version of the function takes the facing_left argument to set the direction byte as well
 void PlaybackManager::load_into_slot(std::vector<char> trimmed_playback, int facing_left, int slot) {
     //the playback is not necessarily trimmed btw, just leaving for reference until I overhaul scrwindow
-    *(PlaybackSlot(slot).facing_direction_p) = facing_left;
+    const int facingDirection = facing_left;
+    memcpy(PlaybackSlot(slot).facing_direction_p, &facingDirection, sizeof(facingDirection));
     this->slots[slot - 1].load_into_slot(trimmed_playback);
+}
+
+void PlaybackManager::load_raw_into_slot(const std::vector<char>& raw_playback, int facing_left, int slot) {
+    const int facingDirection = facing_left;
+    memcpy(PlaybackSlot(slot).facing_direction_p, &facingDirection, sizeof(facingDirection));
+    this->slots[slot - 1].load_raw_into_slot(raw_playback);
 }
 void PlaybackManager::load_from_file_into_slot(char* fname, int slot)
 {
@@ -108,7 +119,12 @@ void PlaybackManager::set_active_slot(int slot)
 
 void PlaybackManager::set_playback_control(int playback_control)
 {
-    memcpy(this->playback_control_p, &playback_control, 2);
+    if (!this->bbcf_base_adress || !this->training_state_p) {
+        return;
+    }
+
+    auto fn = reinterpret_cast<SetTrainingPlaybackControlFn>(this->bbcf_base_adress + 0x2CFB10);
+    fn(this->training_state_p, playback_control, -1);
 }
 
 void PlaybackManager::set_playback_position(int frame_position) {

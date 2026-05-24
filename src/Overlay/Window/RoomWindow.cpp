@@ -1,5 +1,6 @@
 #include "RoomWindow.h"
 
+#include "Core/Localization.h"
 #include "Core/interfaces.h"
 #include "Core/utils.h"
 #include "Game/gamestates.h"
@@ -34,10 +35,10 @@ void RoomWindow::BeforeDraw()
 
 void RoomWindow::Draw()
 {
-	if (!g_interfaces.pRoomManager->IsRoomFunctional())
-	{
-		ImGui::TextDisabled("YOU ARE NOT IN A ROOM OR ONLINE MATCH!");
-		m_windowTitle = m_origWindowTitle;
+        if (!g_interfaces.pRoomManager->IsRoomFunctional())
+        {
+                ImGui::TextDisabled(Messages.YOU_ARE_NOT_IN_A_ROOM_OR_ONLINE_MATCH());
+                m_windowTitle = m_origWindowTitle;
 
 		return;
 	}
@@ -45,7 +46,7 @@ void RoomWindow::Draw()
 	std::string roomTypeName = g_interfaces.pRoomManager->GetRoomTypeName();
 	SetWindowTitleRoomType(roomTypeName);
 
-	ImGui::Text("Online type: %s", roomTypeName.c_str());
+        ImGui::Text(Messages.Online_type_s(), roomTypeName.c_str());
 
 	ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 5.0f);
 
@@ -97,24 +98,24 @@ void RoomWindow::Draw()
 
 void RoomWindow::SetWindowTitleRoomType(const std::string& roomTypeName)
 {
-	m_windowTitle = "Online - " + roomTypeName + "###Room";
+        m_windowTitle = FormatText(Messages.Online_room_window_title_format(), Messages.Online(), roomTypeName.c_str());
 }
 
 void RoomWindow::ShowClickableSteamUser(const char* playerName, const CSteamID& steamId) const
 {
-	ImGui::TextUnformatted(playerName);
-	ImGui::HoverTooltip("Click to open Steam profile");
-	if (ImGui::IsItemClicked())
-	{
-		g_interfaces.pSteamFriendsWrapper->ActivateGameOverlayToUser("steamid", steamId);
+        ImGui::TextUnformatted(playerName);
+        ImGui::HoverTooltip(Messages.Click_to_open_Steam_profile());
+        if (ImGui::IsItemClicked())
+        {
+                g_interfaces.pSteamFriendsWrapper->ActivateGameOverlayToUser("steamid", steamId);
 	}
 }
 
 void RoomWindow::DrawRoomImPlayers()
 {
 	ImGui::BeginGroup();
-	ImGui::TextUnformatted("Improvement Mod users in Room:");
-	ImGui::BeginChild("RoomImUsers", ImVec2(230, 150), true);
+        ImGui::TextUnformatted(Messages.Improvement_Mod_users_in_Room());
+        ImGui::BeginChild("RoomImUsers", ImVec2(230, 150), true);
 
 	for (const IMPlayer& imPlayer : g_interfaces.pRoomManager->GetIMPlayersInCurrentRoom())
 	{
@@ -129,8 +130,8 @@ void RoomWindow::DrawRoomImPlayers()
 void RoomWindow::DrawMatchImPlayers()
 {
 	ImGui::BeginGroup();
-	ImGui::TextUnformatted("Improvement Mod users in match:");
-	ImGui::BeginChild("MatchImUsers", ImVec2(230, 150), true);
+        ImGui::TextUnformatted(Messages.Improvement_Mod_users_in_match());
+        ImGui::BeginChild("MatchImUsers", ImVec2(230, 150), true);
 
 	if (g_interfaces.pRoomManager->IsThisPlayerInMatch())
 	{
@@ -140,12 +141,12 @@ void RoomWindow::DrawMatchImPlayers()
 			uint16_t matchPlayerIndex = g_interfaces.pRoomManager->GetPlayerMatchPlayerIndexByRoomMemberIndex(imPlayer.roomMemberIndex);
 			std::string playerType;
 
-			if (matchPlayerIndex == 0)
-				playerType = "Player 1";
-			else if (matchPlayerIndex == 1)
-				playerType = "Player 2";
-			else
-				playerType = "Spectator";
+                        if (matchPlayerIndex == 0)
+                                playerType = Messages.Player_1();
+                        else if (matchPlayerIndex == 1)
+                                playerType = Messages.Player_2();
+                        else
+                                playerType = Messages.Spectator();
 
 			ShowClickableSteamUser(imPlayer.steamName.c_str(), imPlayer.steamID);
 			ImGui::NextColumn();

@@ -1,20 +1,31 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 2013
-VisualStudioVersion = 12.0.21005.1
+# Visual Studio Version 18
+VisualStudioVersion = 18.3.11520.95 d18.3
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "BBCF_IM", "BBCF_IM.vcxproj", "{CB50353A-2EC9-4D1C-89C6-65A621C335C5}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{0CC7834C-6DBA-414D-8999-F14539D13068}"
+	ProjectSection(SolutionItems) = preProject
+		deploy\DeploySettings.props = deploy\DeploySettings.props
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Win32 = Debug|Win32
+		DebugDeploy|Win32 = DebugDeploy|Win32
 		Release|Win32 = Release|Win32
+		ReleaseDeploy|Win32 = ReleaseDeploy|Win32
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
 		{CB50353A-2EC9-4D1C-89C6-65A621C335C5}.Debug|Win32.ActiveCfg = Debug|Win32
 		{CB50353A-2EC9-4D1C-89C6-65A621C335C5}.Debug|Win32.Build.0 = Debug|Win32
+		{CB50353A-2EC9-4D1C-89C6-65A621C335C5}.DebugDeploy|Win32.ActiveCfg = DebugDeploy|Win32
+		{CB50353A-2EC9-4D1C-89C6-65A621C335C5}.DebugDeploy|Win32.Build.0 = DebugDeploy|Win32
 		{CB50353A-2EC9-4D1C-89C6-65A621C335C5}.Release|Win32.ActiveCfg = Release|Win32
 		{CB50353A-2EC9-4D1C-89C6-65A621C335C5}.Release|Win32.Build.0 = Release|Win32
+		{CB50353A-2EC9-4D1C-89C6-65A621C335C5}.ReleaseDeploy|Win32.ActiveCfg = ReleaseDeploy|Win32
+		{CB50353A-2EC9-4D1C-89C6-65A621C335C5}.ReleaseDeploy|Win32.Build.0 = ReleaseDeploy|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

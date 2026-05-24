@@ -1,6 +1,7 @@
 #include "ScrWindow.h"
 
 #include "Core/interfaces.h"
+#include "Core/Localization.h"
 #include "Core/Settings.h"
 #include "Core/utils.h"
 #include "Game/gamestates.h"
@@ -23,6 +24,8 @@
 #include "Core/info.h"
 #include <windows.h>
 #include "Game/Playbacks/PlaybackManager.h"
+#include "Game/Playbacks/UnlimitedPlaybackManager.h"
+#include "Game/ReplayTakeover/ReplayTakeoverFeatureFlags.h"
 #include "Overlay/imgui_utils.h"
 #include <cstdlib>
 #include <ctime>
@@ -1055,12 +1058,20 @@ void ScrWindow::DrawPlaybackSection() {
     char* bbcf_base_adress = GetBbcfBaseAdress();
     char* active_slot = bbcf_base_adress + 0x902C3C;
     static bool loop_playback = false;
-   
+    auto& unlimitedPlayback = UnlimitedPlaybackManager::Instance();
+    unlimitedPlayback.InitializeIfNeeded();
     //ScrWindow::DrawPlaybackEditor();
     if (ImGui::CollapsingHeader("Playback")) {
-        ImGui::Checkbox("Loop current playback", &loop_playback);
+        if (ImGui::Button(L("Unlimited Playback (BETA)").c_str())) {
+            ScrWindow::m_pWindowContainer->GetWindow(WindowType_UnlimitedPlayback)->ToggleOpen();
+        }
         ImGui::SameLine();
-        ImGui::ShowHelpMarker("This will continuously loop the current recording slot, subject to absolute positioning.");
+        ImGui::TextDisabled("%s", L("Popup is always available. Runtime actions only work in the right context.").c_str());
+        ImGui::TextWrapped("%s", unlimitedPlayback.GetStatusText().c_str());
+
+        ImGui::Checkbox(L("Loop current playback").c_str(), &loop_playback);
+        ImGui::SameLine();
+        ImGui::ShowHelpMarker(L("This will continuously loop the current recording slot, subject to absolute positioning.").c_str());
         ScrWindow::DrawPlaybackEditor();
         if (ImGui::CollapsingHeader("SLOT_1")) {
             draw_playback_slot_section(1);
@@ -1369,26 +1380,35 @@ void ScrWindow::DrawSaveStates() {
         return;
     if (*(bbcf_base_adress + 0x8F7758) == 0) {
         if (!g_interfaces.player1.IsCharDataNullPtr() && !g_interfaces.player2.IsCharDataNullPtr()) {
-            if (snap_apparatus == nullptr) {
-
-                snap_apparatus = new SnapshotApparatus();
-            }
-            if (!snap_apparatus->check_if_valid(g_interfaces.player1.GetData(),
-                g_interfaces.player2.GetData())) {
-                delete snap_apparatus;
-                snap_apparatus = new SnapshotApparatus();
-            }
+            auto ensure_snapshot_apparatus = [&]() -> SnapshotApparatus* {
+                if (snap_apparatus == nullptr) {
+                    snap_apparatus = new SnapshotApparatus();
+                }
+                else if (!snap_apparatus->check_if_valid(g_interfaces.player1.GetData(),
+                    g_interfaces.player2.GetData())) {
+                    delete snap_apparatus;
+                    snap_apparatus = new SnapshotApparatus();
+                }
+                return snap_apparatus;
+            };
             static float wait_before_exec_s = 0;
 
             if (ImGui::Button("Save snapshot") || ImGui::IsKeyPressed(g_modVals.save_states_save_keycode)) {
-                snap_apparatus->save_snapshot(0);
+                SnapshotApparatus* apparatus = ensure_snapshot_apparatus();
+                if (apparatus) {
+                    apparatus->save_snapshot(0);
+                }
             }
             ImGui::SameLine();
             ImGui::ShowHelpMarker("You can use a hotkey to activate it, default is F5 but can be changed in settings.ini between F1-9.");
             ImGui::SameLine();
-            if (snap_apparatus->snapshot_count != 0) {
+            const bool has_snapshot = snap_apparatus && snap_apparatus->snapshot_count != 0;
+            if (has_snapshot) {
                 if (ImGui::Button("Load snapshot") || ImGui::IsKeyPressed(g_modVals.save_states_load_keycode)) {
-                    snap_apparatus->load_snapshot(0);
+                    SnapshotApparatus* apparatus = ensure_snapshot_apparatus();
+                    if (apparatus) {
+                        apparatus->load_snapshot(0);
+                    }
                     if (wait_before_exec_s > 0) {
                         g_gameVals.isFrameFrozen = true;
 
@@ -1832,6 +1852,17 @@ void ScrWindow::DrawReplayTakeover() {
     static std::vector<char> replay_action_load{};
     static SnapshotApparatus* snap_apparatus_takeover = nullptr;
     static int facing_left_replay_takeover = 0;
+    auto ensure_snapshot_apparatus_takeover = [&]() -> SnapshotApparatus* {
+        if (snap_apparatus_takeover == nullptr) {
+            snap_apparatus_takeover = new SnapshotApparatus();
+        }
+        else if (!snap_apparatus_takeover->check_if_valid(g_interfaces.player1.GetData(),
+            g_interfaces.player2.GetData())) {
+            delete snap_apparatus_takeover;
+            snap_apparatus_takeover = new SnapshotApparatus();
+        }
+        return snap_apparatus_takeover;
+    };
     char current_round = *(bbcf_base + 0x11C034C);
     //these are merely demonstrative, the formula to get the start of a players inputs in a round is: bbcf_base + 0x115B470 + 0x8d4 + (0x7080 * player_to_playback) + (0xE100 * current_round);
     char* r1p1_start = bbcf_base + 0x115B470 + 0x8d4;
@@ -1844,17 +1875,19 @@ void ScrWindow::DrawReplayTakeover() {
 
     if (!ImGui::CollapsingHeader("Replay Takeover"))
         return;
+
+#if BBCF_ENABLE_UNLIMITED_REPLAY_TAKEOVER
+    {
+        if (ImGui::Button("Unlimited Replay Takeover (BETA)")) {
+            ScrWindow::m_pWindowContainer->GetWindow(WindowType_UnlimitedReplayTakeover)->ToggleOpen();
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("Capture replay situations into a training library.");
+    }
+#endif
+
     if (*(bbcf_base_adress + 0x8F7758) == 0) { //checks if it is searching for a ranked match
         if (!g_interfaces.player1.IsCharDataNullPtr() && !g_interfaces.player2.IsCharDataNullPtr()) {
-            if (snap_apparatus_takeover == nullptr) {
-
-                snap_apparatus_takeover = new SnapshotApparatus();
-            }
-            if (!snap_apparatus_takeover->check_if_valid(g_interfaces.player1.GetData(),
-                g_interfaces.player2.GetData())) {
-                delete snap_apparatus_takeover;
-                snap_apparatus_takeover = new SnapshotApparatus();
-            }
         }
         else {
             ImGui::Text("Cannot access replay takeover outside of a replay");
@@ -1864,8 +1897,12 @@ void ScrWindow::DrawReplayTakeover() {
         if (*g_gameVals.pGameMode == GameMode_ReplayTheater) {
             if (ImGui::Button("Takeover as P1")) {
                 if (!g_interfaces.player1.IsCharDataNullPtr() && !g_interfaces.player2.IsCharDataNullPtr()) {
+                    SnapshotApparatus* apparatus = ensure_snapshot_apparatus_takeover();
+                    if (!apparatus) {
+                        return;
+                    }
                     *g_gameVals.pGameMode = GameMode_Training;
-                    snap_apparatus_takeover->save_snapshot(0);
+                    apparatus->save_snapshot(0);
 
                     int player_to_playback = 1;
                     char* rpstart = r1p1_start + (0x7080 * player_to_playback) + (0xE100 * current_round);
@@ -1887,8 +1924,12 @@ void ScrWindow::DrawReplayTakeover() {
             ImGui::SameLine();
             if (ImGui::Button("Takeover as P2")) {
                 if (!g_interfaces.player1.IsCharDataNullPtr() && !g_interfaces.player2.IsCharDataNullPtr()) {
+                    SnapshotApparatus* apparatus = ensure_snapshot_apparatus_takeover();
+                    if (!apparatus) {
+                        return;
+                    }
                     *g_gameVals.pGameMode = GameMode_Training;
-                    snap_apparatus_takeover->save_snapshot(0);
+                    apparatus->save_snapshot(0);
 
 
                     int player_to_playback = 0;

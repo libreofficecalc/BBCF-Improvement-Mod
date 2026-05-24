@@ -3,6 +3,7 @@
 
 
 #include "Core/interfaces.h"
+#include "Core/Localization.h"
 #include "Game/gamestates.h"
 #include "imgui_internal.h"
 #include "Core/utils.h"
@@ -145,7 +146,7 @@ void FrameHistoryWindow::Draw() {
 		StatePairQueue& queue = history.read();
 		int frame_idx = 0;
 
-		ImGui::Text("Player 1:");
+ImGui::Text(Messages.Player_1());
 		// Rows starting point. Be careful where you place this
 		ImVec2 cursor_p = ImGui::GetCursorScreenPos();
 
@@ -158,7 +159,7 @@ void FrameHistoryWindow::Draw() {
 
 		// Reclaim space after player 1 rows so Player 2 appears below
 		ImGui::Dummy(ImVec2(0, (height + spacing) * ((rows >> 1) - 1) + height));
-		ImGui::Text("Player 2:");
+ImGui::Text(Messages.Player_2());
 		for (StatePairQueue::reverse_iterator elem = queue.rbegin(); elem != queue.rend(); ++elem) {
 			PlayerFrameState p1state = elem->front();
 			PlayerFrameState p2state = elem->back();

@@ -4,16 +4,23 @@
 #include "NotificationBar/NotificationBar.h"
 #include "WindowContainer/WindowContainer.h"
 #include "Window/LogWindow.h"
+#include "Window/MainWindow.h"
+#include "Window/Ranked/RankedProgressWindow.h"
+#include "Window/WinePopupWindow.h"
 
 #include "Core/info.h"
 #include "Core/interfaces.h"
+#include "Core/Localization.h"
 #include "Core/logger.h"
+#include "Core/RuntimePlatform.h"
 #include "Core/Settings.h"
+#include "Core/WineCheck.h"
 #include "Core/utils.h"
 #include "Web/update_check.h"
 
 #include <imgui.h>
 #include <imgui_impl_dx9.h>
+#include <cstdio>
 #include <ctime>
 
 #define DEFAULT_ALPHA 0.87f
@@ -24,7 +31,7 @@ int keyToggleHud;
 
 WindowManager* WindowManager::m_instance = nullptr;
 
-WindowManager & WindowManager::GetInstance()
+WindowManager& WindowManager::GetInstance()
 {
 	if (m_instance == nullptr)
 	{
@@ -33,7 +40,7 @@ WindowManager & WindowManager::GetInstance()
 	return *m_instance;
 }
 
-bool WindowManager::Initialize(void *hwnd, IDirect3DDevice9 *device)
+bool WindowManager::Initialize(void* hwnd, IDirect3DDevice9* device)
 {
 	if (m_initialized)
 	{
@@ -64,9 +71,25 @@ bool WindowManager::Initialize(void *hwnd, IDirect3DDevice9 *device)
 
 	m_pLogger->Log("[system] Initialization starting...\n");
 
-	m_windowContainer = new WindowContainer();
+        m_windowContainer = new WindowContainer();
 
-	ImGui::StyleColorsDark();
+        const bool wineLikely = WineCheck();
+        if (wineLikely || !IsSafeToUseControllerHooks())
+        {
+                if (!Settings::settingsIni.ForceEnableControllerSettingHooks && Settings::settingsIni.EnableControllerHooks)
+                {
+                        LOG(1, "Wine/Proton detected; disabling hooks that break under Wine.\n");
+                        Settings::changeSetting("EnableControllerHooks", "0");
+                        Settings::settingsIni.EnableControllerHooks = 0;
+                }
+
+                if (!Settings::settingsIni.ForceEnableControllerSettingHooks)
+                {
+                        m_windowContainer->GetWindow<WinePopupWindow>(WindowType_WinePopup)->Open();
+                }
+        }
+
+        ImGui::StyleColorsDark();
 	ImGuiStyle& style = ImGui::GetStyle();
 	style.WindowBorderSize = 1;
 	style.FrameBorderSize = 1;
@@ -155,8 +178,17 @@ bool WindowManager::Initialize(void *hwnd, IDirect3DDevice9 *device)
 	notificationText += " (DEBUG)";
 #endif
 
-	g_notificationBar->AddNotification("%s (Press %s to open the main window)",
-		notificationText.c_str(), Settings::settingsIni.togglebutton.c_str());
+        g_notificationBar->AddLocalizedNotification([notificationText]() {
+                const char* format = Messages.Main_window_notification_format();
+                const auto& toggleButton = Settings::settingsIni.togglebutton;
+
+                const int size = std::snprintf(nullptr, 0, format, notificationText.c_str(), toggleButton.c_str()) + 1;
+                std::string formatted(static_cast<size_t>(size), ' ');
+                std::snprintf(&formatted[0], static_cast<size_t>(size), format,
+                        notificationText.c_str(), toggleButton.c_str());
+
+                return formatted;
+        });
 
 	m_pLogger->Log("[system] Finished initialization\n");
 	m_pLogger->LogSeparator();
@@ -246,6 +278,7 @@ void WindowManager::Render()
 	}
 
 	DrawAllWindows();
+	DrawRankedProgressOverlayStandalone();
 
 	g_notificationBar->DrawNotifications();
 

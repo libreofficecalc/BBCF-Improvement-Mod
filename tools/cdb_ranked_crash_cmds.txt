@@ -1,0 +1,5 @@
+.ecxr
+kb 60
+lm m dinput8
+u @eip-32 @eip+32
+q

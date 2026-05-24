@@ -1,0 +1,4 @@
+// Localization resources packaged into the DLL so external files aren't required at runtime.
+#include <windows.h>
+
+"Localization.csv" RCDATA "localization\\Localization.csv"

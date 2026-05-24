@@ -4,6 +4,123 @@
 #include "Core/logger.h"
 #include "Core/utils.h"
 #include "Game/gamestates.h"
+#include "Hooks/hooks_bbcf.h"
+#include "Hooks/RankedAutomationHarness.h"
+
+#include <algorithm>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
+#include <intrin.h>
+#include <sstream>
+#include <string>
+
+namespace
+{
+	std::string ToLowerCopy(const char* text)
+	{
+		if (!text)
+		{
+			return std::string();
+		}
+
+		std::string lowered(text);
+		std::transform(lowered.begin(), lowered.end(), lowered.begin(),
+			[](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+		return lowered;
+	}
+
+	const char* GetLobbyTag(const char* text)
+	{
+		const std::string lowered = ToLowerCopy(text);
+		if (lowered.find("rank") != std::string::npos ||
+			lowered.find("level") != std::string::npos ||
+			lowered.find("leader") != std::string::npos ||
+			lowered.find("point") != std::string::npos ||
+			lowered.find("score") != std::string::npos ||
+			lowered.find("title") != std::string::npos)
+		{
+			return "[RANK][Lobby]";
+		}
+
+		return "[Lobby]";
+	}
+
+	bool IsRankLobbyKey(const char* text)
+	{
+		const std::string lowered = ToLowerCopy(text);
+		return lowered.find("rank") != std::string::npos ||
+			lowered.find("level") != std::string::npos ||
+			lowered.find("leader") != std::string::npos ||
+			lowered.find("point") != std::string::npos ||
+			lowered.find("score") != std::string::npos ||
+			lowered.find("title") != std::string::npos;
+	}
+
+	std::string FormatLobbyCallerBytes(const uint8_t* bytes, size_t length)
+	{
+		std::ostringstream out;
+		out << "[";
+		for (size_t i = 0; i < length; ++i)
+		{
+			if (i != 0)
+			{
+				out << " ";
+			}
+
+			char byteText[8] = {};
+			std::snprintf(byteText, sizeof(byteText), "%02X", static_cast<unsigned int>(bytes[i]));
+			out << byteText;
+		}
+		out << "]";
+		return out.str();
+	}
+
+	void LogRankLobbyCallerContext(const char* key, int index)
+	{
+		RankedProbeNoteLobbyCaller();
+
+		static int s_budget = 48;
+		if (s_budget <= 0)
+		{
+			return;
+		}
+
+		const uintptr_t moduleBase = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
+		const uintptr_t returnAddress = reinterpret_cast<uintptr_t>(_ReturnAddress());
+		void* const returnSlot = _AddressOfReturnAddress();
+
+		LOG(2, "[RANK][LobbyCaller] key='%s' index=%d return_addr=0x%p bbcf_rva=0x%08X return_slot=0x%p\n",
+			key ? key : "<null>",
+			index,
+			reinterpret_cast<void*>(returnAddress),
+			(moduleBase && returnAddress >= moduleBase) ? static_cast<unsigned int>(returnAddress - moduleBase) : 0u,
+			returnSlot);
+
+		if (returnAddress >= 16)
+		{
+			const uint8_t* const codeStart = reinterpret_cast<const uint8_t*>(returnAddress - 16);
+			if (!IsBadReadPtr(codeStart, 24))
+			{
+				LOG(2, "[RANK][LobbyCaller] code_bytes return_addr-16..+7=%s\n",
+					FormatLobbyCallerBytes(codeStart, 24).c_str());
+			}
+		}
+
+		PVOID frames[4] = {};
+		const USHORT captured = CaptureStackBackTrace(0, 4, frames, nullptr);
+		for (USHORT i = 0; i < captured; ++i)
+		{
+			const uintptr_t frame = reinterpret_cast<uintptr_t>(frames[i]);
+			LOG(2, "[RANK][LobbyCaller] bt_%u=0x%p bbcf_rva=0x%08X\n",
+				static_cast<unsigned int>(i),
+				reinterpret_cast<void*>(frame),
+				(moduleBase && frame >= moduleBase) ? static_cast<unsigned int>(frame - moduleBase) : 0u);
+		}
+
+		--s_budget;
+	}
+}
 
 SteamMatchmakingWrapper::SteamMatchmakingWrapper(ISteamMatchmaking** pSteamMatchmaking)
 {
@@ -19,6 +136,89 @@ SteamMatchmakingWrapper::SteamMatchmakingWrapper(ISteamMatchmaking** pSteamMatch
 
 SteamMatchmakingWrapper::~SteamMatchmakingWrapper()
 {
+}
+
+void SteamMatchmakingWrapper::CacheRankedHostLevel(CSteamID steamIDLobby, const char* value)
+{
+	if (!value || value[0] == '\0' || !m_SteamMatchmaking)
+	{
+		return;
+	}
+
+	char* end = nullptr;
+	const long parsed = std::strtol(value, &end, 10);
+	if (end == value || parsed < 0 || parsed > 63)
+	{
+		return;
+	}
+
+	const CSteamID owner = m_SteamMatchmaking->GetLobbyOwner(steamIDLobby);
+	uint64_t ownerId = owner.ConvertToUint64();
+	if (ownerId == 0u)
+	{
+		const char* const ownerIdText = m_SteamMatchmaking->GetLobbyData(steamIDLobby, "ownerID");
+		if (ownerIdText && ownerIdText[0] != '\0')
+		{
+			char* ownerEnd = nullptr;
+			const unsigned long long parsedOwner = std::strtoull(ownerIdText, &ownerEnd, 10);
+			if (ownerEnd != ownerIdText)
+			{
+				ownerId = static_cast<uint64_t>(parsedOwner);
+			}
+		}
+	}
+	if (ownerId == 0u)
+	{
+		LOG(1, "[RANK][LobbyRankCache] missing owner lobby=%llu internal=%u visible=%u\n",
+			static_cast<unsigned long long>(steamIDLobby.ConvertToUint64()),
+			static_cast<unsigned int>(parsed),
+			static_cast<unsigned int>(parsed + 1));
+		return;
+	}
+
+	const uint64_t lobbyId = steamIDLobby.ConvertToUint64();
+	const uint32_t internalRank = static_cast<uint32_t>(parsed);
+	auto it = std::find_if(m_rankedHostLevelCache.begin(), m_rankedHostLevelCache.end(),
+		[ownerId](const RankedHostLevelCacheEntry& entry) { return entry.steamId == ownerId; });
+	if (it == m_rankedHostLevelCache.end())
+	{
+		if (m_rankedHostLevelCache.size() >= 32u)
+		{
+			m_rankedHostLevelCache.erase(m_rankedHostLevelCache.begin());
+		}
+		m_rankedHostLevelCache.push_back({});
+		it = m_rankedHostLevelCache.end() - 1;
+	}
+
+	it->steamId = ownerId;
+	it->lobbyId = lobbyId;
+	it->internalRank = internalRank;
+	it->tick = GetTickCount();
+
+	LOG(1, "[RANK][LobbyRankCache] ownerSteam=%llu lobby=%llu internal=%u visible=%u\n",
+		static_cast<unsigned long long>(ownerId),
+		static_cast<unsigned long long>(lobbyId),
+		static_cast<unsigned int>(internalRank),
+		static_cast<unsigned int>(internalRank + 1u));
+}
+
+bool SteamMatchmakingWrapper::GetCachedRankedHostLevel(uint64_t steamId, uint32_t* outInternalRank) const
+{
+	if (!outInternalRank || steamId == 0u)
+	{
+		return false;
+	}
+
+	for (auto it = m_rankedHostLevelCache.rbegin(); it != m_rankedHostLevelCache.rend(); ++it)
+	{
+		if (it->steamId == steamId)
+		{
+			*outInternalRank = it->internalRank;
+			return true;
+		}
+	}
+
+	return false;
 }
 
 int SteamMatchmakingWrapper::GetFavoriteGameCount()
@@ -47,24 +247,31 @@ bool SteamMatchmakingWrapper::RemoveFavoriteGame(AppId_t nAppID, uint32 nIP, uin
 
 SteamAPICall_t SteamMatchmakingWrapper::RequestLobbyList()
 {
-	LOG(7, "SteamMatchmakingWrapper RequestLobbyList\n");
-	return m_SteamMatchmaking->RequestLobbyList();
+	const SteamAPICall_t call = m_SteamMatchmaking->RequestLobbyList();
+	LOG(2, "[Lobby] RequestLobbyList call=%llu\n", static_cast<unsigned long long>(call));
+	RankedAutomationHarness::NotifyLobbyListRequested();
+	return call;
 }
 
 void SteamMatchmakingWrapper::AddRequestLobbyListStringFilter(const char *pchKeyToMatch, const char *pchValueToMatch, ELobbyComparison eComparisonType)
 {
-	LOG(7, "SteamMatchmakingWrapper AddRequestLobbyListStringFilter\n");
+	LOG(2, "%s AddRequestLobbyListStringFilter key='%s' value='%s' cmp=%d\n",
+		GetLobbyTag(pchKeyToMatch), pchKeyToMatch ? pchKeyToMatch : "<null>",
+		pchValueToMatch ? pchValueToMatch : "<null>", static_cast<int>(eComparisonType));
 	return m_SteamMatchmaking->AddRequestLobbyListStringFilter(pchKeyToMatch, pchValueToMatch, eComparisonType);
 }
 
 void SteamMatchmakingWrapper::AddRequestLobbyListNumericalFilter(const char *pchKeyToMatch, int nValueToMatch, ELobbyComparison eComparisonType)
 {
-	LOG(7, "SteamMatchmakingWrapper AddRequestLobbyListNumericalFilter\n");
+	LOG(2, "%s AddRequestLobbyListNumericalFilter key='%s' value=%d cmp=%d\n",
+		GetLobbyTag(pchKeyToMatch), pchKeyToMatch ? pchKeyToMatch : "<null>",
+		nValueToMatch, static_cast<int>(eComparisonType));
 	return m_SteamMatchmaking->AddRequestLobbyListNumericalFilter(pchKeyToMatch, nValueToMatch, eComparisonType);
 }
 void SteamMatchmakingWrapper::AddRequestLobbyListNearValueFilter(const char *pchKeyToMatch, int nValueToBeCloseTo)
 {
-	LOG(7, "SteamMatchmakingWrapper AddRequestLobbyListNearValueFilter\n");
+	LOG(2, "%s AddRequestLobbyListNearValueFilter key='%s' value=%d\n",
+		GetLobbyTag(pchKeyToMatch), pchKeyToMatch ? pchKeyToMatch : "<null>", nValueToBeCloseTo);
 	return m_SteamMatchmaking->AddRequestLobbyListNearValueFilter(pchKeyToMatch, nValueToBeCloseTo);
 }
 void SteamMatchmakingWrapper::AddRequestLobbyListFilterSlotsAvailable(int nSlotsAvailable)
@@ -136,11 +343,17 @@ CSteamID SteamMatchmakingWrapper::GetLobbyMemberByIndex(CSteamID steamIDLobby, i
 
 const char* SteamMatchmakingWrapper::GetLobbyData(CSteamID steamIDLobby, const char *pchKey)
 {
-	LOG(7, "SteamMatchmakingWrapper GetLobbyData\n");
+	LOG(2, "%s GetLobbyData start steamIDLobby=%llu key='%s'\n",
+		GetLobbyTag(pchKey), steamIDLobby.ConvertToUint64(), pchKey ? pchKey : "<null>");
 
 	const char* ret = m_SteamMatchmaking->GetLobbyData(steamIDLobby, pchKey);
 
-	LOG(7, "\t- steamIDLobby: %llu, pchKey: %s, ret: %s\n", steamIDLobby.ConvertToUint64(), pchKey, ret);
+	LOG(2, "%s GetLobbyData steamIDLobby=%llu key='%s' ret='%s'\n",
+		GetLobbyTag(pchKey), steamIDLobby.ConvertToUint64(), pchKey ? pchKey : "<null>", ret ? ret : "<null>");
+	if (ret && pchKey && std::strcmp(pchKey, "RANK_HOST_LEVEL") == 0)
+	{
+		CacheRankedHostLevel(steamIDLobby, ret);
+	}
 
 	return ret;
 }
@@ -159,8 +372,23 @@ int SteamMatchmakingWrapper::GetLobbyDataCount(CSteamID steamIDLobby)
 
 bool SteamMatchmakingWrapper::GetLobbyDataByIndex(CSteamID steamIDLobby, int iLobbyData, char *pchKey, int cchKeyBufferSize, char *pchValue, int cchValueBufferSize)
 {
-	LOG(7, "SteamMatchmakingWrapper GetLobbyDataByIndex\n");
-	return m_SteamMatchmaking->GetLobbyDataByIndex(steamIDLobby, iLobbyData, pchKey, cchKeyBufferSize, pchValue, cchValueBufferSize);
+	const bool result = m_SteamMatchmaking->GetLobbyDataByIndex(steamIDLobby, iLobbyData, pchKey, cchKeyBufferSize, pchValue, cchValueBufferSize);
+	LOG(2, "%s GetLobbyDataByIndex steamIDLobby=%llu index=%d result=%d key='%s' value='%s'\n",
+		GetLobbyTag(pchKey), steamIDLobby.ConvertToUint64(), iLobbyData, result ? 1 : 0,
+		(result && pchKey) ? pchKey : "<null>", (result && pchValue) ? pchValue : "<null>");
+	if (result)
+	{
+		if (pchKey && std::strcmp(pchKey, "RANK_HOST_LEVEL") == 0)
+		{
+			CacheRankedHostLevel(steamIDLobby, pchValue);
+		}
+		if (IsRankLobbyKey(pchKey))
+		{
+			LogRankLobbyCallerContext(pchKey, iLobbyData);
+		}
+		RankedAutomationHarness::NotifyLobbyDataByIndex(pchKey, pchValue);
+	}
+	return result;
 }
 
 bool SteamMatchmakingWrapper::DeleteLobbyData(CSteamID steamIDLobby, const char *pchKey)
@@ -171,7 +399,8 @@ bool SteamMatchmakingWrapper::DeleteLobbyData(CSteamID steamIDLobby, const char 
 
 const char* SteamMatchmakingWrapper::GetLobbyMemberData(CSteamID steamIDLobby, CSteamID steamIDUser, const char *pchKey)
 {
-	LOG(7, "SteamMatchmakingWrapper GetLobbyMemberData\n");
+	LOG(2, "%s GetLobbyMemberData start steamIDLobby=%llu steamIDUser=%llu key='%s'\n",
+		GetLobbyTag(pchKey), steamIDLobby.ConvertToUint64(), steamIDUser.ConvertToUint64(), pchKey ? pchKey : "<null>");
 	//DWORD returnAddress = 0;
 	//__asm
 	//{
@@ -187,8 +416,9 @@ const char* SteamMatchmakingWrapper::GetLobbyMemberData(CSteamID steamIDLobby, C
 
 	const char* ret = m_SteamMatchmaking->GetLobbyMemberData(steamIDLobby, steamIDUser, pchKey);
 
-	LOG(7, "\t- steamIDLobby: %llu, steamIDUser: %llu, pchKey: %s, ret: %s\n",
-		steamIDLobby.ConvertToUint64(), steamIDUser.ConvertToUint64(), pchKey, ret);
+	LOG(2, "%s GetLobbyMemberData steamIDLobby=%llu steamIDUser=%llu key='%s' ret='%s'\n",
+		GetLobbyTag(pchKey), steamIDLobby.ConvertToUint64(), steamIDUser.ConvertToUint64(),
+		pchKey ? pchKey : "<null>", ret ? ret : "<null>");
 
 	return ret;
 }

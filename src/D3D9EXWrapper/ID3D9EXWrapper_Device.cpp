@@ -12,7 +12,7 @@
 
 #pragma comment(lib, "steam_api.lib")
 
-Direct3DDevice9ExWrapper::Direct3DDevice9ExWrapper(IDirect3DDevice9Ex **ppReturnedDeviceInterface, D3DPRESENT_PARAMETERS *pPresentParam, IDirect3D9Ex *pIDirect3D9Ex)
+Direct3DDevice9ExWrapper::Direct3DDevice9ExWrapper(IDirect3DDevice9Ex** ppReturnedDeviceInterface, D3DPRESENT_PARAMETERS* pPresentParam, IDirect3D9Ex* pIDirect3D9Ex)
 {
 	LOG(1, "cDirect3DDevice9ExWrapper with modified PresentationParameters\n");
 
@@ -30,7 +30,7 @@ Direct3DDevice9ExWrapper::Direct3DDevice9ExWrapper(IDirect3DDevice9Ex **ppReturn
 
 Direct3DDevice9ExWrapper::~Direct3DDevice9ExWrapper() {}
 
-HRESULT APIENTRY Direct3DDevice9ExWrapper::QueryInterface(const IID &riid, void **ppvObj)
+HRESULT APIENTRY Direct3DDevice9ExWrapper::QueryInterface(const IID& riid, void** ppvObj)
 {
 	LOG(7, "QueryInterface\n");
 
@@ -104,7 +104,7 @@ HRESULT APIENTRY Direct3DDevice9ExWrapper::GetDisplayMode(UINT iSwapChain, D3DDI
 	return m_Direct3DDevice9Ex->GetDisplayMode(iSwapChain, pMode);
 }
 
-HRESULT APIENTRY Direct3DDevice9ExWrapper::GetCreationParameters(D3DDEVICE_CREATION_PARAMETERS *pParameters)
+HRESULT APIENTRY Direct3DDevice9ExWrapper::GetCreationParameters(D3DDEVICE_CREATION_PARAMETERS* pParameters)
 {
 	LOG(7, "GetCreationParameters\n");
 	return m_Direct3DDevice9Ex->GetCreationParameters(pParameters);
@@ -553,7 +553,7 @@ HRESULT APIENTRY Direct3DDevice9ExWrapper::SetCurrentTexturePalette(UINT Palette
 	return m_Direct3DDevice9Ex->SetCurrentTexturePalette(PaletteNumber);
 }
 
-HRESULT APIENTRY Direct3DDevice9ExWrapper::GetCurrentTexturePalette(UINT *PaletteNumber)
+HRESULT APIENTRY Direct3DDevice9ExWrapper::GetCurrentTexturePalette(UINT* PaletteNumber)
 {
 	LOG(7, "GetCurrentTexturePalette\n");
 	return m_Direct3DDevice9Ex->GetCurrentTexturePalette(PaletteNumber);
@@ -952,7 +952,7 @@ HRESULT APIENTRY Direct3DDevice9ExWrapper::CreateDepthStencilSurfaceEx(UINT Widt
 	return ret;
 }
 
-HRESULT APIENTRY Direct3DDevice9ExWrapper::ResetEx(D3DPRESENT_PARAMETERS* pPresentationParameters, D3DDISPLAYMODEEX *pFullscreenDisplayMode)
+HRESULT APIENTRY Direct3DDevice9ExWrapper::ResetEx(D3DPRESENT_PARAMETERS* pPresentationParameters, D3DDISPLAYMODEEX* pFullscreenDisplayMode)
 {
 	LOG(3, "ResetEx\n");
 	logD3DPParams(pPresentationParameters, true);

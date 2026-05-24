@@ -18,6 +18,7 @@ Join the [BB Improvement Mod Discord Server](https://discord.gg/j2mCX9s) to disc
 - Adds gap action thru training dummy slots
 - Adds local replay file loading
 - more experimental features
+- Switchable overlay language (English/Spanish) with extendable dictionaries (see `docs/localization.md` to add more)
 
 
 - Create and load custom palettes and effects without file modifications
@@ -27,17 +28,22 @@ Join the [BB Improvement Mod Discord Server](https://discord.gg/j2mCX9s) to disc
 - Freely adjustable ingame currency value
 
 ## Installing
-Download dinput8.dll, settings.ini and optionally palettes.ini from the latest release and put it in your BlazBlue Centralfiction folder. There is no need to compile it yourself for regular usage.
+Download dinput8.dll, settings.ini and optionally palettes.ini from the latest release and put it in your BlazBlue Centralfiction folder. All localization data is bundled inside dinput8.dll, so no extra language files are required. There is no need to compile it yourself for regular usage.
 
 
 ## Compiling and usage
 BBCF Improvement Mod is coded using Visual Studio 2019 (toolset v142). <br>
 To compile, you should only need to load the sln file and compile as-is. No changes should be needed to the solution or source.<br>
-Copy the compiled binary, settings.ini, and palettes.ini files from the bin/ folder into the game's root folder.
+Copy the compiled binary, settings.ini, and palettes.ini files from the bin/ folder into the game's root folder. The embedded localization resources mean no extra language files are needed at runtime.
 
 
-### FrameHistory: 
-frameHistory is a frame meter with two rows for each character. For each non-idle frame, it displays a column of rectangles. 
+## Crash reports and troubleshooting
+- If the game crashes while the mod is loaded, a bundle is created under `BBCF_IM/CrashReports/Crash_<timestamp>/` containing `crash.dmp`, `logs.txt` (recent log ring buffer), and `crash_context.txt` (exception and mod metadata).
+- Please zip the entire `Crash_<timestamp>` folder and share it with the developers; it already includes the embedded log stream inside the `.dmp` for debugging.
+
+
+### FrameHistory:
+frameHistory is a frame meter with two rows for each character. For each non-idle frame, it displays a column of rectangles.
 - For each player:
     + The first row displays player state. The colors are as follows 
         - Hard landing recovery -> blush

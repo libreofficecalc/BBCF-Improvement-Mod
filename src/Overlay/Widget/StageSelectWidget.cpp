@@ -4,6 +4,7 @@
 #include "Game/gamestates.h"
 #include "Game/stages.h"
 #include "Overlay/imgui_utils.h"
+#include "Core/Localization.h"
 
 void StageSelectWidget()
 {
@@ -23,8 +24,8 @@ void StageSelectWidget()
 			}
 		}
 
-		ImGui::AlignTextToFramePadding();
-		ImGui::TextUnformatted("Stage"); ImGui::SameLine();
+ImGui::AlignTextToFramePadding();
+ImGui::TextUnformatted(Messages.Stage()); ImGui::SameLine();
 		if (ImGui::SliderByte("##Stage", &selectedStage, 0, STAGES_COUNT - 1))
 		{
 			*g_gameVals.stageSelect_X = stages[selectedStage][0];

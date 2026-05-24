@@ -1,5 +1,7 @@
 #pragma once
 #include "ReplayRewindWindow.h"
+
+#include "Core/Localization.h"
 #include "Core/interfaces.h"
 #include "Game/SnapshotApparatus/SnapshotApparatus.h"
 #include "Game/gamestates.h"
@@ -77,8 +79,8 @@ void ReplayRewindWindow::Draw()
 {
     
 #ifdef _DEBUG
-    ImGui::Text("Active entities: %d", ReplayRewindWindow::count_entities(false));
-    ImGui::Text("Active entities with unk_status2 = 2: %d", count_entities(true));
+    ImGui::Text(Messages.Active_entities_d(), ReplayRewindWindow::count_entities(false));
+    ImGui::Text(Messages.Active_entities_with_unk_status2_2_d(), count_entities(true));
 #endif
 
     auto bbcf_base_adress = GetBbcfBaseAdress();
@@ -93,7 +95,7 @@ void ReplayRewindWindow::Draw()
         this->Close();
     }
     if (*g_gameVals.pGameMode != GameMode_ReplayTheater || *g_gameVals.pGameState != GameState_InMatch) {
-        ImGui::Text("Only works during a running replay");
+        ImGui::Text(Messages.Only_works_during_a_running_replay());
 
         return;
     }
@@ -103,21 +105,13 @@ void ReplayRewindWindow::Draw()
             {
                 ImGui::Text("");
                 if (*g_gameVals.pGameMode == GameMode_ReplayTheater) {
-                    if (ImGui::Button("Rewind")) {
+                    if (ImGui::Button(Messages.Rewind())) {
                         g_interfaces.pReplayRewindManager->rewind_to_nearest();
 
 
                     }
                     ImGui::SameLine();
-                    ImGui::ShowHelpMarker("Replay rewind can currently hold up to 10 \"checkpoints\" at a time to rewind to. These checkpoints are saved as the replay progresses at defined intervals(1s,3s or 9s). With replay interval set to 9s for example you will save checkpoints at second 0,9,18...,90.\n\
-\n\
-You can also change them during the replay itself to refine the rewind, say for example you found something interesting at second 16 while having rewind interval as 9s:\n\
-\n\
-\t - Rewind until you reach the checkpoint at second 9\n\
-\t - Change the rewind interval to 1s or 3s\n\
-\t - Now as it reaches the desired position it will have recorded the previous checkpoints in smaller intervals, allowing you to wait less to reach the desired part / analyze the lead up to it.\n\
-\n\
-You can see the frames of all saved checkpoints and more advanced info on the \"Saved Checkpoints Advanced Info\" section above.");
+                    ImGui::ShowHelpMarker(Messages.Replay_rewind_help_tooltip());
                 }
             }
             ImGui::EndGroup();
@@ -125,22 +119,22 @@ You can see the frames of all saved checkpoints and more advanced info on the \"
             ImGui::HorizontalSpacing();
             ImGui::BeginGroup();
             {
-                
-                ImGui::Text("Rewind Interval"); ImGui::SameLine(); ImGui::ShowHelpMarker("Defines the interval to save the rewind \"checkpoint\". For more info see the help bar on \"Rewind\" button");
-                ImGui::RadioButton("1s", &g_interfaces.pReplayRewindManager->FRAME_STEP, 60); ImGui::SameLine();
-                ImGui::RadioButton("3s", &g_interfaces.pReplayRewindManager->FRAME_STEP, 180); ImGui::SameLine();
-                ImGui::RadioButton("9s", &g_interfaces.pReplayRewindManager->FRAME_STEP, 540);
+
+                ImGui::Text(Messages.Rewind_Interval()); ImGui::SameLine(); ImGui::ShowHelpMarker(Messages.Rewind_interval_help_tooltip());
+                ImGui::RadioButton(Messages._1s(), &g_interfaces.pReplayRewindManager->FRAME_STEP, 60); ImGui::SameLine();
+                ImGui::RadioButton(Messages._3s(), &g_interfaces.pReplayRewindManager->FRAME_STEP, 180); ImGui::SameLine();
+                ImGui::RadioButton(Messages._9s(), &g_interfaces.pReplayRewindManager->FRAME_STEP, 540);
             }
             ImGui::EndGroup();
 #ifdef _DEBUG
 
             ImGui::Separator();
 
-            if (ImGui::TreeNode("Saved Checkpoints Adv. Info")) {
-                ImGui::Text("Rewind pos: +%d", g_interfaces.pReplayRewindManager->rewind_pos);
+            if (ImGui::TreeNode(Messages.Saved_Checkpoints_Adv_Info())) {
+                ImGui::Text(Messages.Rewind_pos_d(), g_interfaces.pReplayRewindManager->rewind_pos);
                 //auto nearest_pos = ReplayRewindWindow::find_nearest_checkpoint(frame_checkpoints_clipped);
                 //ImGui::Text("Rewind checkpoint: %d    FF checkpoint(nearest): %d", nearest_pos[0], nearest_pos[1]);
-                ImGui::Text("snap_apparatus snapshot_count: %d", snap_apparatus_replay_rewind->snapshot_count);
+                ImGui::Text(Messages.snap_apparatus_snapshot_count_d(), snap_apparatus_replay_rewind->snapshot_count);
                 if (snap_apparatus_replay_rewind != nullptr) {
                     static_DAT_of_PTR_on_load_4* DAT_on_load_4_addr = (static_DAT_of_PTR_on_load_4*)(bbcf_base_adress + 0x612718);
                     SnapshotManager* snap_manager = 0;
@@ -148,7 +142,7 @@ You can see the frames of all saved checkpoints and more advanced info on the \"
                     int iter = 0;
                     for (auto& state : snap_manager->_saved_states_related_struct) {
 
-                        ImGui::Text("%d: Framecount:%d", iter, state._framecount);
+                        ImGui::Text(Messages.d_Framecount_d(), iter, state._framecount);
                         iter++;
                     }
 
@@ -160,6 +154,6 @@ You can see the frames of all saved checkpoints and more advanced info on the \"
         }
     }
     else {
-        ImGui::Text("You cannot use this feature while searching for a ranked match");
+ImGui::Text(Messages.Ranked_search_warning());
     }
 }

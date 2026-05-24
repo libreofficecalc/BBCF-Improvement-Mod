@@ -5,8 +5,16 @@
       <Configuration>Debug</Configuration>
       <Platform>Win32</Platform>
     </ProjectConfiguration>
+    <ProjectConfiguration Include="DebugDeploy|Win32">
+      <Configuration>DebugDeploy</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
     <ProjectConfiguration Include="Release|Win32">
       <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="ReleaseDeploy|Win32">
+      <Configuration>ReleaseDeploy</Configuration>
       <Platform>Win32</Platform>
     </ProjectConfiguration>
   </ItemGroup>
@@ -17,6 +25,8 @@
     <ClCompile Include="depends\imgui\imgui_impl_dx9.cpp" />
     <ClCompile Include="src\Game\ScenesManager\ScenesManager.cpp" />
     <ClCompile Include="src\Game\ReplayRewind\ReplayRewind.cpp" />
+    <ClCompile Include="src\Hooks\hooks_battle_input.cpp" />
+    <ClCompile Include="src\Hooks\RankedAutomationHarness.cpp" />
     <ClCompile Include="src\Overlay\Window\FrameAdvantage\FrameAdvantageWindow.cpp" />
     <ClCompile Include="src\Overlay\Window\FrameHistory\FrameHistory.cpp" />
     <ClCompile Include="src\Overlay\Window\FrameHistory\FrameHistoryWindow.cpp" />
@@ -27,6 +37,8 @@
     <ClCompile Include="src\Overlay\Window\FrameAdvantage\PlayerExtendedData.cpp" />
     <ClCompile Include="src\Game\Jonb\JonbDBReader.cpp" />
     <ClCompile Include="src\Game\Playbacks\PlaybackSlot.cpp" />
+    <ClCompile Include="src\Game\Playbacks\CompatibilityManager.cpp" />
+    <ClCompile Include="src\Game\Playbacks\UnlimitedPlaybackManager.cpp" />
     <ClCompile Include="src\Game\Playbacks\PlaybackManager.cpp" />
     <ClCompile Include="src\CustomGameMode\customGameMode.cpp" />
     <ClCompile Include="src\CustomGameMode\GameModeManager.cpp" />
@@ -43,6 +55,7 @@
     <ClCompile Include="src\Overlay\Widget\StageSelectWidget.cpp" />
     <ClCompile Include="src\Overlay\Window\InputBufferWindow.cpp" />
     <ClCompile Include="src\Overlay\Window\PlaybackEditorWindow.cpp" />
+    <ClCompile Include="src\Overlay\Window\UnlimitedPlaybackWindow.cpp" />
     <ClCompile Include="src\Overlay\Window\ReplayRewindWindow.cpp" />
     <ClCompile Include="src\Overlay\Window\RoomWindow.cpp" />
     <ClCompile Include="src\Overlay\Window\ScrWindow.cpp" />
@@ -54,10 +67,17 @@
     <ClCompile Include="src\Hooks\hooks_bbcf.cpp" />
     <ClCompile Include="src\Hooks\hooks_customGameModes.cpp" />
     <ClCompile Include="src\Hooks\hooks_detours.cpp" />
+    <ClCompile Include="src\Hooks\hooks_system_input.cpp" />
     <ClCompile Include="src\Hooks\hooks_palette.cpp" />
     <ClCompile Include="src\SteamApiWrapper\steamApiWrappers.cpp" />
     <ClCompile Include="src\Core\interfaces.cpp" />
     <ClCompile Include="src\Core\crashdump.cpp" />
+    <ClCompile Include="src\Core\ControllerOverrideManager.cpp" />
+    <ClCompile Include="src\Core\RuntimePlatform.cpp" />
+    <ClCompile Include="src\Core\WineCheck.cpp" />
+    <ClCompile Include="src\Core\XInputRuntime.cpp" />
+    <ClCompile Include="src\Core\DirectInputWrapper.cpp" />
+    <ClCompile Include="src\Core\Localization.cpp" />
     <ClCompile Include="src\Network\NetworkManager.cpp" />
     <ClCompile Include="src\Network\OnlinePaletteManager.cpp" />
     <ClCompile Include="src\Network\RoomManager.cpp" />
@@ -70,6 +90,16 @@
     <ClCompile Include="src\Overlay\Window\HitboxOverlay.cpp" />
     <ClCompile Include="src\Overlay\Window\LogWindow.cpp" />
     <ClCompile Include="src\Overlay\Window\MainWindow.cpp" />
+    <ClCompile Include="src\Overlay\Window\Ranked\RankedMainMenuSection.cpp" />
+    <ClCompile Include="src\Overlay\Window\Ranked\RankedModalWindow.cpp" />
+    <ClCompile Include="src\Overlay\Window\Ranked\RankedProgressWindow.cpp" />
+    <ClCompile Include="src\Overlay\Window\WinePopupWindow.cpp" />
+    <ClCompile Include="src\Overlay\Window\ControllerSettings\ControllerRefreshDrawer.cpp" />
+    <ClCompile Include="src\Overlay\Window\ControllerSettings\ControllerSettingsSection.cpp" />
+    <ClCompile Include="src\Overlay\Window\ControllerSettings\KeyboardSeparationDrawer.cpp" />
+    <ClCompile Include="src\Overlay\Window\ControllerSettings\LocalControllerOverrideDrawer.cpp" />
+    <ClCompile Include="src\Overlay\Window\ControllerSettings\MultipleKeyboardOverrideDrawer.cpp" />
+    <ClCompile Include="src\Overlay\Window\ControllerSettings\SteamInputWarningDrawer.cpp" />
     <ClCompile Include="src\Overlay\Window\PaletteEditorWindow.cpp" />
     <ClCompile Include="src\Overlay\Window\UpdateNotifierWindow.cpp" />
     <ClCompile Include="src\Overlay\Window\IWindow.cpp" />
@@ -84,7 +114,6 @@
     <ClCompile Include="src\Core\Settings.cpp" />
     <ClCompile Include="src\Palette\impl_templates.cpp" />
     <ClCompile Include="src\Palette\PaletteManager.cpp" />
-    <ClCompile Include="src\Palette\impl_templates.h" />
     <ClCompile Include="src\SteamApiWrapper\SteamApiHelper.cpp" />
     <ClCompile Include="src\SteamApiWrapper\SteamFriendsWrapper.cpp" />
     <ClCompile Include="src\SteamApiWrapper\SteamMatchmakingWrapper.cpp" />
@@ -98,7 +127,6 @@
     <ClCompile Include="src\Game\Menus\TrainingSetupMenu.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\..\..\..\Downloads\stb_image.h" />
     <ClInclude Include="depends\imgui\imconfig.h" />
     <ClInclude Include="depends\imgui\imgui.h" />
     <ClInclude Include="depends\imgui\imgui_impl_dx9.h" />
@@ -111,6 +139,9 @@
     <ClInclude Include="src\Game\ReplayFiles\ReplayList.h" />
     <ClInclude Include="src\Game\ScenesManager\ScenesManager.h" />
     <ClInclude Include="src\Game\ReplayRewind\ReplayRewind.h" />
+    <ClInclude Include="src\Hooks\hooks_battle_input.h" />
+    <ClInclude Include="src\Hooks\RankedAutomationHarness.h" />
+    <ClInclude Include="src\Hooks\hooks_system_input.h" />
     <ClInclude Include="src\Overlay\Window\FrameAdvantage\FrameAdvantageWindow.h" />
     <ClInclude Include="src\Overlay\Window\FrameHistory\FrameHistory.h" />
     <ClInclude Include="src\Overlay\Window\FrameHistory\FrameHistoryWindow.h" />
@@ -118,12 +149,15 @@
     <ClInclude Include="src\Network\ReplayUploadManager.h" />
     <ClInclude Include="src\Game\GhidraDefs.h" />
     <ClInclude Include="src\Game\SnapshotApparatus\SnapshotApparatus.h" />
+    <ClInclude Include="src\Game\ReplayTakeover\ReplayTakeoverFeatureFlags.h" />
     <ClInclude Include="src\Overlay\Window\ComboDataWindow.h" />
     <ClInclude Include="src\Overlay\Window\FrameAdvantage\PlayerExtendedData.h" />
     <ClInclude Include="src\Game\Jonb\JonbDBEntry.h" />
     <ClInclude Include="src\Game\Jonb\JonbDBReader.h" />
     <ClInclude Include="src\Game\Playbacks\PlaybackSlot.h" />
+    <ClInclude Include="src\Game\Playbacks\CompatibilityManager.h" />
     <ClInclude Include="src\Game\Playbacks\PlaybackManager.h" />
+    <ClInclude Include="src\Game\Playbacks\UnlimitedPlaybackManager.h" />
     <ClInclude Include="src\Core\info.h" />
     <ClInclude Include="src\CustomGameMode\customGameMode.h" />
     <ClInclude Include="src\CustomGameMode\GameModeManager.h" />
@@ -145,6 +179,7 @@
     <ClInclude Include="src\Overlay\Window\FrameAdvantage\FrameAdvantage.h" />
     <ClInclude Include="src\Overlay\Window\InputBufferWindow.h" />
     <ClInclude Include="src\Overlay\Window\PlaybackEditorWindow.h" />
+    <ClInclude Include="src\Overlay\Window\UnlimitedPlaybackWindow.h" />
     <ClInclude Include="src\Overlay\Window\ReplayRewindWindow.h" />
     <ClInclude Include="src\Overlay\Window\RoomWindow.h" />
     <ClInclude Include="src\Overlay\Window\ScrWindow.h" />
@@ -163,6 +198,13 @@
     <ClInclude Include="src\Game\CharData.h" />
     <ClInclude Include="src\Core\interfaces.h" />
     <ClInclude Include="src\Core\crashdump.h" />
+    <ClInclude Include="src\Core\ControllerOverrideManager.h" />
+    <ClInclude Include="src\Core\DirectInputWrapper.h" />
+    <ClInclude Include="src\Core\RuntimePlatform.h" />
+    <ClInclude Include="src\Core\WineCheck.h" />
+    <ClInclude Include="src\Core\XInputRuntime.h" />
+    <ClInclude Include="src\Core\dllmain.h" />
+    <ClInclude Include="src\Core\Localization.h" />
     <ClInclude Include="src\Network\NetworkManager.h" />
     <ClInclude Include="src\Network\OnlinePaletteManager.h" />
     <ClInclude Include="src\Network\Packet.h" />
@@ -178,6 +220,16 @@
     <ClInclude Include="src\Overlay\Window\HitboxOverlay.h" />
     <ClInclude Include="src\Overlay\Window\LogWindow.h" />
     <ClInclude Include="src\Overlay\Window\MainWindow.h" />
+    <ClInclude Include="src\Overlay\Window\Ranked\RankedMainMenuSection.h" />
+    <ClInclude Include="src\Overlay\Window\Ranked\RankedModalWindow.h" />
+    <ClInclude Include="src\Overlay\Window\Ranked\RankedProgressWindow.h" />
+    <ClInclude Include="src\Overlay\Window\WinePopupWindow.h" />
+    <ClInclude Include="src\Overlay\Window\ControllerSettings\ControllerRefreshDrawer.h" />
+    <ClInclude Include="src\Overlay\Window\ControllerSettings\ControllerSettingsSection.h" />
+    <ClInclude Include="src\Overlay\Window\ControllerSettings\KeyboardSeparationDrawer.h" />
+    <ClInclude Include="src\Overlay\Window\ControllerSettings\LocalControllerOverrideDrawer.h" />
+    <ClInclude Include="src\Overlay\Window\ControllerSettings\MultipleKeyboardOverrideDrawer.h" />
+    <ClInclude Include="src\Overlay\Window\ControllerSettings\SteamInputWarningDrawer.h" />
     <ClInclude Include="src\Overlay\Window\PaletteEditorWindow.h" />
     <ClInclude Include="src\Overlay\Window\UpdateNotifierWindow.h" />
     <ClInclude Include="src\Overlay\Window\IWindow.h" />
@@ -188,6 +240,7 @@
     <ClInclude Include="src\D3D9EXWrapper\ID3DXWrapper_Effect.h" />
     <ClInclude Include="src\Hooks\HookManager.h" />
     <ClInclude Include="src\Palette\impl_format.h" />
+    <ClInclude Include="src\Palette\impl_templates.h" />
     <ClInclude Include="src\Core\logger.h" />
     <ClInclude Include="src\Core\Settings.h" />
     <ClInclude Include="src\Game\gamestates.h" />
@@ -209,12 +262,26 @@
     <None Include="export\dinput8.def" />
     <None Include="LICENSE" />
     <None Include="README.md" />
+    <CustomBuild Include="resource\localization\Localization.csv">
+      <Message>Generating strongly-typed localization accessors</Message>
+      <Command>powershell -NoProfile -ExecutionPolicy Bypass -File "$(ProjectDir)tools\generate_localization_bindings.ps1" -CsvPath "$(ProjectDir)resource\localization\Localization.csv" -OutPath "$(ProjectDir)src\Core\LocalizationKeys.autogen.h"</Command>
+      <Outputs>$(ProjectDir)src\Core\LocalizationKeys.autogen.h;%(Outputs)</Outputs>
+      <AdditionalInputs>
+                        $(ProjectDir)resource\localization\Localization.csv;
+                        $(ProjectDir)tools\generate_localization_bindings.ps1;
+                        %(AdditionalInputs)
+                </AdditionalInputs>
+      <SubType>Designer</SubType>
+    </CustomBuild>
     <None Include="resource\palettes.ini" />
     <None Include="resource\settings.ini">
       <FileType>Document</FileType>
       <DeploymentContent>false</DeploymentContent>
     </None>
     <None Include="src\Core\settings.def" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="resource\resource.rc" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="USER_README.txt" />
@@ -230,24 +297,45 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v142</PlatformToolset>
+    <PlatformToolset>v145</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+    <WholeProgramOptimization>false</WholeProgramOptimization>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='DebugDeploy|Win32'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
     <WholeProgramOptimization>false</WholeProgramOptimization>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v142</PlatformToolset>
+    <PlatformToolset>v145</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseDeploy|Win32'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <Import Project="deploy\DeploySettings.props" Condition="exists('deploy\\DeploySettings.props')" />
   <ImportGroup Label="ExtensionSettings">
   </ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='DebugDeploy|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='ReleaseDeploy|Win32'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
@@ -259,6 +347,20 @@
     <OutDir>bin\$(Configuration)\</OutDir>
     <IntDir>build\$(Configuration)\</IntDir>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='DebugDeploy|Win32'">
+    <LinkIncremental>true</LinkIncremental>
+    <TargetName>dinput8</TargetName>
+    <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
+    <Attach>true</Attach>
+    <LocalDebuggerAttach>true</LocalDebuggerAttach>
+    <LocalDebuggerCommand>$(BbcfDebuggerCommand)</LocalDebuggerCommand>
+    <LocalDebuggerCommandArguments>$(BbcfDebuggerArguments)</LocalDebuggerCommandArguments>
+    <LocalDebuggerWorkingDirectory>$(BbcfDebuggerWorkingDirectory)</LocalDebuggerWorkingDirectory>
+    <IncludePath>$(SolutionDir)\src;$(SolutionDir)\depends\winhttpclient\Include;$(SolutionDir)\depends\imgui;$(SolutionDir)\depends\detour;$(SolutionDir)\depends\directx_sdk\Include;$(SolutionDir)\depends\steam_api\public\steam;$(IncludePath)</IncludePath>
+    <LibraryPath>$(SolutionDir)\depends\detour;$(SolutionDir)\depends\directx_sdk\Lib\x86;$(SolutionDir)\depends\steam_api\redistributable_bin;$(LibraryPath)</LibraryPath>
+    <OutDir>bin\DebugDeploy\</OutDir>
+    <IntDir>build\DebugDeploy\</IntDir>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <LinkIncremental>false</LinkIncremental>
     <TargetName>dinput8</TargetName>
@@ -266,6 +368,21 @@
     <LibraryPath>$(SolutionDir)\depends\detour;$(SolutionDir)\depends\directx_sdk\Lib\x86;$(SolutionDir)\depends\steam_api\redistributable_bin;$(LibraryPath)</LibraryPath>
     <OutDir>bin\$(Configuration)\</OutDir>
     <IntDir>build\$(Configuration)\</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseDeploy|Win32'">
+    <LinkIncremental>false</LinkIncremental>
+    <TargetName>dinput8</TargetName>
+    <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
+    <Attach>false</Attach>
+    <LocalDebuggerAttach>false</LocalDebuggerAttach>
+    <LocalDebuggerDebuggerType>NativeOnly</LocalDebuggerDebuggerType>
+    <LocalDebuggerCommand>$(ComSpec)</LocalDebuggerCommand>
+    <LocalDebuggerCommandArguments>/c exit 0</LocalDebuggerCommandArguments>
+    <LocalDebuggerWorkingDirectory>$(ProjectDir)</LocalDebuggerWorkingDirectory>
+    <IncludePath>$(SolutionDir)\src;$(SolutionDir)\depends\imgui;$(SolutionDir)\depends\detour;$(SolutionDir)\depends\directx_sdk\Include;$(SolutionDir)\depends\steam_api\public\steam;$(SolutionDir)\depends\winhttpclient\Include;$(IncludePath)</IncludePath>
+    <LibraryPath>$(SolutionDir)\depends\detour;$(SolutionDir)\depends\directx_sdk\Lib\x86;$(SolutionDir)\depends\steam_api\redistributable_bin;$(LibraryPath)</LibraryPath>
+    <OutDir>bin\Release\</OutDir>
+    <IntDir>build\ReleaseDeploy\</IntDir>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -284,7 +401,32 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>DebugFull</GenerateDebugInformation>
-      <AdditionalDependencies>comsuppw.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>dinput8.lib;dxguid.lib;comsuppw.lib;winmm.lib;delayimp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <DelayLoadDLLs>hid.dll;setupapi.dll;cfgmgr32.dll;shlwapi.dll;winmm.dll;d3dx9_43.dll;steam_api.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
+      <ModuleDefinitionFile>export/dinput8.def</ModuleDefinitionFile>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='DebugDeploy|Win32'">
+    <ClCompile>
+      <PrecompiledHeader>
+      </PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>Disabled</Optimization>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;_USRDLL;BBCF_IM_EXPORTS;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <SDLCheck>true</SDLCheck>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <PrecompiledHeaderFile />
+      <PrecompiledHeaderOutputFile />
+      <PreprocessToFile>false</PreprocessToFile>
+      <LanguageStandard>Default</LanguageStandard>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>DebugFull</GenerateDebugInformation>
+      <ImageHasSafeExceptionHandlers>false</ImageHasSafeExceptionHandlers>
+      <AdditionalDependencies>dinput8.lib;dxguid.lib;comsuppw.lib;winmm.lib;delayimp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <DelayLoadDLLs>hid.dll;setupapi.dll;cfgmgr32.dll;shlwapi.dll;winmm.dll;d3dx9_43.dll;steam_api.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
       <ModuleDefinitionFile>export/dinput8.def</ModuleDefinitionFile>
     </Link>
   </ItemDefinitionGroup>
@@ -316,14 +458,53 @@
       <ModuleDefinitionFile>export/dinput8.def</ModuleDefinitionFile>
       <AdditionalLibraryDirectories>
       </AdditionalLibraryDirectories>
-      <AdditionalDependencies>comsuppw.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>dinput8.lib;dxguid.lib;comsuppw.lib;winmm.lib;delayimp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <DelayLoadDLLs>hid.dll;setupapi.dll;cfgmgr32.dll;shlwapi.dll;winmm.dll;d3dx9_43.dll;steam_api.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseDeploy|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <PrecompiledHeader>
+      </PrecompiledHeader>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>false</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;_USRDLL;BBCF_IM_EXPORTS;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <SDLCheck>true</SDLCheck>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <AdditionalIncludeDirectories>
+      </AdditionalIncludeDirectories>
+      <PrecompiledHeaderFile />
+      <PrecompiledHeaderOutputFile />
+      <AssemblerOutput>NoListing</AssemblerOutput>
+      <LanguageStandard>Default</LanguageStandard>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>DebugFull</GenerateDebugInformation>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <ImageHasSafeExceptionHandlers>false</ImageHasSafeExceptionHandlers>
+      <ModuleDefinitionFile>export/dinput8.def</ModuleDefinitionFile>
+      <AdditionalLibraryDirectories>
+      </AdditionalLibraryDirectories>
+      <AdditionalDependencies>dinput8.lib;dxguid.lib;comsuppw.lib;winmm.lib;delayimp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <DelayLoadDLLs>hid.dll;setupapi.dll;cfgmgr32.dll;shlwapi.dll;winmm.dll;d3dx9_43.dll;steam_api.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
     </Link>
   </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
   <Target Name="AfterBuild">
+    <Delete Files="$(ProjectDir)$(OutDir)$(TargetName).exp;$(ProjectDir)$(OutDir)$(TargetName).lib" />
+    <Delete Files="$(ProjectDir)$(OutDir)$(TargetName).pdb" Condition="'$(Configuration)'!='DebugDeploy'" />
     <Copy SourceFiles="$(ProjectDir)resource\settings.ini" DestinationFolder="$(ProjectDir)$(OutDir)" OverwriteReadOnlyFiles="true" SkipUnchangedFiles="false" />
     <Copy SourceFiles="$(ProjectDir)resource\palettes.ini" DestinationFolder="$(ProjectDir)$(OutDir)" OverwriteReadOnlyFiles="true" SkipUnchangedFiles="false" />
+    <Copy SourceFiles="$(ProjectDir)$(OutDir)$(TargetName).dll" DestinationFolder="$(BbcfInstallDir)" OverwriteReadOnlyFiles="true" SkipUnchangedFiles="false" Condition="('$(Configuration)'=='ReleaseDeploy' or '$(Configuration)'=='DebugDeploy') and '$(BbcfDeployEnabled)'=='true' and '$(BbcfCopyDll)'=='true' and '$(BbcfInstallDir)'!=''" />
+    <Copy SourceFiles="$(ProjectDir)resource\palettes.ini" DestinationFolder="$(BbcfInstallDir)" OverwriteReadOnlyFiles="true" SkipUnchangedFiles="false" Condition="('$(Configuration)'=='ReleaseDeploy' or '$(Configuration)'=='DebugDeploy') and '$(BbcfDeployEnabled)'=='true' and '$(BbcfCopyPalettes)'=='true' and '$(BbcfInstallDir)'!=''" />
+    <Copy SourceFiles="$(ProjectDir)resource\settings.ini" DestinationFolder="$(BbcfInstallDir)" OverwriteReadOnlyFiles="true" SkipUnchangedFiles="false" Condition="('$(Configuration)'=='ReleaseDeploy' or '$(Configuration)'=='DebugDeploy') and '$(BbcfDeployEnabled)'=='true' and '$(BbcfCopySettings)'=='true' and '$(BbcfInstallDir)'!=''" />
+    <Exec Command="$(BbcfLaunchCommand)" Condition="('$(Configuration)'=='ReleaseDeploy' or '$(Configuration)'=='DebugDeploy') and '$(BbcfDeployEnabled)'=='true' and '$(BbcfLaunchAfterDeploy)'=='true' and '$(BbcfLaunchCommand)'!=''" />
   </Target>
 </Project>

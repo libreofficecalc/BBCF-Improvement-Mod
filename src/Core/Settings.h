@@ -26,14 +26,17 @@ struct savedSettings_t
 class Settings
 {
 public:
-	static settingsIni_t settingsIni;
-	static savedSettings_t savedSettings;
+        static settingsIni_t settingsIni;
+        static savedSettings_t savedSettings;
+        static bool debugLoggingSettingMissing;
 
-	static void applySettingsIni(D3DPRESENT_PARAMETERS* pPresentationParameters);
-	static bool loadSettingsFile();
-	static void initSavedSettings();
-	//static void setViewportSize(D3DVIEWPORT9 Viewport);
-	static short getButtonValue(std::string button);
+        static void applySettingsIni(D3DPRESENT_PARAMETERS* pPresentationParameters);
+        static bool loadSettingsFile();
+        static void initSavedSettings();
+        //static void setViewportSize(D3DVIEWPORT9 Viewport);
+        static short getButtonValue(std::string button);
+
+        static bool WasDebugLoggingSettingMissing();
 
 	static int changeSetting(std::string setting_name, std::string new_value);
 private:

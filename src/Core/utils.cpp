@@ -6,7 +6,7 @@
 
 char* GetBbcfBaseAdress() {
 	static char* bbcf_base = NULL;
-	
+
 	// no point in calculating this more than once
 	if (bbcf_base != NULL) {
 		return bbcf_base;
@@ -53,7 +53,7 @@ char* RawMemoryArrayToString(unsigned char* srcBuf, int length)
 	static char output[2000];
 	//maybe should memset 0 the output array
 	//memset(output, 0, 2000);
-	char *ptr = &output[0];
+	char* ptr = &output[0];
 	int i = 0;
 	for (; i < length; i++)
 	{
@@ -74,7 +74,7 @@ MODULEINFO GetModuleInfo(LPCWSTR szModule)
 	return modinfo;
 }
 
-DWORD FindPattern(LPCWSTR module, char *pattern, char *mask)
+DWORD FindPattern(LPCWSTR module, char* pattern, char* mask)
 {
 	//Get all module related information
 	MODULEINFO mInfo = GetModuleInfo(module);
@@ -111,7 +111,7 @@ DWORD FindPattern(LPCWSTR module, char *pattern, char *mask)
 //HMODULE hM2 = GetModuleHandleA("steam_api.dll");
 //PBYTE pSteamAPI_Init = (PBYTE)GetProcAddress(hM2, "SteamAPI_Init");
 //orig_SteamAPI_Init = (SteamAPI_Init_t)DetourFunction(pSteamAPI_Init, (LPBYTE)hook_SteamAPI_Init);
-DWORD* GetInterfaceFuncPtr(DWORD* pDeviceInterface, const char *fmt, ...)
+DWORD* GetInterfaceFuncPtr(DWORD* pDeviceInterface, const char* fmt, ...)
 {
 	va_list	va_alist;
 	char	buf[32];
@@ -122,7 +122,7 @@ DWORD* GetInterfaceFuncPtr(DWORD* pDeviceInterface, const char *fmt, ...)
 	_vsnprintf_s(buf, sizeof(buf), fmt, va_alist);
 	va_end(va_alist);
 
-	char *op = (char *)strtoul(buf, NULL, 16);
+	char* op = (char*)strtoul(buf, NULL, 16);
 
 	while (1)
 	{
@@ -198,7 +198,7 @@ std::string FormatText(const char* message, ...)
 	char buf[1000];
 	va_list args;
 	va_start(args, message);
-	
+
 	vsprintf(buf, message, args);
 	va_end(args);
 
@@ -226,7 +226,7 @@ unsigned int rgb(double hue)
 	return r + (g << 8) + (b << 16);
 }
 
-DWORD QuickChecksum(DWORD *pData, int size)
+DWORD QuickChecksum(DWORD* pData, int size)
 {
 	if (!pData) { return 0x0; }
 

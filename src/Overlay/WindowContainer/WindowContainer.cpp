@@ -15,10 +15,17 @@
 #include "Overlay/Window/FrameHistory/FrameHistoryWindow.h"
 #include "Overlay/Window/FrameAdvantage/FrameAdvantageWindow.h"
 #include "Overlay/Window/ReplayRewindWindow.h"
+#include "Overlay/Window/WinePopupWindow.h"
+#include "Overlay/Window/UnlimitedPlaybackWindow.h"
+#include "Game/ReplayTakeover/ReplayTakeoverFeatureFlags.h"
+#if BBCF_ENABLE_UNLIMITED_REPLAY_TAKEOVER
+#include "Overlay/Window/UnlimitedReplayTakeoverWindow.h"
+#endif
 
 #include "Core/info.h"
 #include "Core/logger.h"
 #include "Core/Settings.h"
+#include "Core/Localization.h"
 
 WindowContainer::WindowContainer()
 {
@@ -36,14 +43,14 @@ WindowContainer::WindowContainer()
 		new UpdateNotifierWindow("Update available", true,
 			ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse));
 
-	AddWindow(WindowType_PaletteEditor,
-		new PaletteEditorWindow("Palette Editor", true));
+        AddWindow(WindowType_PaletteEditor,
+                new PaletteEditorWindow("Palette Editor", true));
 
 	AddWindow(WindowType_HitboxOverlay,
 		new HitboxOverlay("##HitboxOverlay", false, ImGuiWindowFlags_NoCollapse));
 
-	AddWindow(WindowType_Room,
-		new RoomWindow("Online###Room", true, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse));
+        AddWindow(WindowType_Room,
+                new RoomWindow(std::string(Messages.Online()) + "###Room", true, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse));
 
 	AddWindow(WindowType_Scr,
 		new ScrWindow("States", true, *this));
@@ -63,14 +70,27 @@ WindowContainer::WindowContainer()
 	AddWindow(WindowType_ReplayDBPopup,
 		new ReplayDBPopupWindow("Replay DB Popup", true, *this, ImGuiWindowFlags_NoTitleBar));
 
-	AddWindow(WindowType_FrameHistory,
-		new FrameHistoryWindow("Frame History", true));
+        AddWindow(WindowType_FrameHistory,
+                new FrameHistoryWindow("Frame History", true));
 
-	AddWindow(WindowType_FrameAdvantage,
-		new FrameAdvantageWindow("Frame Advantage", true, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse));
+        AddWindow(WindowType_FrameAdvantage,
+                new FrameAdvantageWindow("Frame Advantage", true, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse));
 	
-	AddWindow(WindowType_ReplayRewind,
-		new ReplayRewindWindow("Replay Rewind", true, *this, ImGuiWindowFlags_NoTitleBar));
+        AddWindow(WindowType_ReplayRewind,
+                new ReplayRewindWindow(Messages.Replay_Rewind(), true, *this, ImGuiWindowFlags_NoTitleBar));
+
+        AddWindow(WindowType_WinePopup,
+                new WinePopupWindow("Wine Popup", true, *this, ImGuiWindowFlags_NoTitleBar));
+
+        AddWindow(WindowType_UnlimitedPlayback,
+                new UnlimitedPlaybackWindow(L("Unlimited Playback (BETA)").c_str(), true, *this));
+
+#if BBCF_ENABLE_UNLIMITED_REPLAY_TAKEOVER
+        {
+                AddWindow(WindowType_UnlimitedReplayTakeover,
+                        new UnlimitedReplayTakeoverWindow("Unlimited Replay Takeover (BETA)", true, *this));
+        }
+#endif
 }
 
 

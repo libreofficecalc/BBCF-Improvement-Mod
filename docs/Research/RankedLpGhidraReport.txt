@@ -1,0 +1,201 @@
+Program: BBCF.exe
+Image base: 00400000
+
+===== 004bddf0 =====
+Function: FUN_004bddf0
+
+short FUN_004bddf0(ushort param_1,ushort param_2)
+
+{
+  ushort uVar1;
+  short sVar2;
+  
+  sVar2 = 0x400;
+  uVar1 = param_1;
+  if (param_1 < param_2) {
+    uVar1 = param_2;
+    param_2 = param_1;
+  }
+  while( true ) {
+    if (uVar1 == param_2) {
+      return sVar2;
+    }
+    sVar2 = FUN_0079f6c0();
+    if (sVar2 < 1) break;
+    uVar1 = uVar1 - 1;
+  }
+  return 1;
+}
+
+
+
+===== 004be320 =====
+Function: FUN_004be320
+
+void FUN_004be320(ushort *param_1,uint param_2)
+
+{
+  ushort uVar1;
+  short sVar2;
+  uint uVar3;
+  uint uVar4;
+  uint uVar5;
+  ushort uVar6;
+  bool bVar7;
+  bool bVar8;
+  
+  bVar8 = (short)param_2 == 0x28;
+  if (bVar8) {
+    param_2 = 0;
+  }
+  uVar1 = *param_1;
+  uVar3 = (uint)uVar1;
+  if ((uVar1 == 0) && (param_1[1] == 0)) {
+    param_1[1] = 0x7fff;
+  }
+  if ((char)param_1[5] == '\0') {
+    *(char *)(param_1 + 4) = (char)param_1[4] + '\x01';
+    FUN_004be1d0();
+    return;
+  }
+  uVar4 = uVar3;
+  if (9 < uVar3) {
+    sVar2 = FUN_004bddf0(uVar3,param_2,DAT_008a8f7c);
+    param_1[1] = param_1[1] - sVar2;
+    sVar2 = *(short *)(&DAT_009dffd0 + (uint)*param_1 * 8);
+    if ((sVar2 + 0x7fff < (int)(uint)param_1[1]) ||
+       (sVar2 = *(short *)(&DAT_009dffd2 + (uint)*param_1 * 8),
+       (int)(uint)param_1[1] < sVar2 + 0x7fff)) {
+      param_1[1] = sVar2 + 0x7fff;
+    }
+    uVar4 = (uint)*param_1;
+  }
+  uVar6 = (ushort)param_2;
+  if (0x17 < uVar3) {
+    if (uVar3 < 0x1d) {
+      if (uVar1 == uVar6) {
+        param_1[3] = param_1[3] + 1;
+        if ((short)*(ushort *)(&DAT_009dffd6 + uVar4 * 8) < (short)param_1[3]) {
+          param_1[3] = *(ushort *)(&DAT_009dffd6 + uVar4 * 8);
+        }
+      }
+    }
+    else {
+      if (uVar3 < 0x23) {
+        uVar4 = param_2 & 0xffff;
+        uVar5 = uVar3;
+        if (uVar6 < uVar1) {
+          uVar5 = param_2 & 0xffff;
+          uVar4 = uVar3;
+        }
+        if (uVar5 + 2 < uVar4) goto LAB_004be439;
+      }
+      else {
+        if (uVar3 < 0x25) {
+          bVar7 = uVar6 < 0x1d;
+        }
+        else {
+          bVar7 = uVar6 < 0x18;
+        }
+        if (bVar7) goto LAB_004be439;
+      }
+      FUN_004bdca0(1);
+    }
+  }
+LAB_004be439:
+  uVar4 = param_2 & 0xffff;
+  uVar5 = uVar3;
+  if (uVar6 < uVar1) {
+    uVar5 = param_2 & 0xffff;
+    uVar4 = uVar3;
+  }
+  if (uVar4 <= uVar5 + 2) {
+    param_1[2] = 0;
+  }
+  if ((((9 < uVar3) && (!bVar8)) && (0x13 < uVar3)) &&
+     (((int)(uint)param_1[1] <= *(short *)(&DAT_009dffd2 + uVar3 * 8) + 0x7fff ||
+      ((0x17 < uVar3 && (*(short *)(&DAT_009dffd6 + uVar3 * 8) <= (short)param_1[3])))))) {
+    FUN_004be700(param_1);
+  }
+  return;
+}
+
+
+
+===== 004be700 =====
+Function: FUN_004be700
+
+void FUN_004be700(short *param_1)
+
+{
+  if (*param_1 != 0) {
+    *param_1 = *param_1 + -1;
+    param_1[1] = 0x7fff;
+    param_1[2] = 0;
+    param_1[3] = 0;
+  }
+  return;
+}
+
+
+
+===== 004be730 =====
+Function: FUN_004be730
+
+void FUN_004be730(ushort *param_1)
+
+{
+  if (*param_1 < 0x27) {
+    *param_1 = *param_1 + 1;
+    param_1[1] = 0x7fff;
+    param_1[2] = 0;
+    param_1[3] = 0;
+  }
+  return;
+}
+
+
+
+===== DAT_009DFFD0 ranked LP bounds table =====
+rank  upperOff  lowerOff  unk4  counter  upper  lower
+0     100       0         0     0        32867  32767 
+1     100       0         0     0        32867  32767 
+2     100       0         0     0        32867  32767 
+3     100       0         0     0        32867  32767 
+4     100       0         0     0        32867  32767 
+5     100       0         0     0        32867  32767 
+6     100       0         0     0        32867  32767 
+7     100       0         0     0        32867  32767 
+8     100       0         0     0        32867  32767 
+9     100       0         0     0        32867  32767 
+10    2048      -5120     3072  0        34815  27647 
+11    2048      -5120     3072  0        34815  27647 
+12    2048      -5120     3072  0        34815  27647 
+13    2048      -5120     3072  0        34815  27647 
+14    3072      -5120     4096  0        35839  27647 
+15    3072      -5120     4096  0        35839  27647 
+16    3072      -5120     4096  0        35839  27647 
+17    3072      -5120     4096  0        35839  27647 
+18    4096      -5120     5120  5        36863  27647 
+19    4096      -5120     5120  5        36863  27647 
+20    4096      -5120     5120  5        36863  27647 
+21    4096      -5120     5120  5        36863  27647 
+22    4096      -5120     5120  5        36863  27647 
+23    5120      -5120     5120  5        37887  27647 
+24    5120      -5120     5120  5        37887  27647 
+25    5120      -5120     5120  5        37887  27647 
+26    5120      -5120     5120  5        37887  27647 
+27    5120      -5120     5120  5        37887  27647 
+28    6144      -5120     6144  5        38911  27647 
+29    6144      -5120     6144  5        38911  27647 
+30    6144      -5120     6144  5        38911  27647 
+31    6144      -5120     6144  5        38911  27647 
+32    6144      -5120     6144  5        38911  27647 
+33    7168      -5120     7168  5        39935  27647 
+34    8192      -5120     8192  5        40959  27647 
+35    8192      -5120     20480 5        40959  27647 
+36    9216      -5120     20480 5        41983  27647 
+37    10240     -5120     20480 5        43007  27647 
+38    15360     -5120     20480 5        48127  27647 
+39    5120      -5120     20480 5        37887  27647 
+

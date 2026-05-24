@@ -17,8 +17,10 @@ public:
 	void ProcessSavedPalettePackets();
 	void ClearSavedPalettePacketQueues();
 	void OnMatchInit();
+	void OnUpdate();
 
 private:
+	bool IsPaletteHandleReady(const CharPaletteHandle& charPalHandle) const;
 	void SendPaletteInfoPacket(CharPaletteHandle& charPalHandle, uint16_t roomMemberIndex);
 	void SendPaletteDataPackets(CharPaletteHandle& charPalHandle, uint16_t roomMemberIndex);
 	void ProcessSavedPaletteInfoPackets();
@@ -59,4 +61,6 @@ private:
 	// Interfaces
 	PaletteManager* m_pPaletteManager;
 	RoomManager* m_pRoomManager;
+	bool m_matchInitPending = false;
+	bool m_loggedMatchInitWait = false;
 };

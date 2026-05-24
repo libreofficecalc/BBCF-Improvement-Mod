@@ -32,6 +32,44 @@ char* CharPaletteHandle::GetPalFileAddr(const char* base, int palIndex, int file
 	return (char*)paletteAddress;
 }
 
+bool CharPaletteHandle::TryGetPalFileAddr(int palIndex, int fileID, char** ppPalFileAddr) const
+{
+	if (ppPalFileAddr == nullptr)
+		return false;
+
+	*ppPalFileAddr = nullptr;
+
+	if (m_pPalBaseAddr == nullptr)
+		return false;
+
+	if (palIndex < 0 || palIndex > MAX_PAL_INDEX || fileID < 0 || fileID >= TOTAL_PALETTE_FILES)
+		return false;
+
+	__try
+	{
+		const DWORD* deref1 = reinterpret_cast<const DWORD*>(m_pPalBaseAddr) + 1;
+		if (*deref1 == 0)
+			return false;
+
+		const DWORD* deref2 = reinterpret_cast<const DWORD*>(*deref1) + (palIndex * 8) + fileID;
+		if (*deref2 == 0)
+			return false;
+
+		char* paletteAddress = reinterpret_cast<char*>(reinterpret_cast<DWORD*>(*deref2) + 7);
+
+		// Probe the first byte so stale game pointers fail here instead of in later memcpy paths.
+		volatile char firstByte = paletteAddress[0];
+		(void)firstByte;
+
+		*ppPalFileAddr = paletteAddress;
+		return true;
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER)
+	{
+		return false;
+	}
+}
+
 void CharPaletteHandle::SetPointerPalIndex(int* pPalIndex)
 {
 	m_pCurPalIndex = pPalIndex;
@@ -55,14 +93,43 @@ int CharPaletteHandle::GetOrigPalIndex() const
 	return m_origPalIndex;
 }
 
-bool CharPaletteHandle::IsNullPointerPalBasePtr()
+bool CharPaletteHandle::IsNullPointerPalBasePtr() const
 {
 	return m_pPalBaseAddr == nullptr;
 }
 
-bool CharPaletteHandle::IsNullPointerPalIndex()
+bool CharPaletteHandle::IsNullPointerPalIndex() const
 {
 	return m_pCurPalIndex == nullptr;
+}
+
+bool CharPaletteHandle::CanResolvePalFileAddr(int palIndex, int fileID) const
+{
+	char* pPalFileAddr = nullptr;
+	return TryGetPalFileAddr(palIndex, fileID, &pPalFileAddr);
+}
+
+bool CharPaletteHandle::IsPaletteDataReady() const
+{
+	if (m_pCurPalIndex == nullptr)
+		return false;
+
+	if (m_switchPalIndex1 < 0 || m_switchPalIndex1 > MAX_PAL_INDEX ||
+		m_switchPalIndex2 < 0 || m_switchPalIndex2 > MAX_PAL_INDEX)
+	{
+		return false;
+	}
+
+	for (int fileID = 0; fileID < TOTAL_PALETTE_FILES; ++fileID)
+	{
+		if (!CanResolvePalFileAddr(m_switchPalIndex1, fileID) ||
+			!CanResolvePalFileAddr(m_switchPalIndex2, fileID))
+		{
+			return false;
+		}
+	}
+
+	return true;
 }
 
 int& CharPaletteHandle::GetPalIndexRef()
@@ -72,6 +139,12 @@ int& CharPaletteHandle::GetPalIndexRef()
 
 void CharPaletteHandle::ReplacePalData(IMPL_data_t* newPaletteData)
 {
+	if (!IsPaletteDataReady())
+	{
+		LOG(1, "CharPaletteHandle::ReplacePalData skipped because palette storage is not ready\n");
+		return;
+	}
+
 	SetCurrentPalInfo(&newPaletteData->palInfo);
 	ReplaceAllPalFiles(newPaletteData, m_switchPalIndex1);
 	ReplaceAllPalFiles(newPaletteData, m_switchPalIndex2);
@@ -81,8 +154,20 @@ void CharPaletteHandle::ReplacePalData(IMPL_data_t* newPaletteData)
 
 void CharPaletteHandle::ReplaceSinglePalFile(const char* newPalData, PaletteFile palFile)
 {
-	char* pDst1 = GetPalFileAddr(m_pPalBaseAddr, m_switchPalIndex1, (int)palFile);
-	char* pDst2 = GetPalFileAddr(m_pPalBaseAddr, m_switchPalIndex2, (int)palFile);
+	if (!IsPaletteDataReady())
+	{
+		LOG(1, "CharPaletteHandle::ReplaceSinglePalFile skipped because palette storage is not ready (palFile=%d)\n", (int)palFile);
+		return;
+	}
+
+	char* pDst1 = nullptr;
+	char* pDst2 = nullptr;
+	if (!TryGetPalFileAddr(m_switchPalIndex1, (int)palFile, &pDst1) ||
+		!TryGetPalFileAddr(m_switchPalIndex2, (int)palFile, &pDst2))
+	{
+		LOG(1, "CharPaletteHandle::ReplaceSinglePalFile skipped because palette file pointers became invalid during update (palFile=%d)\n", (int)palFile);
+		return;
+	}
 	
 	ReplacePalArrayInMemory(pDst1, newPalData);
 	ReplacePalArrayInMemory(pDst2, newPalData);
@@ -133,7 +218,11 @@ void CharPaletteHandle::SetSelectedCustomPalIndex(int index)
 
 const char* CharPaletteHandle::GetCurPalFileAddr(PaletteFile palFile)
 {
-	return GetPalFileAddr(m_pPalBaseAddr, m_switchPalIndex1, (int)palFile);
+	char* pPalFileAddr = nullptr;
+	if (!TryGetPalFileAddr(m_switchPalIndex1, (int)palFile, &pPalFileAddr))
+		return nullptr;
+
+	return pPalFileAddr;
 }
 
 const char* CharPaletteHandle::GetOrigPalFileAddr(PaletteFile palFile)
@@ -155,10 +244,21 @@ void CharPaletteHandle::SetCurrentPalInfo(IMPL_info_t* pPalInfo)
 
 const IMPL_data_t& CharPaletteHandle::GetCurrentPalData()
 {
+	if (!IsPaletteDataReady())
+	{
+		LOG(1, "CharPaletteHandle::GetCurrentPalData returning cached data because palette storage is not ready\n");
+		return m_currentPalData;
+	}
+
 	for (int i = 0; i < TOTAL_PALETTE_FILES; i++)
 	{
 		char* pDst = m_currentPalData.file0 + (i * IMPL_PALETTE_DATALEN);
-		const char* pSrc = GetPalFileAddr(m_pPalBaseAddr, m_switchPalIndex1, i);
+		char* pSrc = nullptr;
+		if (!TryGetPalFileAddr(m_switchPalIndex1, i, &pSrc))
+		{
+			LOG(1, "CharPaletteHandle::GetCurrentPalData returning cached data because palette file %d became invalid during readback\n", i);
+			return m_currentPalData;
+		}
 		memcpy(pDst, pSrc, IMPL_PALETTE_DATALEN);
 		pDst += IMPL_PALETTE_DATALEN;
 	}
@@ -195,7 +295,12 @@ void CharPaletteHandle::ReplaceAllPalFiles(IMPL_data_t* newPaletteData, int palI
 		if (!memcmp(NULLBLOCK, pSrc, IMPL_PALETTE_DATALEN))
 			continue;
 
-		char* pDst = GetPalFileAddr(m_pPalBaseAddr, palIndex, i);
+		char* pDst = nullptr;
+		if (!TryGetPalFileAddr(palIndex, i, &pDst))
+		{
+			LOG(1, "CharPaletteHandle::ReplaceAllPalFiles skipped palette file %d because destination pointer is invalid (palIndex=%d)\n", i, palIndex);
+			continue;
+		}
 		ReplacePalArrayInMemory(pDst, pSrc);
 	}
 }
@@ -204,12 +309,24 @@ void CharPaletteHandle::BackupOrigPal()
 {
 	LOG(2, "CharPaletteHandle::BackupOrigPal\n");
 
+	if (!IsPaletteDataReady())
+	{
+		LOG(1, "CharPaletteHandle::BackupOrigPal skipped because palette storage is not ready\n");
+		return;
+	}
+
 	const char* pSrc = 0;
 	char* pDst = m_origPalBackup.file0;
 
 	for (int i = 0; i < TOTAL_PALETTE_FILES; i++)
 	{
-		pSrc = GetPalFileAddr(m_pPalBaseAddr, *m_pCurPalIndex, i);
+		char* pResolvedSrc = nullptr;
+		if (!TryGetPalFileAddr(*m_pCurPalIndex, i, &pResolvedSrc))
+		{
+			LOG(1, "CharPaletteHandle::BackupOrigPal aborted because palette file %d became invalid during backup\n", i);
+			return;
+		}
+		pSrc = pResolvedSrc;
 		memcpy(pDst, pSrc, IMPL_PALETTE_DATALEN);
 		pDst += IMPL_PALETTE_DATALEN;
 	}

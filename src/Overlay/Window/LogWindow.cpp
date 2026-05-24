@@ -1,5 +1,7 @@
 #include "LogWindow.h"
 
+#include "Core/Localization.h"
+
 void LogWindow::BeforeDraw()
 {
 	ImGui::SetNextWindowSize(ImVec2(500, 400), ImGuiCond_FirstUseEver);
@@ -7,20 +9,20 @@ void LogWindow::BeforeDraw()
 
 void LogWindow::Draw()
 {
-	if (ImGui::Button("Clear"))
+	if (ImGui::Button(Messages.Clear()))
 	{
 		m_logger.Clear();
 	}
 	ImGui::SameLine();
-	bool copyPressed = ImGui::Button("Copy to clipboard");
+	bool copyPressed = ImGui::Button(Messages.Copy_to_clipboard());
 	ImGui::SameLine();
-	m_filter.Draw("Search", -100.0f);
+	m_filter.Draw(Messages.Search(), -100.0f);
 	ImGui::Separator();
 	ImGui::BeginChild("scrolling", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);
 	if (copyPressed)
 	{
 		ImGui::LogToClipboard();
-		m_logger.Log("[system] Log has been copied to clipboard\n");
+		m_logger.Log(Messages.System_log_copied());
 	}
 
 	ImGuiLogBuffer* logBuffer = (ImGuiLogBuffer*)m_logger.GetBuffer();

@@ -1,6 +1,7 @@
 #pragma once
 #include "Game/GhidraDefs.h"
 #include "Game/CharData.h"
+#include <cstddef>
 #include <map>
 #define SNAPSHOT_PREALLOC_SIZE  1
 
@@ -23,6 +24,7 @@ public:
 	unsigned int snapshot_count;
 	CharData* p1_ptr;//p1 CharData*
 	CharData* p2_ptr; //p2 CharData*
+	int last_saved_snapshot_size;
 	//p1 and p2 ptrs are used for now to determine when I need to remake the snapshot
 	GGPOSessionCallbacks*  callbacks_ptr;
 	//Snapshot* p_snapshot_reseve;
@@ -30,13 +32,15 @@ public:
 	SnapshotApparatus();
 
 	
-bool save_snapshot(Snapshot** pbuf);
-bool save_snapshot_prealloc();
-bool load_snapshot(Snapshot* buf);
-bool load_snapshot_prealloc(int index);
-bool load_snapshot_index(int index);
-bool check_if_valid(CharData* p1, CharData* p2);
-void clear_count();
-bool clear_framecounts();
-int get_nearest_prealloc_frame(int current_frame, std::map<int, Snapshot*> frame_snap_map);
+	bool save_snapshot(Snapshot** pbuf);
+	bool save_snapshot_prealloc();
+	bool load_snapshot(Snapshot* buf);
+	bool load_snapshot_sized(const void* buf, size_t buf_size);
+	bool load_snapshot_prealloc(int index);
+	bool load_snapshot_index(int index);
+	bool check_if_valid(CharData* p1, CharData* p2);
+	void clear_count();
+	bool clear_framecounts();
+	int get_nearest_prealloc_frame(int current_frame, std::map<int, Snapshot*> frame_snap_map);
+	int get_last_saved_snapshot_size() const;
 };

@@ -20,14 +20,15 @@ private:
 	void DrawCurrentPlayersCount() const;
 	void DrawLinkButtons() const;
 	void DrawLoadedSettingsValuesSection() const;
-	void DrawCustomPalettesSection() const;
-	void DrawHitboxOverlaySection() const;
-	void DrawGameplaySettingSection() const;
-	void DrawAvatarSection() const;
-	void DrawFrameAdvantageSection() const;
-	void DrawFrameHistorySection() const;
-	void DrawControllerSettingSection() const;
-
+        void DrawCustomPalettesSection() const;
+        void DrawHitboxOverlaySection() const;
+        void DrawGameplaySettingSection() const;
+        void DrawRankedMatchesSection() const;
+        void DrawAvatarSection() const;
+        void DrawFrameAdvantageSection() const;
+        void DrawFrameHistorySection() const;
+        void DrawControllerSettingSection() const;
+        void DrawLanguageSelector();
 	const ImVec2 BTN_SIZE = ImVec2(60, 20);
 	WindowContainer* m_pWindowContainer = nullptr;
 };

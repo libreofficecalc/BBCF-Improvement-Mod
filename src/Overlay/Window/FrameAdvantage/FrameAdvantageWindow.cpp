@@ -4,6 +4,7 @@
 #include "FrameAdvantage.h"
 #include "FrameAdvantageWindow.h"
 #include "Overlay/imgui_utils.h"
+#include "Core/Localization.h"
 
 void FrameAdvantageWindow::Draw() {
 
@@ -31,12 +32,12 @@ void FrameAdvantageWindow::Draw() {
 		else
 			color = white;
 
-		ImGui::Text("Player 1");
-		ImGui::TextUnformatted("Gap:");
+ImGui::Text(Messages.Player_1());
+ImGui::TextUnformatted(Messages.Gap());
 		ImGui::SameLine();
 		ImGui::TextUnformatted(((playersInteraction.p1GapDisplay != -1) ? std::to_string(playersInteraction.p1GapDisplay) : "").c_str());
 
-		ImGui::TextUnformatted("Advantage:");
+ImGui::TextUnformatted(Messages.Advantage());
 		ImGui::SameLine();
 		std::string str = std::to_string(playersInteraction.frameAdvantageToDisplay);
 		if (playersInteraction.frameAdvantageToDisplay > 0)
@@ -53,12 +54,12 @@ void FrameAdvantageWindow::Draw() {
 			color = white;
 
 		ImGui::NextColumn();
-		ImGui::Text("Player 2");
-		ImGui::TextUnformatted("Gap:");
+ImGui::Text(Messages.Player_2());
+ImGui::TextUnformatted(Messages.Gap());
 		ImGui::SameLine();
 		ImGui::TextUnformatted(((playersInteraction.p2GapDisplay != -1) ? std::to_string(playersInteraction.p2GapDisplay) : "").c_str());
 
-		ImGui::TextUnformatted("Advantage:");
+ImGui::TextUnformatted(Messages.Advantage());
 		ImGui::SameLine();
 		std::string str2 = std::to_string(-playersInteraction.frameAdvantageToDisplay);
 		if (playersInteraction.frameAdvantageToDisplay < 0)

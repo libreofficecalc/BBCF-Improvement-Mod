@@ -46,6 +46,10 @@ D3DXMATRIX* WINAPI hook_D3DXMatrixLookAtLH(D3DXMATRIX *pOut, CONST D3DXVECTOR3 *
 {
 	LOG(7, "D3DXMatrixLookAtLH 0x%p (pEye:) %.2f %.2f %.2f (pAt:) %.2f %.2f %.2f (pUP:) %.2f %.2f %.2f\n", 
 		pOut, pEye->x, pEye->y, pEye->z, pAt->x, pAt->y, pAt->z, pUp->x, pUp->y, pUp->z);
+	if (!orig_D3DXMatrixLookAtLH)
+	{
+		return pOut;
+	}
 	//LOG(7, "BEFORE:\n");
 	//LOG(7, "%.2f %.2f %,2 %,2\n", pOut->_11, pOut->_12, pOut->_13, pOut->_14);
 	//LOG(7, "%.2f %.2f %,2 %,2\n", pOut->_21, pOut->_22, pOut->_23, pOut->_24);
@@ -66,6 +70,10 @@ D3DXMATRIX* WINAPI hook_D3DXMatrixLookAtLH(D3DXMATRIX *pOut, CONST D3DXVECTOR3 *
 D3DXMATRIX* WINAPI hook_D3DXMatrixPerspectiveFovLH(D3DXMATRIX *pOut, FLOAT fovy, FLOAT Aspect, FLOAT zn, FLOAT zf)
 {
 	LOG(7, "D3DXMatrixPerspectiveFovLH 0x%p %.2f %.2f %.2f %.2f\n", pOut, fovy, Aspect, zn, zf);
+	if (!orig_D3DXMatrixPerspectiveFovLH)
+	{
+		return pOut;
+	}
 	//LOG(7, "BEFORE:\n");
 	//LOG(7, "%.2f %.2f %,2 %,2\n", pOut->_11, pOut->_12, pOut->_13, pOut->_14);
 	//LOG(7, "%.2f %.2f %,2 %,2\n", pOut->_21, pOut->_22, pOut->_23, pOut->_24);
@@ -85,6 +93,10 @@ D3DXMATRIX* WINAPI hook_D3DXMatrixPerspectiveFovLH(D3DXMATRIX *pOut, FLOAT fovy,
 
 D3DXMATRIX* WINAPI hook_D3DXMatrixMultiply(D3DXMATRIX *pOut, CONST D3DXMATRIX *pM1, CONST D3DXMATRIX *pM2)
 {
+	if (!orig_D3DXMatrixMultiply)
+	{
+		return pOut;
+	}
 	D3DXMATRIX* ret = orig_D3DXMatrixMultiply(pOut, pM1, pM2);
 	LOG(7, "D3DXMatrixMultiply\n");
 	return ret;
@@ -92,6 +104,10 @@ D3DXMATRIX* WINAPI hook_D3DXMatrixMultiply(D3DXMATRIX *pOut, CONST D3DXMATRIX *p
 
 D3DXMATRIX* WINAPI hook_D3DXMatrixScaling(D3DXMATRIX *pOut, FLOAT sx, FLOAT sy, FLOAT sz)
 {
+	if (!orig_D3DXMatrixScaling)
+	{
+		return pOut;
+	}
 	D3DXMATRIX* ret = orig_D3DXMatrixScaling(pOut, sx, sy, sz);
 	LOG(7, "D3DXMatrixScaling\n");
 	return ret;
@@ -99,6 +115,10 @@ D3DXMATRIX* WINAPI hook_D3DXMatrixScaling(D3DXMATRIX *pOut, FLOAT sx, FLOAT sy, 
 
 D3DXMATRIX* WINAPI hook_D3DXMatrixTranslation(D3DXMATRIX *pOut, FLOAT x, FLOAT y, FLOAT z)
 {
+	if (!orig_D3DXMatrixTranslation)
+	{
+		return pOut;
+	}
 	D3DXMATRIX* ret = orig_D3DXMatrixTranslation(pOut, x, y, z);
 	LOG(7, "D3DXMatrixTranslation\n");
 	return ret;
@@ -106,6 +126,10 @@ D3DXMATRIX* WINAPI hook_D3DXMatrixTranslation(D3DXMATRIX *pOut, FLOAT x, FLOAT y
 
 D3DXVECTOR3* WINAPI hook_D3DXVec3TransformCoord(D3DXVECTOR3 *pOut, CONST D3DXVECTOR3 *pV, CONST D3DXMATRIX *pM)
 {
+	if (!orig_D3DXVec3TransformCoord)
+	{
+		return pOut;
+	}
 	D3DXVECTOR3* ret = orig_D3DXVec3TransformCoord(pOut, pV, pM);
 	LOG(7, "D3DXVec3TransformCoord\n");
 	return ret;
@@ -114,6 +138,10 @@ D3DXVECTOR3* WINAPI hook_D3DXVec3TransformCoord(D3DXVECTOR3 *pOut, CONST D3DXVEC
 D3DXVECTOR4* WINAPI hook_D3DXVec4Transform(D3DXVECTOR4 *pOut, CONST D3DXVECTOR4 *pV, CONST D3DXMATRIX *pM)
 {
 	LOG(7, "D3DXVec4Transform\n");
+	if (!orig_D3DXVec4Transform)
+	{
+		return pOut;
+	}
 	return orig_D3DXVec4Transform(pOut, pV, pM);
 }
 
@@ -121,36 +149,37 @@ D3DXMATRIX* WINAPI hook_D3DXMatrixTransformation2D(D3DXMATRIX *pOut, CONST D3DXV
 	FLOAT ScalingRotation, CONST D3DXVECTOR2* pScaling, CONST D3DXVECTOR2* pRotationCenter, FLOAT Rotation, CONST D3DXVECTOR2* pTranslation)
 {
 	LOG(7, "D3DXMatrixTransformation2D\n");
+	if (!orig_D3DXMatrixTransformation2D)
+	{
+		return pOut;
+	}
 	return orig_D3DXMatrixTransformation2D(pOut, pScalingCenter, ScalingRotation, pScaling, pRotationCenter, Rotation, pTranslation);
 }
 
 void hookD3DMaths()
 {
 	HMODULE hM = GetModuleHandleA("d3dx9_43.dll");
-	PBYTE pD3DXMatrixLookAtLH = (PBYTE)GetProcAddress(hM, "D3DXMatrixLookAtLH");
-	PBYTE pD3DXMatrixPerspectiveFovLH = (PBYTE)GetProcAddress(hM, "D3DXMatrixPerspectiveFovLH");
-	PBYTE pD3DXMatrixMultiply = (PBYTE)GetProcAddress(hM, "D3DXMatrixMultiply");
-	PBYTE pD3DXMatrixScaling = (PBYTE)GetProcAddress(hM, "D3DXMatrixScaling");
-	PBYTE pD3DXMatrixTranslation = (PBYTE)GetProcAddress(hM, "D3DXMatrixTranslation");
-	PBYTE pD3DXVec3TransformCoord = (PBYTE)GetProcAddress(hM, "D3DXVec3TransformCoord");
-	PBYTE pD3DXVec4Transform = (PBYTE)GetProcAddress(hM, "D3DXVec4Transform");
-	PBYTE pD3DXMatrixTransformation2D = (PBYTE)GetProcAddress(hM, "D3DXMatrixTransformation2D");
+	if (!hM) {
+		LOG(2, "d3dx9_43.dll not loaded; skipping D3DX math hooks\n");
+		return;
+	}
 
-	hookSucceeded((PBYTE)pD3DXMatrixLookAtLH, "D3DXMatrixLookAtLH");
-	hookSucceeded((PBYTE)pD3DXMatrixPerspectiveFovLH, "D3DXMatrixPerspectiveFovLH");
-	hookSucceeded((PBYTE)pD3DXMatrixMultiply, "D3DXMatrixMultiply");
-	hookSucceeded((PBYTE)pD3DXMatrixScaling, "D3DXMatrixScaling");
-	hookSucceeded((PBYTE)pD3DXMatrixTranslation, "D3DXMatrixTranslation");
-	hookSucceeded((PBYTE)pD3DXVec3TransformCoord, "D3DXVec3TransformCoord");
-	hookSucceeded((PBYTE)pD3DXVec4Transform, "D3DXVec4Transform");
-	hookSucceeded((PBYTE)pD3DXMatrixTransformation2D, "D3DXMatrixTransformation2D");
+	auto hookOptionalD3DX = [](HMODULE module, const char* name, LPBYTE hook) -> PBYTE {
+		PBYTE target = (PBYTE)GetProcAddress(module, name);
+		if (!target) {
+			LOG(2, "%s not found; skipping D3DX math hook\n", name);
+			return nullptr;
+		}
+		hookSucceeded(target, name);
+		return DetourFunction(target, hook);
+	};
 
-	orig_D3DXMatrixLookAtLH = (D3DXMatrixLookAtLH_t)DetourFunction(pD3DXMatrixLookAtLH, (LPBYTE)hook_D3DXMatrixLookAtLH);
-	orig_D3DXMatrixPerspectiveFovLH = (D3DXMatrixPerspectiveFovLH_t)DetourFunction(pD3DXMatrixPerspectiveFovLH, (LPBYTE)hook_D3DXMatrixPerspectiveFovLH);
-	orig_D3DXMatrixMultiply = (D3DXMatrixMultiply_t)DetourFunction(pD3DXMatrixMultiply, (LPBYTE)hook_D3DXMatrixMultiply);
-	orig_D3DXMatrixScaling = (D3DXMatrixScaling_t)DetourFunction(pD3DXMatrixScaling, (LPBYTE)hook_D3DXMatrixScaling);
-	orig_D3DXMatrixTranslation = (D3DXMatrixTranslation_t)DetourFunction(pD3DXMatrixTranslation, (LPBYTE)hook_D3DXMatrixTranslation);
-	orig_D3DXVec3TransformCoord = (D3DXVec3TransformCoord_t)DetourFunction(pD3DXVec3TransformCoord, (LPBYTE)hook_D3DXVec3TransformCoord);
-	orig_D3DXVec4Transform = (D3DXVec4Transform_t)DetourFunction(pD3DXVec4Transform, (LPBYTE)hook_D3DXVec4Transform);
-	orig_D3DXMatrixTransformation2D = (D3DXMatrixTransformation2D_t)DetourFunction(pD3DXMatrixTransformation2D, (LPBYTE)hook_D3DXMatrixTransformation2D);
+	orig_D3DXMatrixLookAtLH = (D3DXMatrixLookAtLH_t)hookOptionalD3DX(hM, "D3DXMatrixLookAtLH", (LPBYTE)hook_D3DXMatrixLookAtLH);
+	orig_D3DXMatrixPerspectiveFovLH = (D3DXMatrixPerspectiveFovLH_t)hookOptionalD3DX(hM, "D3DXMatrixPerspectiveFovLH", (LPBYTE)hook_D3DXMatrixPerspectiveFovLH);
+	orig_D3DXMatrixMultiply = (D3DXMatrixMultiply_t)hookOptionalD3DX(hM, "D3DXMatrixMultiply", (LPBYTE)hook_D3DXMatrixMultiply);
+	orig_D3DXMatrixScaling = (D3DXMatrixScaling_t)hookOptionalD3DX(hM, "D3DXMatrixScaling", (LPBYTE)hook_D3DXMatrixScaling);
+	orig_D3DXMatrixTranslation = (D3DXMatrixTranslation_t)hookOptionalD3DX(hM, "D3DXMatrixTranslation", (LPBYTE)hook_D3DXMatrixTranslation);
+	orig_D3DXVec3TransformCoord = (D3DXVec3TransformCoord_t)hookOptionalD3DX(hM, "D3DXVec3TransformCoord", (LPBYTE)hook_D3DXVec3TransformCoord);
+	orig_D3DXVec4Transform = (D3DXVec4Transform_t)hookOptionalD3DX(hM, "D3DXVec4Transform", (LPBYTE)hook_D3DXVec4Transform);
+	orig_D3DXMatrixTransformation2D = (D3DXMatrixTransformation2D_t)hookOptionalD3DX(hM, "D3DXMatrixTransformation2D", (LPBYTE)hook_D3DXMatrixTransformation2D);
 }

@@ -46,7 +46,9 @@ enum GameState
 	GameState_ArcadeStageSelectScreen = 13,
 	GameState_VersusScreen = 14,
 	GameState_InMatch = 15,
-	GameState_VictoryScreen = 16,
+	GameState_VictoryScreen = 16,   // 0x10 — initial victory frame, OnMatchRematch hooked here
+	GameState_VictoryScreen1 = 17,  // 0x11 — victory phase 2
+	GameState_VictoryScreen2 = 18,  // 0x12 — victory phase 3 (rematch/exit choice visible)
 	GameState_StoryMenu = 24,
 	GameState_GalleryMenu = 25,
 	GameState_ItemMenu = 25,
