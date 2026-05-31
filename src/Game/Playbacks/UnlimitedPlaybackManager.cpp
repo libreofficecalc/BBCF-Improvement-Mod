@@ -927,8 +927,43 @@ bool UnlimitedPlaybackManager::RemoveEntryByIndex(size_t idx) {
 
     m_cache.erase(m_entries[idx].id);
     m_entries.erase(m_entries.begin() + idx);
+    for (int i = 0; i < Trigger_Count; ++i) {
+        m_sequentialIndex[i] = 0;
+        m_nonRepeatPools[i].clear();
+    }
     PushToast(L("Entry removed."));
     return true;
+}
+
+bool UnlimitedPlaybackManager::MoveEntry(size_t fromIdx, size_t toIdx) {
+    InitializeIfNeeded();
+
+    if (fromIdx >= m_entries.size() || toIdx >= m_entries.size() || fromIdx == toIdx) {
+        return false;
+    }
+
+    PlaybackEntry entry = std::move(m_entries[fromIdx]);
+    m_entries.erase(m_entries.begin() + static_cast<std::ptrdiff_t>(fromIdx));
+    m_entries.insert(m_entries.begin() + static_cast<std::ptrdiff_t>(toIdx), std::move(entry));
+    for (int i = 0; i < Trigger_Count; ++i) {
+        m_sequentialIndex[i] = 0;
+        m_nonRepeatPools[i].clear();
+    }
+    PushToast(L("Slot moved."));
+    return true;
+}
+
+void UnlimitedPlaybackManager::SetAllEntriesEnabled(bool enabled) {
+    InitializeIfNeeded();
+
+    for (auto& entry : m_entries) {
+        entry.enabled = enabled;
+    }
+    for (int i = 0; i < Trigger_Count; ++i) {
+        m_sequentialIndex[i] = 0;
+        m_nonRepeatPools[i].clear();
+    }
+    PushToast(enabled ? L("All slots enabled.") : L("All slots disabled."));
 }
 
 bool UnlimitedPlaybackManager::RenameEntry(size_t idx, const std::string& newName) {

@@ -14,6 +14,7 @@ Unlimited Playback lets you:
 - Send a library entry back into one of the normal CF slots.
 - Import and export individual `.playback` files.
 - Save and load whole Unlimited Playback profiles as `.upl` files.
+- Reorder library entries by drag-and-drop or right-click menu actions.
 - Capture short input sequences from Replay Theater.
 - Randomize or rotate through enabled playback entries.
 - Trigger playback from training events such as wakeup, block, hit, throw tech, or a key/button press.
@@ -94,6 +95,17 @@ Each library entry has:
 - An edit button.
 - A delete button.
 - A right-click menu with extra actions.
+
+### Reorder Entries
+
+You can reorder entries inside the current Unlimited Playback profile without changing their names or playback data.
+
+- Drag an entry and drop it onto another entry to move it to that position.
+- Right-click an entry and use `Move up`, `Move down`, or `Set index...`.
+- `Set index...` opens a blocking popup with a 1-based index clamped to the current entry count.
+- The same right-click menu has `Turn ALL slots off` and `Turn ALL slots on` under `Slot list`.
+
+Order matters for `Sequential` selection mode and is saved in `.upl` profile files.
 
 ### Play an Entry Immediately
 

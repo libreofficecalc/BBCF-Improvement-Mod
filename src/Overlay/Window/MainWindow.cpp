@@ -98,6 +98,11 @@ void MainWindow::Draw()
 	{
 		m_pWindowContainer->GetWindow(WindowType_Room)->ToggleOpen();
 	}
+	ImGui::SameLine();
+	if (ImGui::Button(L("Network Square Color").c_str(), ImVec2(160, 20)))
+	{
+		m_pWindowContainer->GetWindow(WindowType_NetworkSquareColor)->ToggleOpen();
+	}
 
 	ImGui::VerticalSpacing(5);
 

@@ -312,6 +312,7 @@ namespace
 		bool pending = false;
 		uint64_t serial = 0;
 		ULONGLONG startedAtMs = 0;
+		ULONGLONG lastScanAtMs = 0;
 		ULONGLONG firstBackingChangeAtMs = 0;
 		uint32_t attemptedCharacterId = kInvalidRankedCharacterId;
 		int32_t uploadedScore = 0;
@@ -3510,14 +3511,27 @@ namespace
 			return false;
 		}
 
+		static uintptr_t s_cachedModuleBase = 0;
+		static uintptr_t s_cachedRankedTableBase = 0;
+		if (s_cachedModuleBase == moduleBase &&
+			s_cachedRankedTableBase != 0 &&
+			!IsBadReadPtr(reinterpret_cast<const void*>(s_cachedRankedTableBase + 0xD4), 4))
+		{
+			*outBase = s_cachedRankedTableBase;
+			return true;
+		}
+
 		typedef uintptr_t(__cdecl* RankedTableBaseFn)();
 		const RankedTableBaseFn rankedTableBaseFn = reinterpret_cast<RankedTableBaseFn>(moduleBase + kRankedTableBaseFnRva);
 		const uintptr_t rankedTableBase = rankedTableBaseFn ? rankedTableBaseFn() : 0;
-		if (rankedTableBase == 0)
+		if (rankedTableBase == 0 || IsBadReadPtr(reinterpret_cast<const void*>(rankedTableBase + 0xD4), 4))
 		{
+			s_cachedRankedTableBase = 0;
 			return false;
 		}
 
+		s_cachedModuleBase = moduleBase;
+		s_cachedRankedTableBase = rankedTableBase;
 		*outBase = rankedTableBase;
 		return true;
 	}
@@ -3999,6 +4013,12 @@ namespace
 		}
 
 		const ULONGLONG nowMs = GetTickCount64();
+		if (g_rankedUploadObservation.lastScanAtMs != 0 &&
+			nowMs < g_rankedUploadObservation.lastScanAtMs + 100ull)
+		{
+			return;
+		}
+		g_rankedUploadObservation.lastScanAtMs = nowMs;
 		if (nowMs > g_rankedUploadObservation.startedAtMs + 15000ull)
 		{
 			LOG(1, "[RANK][OverlayObserve] timeout serial=%llu attemptedChar=%u uploadedScore=%d\n",
@@ -4946,23 +4966,23 @@ namespace
 		uint32_t opponentCharacterId)
 	{
 		static uint64_t s_lastSignature = 0;
-		const uint64_t signature =
-			(static_cast<uint64_t>(static_cast<uint32_t>(networkState.state & 0xFFFF)) << 48) ^
-			(static_cast<uint64_t>(static_cast<uint32_t>(networkState.state1 & 0xFFFF)) << 32) ^
-			(static_cast<uint64_t>(rankedEntryActive ? 1u : 0u) << 31) ^
-			(static_cast<uint64_t>(inMatch ? 1u : 0u) << 30) ^
-			(static_cast<uint64_t>(rankedRematchScreen ? 1u : 0u) << 29) ^
-			(static_cast<uint64_t>(sawState58ThisVictoryCycle ? 1u : 0u) << 28) ^
-			(static_cast<uint64_t>(opponentCharacterId & 0x3Fu) << 24) ^
-			(opponentSteamId & 0x3FFFFFFFull) ^
-			(static_cast<uint64_t>(static_cast<uint32_t>(networkState.x08)) * 0x100000007ULL) ^
-			(static_cast<uint64_t>(static_cast<uint32_t>(networkState.x0c)) * 0x10000000003ULL) ^
-			(static_cast<uint64_t>(static_cast<uint32_t>(networkState.xe0)) * 0x1000000000009ULL) ^
-			(static_cast<uint64_t>(static_cast<uint32_t>(networkState.xf4)) * 0x100000000002bULL) ^
-			(static_cast<uint64_t>(static_cast<uint32_t>(victoryStep.step)) * 0x1000000000063ULL) ^
-			(static_cast<uint64_t>(static_cast<uint32_t>(victoryStep.rematchMode)) * 0x1000000000099ULL) ^
-			(static_cast<uint64_t>(static_cast<uint32_t>(victoryStep.rematchPending)) * 0x10000000000f5ULL) ^
-			(static_cast<uint64_t>(static_cast<uint32_t>(victoryStep.inputDelay)) * 0x100000000013bULL);
+		uint64_t signature = 1469598103934665603ull;
+		const auto mixSignature = [&signature](uint64_t value) {
+			signature ^= value;
+			signature *= 1099511628211ull;
+		};
+		mixSignature(static_cast<uint64_t>(static_cast<uint32_t>(gameState)));
+		mixSignature(static_cast<uint64_t>(static_cast<uint32_t>(networkState.state)));
+		mixSignature(static_cast<uint64_t>(static_cast<uint32_t>(networkState.state1)));
+		mixSignature(static_cast<uint64_t>(static_cast<uint32_t>(victoryStep.step)));
+		mixSignature(static_cast<uint64_t>(static_cast<uint32_t>(victoryStep.rematchMode)));
+		mixSignature(static_cast<uint64_t>(static_cast<uint32_t>(victoryStep.rematchPending)));
+		mixSignature(rankedEntryActive ? 1u : 0u);
+		mixSignature(inMatch ? 1u : 0u);
+		mixSignature(rankedRematchScreen ? 1u : 0u);
+		mixSignature(sawState58ThisVictoryCycle ? 1u : 0u);
+		mixSignature(opponentSteamId);
+		mixSignature(static_cast<uint64_t>(opponentCharacterId));
 		if (s_lastSignature == signature)
 		{
 			return;
@@ -5198,6 +5218,8 @@ namespace
 		static uint64_t s_lastPredictionOpponentSteamId = 0;
 		static uint32_t s_lastPredictionOpponentCharacterId = kInvalidRankedCharacterId;
 		static double s_lastPredictionOpponentSeenAt = -30.0;
+		static double s_lastPredictionOpponentPollAt = -30.0;
+		static double s_lastInMatchOpponentPollAt = -30.0;
 
 		if (!Settings::settingsIni.showRankedProgress || !Settings::settingsIni.showRankedPrediction)
 		{
@@ -5206,17 +5228,22 @@ namespace
 		}
 		const bool inPostMatchRematch = IsRankedVictoryWindowState(gameState, networkState);
 		const bool predictionContext = IsRankedPredictionMenuState(networkState) || rankedRematchScreen || inPostMatchRematch;
+		const double now = ImGui::GetTime();
 		if (inMatch)
 		{
 			// Keep the cache warm with in-match opponent data so it's immediately valid
 			// when the match ends and the post-match rematch lobby appears.
-			uint64_t inMatchSteamId = 0;
-			uint32_t inMatchCharId = kInvalidRankedCharacterId;
-			if (TryGetRankedPredictionOpponent(&inMatchSteamId, &inMatchCharId) && inMatchSteamId != 0u)
+			if (now >= s_lastInMatchOpponentPollAt + 0.25)
 			{
-				s_lastPredictionOpponentSteamId = inMatchSteamId;
-				s_lastPredictionOpponentCharacterId = inMatchCharId;
-				s_lastPredictionOpponentSeenAt = ImGui::GetTime();
+				s_lastInMatchOpponentPollAt = now;
+				uint64_t inMatchSteamId = 0;
+				uint32_t inMatchCharId = kInvalidRankedCharacterId;
+				if (TryGetRankedPredictionOpponent(&inMatchSteamId, &inMatchCharId) && inMatchSteamId != 0u)
+				{
+					s_lastPredictionOpponentSteamId = inMatchSteamId;
+					s_lastPredictionOpponentCharacterId = inMatchCharId;
+					s_lastPredictionOpponentSeenAt = now;
+				}
 			}
 			return;
 		}
@@ -5231,15 +5258,20 @@ namespace
 
 		uint64_t opponentSteamId = 0;
 		uint32_t opponentCharacterId = kInvalidRankedCharacterId;
-		bool hasOpponentSteamId = TryGetRankedPredictionOpponent(&opponentSteamId, &opponentCharacterId);
-		const double now = ImGui::GetTime();
-		if (hasOpponentSteamId)
+		bool hasOpponentSteamId = false;
+		if (now >= s_lastPredictionOpponentPollAt + 0.25)
 		{
-			s_lastPredictionOpponentSteamId = opponentSteamId;
-			s_lastPredictionOpponentCharacterId = opponentCharacterId;
-			s_lastPredictionOpponentSeenAt = now;
+			s_lastPredictionOpponentPollAt = now;
+			hasOpponentSteamId = TryGetRankedPredictionOpponent(&opponentSteamId, &opponentCharacterId);
+			if (hasOpponentSteamId)
+			{
+				s_lastPredictionOpponentSteamId = opponentSteamId;
+				s_lastPredictionOpponentCharacterId = opponentCharacterId;
+				s_lastPredictionOpponentSeenAt = now;
+			}
 		}
-		else if ((IsRankedPredictionMenuState(networkState) || rankedRematchScreen || inPostMatchRematch) &&
+		if (!hasOpponentSteamId &&
+			(IsRankedPredictionMenuState(networkState) || rankedRematchScreen || inPostMatchRematch) &&
 			s_lastPredictionOpponentSteamId != 0u &&
 			now < s_lastPredictionOpponentSeenAt + 15.0)
 		{

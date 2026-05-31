@@ -21,4 +21,5 @@ enum WindowType_
         WindowType_WinePopup,
         WindowType_UnlimitedPlayback,
         WindowType_UnlimitedReplayTakeover,
+        WindowType_NetworkSquareColor,
 };

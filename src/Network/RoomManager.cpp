@@ -2,6 +2,8 @@
 
 #include "Core/logger.h"
 
+#include <cstddef>
+
 
 
 RoomManager::RoomManager(NetworkManager* pNetworkManager, ISteamFriends* pSteamFriends, CSteamID steamID)
@@ -68,6 +70,9 @@ void RoomManager::JoinRoom(Room* pRoom)
 bool RoomManager::IsRoomFunctional() const
 {
 	LOG(7, "RoomManager::IsRoomFunctional\n");
+
+	if (!m_pRoom || IsBadReadPtr(m_pRoom, offsetof(Room, roomStatus) + sizeof(m_pRoom->roomStatus)))
+		return false;
 
 	return m_pRoom != nullptr && m_pRoom->roomStatus == RoomStatus_Functional;
 }
@@ -352,8 +357,14 @@ const RoomMemberEntry* RoomManager::GetThisPlayerRoomMemberEntry() const
 
 const RoomMemberEntry* RoomManager::GetRoomMemberEntryByIndex(uint16_t index) const
 {
+	if (index >= MAX_PLAYERS_IN_ROOM || !m_pRoom || IsBadReadPtr(m_pRoom, sizeof(Room)))
+		return nullptr;
+
 	char* deref = (char*)(&m_pRoom->member1) + (index * sizeof(RoomMemberEntry));
 	RoomMemberEntry* roomMemberEntry = (RoomMemberEntry*)deref;
+
+	if (IsBadReadPtr(roomMemberEntry, sizeof(RoomMemberEntry)))
+		return nullptr;
 
 	if (roomMemberEntry->steamId == 0)
 		return nullptr;

@@ -17,6 +17,7 @@
 #include "Overlay/Window/ReplayRewindWindow.h"
 #include "Overlay/Window/WinePopupWindow.h"
 #include "Overlay/Window/UnlimitedPlaybackWindow.h"
+#include "Overlay/Window/NetworkSquareColorWindow.h"
 #include "Game/ReplayTakeover/ReplayTakeoverFeatureFlags.h"
 #if BBCF_ENABLE_UNLIMITED_REPLAY_TAKEOVER
 #include "Overlay/Window/UnlimitedReplayTakeoverWindow.h"
@@ -84,6 +85,10 @@ WindowContainer::WindowContainer()
 
         AddWindow(WindowType_UnlimitedPlayback,
                 new UnlimitedPlaybackWindow(L("Unlimited Playback (BETA)").c_str(), true, *this));
+
+        AddWindow(WindowType_NetworkSquareColor,
+                new NetworkSquareColorWindow((L("Network Square Color") + "###NetworkSquareColor").c_str(), true,
+                        ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse));
 
 #if BBCF_ENABLE_UNLIMITED_REPLAY_TAKEOVER
         {
