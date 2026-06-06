@@ -1,14 +1,17 @@
 #include "NetworkSquareColorWindow.h"
 
 #include "Core/Localization.h"
+#include "Core/Settings.h"
 #include "Core/interfaces.h"
 #include "Core/logger.h"
 #include "Core/utils.h"
+#include "Game/gamestates.h"
 #include "Game/Room/RoomMemberEntry.h"
 
 #include <Windows.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -32,20 +35,22 @@ namespace
 	struct NetColorDefinition
 	{
 		uint8_t value;
-		const char* nameKey;
+		const char* displayName;
 		ImVec4 color;
 	};
 
+	// Central edit point for network square rank names and colors.
+	// Values come from BBCF netcolor bytes; names/colors are UI labels here.
 	const NetColorDefinition kNetColors[] = {
-		{ 0, "White", ImVec4(0.94f, 0.94f, 0.94f, 1.0f) },
-		{ 1, "Purple", ImVec4(0.72f, 0.22f, 1.00f, 1.0f) },
-		{ 2, "Red", ImVec4(1.00f, 0.12f, 0.12f, 1.0f) },
-		{ 3, "Orange", ImVec4(1.00f, 0.42f, 0.10f, 1.0f) },
-		{ 4, "Yellow", ImVec4(1.00f, 0.88f, 0.12f, 1.0f) },
-		{ 5, "Green", ImVec4(0.32f, 0.92f, 0.30f, 1.0f) },
-		{ 6, "Blue", ImVec4(0.10f, 0.34f, 0.95f, 1.0f) },
-		{ 7, "Teal", ImVec4(0.00f, 0.74f, 0.72f, 1.0f) },
-		{ 8, "Black", ImVec4(0.03f, 0.03f, 0.03f, 1.0f) },
+		{ 0, "White",  ImVec4(231.0f / 255.0f, 231.0f / 255.0f, 227.0f / 255.0f, 1.0f) },
+		{ 1, "Pink",   ImVec4(250.0f / 255.0f,  72.0f / 255.0f, 155.0f / 255.0f, 1.0f) },
+		{ 2, "Orange", ImVec4(241.0f / 255.0f,  86.0f / 255.0f,   2.0f / 255.0f, 1.0f) },
+		{ 3, "Yellow", ImVec4(245.0f / 255.0f, 213.0f / 255.0f,   0.0f / 255.0f, 1.0f) },
+		{ 4, "Lime",   ImVec4(68.0f / 255.0f, 247.0f / 255.0f,  12.0f / 255.0f, 1.0f) },
+		{ 5, "Green",  ImVec4(41.0f / 255.0f, 156.0f / 255.0f,  12.0f / 255.0f, 1.0f) },
+		{ 6, "Blue",   ImVec4(14.0f / 255.0f,  85.0f / 255.0f, 214.0f / 255.0f, 1.0f) },
+		{ 7, "Teal",   ImVec4(12.0f / 255.0f, 188.0f / 255.0f, 205.0f / 255.0f, 1.0f) },
+		{ 8, "Black",  ImVec4(0.03f, 0.03f, 0.03f, 1.0f) },
 	};
 
 	struct NetworkSquareColorState
@@ -82,7 +87,7 @@ namespace
 		const NetColorDefinition* const color = FindNetColor(value);
 		if (color)
 		{
-			return L(color->nameKey);
+			return color->displayName;
 		}
 		return FormatText(L("Unknown (%u)").c_str(), static_cast<unsigned int>(value));
 	}
@@ -443,104 +448,304 @@ namespace
 		ImGui::SameLine(150.0f);
 		ImGui::TextDisabled("%s", L("Unavailable").c_str());
 	}
+
+	ImVec4 GetNetColorVec4(uint8_t value)
+	{
+		const NetColorDefinition* const color = FindNetColor(value);
+		return color ? color->color : ImVec4(0.48f, 0.48f, 0.50f, 1.0f);
+	}
+
+	uint8_t GetPreviousNetColor(uint8_t value)
+	{
+		return value < 7 ? static_cast<uint8_t>(value + 1) : value;
+	}
+
+	uint8_t GetNextNetColor(uint8_t value)
+	{
+		return value > 1 ? static_cast<uint8_t>(value - 1) : value;
+	}
+
+	int CounterToScore(uint8_t counter)
+	{
+		return static_cast<int>(counter) - static_cast<int>(kRankChangeResetCounter);
+	}
+
+	float ScoreToProgress(int score)
+	{
+		const float raw = (static_cast<float>(score) + 10.0f) / 20.0f;
+		return (std::max)(0.0f, (std::min)(1.0f, raw));
+	}
+
+	float SmoothStep(float t)
+	{
+		t = (std::max)(0.0f, (std::min)(1.0f, t));
+		return t * t * (3.0f - 2.0f * t);
+	}
+
+	float LerpFloat(float a, float b, float t)
+	{
+		return a + ((b - a) * t);
+	}
+
+	struct NetworkSquareAnimation
+	{
+		bool hasValue = false;
+		int sourceScore = 0;
+		int targetScore = 0;
+		int delta = 0;
+		double startTime = 0.0;
+	};
+
+	NetworkSquareAnimation g_networkSquareAnimation{};
+
+	int GetAnimatedScore(int targetScore, float* outDeltaAlpha)
+	{
+		const double now = ImGui::GetTime();
+		if (!g_networkSquareAnimation.hasValue)
+		{
+			g_networkSquareAnimation.hasValue = true;
+			g_networkSquareAnimation.sourceScore = targetScore;
+			g_networkSquareAnimation.targetScore = targetScore;
+			g_networkSquareAnimation.delta = 0;
+			g_networkSquareAnimation.startTime = now;
+		}
+		else if (targetScore != g_networkSquareAnimation.targetScore)
+		{
+			const float currentT = SmoothStep(static_cast<float>((now - g_networkSquareAnimation.startTime) / 0.55));
+			const int currentScore = static_cast<int>(std::round(LerpFloat(
+				static_cast<float>(g_networkSquareAnimation.sourceScore),
+				static_cast<float>(g_networkSquareAnimation.targetScore),
+				currentT)));
+			g_networkSquareAnimation.sourceScore = currentScore;
+			g_networkSquareAnimation.delta = targetScore - g_networkSquareAnimation.targetScore;
+			g_networkSquareAnimation.targetScore = targetScore;
+			g_networkSquareAnimation.startTime = now;
+		}
+
+		const float t = SmoothStep(static_cast<float>((now - g_networkSquareAnimation.startTime) / 0.55));
+		if (outDeltaAlpha)
+		{
+			*outDeltaAlpha = (std::max)(0.0f, 1.0f - static_cast<float>((now - g_networkSquareAnimation.startTime) / 1.15));
+		}
+		return static_cast<int>(std::round(LerpFloat(
+			static_cast<float>(g_networkSquareAnimation.sourceScore),
+			static_cast<float>(g_networkSquareAnimation.targetScore),
+			t)));
+	}
+
+	std::string GetLocalPersonaName()
+	{
+		if (g_interfaces.pSteamFriendsWrapper)
+		{
+			const char* const name = g_interfaces.pSteamFriendsWrapper->GetPersonaName();
+			if (name && name[0] != '\0')
+			{
+				return name;
+			}
+		}
+		return L("Player");
+	}
+
+	void DrawColorSwatchSized(uint8_t value, float size)
+	{
+		const ImVec4 fill = GetNetColorVec4(value);
+		const ImVec2 p0 = ImGui::GetCursorScreenPos();
+		const ImVec2 p1 = ImVec2(p0.x + size, p0.y + size);
+		ImDrawList* const drawList = ImGui::GetWindowDrawList();
+		drawList->AddRectFilled(p0, p1, ImGui::GetColorU32(fill), 3.0f);
+		drawList->AddRect(p0, p1, ImGui::GetColorU32(ImVec4(0.05f, 0.05f, 0.06f, 1.0f)), 3.0f);
+		ImGui::Dummy(ImVec2(size, size));
+	}
+
+	void DrawCenteredCurrentPlayerRow(uint8_t color)
+	{
+		const float swatchSize = 20.0f;
+		const std::string name = GetLocalPersonaName();
+		const ImVec2 nameSize = ImGui::CalcTextSize(name.c_str());
+		const float rowWidth = swatchSize + ImGui::GetStyle().ItemSpacing.x + nameSize.x;
+		const float offset = (ImGui::GetContentRegionAvail().x - rowWidth) * 0.5f;
+		if (offset > 0.0f)
+		{
+			ImGui::SetCursorPosX(ImGui::GetCursorPosX() + offset);
+		}
+		DrawColorSwatchSized(color, swatchSize);
+		ImGui::SameLine();
+		ImGui::TextUnformatted(name.c_str());
+	}
+
+	void DrawGradientProgressBar(uint8_t previousColor, uint8_t currentColor, uint8_t nextColor, float progress, const ImVec2& size)
+	{
+		const ImVec2 p0 = ImGui::GetCursorScreenPos();
+		const ImVec2 p1 = ImVec2(p0.x + size.x, p0.y + size.y);
+		const ImVec2 mid = ImVec2(p0.x + (size.x * 0.5f), p1.y);
+		ImDrawList* const drawList = ImGui::GetWindowDrawList();
+		const ImU32 bgColor = ImGui::GetColorU32(ImVec4(0.13f, 0.14f, 0.16f, 0.96f));
+		const ImU32 borderColor = ImGui::GetColorU32(ImVec4(0.36f, 0.37f, 0.41f, 1.0f));
+
+		drawList->AddRectFilled(p0, p1, bgColor, 4.0f);
+		const float fillWidth = size.x * (std::max)(0.0f, (std::min)(1.0f, progress));
+		if (fillWidth > 0.0f)
+		{
+			drawList->PushClipRect(p0, ImVec2(p0.x + fillWidth, p1.y), true);
+			drawList->AddRectFilledMultiColor(
+				p0,
+				mid,
+				ImGui::GetColorU32(GetNetColorVec4(previousColor)),
+				ImGui::GetColorU32(GetNetColorVec4(currentColor)),
+				ImGui::GetColorU32(GetNetColorVec4(currentColor)),
+				ImGui::GetColorU32(GetNetColorVec4(previousColor)));
+			drawList->AddRectFilledMultiColor(
+				ImVec2(mid.x, p0.y),
+				p1,
+				ImGui::GetColorU32(GetNetColorVec4(currentColor)),
+				ImGui::GetColorU32(GetNetColorVec4(nextColor)),
+				ImGui::GetColorU32(GetNetColorVec4(nextColor)),
+				ImGui::GetColorU32(GetNetColorVec4(currentColor)));
+			drawList->PopClipRect();
+		}
+		drawList->AddRect(p0, p1, borderColor, 4.0f, 0, 1.0f);
+		ImGui::Dummy(size);
+	}
+
+	bool IsNetworkSquareContextActive()
+	{
+		if (GetGameSceneStatus() < GameSceneStatus_Running || !g_gameVals.pGameState)
+		{
+			return false;
+		}
+
+		const int gameState = *g_gameVals.pGameState;
+		if (gameState == GameState_Lobby)
+		{
+			return true;
+		}
+
+		NetworkStateLite networkState{};
+		if (!ReadNetworkStateLite(&networkState))
+		{
+			return false;
+		}
+		return networkState.state == 4 || networkState.state == 5;
+	}
+
+	void DrawNetworkSquareColorContent(float alpha)
+	{
+		const NetworkSquareColorState state = CaptureNetworkSquareColorState();
+		LogNetworkSquareColorDiagnostics(state);
+
+		if (!state.localColorAvailable)
+		{
+			ImGui::TextDisabled("%s", L("Offline or unavailable").c_str());
+			return;
+		}
+
+		const uint8_t currentColor = state.localColor;
+		const uint8_t previousColor = IsRankedColor(currentColor) ? GetPreviousNetColor(currentColor) : currentColor;
+		const uint8_t nextColor = IsRankedColor(currentColor) ? GetNextNetColor(currentColor) : currentColor;
+		const bool counterValid = state.localCounterAvailable && state.localCounter <= 100;
+		const int targetScore = counterValid ? CounterToScore(state.localCounter) : 0;
+		float deltaAlpha = 0.0f;
+		const int displayedScore = counterValid ? GetAnimatedScore(targetScore, &deltaAlpha) : 0;
+		const float progress = counterValid ? ScoreToProgress(displayedScore) : 0.0f;
+
+		DrawCenteredCurrentPlayerRow(currentColor);
+		ImGui::Dummy(ImVec2(1.0f, 4.0f));
+
+		const float fullWidth = (std::max)(320.0f, ImGui::GetContentRegionAvail().x);
+		const float swatchSize = 22.0f;
+		const float spacing = ImGui::GetStyle().ItemSpacing.x;
+		const float barWidth = (std::max)(180.0f, fullWidth - (swatchSize * 2.0f) - (spacing * 2.0f));
+		const ImVec2 rowStart = ImGui::GetCursorScreenPos();
+
+		DrawColorSwatchSized(previousColor, swatchSize);
+		ImGui::SameLine();
+		DrawGradientProgressBar(previousColor, currentColor, nextColor, progress, ImVec2(barWidth, 18.0f));
+		ImGui::SameLine();
+		DrawColorSwatchSized(nextColor, swatchSize);
+
+		const float labelY = rowStart.y + swatchSize + 4.0f;
+		ImGui::SetCursorScreenPos(ImVec2(rowStart.x, labelY));
+		ImGui::TextUnformatted("-10");
+
+		char currentBuffer[64] = {};
+		std::snprintf(currentBuffer, sizeof(currentBuffer), "Current: %d", displayedScore);
+		const float currentWidth = ImGui::CalcTextSize(currentBuffer).x;
+		ImGui::SameLine();
+		ImGui::SetCursorScreenPos(ImVec2(rowStart.x + swatchSize + spacing + ((barWidth - currentWidth) * 0.5f), labelY));
+		ImGui::TextUnformatted(currentBuffer);
+
+		if (counterValid && g_networkSquareAnimation.delta != 0 && deltaAlpha > 0.0f)
+		{
+			char deltaBuffer[32] = {};
+			std::snprintf(deltaBuffer, sizeof(deltaBuffer), "%+d", g_networkSquareAnimation.delta);
+			const ImVec4 baseColor = g_networkSquareAnimation.delta > 0
+				? ImVec4(0.35f, 1.00f, 0.38f, alpha * deltaAlpha)
+				: ImVec4(1.00f, 0.30f, 0.30f, alpha * deltaAlpha);
+			ImGui::SameLine();
+			ImGui::PushStyleColor(ImGuiCol_Text, baseColor);
+			ImGui::TextUnformatted(deltaBuffer);
+			ImGui::PopStyleColor();
+		}
+
+		const char* rightLabel = "10";
+		const float rightWidth = ImGui::CalcTextSize(rightLabel).x;
+		ImGui::SameLine();
+		ImGui::SetCursorScreenPos(ImVec2(rowStart.x + swatchSize + spacing + barWidth + spacing + swatchSize - rightWidth, labelY));
+		ImGui::TextUnformatted(rightLabel);
+	}
 }
 
 void NetworkSquareColorWindow::BeforeDraw()
 {
-	ImGui::SetNextWindowSize(ImVec2(430.0f, 270.0f), ImGuiCond_FirstUseEver);
+	ImGui::SetNextWindowSize(ImVec2(430.0f, 112.0f), ImGuiCond_FirstUseEver);
 }
 
 void NetworkSquareColorWindow::Draw()
 {
-	const NetworkSquareColorState state = CaptureNetworkSquareColorState();
-	LogNetworkSquareColorDiagnostics(state);
+	DrawNetworkSquareColorContent(1.0f);
+}
 
-	if (!state.localColorAvailable)
-	{
-		ImGui::TextDisabled("%s", L("Offline or unavailable").c_str());
-		ImGui::Separator();
-		DrawUnavailableColorLine("Local color");
-	}
-	else
-	{
-		DrawColorLine("Local color", state.localColor);
-	}
+void DrawNetworkSquareColorProgressStandalone()
+{
+	static bool s_wasVisible = false;
+	static double s_visibleStartTime = 0.0;
 
-	const bool counterValid = state.localCounterAvailable && state.localCounter <= 100;
-	if (counterValid)
+	const bool visible = Settings::settingsIni.showSquareColorProgress && IsNetworkSquareContextActive();
+	if (!visible)
 	{
-		ImGui::Text("%s: %u", L("Counter").c_str(), static_cast<unsigned int>(state.localCounter));
-		const float progress = static_cast<float>(state.localCounter) / 100.0f;
-		ImGui::ProgressBar((std::max)(0.0f, (std::min)(1.0f, progress)), ImVec2(-1.0f, 0.0f));
-	}
-	else
-	{
-		ImGui::Text("%s: %s", L("Counter").c_str(),
-			state.localCounterAvailable
-				? FormatText(L("Invalid (%u)").c_str(), static_cast<unsigned int>(state.localCounter)).c_str()
-				: L("Unavailable").c_str());
+		s_wasVisible = false;
+		g_networkSquareAnimation = {};
+		return;
 	}
 
-	if (state.localColorAvailable && IsRankedColor(state.localColor))
+	const double now = ImGui::GetTime();
+	if (!s_wasVisible)
 	{
-		if (state.localColor > 1)
-		{
-			DrawColorLine("Next color", static_cast<uint8_t>(state.localColor - 1));
-		}
-		else
-		{
-			ImGui::Text("%s: %s", L("Next color").c_str(), L("Top color").c_str());
-		}
-
-		if (state.localColor < 7)
-		{
-			DrawColorLine("Previous color", static_cast<uint8_t>(state.localColor + 1));
-		}
-		else
-		{
-			ImGui::Text("%s: %s", L("Previous color").c_str(), L("Bottom color").c_str());
-		}
-
-		if (counterValid)
-		{
-			const unsigned int rankUpDistance = state.localColor > 1
-				? static_cast<unsigned int>(state.localCounter < kRankUpThreshold ? kRankUpThreshold - state.localCounter : 0)
-				: 0u;
-			const unsigned int rankDownDistance = state.localColor < 7
-				? static_cast<unsigned int>(state.localCounter > kRankDownThreshold ? state.localCounter - kRankDownThreshold : 0)
-				: 0u;
-			ImGui::Text("%s: %u", L("Distance to rank up").c_str(), rankUpDistance);
-			ImGui::Text("%s: %u", L("Distance to rank down").c_str(), rankDownDistance);
-		}
-		else
-		{
-			ImGui::Text("%s: %s", L("Distance to rank up").c_str(), L("Unavailable").c_str());
-			ImGui::Text("%s: %s", L("Distance to rank down").c_str(), L("Unavailable").c_str());
-		}
-	}
-	else
-	{
-		DrawUnavailableColorLine("Next color");
-		DrawUnavailableColorLine("Previous color");
-		ImGui::Text("%s: %s", L("Distance to rank up").c_str(), L("Unavailable").c_str());
-		ImGui::Text("%s: %s", L("Distance to rank down").c_str(), L("Unavailable").c_str());
+		s_wasVisible = true;
+		s_visibleStartTime = now;
 	}
 
-	ImGui::Separator();
-	if (state.opponentAvailable)
-	{
-		DrawColorLine("Opponent color", state.opponentColor);
-	}
-	else
-	{
-		DrawUnavailableColorLine("Opponent color");
-	}
+	const float alpha = SmoothStep(static_cast<float>((now - s_visibleStartTime) / 0.22));
+	ImGui::SetNextWindowPos(ImVec2(360.0f, 152.0f), ImGuiCond_FirstUseEver);
+	ImGui::SetNextWindowSizeConstraints(ImVec2(430.0f, 108.0f), ImVec2(10000.0f, 150.0f));
+	ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.06f, 0.08f, 0.92f * alpha));
+	ImGui::PushStyleVar(ImGuiStyleVar_Alpha, alpha);
 
-	ImGui::Separator();
-	ImGui::TextWrapped("%s",
-		FormatText(L("Color changes at %u / %u and counter resets to %u after a color change.").c_str(),
-		static_cast<unsigned int>(kRankUpThreshold),
-		static_cast<unsigned int>(kRankDownThreshold),
-		static_cast<unsigned int>(kRankChangeResetCounter)).c_str());
-	ImGui::TextWrapped("%s", L("Wins increase the counter; losses decrease it. Same-color matches are the ones that move square color.").c_str());
+	bool open = true;
+	if (ImGui::Begin((L("Network Square Color") + "###NetworkSquareColorProgress").c_str(), &open, ImGuiWindowFlags_NoCollapse))
+	{
+		ImGui::SetWindowSize(ImVec2(430.0f, 112.0f), ImGuiCond_FirstUseEver);
+		DrawNetworkSquareColorContent(alpha);
+	}
+	ImGui::End();
+	ImGui::PopStyleVar();
+	ImGui::PopStyleColor();
+
+	if (!open)
+	{
+		Settings::settingsIni.showSquareColorProgress = false;
+		Settings::changeSetting("ShowSquareColorProgress", "0");
+		s_wasVisible = false;
+		g_networkSquareAnimation = {};
+	}
 }

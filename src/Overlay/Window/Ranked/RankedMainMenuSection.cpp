@@ -10,7 +10,7 @@ namespace RankedUi
 {
 	uint32_t DrawMainMenuSection()
 	{
-		if (!ImGui::CollapsingHeader(L("Ranked Matches").c_str()))
+		if (!ImGui::CollapsingHeader(L("Network Matches").c_str()))
 		{
 			return RankedMainMenuAction_None;
 		}
@@ -26,6 +26,16 @@ namespace RankedUi
 		}
 		ImGui::SameLine();
 		ImGui::ShowHelpMarker(L("Shows a movable ranked progress window during ranked character select, ranked menu flow, and after a successful ranked LP upload.").c_str());
+
+		ImGui::HorizontalSpacing();
+		bool showSquareColorProgress = Settings::settingsIni.showSquareColorProgress;
+		if (ImGui::Checkbox(L("Show square color progress").c_str(), &showSquareColorProgress))
+		{
+			Settings::settingsIni.showSquareColorProgress = showSquareColorProgress;
+			Settings::changeSetting("ShowSquareColorProgress", showSquareColorProgress ? "1" : "0");
+		}
+		ImGui::SameLine();
+		ImGui::ShowHelpMarker(L("Shows a movable network square color progress window while inside network mode.").c_str());
 
 		ImGui::HorizontalSpacing();
 		bool showRankedPrediction = Settings::settingsIni.showRankedPrediction;
@@ -53,6 +63,12 @@ namespace RankedUi
 		}
 		ImGui::SameLine();
 		ImGui::ShowHelpMarker(L("Choose any rank and open an explanation of its LP, promotion, and demotion rules.").c_str());
+
+		ImGui::HorizontalSpacing();
+		if (ImGui::Button(L("Online").c_str()))
+		{
+			actions |= RankedMainMenuAction_OpenOnline;
+		}
 
 		return actions;
 	}

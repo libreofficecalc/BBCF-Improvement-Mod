@@ -14,3 +14,5 @@ protected:
 	void BeforeDraw() override;
 	void Draw() override;
 };
+
+void DrawNetworkSquareColorProgressStandalone();

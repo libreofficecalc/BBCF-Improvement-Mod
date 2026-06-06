@@ -5,6 +5,7 @@
 #include "WindowContainer/WindowContainer.h"
 #include "Window/LogWindow.h"
 #include "Window/MainWindow.h"
+#include "Window/NetworkSquareColorWindow.h"
 #include "Window/Ranked/RankedProgressWindow.h"
 #include "Window/WinePopupWindow.h"
 
@@ -285,6 +286,7 @@ void WindowManager::Render()
 
 	DrawAllWindows();
 	DrawRankedProgressOverlayStandalone();
+	DrawNetworkSquareColorProgressStandalone();
 
 	g_notificationBar->DrawNotifications();
 

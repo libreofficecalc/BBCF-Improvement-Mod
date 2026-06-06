@@ -94,21 +94,6 @@ void MainWindow::Draw()
 
 	ImGui::VerticalSpacing(5);
 
-	if (ImGui::Button(Messages.Online(), BTN_SIZE))
-	{
-		m_pWindowContainer->GetWindow(WindowType_Room)->ToggleOpen();
-	}
-	ImGui::SameLine();
-	if (ImGui::Button(L("Network Square Color").c_str(), ImVec2(160, 20)))
-	{
-		if (auto* networkSquareWindow = m_pWindowContainer->GetWindow(WindowType_NetworkSquareColor))
-		{
-			networkSquareWindow->ToggleOpen();
-		}
-	}
-
-	ImGui::VerticalSpacing(5);
-
 	DrawGameplaySettingSection();
 	DrawRankedMatchesSection();
 	DrawCustomPalettesSection();
@@ -210,6 +195,7 @@ void MainWindow::DrawUtilButtons() const
 	{
 		m_pWindowContainer->GetWindow(WindowType_Log)->ToggleOpen();
 	}
+	ImGui::SameLine();
 	if (ImGui::Button(Messages.States(), BTN_SIZE))
 	{
 		m_pWindowContainer->GetWindow(WindowType_Scr)->ToggleOpen();

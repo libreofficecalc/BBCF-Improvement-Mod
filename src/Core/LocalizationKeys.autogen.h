@@ -609,6 +609,9 @@ struct LocalizationKeysAccessor
         // Ranked_search_warning
         inline const char* Ranked_search_warning() const { return Get("Ranked_search_warning"); }
 
+        // Network Matches
+        inline const char* Network_Matches() const { return Get("Network Matches"); }
+
         // Ranked Matches
         inline const char* Ranked_Matches() const { return Get("Ranked Matches"); }
 
@@ -617,6 +620,12 @@ struct LocalizationKeysAccessor
 
         // Shows a movable ranked progress window during ranked character select, ranked menu flow, and after a successful ranked LP upload.
         inline const char* Shows_a_movable_ranked_progress_window_during_ranked_character_select_ranked_menu_flow_and_after_a_successful_ranked_LP_upload() const { return Get("Shows a movable ranked progress window during ranked character select, ranked menu flow, and after a successful ranked LP upload."); }
+
+        // Show square color progress
+        inline const char* Show_square_color_progress() const { return Get("Show square color progress"); }
+
+        // Shows a movable network square color progress window while inside network mode.
+        inline const char* Shows_a_movable_network_square_color_progress_window_while_inside_network_mode() const { return Get("Shows a movable network square color progress window while inside network mode."); }
 
         // Show ranked prediction
         inline const char* Show_ranked_prediction() const { return Get("Show ranked prediction"); }

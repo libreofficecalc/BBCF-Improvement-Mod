@@ -12,6 +12,7 @@
 #include "Game/gamestates.h"
 #include "Game/characters.h"
 #include "Overlay/imgui_utils.h"
+#include "Overlay/WindowManager.h"
 
 #include <Windows.h>
 
@@ -5378,6 +5379,10 @@ void DrawRankedMatchesMainMenuSection()
 		g_rankedRulesDialog.selectedInternalRank = 0u;
 		g_rankedRulesDialog.selectorOpenedFromMainMenu = true;
 		g_rankedRulesDialog.selectorOpenRequested = true;
+	}
+	if ((actions & RankedUi::RankedMainMenuAction_OpenOnline) != 0u)
+	{
+		WindowManager::GetInstance().GetWindowContainer()->GetWindow(WindowType_Room)->ToggleOpen();
 	}
 }
 

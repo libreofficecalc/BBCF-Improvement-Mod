@@ -339,9 +339,12 @@ Rewind pos: +%d,Rewind pos: +%d,Pos de rebobinado: +%d
 snap_apparatus snapshot_count: %d,snap_apparatus snapshot_count: %d,snap_apparatus snapshot_count: %d
 %d: Framecount:%d,%d: Framecount:%d,%d: Cuenta de Frames:%d
 Ranked_search_warning,You cannot use this feature while searching for a ranked match,No puedes utilizar esta funcionalidad mientras buscas una partida
+Network Matches,Network Matches,Partidas de red
 Ranked Matches,Ranked Matches,Partidas clasificatorias
 Show ranked progress,Show ranked progress,Mostrar progreso de rango
 "Shows a movable ranked progress window during ranked character select, ranked menu flow, and after a successful ranked LP upload.","Shows a movable ranked progress window during ranked character select, ranked menu flow, and after a successful ranked LP upload.","Muestra una ventana movible de progreso de rango durante la selección de personaje clasificatoria, el flujo de menú clasificatorio y después de una subida exitosa de LP."
+Show square color progress,Show square color progress,Mostrar progreso de color de square
+Shows a movable network square color progress window while inside network mode.,Shows a movable network square color progress window while inside network mode.,Muestra una ventana movible de progreso de color de square dentro del modo network.
 Show ranked prediction,Show ranked prediction,Mostrar predicción de rango
 Shows win/loss ranked outcome predictions during ranked match confirmation and ranked rematch screens when opponent rank data is available.,Shows win/loss ranked outcome predictions during ranked match confirmation and ranked rematch screens when opponent rank data is available.,Muestra predicciones de victoria y derrota durante la confirmación y la revancha clasificatoria cuando el rango del rival está disponible.
 Ranked ladder,Ranked ladder,Escalera clasificatoria
