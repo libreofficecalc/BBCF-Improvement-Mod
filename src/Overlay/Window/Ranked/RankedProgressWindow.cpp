@@ -3511,27 +3511,14 @@ namespace
 			return false;
 		}
 
-		static uintptr_t s_cachedModuleBase = 0;
-		static uintptr_t s_cachedRankedTableBase = 0;
-		if (s_cachedModuleBase == moduleBase &&
-			s_cachedRankedTableBase != 0 &&
-			!IsBadReadPtr(reinterpret_cast<const void*>(s_cachedRankedTableBase + 0xD4), 4))
-		{
-			*outBase = s_cachedRankedTableBase;
-			return true;
-		}
-
 		typedef uintptr_t(__cdecl* RankedTableBaseFn)();
 		const RankedTableBaseFn rankedTableBaseFn = reinterpret_cast<RankedTableBaseFn>(moduleBase + kRankedTableBaseFnRva);
 		const uintptr_t rankedTableBase = rankedTableBaseFn ? rankedTableBaseFn() : 0;
 		if (rankedTableBase == 0 || IsBadReadPtr(reinterpret_cast<const void*>(rankedTableBase + 0xD4), 4))
 		{
-			s_cachedRankedTableBase = 0;
 			return false;
 		}
 
-		s_cachedModuleBase = moduleBase;
-		s_cachedRankedTableBase = rankedTableBase;
 		*outBase = rankedTableBase;
 		return true;
 	}
@@ -5394,11 +5381,40 @@ void DrawRankedMatchesMainMenuSection()
 	}
 }
 
+bool IsRankedOverlayRuntimeReady()
+{
+	if (GetGameSceneStatus() < GameSceneStatus_Running || !g_gameVals.pGameState)
+	{
+		return false;
+	}
+
+	switch (*g_gameVals.pGameState)
+	{
+	case GameState_ArcsysLogo:
+	case GameState_IntroVideoPlaying:
+	case GameState_TitleScreen:
+		return false;
+	default:
+		return true;
+	}
+}
+
 void DrawRankedProgressOverlayStandalone()
 {
 	if (!Settings::settingsIni.showRankedProgress && !g_manualRankedProgressOpen)
 	{
 		ClearRankedProgressOverlaySnapshot("setting_disabled");
+		g_rankedProgressAnimation.active = false;
+		g_rankedProgressAnimationSnapshot = {};
+		g_rankedOverlayVisibility = {};
+		g_lastRankedOverlayCharacterId = kInvalidRankedCharacterId;
+		DrawRankedGlobalDialogs();
+		return;
+	}
+
+	if (!IsRankedOverlayRuntimeReady())
+	{
+		ClearRankedProgressOverlaySnapshot("runtime_not_ready");
 		g_rankedProgressAnimation.active = false;
 		g_rankedProgressAnimationSnapshot = {};
 		g_rankedOverlayVisibility = {};

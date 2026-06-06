@@ -328,7 +328,12 @@ namespace
                         const DWORD attributes = GetFileAttributesA(path.c_str());
                         const bool exists = attributes != INVALID_FILE_ATTRIBUTES &&
                                 (attributes & FILE_ATTRIBUTE_DIRECTORY) == 0;
-                        LOG(1, "[RankedAuto] autorun token path='%s' exists=%d\n", path.c_str(), exists ? 1 : 0);
+                        static bool s_loggedMissingAutorunToken = false;
+                        if (exists || !s_loggedMissingAutorunToken)
+                        {
+                                LOG(1, "[RankedAuto] autorun token path='%s' exists=%d\n", path.c_str(), exists ? 1 : 0);
+                                s_loggedMissingAutorunToken = !exists;
+                        }
                         return exists;
         }
 
@@ -915,6 +920,11 @@ namespace
                                 {
                                         Abort("settings disabled");
                                 }
+                                return;
+                        }
+
+                        if (!IsSceneReady())
+                        {
                                 return;
                         }
 
@@ -2246,13 +2256,11 @@ namespace
 
         void Tick()
         {
-                EnsureWorkerThreadStarted();
                 TickHarnessLocked();
         }
 
         bool TryOverrideSystemInput(SystemControllerSlot slot, uint32_t currentWord, uint32_t* outWord)
         {
-                EnsureWorkerThreadStarted();
                 (void)currentWord;
                 std::lock_guard<std::mutex> lock(g_harnessMutex);
                 return GetHarness().TryOverrideSystemInput(slot, currentWord, outWord);
@@ -2260,14 +2268,12 @@ namespace
 
         void NotifyLobbyListRequested()
         {
-                EnsureWorkerThreadStarted();
                 std::lock_guard<std::mutex> lock(g_harnessMutex);
                 GetHarness().NotifyLobbyListRequested();
         }
 
         void NotifyLobbyDataByIndex(const char* key, const char* value)
         {
-                EnsureWorkerThreadStarted();
                 std::lock_guard<std::mutex> lock(g_harnessMutex);
                 GetHarness().NotifyLobbyDataByIndex(key, value);
         }

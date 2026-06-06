@@ -19,8 +19,16 @@ public:
 	}
 
 	template <class T>
-	T* GetWindow(WindowType_ type) { return (T*)m_windows[type]; }
-	IWindow* GetWindow(WindowType_ type) { return m_windows[type]; }
+	T* GetWindow(WindowType_ type)
+	{
+		const auto it = m_windows.find(type);
+		return it != m_windows.end() ? static_cast<T*>(it->second) : nullptr;
+	}
+	IWindow* GetWindow(WindowType_ type)
+	{
+		const auto it = m_windows.find(type);
+		return it != m_windows.end() ? it->second : nullptr;
+	}
 	const WindowMap& GetWindows() const { return m_windows; }
 private:
 	void AddWindow(WindowType_ type, IWindow* pWindow) { m_windows[type] = pWindow; }

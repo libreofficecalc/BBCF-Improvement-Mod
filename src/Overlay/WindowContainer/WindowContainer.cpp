@@ -98,4 +98,3 @@ WindowContainer::WindowContainer()
 #endif
 }
 
-

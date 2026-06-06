@@ -44,6 +44,8 @@ bool IsSafeToUseControllerHooks()
 
 bool IsControllerHooksRuntimeAllowed()
 {
+        return false;
+
         if (!IsSafeToUseControllerHooks())
         {
                 return false;

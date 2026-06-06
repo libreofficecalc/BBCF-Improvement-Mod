@@ -20,6 +20,6 @@ enum WindowType_
         WindowType_ReplayRewind,
         WindowType_WinePopup,
         WindowType_UnlimitedPlayback,
-        WindowType_UnlimitedReplayTakeover,
         WindowType_NetworkSquareColor,
+        WindowType_UnlimitedReplayTakeover,
 };

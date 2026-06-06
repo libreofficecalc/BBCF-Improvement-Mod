@@ -1599,8 +1599,11 @@ struct LocalizationKeysAccessor
         // White
         inline const char* White() const { return Get("White"); }
 
-        // Pink
-        inline const char* Pink() const { return Get("Pink"); }
+        // Purple
+        inline const char* Purple() const { return Get("Purple"); }
+
+        // Red
+        inline const char* Red() const { return Get("Red"); }
 
         // Orange
         inline const char* Orange() const { return Get("Orange"); }
@@ -1608,17 +1611,14 @@ struct LocalizationKeysAccessor
         // Yellow
         inline const char* Yellow() const { return Get("Yellow"); }
 
-        // Light Green
-        inline const char* Light_Green() const { return Get("Light Green"); }
+        // Green
+        inline const char* Green() const { return Get("Green"); }
 
-        // Dark Green
-        inline const char* Dark_Green() const { return Get("Dark Green"); }
+        // Blue
+        inline const char* Blue() const { return Get("Blue"); }
 
-        // Dark Blue
-        inline const char* Dark_Blue() const { return Get("Dark Blue"); }
-
-        // Light Blue
-        inline const char* Light_Blue() const { return Get("Light Blue"); }
+        // Teal
+        inline const char* Teal() const { return Get("Teal"); }
 
         // Black
         inline const char* Black() const { return Get("Black"); }

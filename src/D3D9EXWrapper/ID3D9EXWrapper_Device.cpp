@@ -342,8 +342,22 @@ HRESULT APIENTRY Direct3DDevice9ExWrapper::EndScene()
 {
 	LOG(7, "EndScene\n");
 
+	static int s_endSceneProbeBudget = 24;
+	if (s_endSceneProbeBudget > 0)
+	{
+		LOG(1, "[EndSceneProbe] before MatchState::OnUpdate budget=%d\n", s_endSceneProbeBudget);
+	}
 	MatchState::OnUpdate();
+	if (s_endSceneProbeBudget > 0)
+	{
+		LOG(1, "[EndSceneProbe] after MatchState::OnUpdate budget=%d\n", s_endSceneProbeBudget);
+	}
 	WindowManager::GetInstance().Render();
+	if (s_endSceneProbeBudget > 0)
+	{
+		LOG(1, "[EndSceneProbe] after WindowManager::Render budget=%d\n", s_endSceneProbeBudget);
+		--s_endSceneProbeBudget;
+	}
 
 	return m_Direct3DDevice9Ex->EndScene();
 }

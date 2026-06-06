@@ -8,6 +8,7 @@
 #include "Core/logger.h"
 #include "Core/RuntimePlatform.h"
 #include "Core/utils.h"
+#include "Game/gamestates.h"
 
 namespace
 {
@@ -29,10 +30,37 @@ namespace
             }
         }
 
+        bool IsGameStateReadyForSystemInputHook()
+        {
+            return g_gameVals.pGameMode &&
+                g_gameVals.pGameState &&
+                *g_gameVals.pGameMode >= 0 &&
+                *g_gameVals.pGameState >= 0 &&
+                GetGameSceneStatus() >= GameSceneStatus_Running;
+        }
+
         uint32_t __stdcall SystemInputHookInternal(void* controllerPtr, uint32_t currentWord)
         {
             if (!IsControllerHooksRuntimeAllowed())
             {
+                return currentWord;
+            }
+
+            if (!IsGameStateReadyForSystemInputHook())
+            {
+                static int skipLogBudget = 16;
+                if (skipLogBudget > 0)
+                {
+                    const int gameMode = g_gameVals.pGameMode ? *g_gameVals.pGameMode : -1;
+                    const int gameState = g_gameVals.pGameState ? *g_gameVals.pGameState : -1;
+                    LOG(1, "[SystemInputHook] skip before game ready mode=%d state=%d scene=%d word=0x%08X controller=0x%p\n",
+                        gameMode,
+                        gameState,
+                        GetGameSceneStatus(),
+                        static_cast<unsigned int>(currentWord),
+                        controllerPtr);
+                    --skipLogBudget;
+                }
                 return currentWord;
             }
 

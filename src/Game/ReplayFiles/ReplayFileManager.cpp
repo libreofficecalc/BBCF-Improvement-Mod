@@ -5,7 +5,11 @@
 #include <fstream>
 #include <vector>
 #include <regex>
-#include <filesystem>
+#ifndef _SILENCE_EXPERIMENTAL_FILESYSTEM_DEPRECATION_WARNING
+#define _SILENCE_EXPERIMENTAL_FILESYSTEM_DEPRECATION_WARNING
+#endif
+
+#include <experimental/filesystem>
 #include "Game/characters.h"
 #include "Game/ScenesManager/ScenesManager.h"
 #include "Game/gamestates.h"
@@ -15,7 +19,7 @@
 #include <Web/url_downloader.h>
 #include "ReplayList.h"
 
-namespace fs = std::filesystem;
+namespace fs = std::experimental::filesystem;
 
 //#define REPLAY_FILE_SIZE 65536
 //#define REPLAY_FOLDER_PATH "./Save/Replay/"

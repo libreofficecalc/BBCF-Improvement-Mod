@@ -5,8 +5,12 @@
 #include <algorithm>
 #include <fstream>
 
-#include <filesystem>
-namespace fs = std::filesystem;
+#ifndef _SILENCE_EXPERIMENTAL_FILESYSTEM_DEPRECATION_WARNING
+#define _SILENCE_EXPERIMENTAL_FILESYSTEM_DEPRECATION_WARNING
+#endif
+
+#include <experimental/filesystem>
+namespace fs = std::experimental::filesystem;
 
 #include <sstream>
 #include <string>

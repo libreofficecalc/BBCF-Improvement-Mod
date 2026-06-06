@@ -39,7 +39,7 @@ merge-relevant behavior and engineering impact observed in this branch.
 - The window shows local square color, counter, next/previous color, distance to
   rank up/down, rule thresholds, and opponent color when room data exposes it.
 - Local data is read from `NetUserData` at:
-  - Ghidra VA `0x008AD0C0` / runtime `moduleBase + 0x004AD0C0`
+  - `moduleBase + 0x008AD0C0`
   - `+0x0194`: `netcolor`
   - `+0x0195`: `netcolor_win_counter`
 - Opponent color uses `RoomMemberEntry::netcolor` at `+0x5A`, matching the
