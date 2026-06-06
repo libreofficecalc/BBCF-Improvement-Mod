@@ -487,6 +487,32 @@ namespace
 		return a + ((b - a) * t);
 	}
 
+	ImVec4 LerpColor(const ImVec4& a, const ImVec4& b, float t)
+	{
+		t = (std::max)(0.0f, (std::min)(1.0f, t));
+		return ImVec4(
+			LerpFloat(a.x, b.x, t),
+			LerpFloat(a.y, b.y, t),
+			LerpFloat(a.z, b.z, t),
+			LerpFloat(a.w, b.w, t));
+	}
+
+	ImVec4 WithAlpha(ImVec4 color, float alpha)
+	{
+		color.w *= alpha;
+		return color;
+	}
+
+	ImVec4 ScoreToGradientColor(uint8_t previousColor, uint8_t currentColor, uint8_t nextColor, int score)
+	{
+		score = (std::max)(-10, (std::min)(10, score));
+		if (score <= 0)
+		{
+			return LerpColor(GetNetColorVec4(previousColor), GetNetColorVec4(currentColor), (static_cast<float>(score) + 10.0f) / 10.0f);
+		}
+		return LerpColor(GetNetColorVec4(currentColor), GetNetColorVec4(nextColor), static_cast<float>(score) / 10.0f);
+	}
+
 	struct NetworkSquareAnimation
 	{
 		bool hasValue = false;
@@ -546,36 +572,42 @@ namespace
 		return L("Player");
 	}
 
-	void DrawColorSwatchSized(uint8_t value, float size)
+	void DrawColorSwatchAt(ImDrawList* drawList, const ImVec2& p0, float size, uint8_t value)
 	{
 		const ImVec4 fill = GetNetColorVec4(value);
-		const ImVec2 p0 = ImGui::GetCursorScreenPos();
 		const ImVec2 p1 = ImVec2(p0.x + size, p0.y + size);
-		ImDrawList* const drawList = ImGui::GetWindowDrawList();
 		drawList->AddRectFilled(p0, p1, ImGui::GetColorU32(fill), 3.0f);
 		drawList->AddRect(p0, p1, ImGui::GetColorU32(ImVec4(0.05f, 0.05f, 0.06f, 1.0f)), 3.0f);
+	}
+
+	void DrawColorSwatchSized(uint8_t value, float size)
+	{
+		const ImVec2 p0 = ImGui::GetCursorScreenPos();
+		DrawColorSwatchAt(ImGui::GetWindowDrawList(), p0, size, value);
 		ImGui::Dummy(ImVec2(size, size));
 	}
 
-	void DrawCenteredCurrentPlayerRow(uint8_t color)
+	void DrawCenteredCurrentPlayerRow(uint8_t color, float alpha)
 	{
 		const float swatchSize = 20.0f;
 		const std::string name = GetLocalPersonaName();
 		const ImVec2 nameSize = ImGui::CalcTextSize(name.c_str());
 		const float rowWidth = swatchSize + ImGui::GetStyle().ItemSpacing.x + nameSize.x;
+		const float rowHeight = swatchSize;
 		const float offset = (ImGui::GetContentRegionAvail().x - rowWidth) * 0.5f;
-		if (offset > 0.0f)
-		{
-			ImGui::SetCursorPosX(ImGui::GetCursorPosX() + offset);
-		}
-		DrawColorSwatchSized(color, swatchSize);
-		ImGui::SameLine();
-		ImGui::TextUnformatted(name.c_str());
+		const ImVec2 rowStart = ImGui::GetCursorScreenPos();
+		const float startX = rowStart.x + (offset > 0.0f ? offset : 0.0f);
+		ImDrawList* const drawList = ImGui::GetWindowDrawList();
+		DrawColorSwatchAt(drawList, ImVec2(startX, rowStart.y), swatchSize, color);
+		drawList->AddText(
+			ImVec2(startX + swatchSize + ImGui::GetStyle().ItemSpacing.x, rowStart.y + ((rowHeight - nameSize.y) * 0.5f)),
+			ImGui::GetColorU32(WithAlpha(ImGui::GetStyleColorVec4(ImGuiCol_Text), alpha)),
+			name.c_str());
+		ImGui::Dummy(ImVec2(rowWidth, rowHeight));
 	}
 
-	void DrawGradientProgressBar(uint8_t previousColor, uint8_t currentColor, uint8_t nextColor, float progress, const ImVec2& size)
+	void DrawGradientProgressBarAt(uint8_t previousColor, uint8_t currentColor, uint8_t nextColor, float progress, const ImVec2& p0, const ImVec2& size)
 	{
-		const ImVec2 p0 = ImGui::GetCursorScreenPos();
 		const ImVec2 p1 = ImVec2(p0.x + size.x, p0.y + size.y);
 		const ImVec2 mid = ImVec2(p0.x + (size.x * 0.5f), p1.y);
 		ImDrawList* const drawList = ImGui::GetWindowDrawList();
@@ -604,6 +636,11 @@ namespace
 			drawList->PopClipRect();
 		}
 		drawList->AddRect(p0, p1, borderColor, 4.0f, 0, 1.0f);
+	}
+
+	void DrawGradientProgressBar(uint8_t previousColor, uint8_t currentColor, uint8_t nextColor, float progress, const ImVec2& size)
+	{
+		DrawGradientProgressBarAt(previousColor, currentColor, nextColor, progress, ImGui::GetCursorScreenPos(), size);
 		ImGui::Dummy(size);
 	}
 
@@ -615,17 +652,13 @@ namespace
 		}
 
 		const int gameState = *g_gameVals.pGameState;
-		if (gameState == GameState_Lobby)
-		{
-			return true;
-		}
-
-		NetworkStateLite networkState{};
-		if (!ReadNetworkStateLite(&networkState))
+		if (gameState != GameState_MainMenu)
 		{
 			return false;
 		}
-		return networkState.state == 4 || networkState.state == 5;
+
+		NetworkSquareColorState state{};
+		return TryReadLocalNetColor(&state) && state.localColorAvailable;
 	}
 
 	void DrawNetworkSquareColorContent(float alpha)
@@ -648,31 +681,39 @@ namespace
 		const int displayedScore = counterValid ? GetAnimatedScore(targetScore, &deltaAlpha) : 0;
 		const float progress = counterValid ? ScoreToProgress(displayedScore) : 0.0f;
 
-		DrawCenteredCurrentPlayerRow(currentColor);
+		DrawCenteredCurrentPlayerRow(currentColor, alpha);
 		ImGui::Dummy(ImVec2(1.0f, 4.0f));
 
 		const float fullWidth = (std::max)(320.0f, ImGui::GetContentRegionAvail().x);
 		const float swatchSize = 22.0f;
+		const float barHeight = 18.0f;
 		const float spacing = ImGui::GetStyle().ItemSpacing.x;
 		const float barWidth = (std::max)(180.0f, fullWidth - (swatchSize * 2.0f) - (spacing * 2.0f));
 		const ImVec2 rowStart = ImGui::GetCursorScreenPos();
+		ImDrawList* const drawList = ImGui::GetWindowDrawList();
 
-		DrawColorSwatchSized(previousColor, swatchSize);
-		ImGui::SameLine();
-		DrawGradientProgressBar(previousColor, currentColor, nextColor, progress, ImVec2(barWidth, 18.0f));
-		ImGui::SameLine();
-		DrawColorSwatchSized(nextColor, swatchSize);
+		DrawColorSwatchAt(drawList, rowStart, swatchSize, previousColor);
+		DrawGradientProgressBarAt(
+			previousColor,
+			currentColor,
+			nextColor,
+			progress,
+			ImVec2(rowStart.x + swatchSize + spacing, rowStart.y + ((swatchSize - barHeight) * 0.5f)),
+			ImVec2(barWidth, barHeight));
+		DrawColorSwatchAt(drawList, ImVec2(rowStart.x + swatchSize + spacing + barWidth + spacing, rowStart.y), swatchSize, nextColor);
+		ImGui::Dummy(ImVec2(fullWidth, swatchSize));
 
 		const float labelY = rowStart.y + swatchSize + 4.0f;
-		ImGui::SetCursorScreenPos(ImVec2(rowStart.x, labelY));
-		ImGui::TextUnformatted("-10");
+		const float labelHeight = ImGui::GetTextLineHeight();
+		const ImU32 previousTextColor = ImGui::GetColorU32(WithAlpha(GetNetColorVec4(previousColor), alpha));
+		drawList->AddText(ImVec2(rowStart.x, labelY), previousTextColor, "-10");
 
 		char currentBuffer[64] = {};
 		std::snprintf(currentBuffer, sizeof(currentBuffer), "Current: %d", displayedScore);
 		const float currentWidth = ImGui::CalcTextSize(currentBuffer).x;
-		ImGui::SameLine();
-		ImGui::SetCursorScreenPos(ImVec2(rowStart.x + swatchSize + spacing + ((barWidth - currentWidth) * 0.5f), labelY));
-		ImGui::TextUnformatted(currentBuffer);
+		const ImU32 currentTextColor = ImGui::GetColorU32(WithAlpha(ScoreToGradientColor(previousColor, currentColor, nextColor, displayedScore), alpha));
+		const ImVec2 currentTextPos(rowStart.x + swatchSize + spacing + ((barWidth - currentWidth) * 0.5f), labelY);
+		drawList->AddText(currentTextPos, currentTextColor, currentBuffer);
 
 		if (counterValid && g_networkSquareAnimation.delta != 0 && deltaAlpha > 0.0f)
 		{
@@ -681,17 +722,20 @@ namespace
 			const ImVec4 baseColor = g_networkSquareAnimation.delta > 0
 				? ImVec4(0.35f, 1.00f, 0.38f, alpha * deltaAlpha)
 				: ImVec4(1.00f, 0.30f, 0.30f, alpha * deltaAlpha);
-			ImGui::SameLine();
-			ImGui::PushStyleColor(ImGuiCol_Text, baseColor);
-			ImGui::TextUnformatted(deltaBuffer);
-			ImGui::PopStyleColor();
+			drawList->AddText(
+				ImVec2(currentTextPos.x + currentWidth + spacing, labelY),
+				ImGui::GetColorU32(baseColor),
+				deltaBuffer);
 		}
 
-		const char* rightLabel = "10";
+		const char* rightLabel = "+10";
 		const float rightWidth = ImGui::CalcTextSize(rightLabel).x;
-		ImGui::SameLine();
-		ImGui::SetCursorScreenPos(ImVec2(rowStart.x + swatchSize + spacing + barWidth + spacing + swatchSize - rightWidth, labelY));
-		ImGui::TextUnformatted(rightLabel);
+		const ImU32 nextTextColor = ImGui::GetColorU32(WithAlpha(GetNetColorVec4(nextColor), alpha));
+		drawList->AddText(
+			ImVec2(rowStart.x + swatchSize + spacing + barWidth + spacing + swatchSize - rightWidth, labelY),
+			nextTextColor,
+			rightLabel);
+		ImGui::Dummy(ImVec2(fullWidth, labelHeight));
 	}
 }
 
