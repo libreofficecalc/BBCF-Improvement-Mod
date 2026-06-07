@@ -593,6 +593,11 @@ namespace
 		return static_cast<int>(counter) - static_cast<int>(kRankChangeResetCounter);
 	}
 
+	bool IsLoadedNetColorCounter(uint8_t counter)
+	{
+		return counter >= kRankDownThreshold && counter <= kRankUpThreshold;
+	}
+
 	float ScoreToProgress(int score)
 	{
 		const float raw = (static_cast<float>(score) + 10.0f) / 20.0f;
@@ -833,6 +838,8 @@ namespace
 		ImGui::Dummy(size);
 	}
 
+	bool TryCaptureLocalSquareScore(NetworkSquareColorState* outState, int* outScore);
+
 	bool IsNetworkSquareContextActive()
 	{
 		if (GetGameSceneStatus() < GameSceneStatus_Running || !g_gameVals.pGameState)
@@ -853,7 +860,8 @@ namespace
 		}
 
 		NetworkSquareColorState state{};
-		return TryReadLocalNetColor(&state) && state.localColorAvailable;
+		int score = 0;
+		return TryCaptureLocalSquareScore(&state, &score);
 	}
 
 	bool TryCaptureLocalSquareScore(NetworkSquareColorState* outState, int* outScore)
@@ -864,7 +872,7 @@ namespace
 		}
 
 		*outState = CaptureNetworkSquareColorState();
-		if (!outState->localColorAvailable || !outState->localCounterAvailable || outState->localCounter > 100)
+		if (!outState->localColorAvailable || !outState->localCounterAvailable || !IsLoadedNetColorCounter(outState->localCounter))
 		{
 			return false;
 		}
@@ -884,7 +892,7 @@ namespace
 		const uint8_t currentColor = state.localColor;
 		const uint8_t previousColor = IsRankedColor(currentColor) ? GetPreviousNetColor(currentColor) : currentColor;
 		const uint8_t nextColor = IsRankedColor(currentColor) ? GetNextNetColor(currentColor) : currentColor;
-		const bool counterValid = state.localCounterAvailable && state.localCounter <= 100;
+		const bool counterValid = state.localCounterAvailable && IsLoadedNetColorCounter(state.localCounter);
 		const int targetScore = counterValid ? CounterToScore(state.localCounter) : 0;
 		float deltaAlpha = 0.0f;
 		const int displayedScore = counterValid ? GetAnimatedScore(targetScore, &deltaAlpha) : 0;
