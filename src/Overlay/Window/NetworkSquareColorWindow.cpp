@@ -14,6 +14,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cctype>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -25,12 +26,15 @@ namespace
 	constexpr uintptr_t kNetworkUserDataRva = 0x008AD0C0;
 	constexpr uintptr_t kOldNetworkUserDataRva = 0x004AD0C0;
 	constexpr uintptr_t kRankedNetworkStructRva = 0x008F7958;
+	constexpr uintptr_t kMainMenuRva = 0x00E8C044;
 	constexpr uintptr_t kNetUserDataNetColorOffset = 0x0194;
 	constexpr uintptr_t kNetUserDataNetColorCounterOffset = 0x0195;
 	constexpr uint8_t kRankUpThreshold = 60;
 	constexpr uint8_t kRankDownThreshold = 40;
 	constexpr uint8_t kRankChangeResetCounter = 50;
 	constexpr int kMaxRoomMembers = 8;
+	constexpr int kMaxSubMenus = 0x10;
+	constexpr int kMaxMenuItems = 0x18;
 
 	struct NetColorDefinition
 	{
@@ -68,6 +72,47 @@ namespace
 	{
 		int state = -1;
 		int state1 = -1;
+	};
+
+	struct MenuItemLite
+	{
+		int action;
+		char id[0x20];
+		char title[0x20];
+	};
+	static_assert(sizeof(MenuItemLite) == 68, "MenuItemLite size mismatch");
+
+	struct SubMenuLite
+	{
+		int pad00;
+		int pad04;
+		char id[0x20];
+		char title[0x20];
+		int itemCount;
+		int itemIndex;
+		MenuItemLite items[kMaxMenuItems];
+	};
+	static_assert(sizeof(SubMenuLite) == 1712, "SubMenuLite size mismatch");
+
+	struct MainMenuLite
+	{
+		char pad0000[0x54];
+		int menuLevel;
+		char pad0058[0x0C];
+		int state;
+		char pad0068[8];
+		SubMenuLite subMenus[kMaxSubMenus];
+		int pad6B70;
+		int subMenuIndex;
+	};
+
+	struct MainMenuSnapshot
+	{
+		bool valid = false;
+		int state = 0;
+		int subMenuIndex = -1;
+		std::string subMenuTitle;
+		std::string itemTitle;
 	};
 
 	const NetColorDefinition* FindNetColor(uint8_t value)
@@ -123,6 +168,84 @@ namespace
 			}
 			used += static_cast<size_t>(written);
 		}
+	}
+
+	std::string ReadFixedString(const char* text, size_t capacity)
+	{
+		if (!text || capacity == 0)
+		{
+			return {};
+		}
+
+		size_t len = 0;
+		while (len < capacity && text[len] != '\0')
+		{
+			++len;
+		}
+
+		return std::string(text, len);
+	}
+
+	std::string ToUpperCopy(const std::string& value)
+	{
+		std::string upper = value;
+		std::transform(upper.begin(), upper.end(), upper.begin(), [](unsigned char c) {
+			return static_cast<char>(std::toupper(c));
+		});
+		return upper;
+	}
+
+	bool ContainsToken(const std::string& value, const char* token)
+	{
+		if (!token)
+		{
+			return false;
+		}
+
+		return ToUpperCopy(value).find(token) != std::string::npos;
+	}
+
+	bool CaptureMainMenuSnapshot(MainMenuSnapshot* outSnapshot)
+	{
+		if (!outSnapshot)
+		{
+			return false;
+		}
+
+		*outSnapshot = {};
+		const uintptr_t moduleBase = reinterpret_cast<uintptr_t>(GetBbcfBaseAdress());
+		if (moduleBase == 0)
+		{
+			return false;
+		}
+
+		MainMenuLite* const mainMenu = reinterpret_cast<MainMenuLite*>(moduleBase + kMainMenuRva);
+		if (IsBadReadPtr(mainMenu, sizeof(MainMenuLite)))
+		{
+			return false;
+		}
+
+		if (mainMenu->subMenuIndex < 0 || mainMenu->subMenuIndex >= kMaxSubMenus)
+		{
+			return false;
+		}
+
+		const SubMenuLite& subMenu = mainMenu->subMenus[mainMenu->subMenuIndex];
+		if (subMenu.itemCount < 0 || subMenu.itemCount > kMaxMenuItems)
+		{
+			return false;
+		}
+
+		outSnapshot->valid = true;
+		outSnapshot->state = mainMenu->state;
+		outSnapshot->subMenuIndex = mainMenu->subMenuIndex;
+		outSnapshot->subMenuTitle = ReadFixedString(subMenu.title, sizeof(subMenu.title));
+		if (subMenu.itemIndex >= 0 && subMenu.itemIndex < subMenu.itemCount)
+		{
+			outSnapshot->itemTitle = ReadFixedString(subMenu.items[subMenu.itemIndex].title, sizeof(subMenu.items[subMenu.itemIndex].title));
+		}
+
+		return true;
 	}
 
 	bool ReadNetworkStateLite(NetworkStateLite* outState)
@@ -523,6 +646,72 @@ namespace
 	};
 
 	NetworkSquareAnimation g_networkSquareAnimation{};
+	constexpr double kNetworkSquareScoreAnimDuration = 0.85;
+	constexpr double kNetworkSquarePopupFadeDuration = 0.35;
+	constexpr double kNetworkSquarePopupHoldDuration = 5.0;
+	constexpr double kNetworkSquareDeltaFadeInDuration = 0.15;
+	constexpr double kNetworkSquareDeltaFadeOutStart = 4.0;
+	constexpr double kNetworkSquareDeltaFadeOutDuration = 0.15;
+
+	float ComputeNetworkSquareDeltaAlpha()
+	{
+		if (!g_networkSquareAnimation.hasValue || g_networkSquareAnimation.delta == 0)
+		{
+			return 0.0f;
+		}
+
+		const double elapsed = ImGui::GetTime() - g_networkSquareAnimation.startTime;
+		if (elapsed < kNetworkSquareDeltaFadeInDuration)
+		{
+			return static_cast<float>(elapsed / kNetworkSquareDeltaFadeInDuration);
+		}
+
+		if (elapsed >= kNetworkSquareDeltaFadeOutStart)
+		{
+			const double fadeOutElapsed = elapsed - kNetworkSquareDeltaFadeOutStart;
+			if (fadeOutElapsed >= kNetworkSquareDeltaFadeOutDuration)
+			{
+				return 0.0f;
+			}
+			return 1.0f - static_cast<float>(fadeOutElapsed / kNetworkSquareDeltaFadeOutDuration);
+		}
+
+		return 1.0f;
+	}
+
+	bool IsNetworkSquarePopupActive()
+	{
+		if (!g_networkSquareAnimation.hasValue || g_networkSquareAnimation.delta == 0)
+		{
+			return false;
+		}
+
+		const double elapsed = ImGui::GetTime() - g_networkSquareAnimation.startTime;
+		return elapsed < (kNetworkSquareScoreAnimDuration + kNetworkSquarePopupHoldDuration + kNetworkSquarePopupFadeDuration);
+	}
+
+	float ComputeNetworkSquarePopupAlpha()
+	{
+		if (!g_networkSquareAnimation.hasValue || g_networkSquareAnimation.delta == 0)
+		{
+			return 1.0f;
+		}
+
+		const double elapsed = ImGui::GetTime() - g_networkSquareAnimation.startTime;
+		const double fadeOutStart = kNetworkSquareScoreAnimDuration + kNetworkSquarePopupHoldDuration;
+		if (elapsed <= fadeOutStart)
+		{
+			return 1.0f;
+		}
+
+		const double fadeOutElapsed = elapsed - fadeOutStart;
+		if (fadeOutElapsed >= kNetworkSquarePopupFadeDuration)
+		{
+			return 0.0f;
+		}
+
+		return 1.0f - static_cast<float>(fadeOutElapsed / kNetworkSquarePopupFadeDuration);
+	}
 
 	int GetAnimatedScore(int targetScore, float* outDeltaAlpha)
 	{
@@ -537,7 +726,7 @@ namespace
 		}
 		else if (targetScore != g_networkSquareAnimation.targetScore)
 		{
-			const float currentT = SmoothStep(static_cast<float>((now - g_networkSquareAnimation.startTime) / 0.55));
+			const float currentT = SmoothStep(static_cast<float>((now - g_networkSquareAnimation.startTime) / kNetworkSquareScoreAnimDuration));
 			const int currentScore = static_cast<int>(std::round(LerpFloat(
 				static_cast<float>(g_networkSquareAnimation.sourceScore),
 				static_cast<float>(g_networkSquareAnimation.targetScore),
@@ -548,10 +737,10 @@ namespace
 			g_networkSquareAnimation.startTime = now;
 		}
 
-		const float t = SmoothStep(static_cast<float>((now - g_networkSquareAnimation.startTime) / 0.55));
+		const float t = SmoothStep(static_cast<float>((now - g_networkSquareAnimation.startTime) / kNetworkSquareScoreAnimDuration));
 		if (outDeltaAlpha)
 		{
-			*outDeltaAlpha = (std::max)(0.0f, 1.0f - static_cast<float>((now - g_networkSquareAnimation.startTime) / 1.15));
+			*outDeltaAlpha = ComputeNetworkSquareDeltaAlpha();
 		}
 		return static_cast<int>(std::round(LerpFloat(
 			static_cast<float>(g_networkSquareAnimation.sourceScore),
@@ -657,15 +846,35 @@ namespace
 			return false;
 		}
 
+		MainMenuSnapshot menu{};
+		if (!CaptureMainMenuSnapshot(&menu) || !ContainsToken(menu.subMenuTitle, "NETWORK"))
+		{
+			return false;
+		}
+
 		NetworkSquareColorState state{};
 		return TryReadLocalNetColor(&state) && state.localColorAvailable;
 	}
 
-	void DrawNetworkSquareColorContent(float alpha)
+	bool TryCaptureLocalSquareScore(NetworkSquareColorState* outState, int* outScore)
 	{
-		const NetworkSquareColorState state = CaptureNetworkSquareColorState();
-		LogNetworkSquareColorDiagnostics(state);
+		if (!outState || !outScore)
+		{
+			return false;
+		}
 
+		*outState = CaptureNetworkSquareColorState();
+		if (!outState->localColorAvailable || !outState->localCounterAvailable || outState->localCounter > 100)
+		{
+			return false;
+		}
+
+		*outScore = CounterToScore(outState->localCounter);
+		return true;
+	}
+
+	void DrawNetworkSquareColorContentForState(const NetworkSquareColorState& state, float alpha)
+	{
 		if (!state.localColorAvailable)
 		{
 			ImGui::TextDisabled("%s", L("Offline or unavailable").c_str());
@@ -737,6 +946,13 @@ namespace
 			rightLabel);
 		ImGui::Dummy(ImVec2(fullWidth, labelHeight));
 	}
+
+	void DrawNetworkSquareColorContent(float alpha)
+	{
+		const NetworkSquareColorState state = CaptureNetworkSquareColorState();
+		LogNetworkSquareColorDiagnostics(state);
+		DrawNetworkSquareColorContentForState(state, alpha);
+	}
 }
 
 void NetworkSquareColorWindow::BeforeDraw()
@@ -754,11 +970,27 @@ void DrawNetworkSquareColorProgressStandalone()
 	static bool s_wasVisible = false;
 	static double s_visibleStartTime = 0.0;
 
-	const bool visible = Settings::settingsIni.showSquareColorProgress && IsNetworkSquareContextActive();
-	if (!visible)
+	if (!Settings::settingsIni.showSquareColorProgress)
 	{
 		s_wasVisible = false;
 		g_networkSquareAnimation = {};
+		return;
+	}
+
+	NetworkSquareColorState state{};
+	int targetScore = 0;
+	const bool hasLocalScore = TryCaptureLocalSquareScore(&state, &targetScore);
+	if (hasLocalScore)
+	{
+		GetAnimatedScore(targetScore, nullptr);
+	}
+
+	const bool networkContextVisible = IsNetworkSquareContextActive();
+	const bool scoreChangeVisible = hasLocalScore && IsNetworkSquarePopupActive();
+	const bool visible = networkContextVisible || scoreChangeVisible;
+	if (!visible)
+	{
+		s_wasVisible = false;
 		return;
 	}
 
@@ -769,7 +1001,11 @@ void DrawNetworkSquareColorProgressStandalone()
 		s_visibleStartTime = now;
 	}
 
-	const float alpha = SmoothStep(static_cast<float>((now - s_visibleStartTime) / 0.22));
+	float alpha = SmoothStep(static_cast<float>((now - s_visibleStartTime) / kNetworkSquarePopupFadeDuration));
+	if (!networkContextVisible && scoreChangeVisible)
+	{
+		alpha *= ComputeNetworkSquarePopupAlpha();
+	}
 	ImGui::SetNextWindowPos(ImVec2(360.0f, 152.0f), ImGuiCond_FirstUseEver);
 	ImGui::SetNextWindowSizeConstraints(ImVec2(430.0f, 108.0f), ImVec2(10000.0f, 150.0f));
 	ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.06f, 0.08f, 0.92f * alpha));
@@ -779,7 +1015,15 @@ void DrawNetworkSquareColorProgressStandalone()
 	if (ImGui::Begin((L("Network Square Color") + "###NetworkSquareColorProgress").c_str(), &open, ImGuiWindowFlags_NoCollapse))
 	{
 		ImGui::SetWindowSize(ImVec2(430.0f, 112.0f), ImGuiCond_FirstUseEver);
-		DrawNetworkSquareColorContent(alpha);
+		if (hasLocalScore)
+		{
+			LogNetworkSquareColorDiagnostics(state);
+			DrawNetworkSquareColorContentForState(state, alpha);
+		}
+		else
+		{
+			DrawNetworkSquareColorContent(alpha);
+		}
 	}
 	ImGui::End();
 	ImGui::PopStyleVar();

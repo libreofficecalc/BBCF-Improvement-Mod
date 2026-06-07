@@ -302,8 +302,8 @@ namespace
 		bool showWins = true;
 		bool showLosses = false;
 		bool showWinrate = true;
-		bool showCharacterLeaderboardPlacement = true;
-		bool showGlobalLeaderboardPlacement = true;
+		bool showCharacterLeaderboardPlacement = false;
+		bool showGlobalLeaderboardPlacement = false;
 	};
 
 	RankedProgressTopRowOptions g_rankedProgressTopRowOptions{};
@@ -5658,7 +5658,13 @@ void DrawRankedProgressOverlayStandalone()
 	promotionDeltaAlpha = ComputeToastAlpha(&g_rankedPromotionToast, renderedDisplay, &promotionDelta);
 	demotionDeltaAlpha = ComputeToastAlpha(&g_rankedDemotionToast, renderedDisplay, &demotionDelta);
 	RememberRankedDisplayState(renderedDisplay);
-	g_rankedLeaderboardTracker.Tick(renderedDisplay.characterId);
+	const bool wantsLeaderboardPlacements =
+		g_rankedProgressTopRowOptions.showCharacterLeaderboardPlacement ||
+		g_rankedProgressTopRowOptions.showGlobalLeaderboardPlacement;
+	if (wantsLeaderboardPlacements)
+	{
+		g_rankedLeaderboardTracker.Tick(renderedDisplay.characterId);
+	}
 	if (g_rankedRulesDialog.requestOpenForCurrentRank)
 	{
 		OpenRankedRulesDialogForRank(VisibleRankToInternalRank(renderedDisplay.visibleRank));
