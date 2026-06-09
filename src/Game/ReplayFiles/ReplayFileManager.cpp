@@ -441,7 +441,8 @@ void ReplayFileManager::load_replay_list_from_db(int page, int character1, std::
     const wchar_t* serverAddress = pszwide;
     INTERNET_PORT port = 443;
 
-    std::string urlPath = "/api/replays?page=" + std::to_string(page+1);
+    const int page_size = 20;
+    std::string urlPath = "/api/replays?page=" + std::to_string(page+1) + "&per_page=" + std::to_string(page_size);
     if (character1 != -1) urlPath += "&p1_character_id=" + std::to_string(character1);
     if (player1 != "") urlPath += "&p1=" + url_escape(player1);
     if (character2 != -1) urlPath += "&p2_character_id=" + std::to_string(character2);
@@ -503,7 +504,6 @@ void ReplayFileManager::load_replay_list_from_db(int page, int character1, std::
         pos = p1 + 1;
     }
 
-    const int page_size = 100;
     std::vector<std::string> page_filenames = std::vector<std::string>(all_filenames.begin(),
         all_filenames.begin() + min(page_size, all_filenames.size()));
 
@@ -525,7 +525,12 @@ void ReplayFileManager::load_replay_list_from_db(int page, int character1, std::
         new_name = "Save/Replay/tmp/rp" + std::string(2 - min(2, new_name.length()), '0') + new_name + ".dat";
             
         ReplayFile* rp = 0;
-        DownloadUrlBinary(L"http://" + utf8_to_utf16(g_modVals.uploadReplayDataHost) + L"/uploads/" + utf8_to_utf16(page_filenames[j]), (void**)&rp);
+        DownloadUrlBinary(L"http://" + utf8_to_utf16(g_modVals.uploadReplayDataHost) + L":" + std::to_wstring(g_modVals.uploadReplayDataPort) + L"/download/" + utf8_to_utf16(page_filenames[j]), (void**)&rp);
+
+        if (rp == 0 || !check_file_validity(rp) || strncmp((char*)rp, "<!", 2) == 0) {
+            replay_list->replays[j].data()->valid = false;
+            continue;
+        }
 
         std::ofstream file(new_name, std::fstream::binary);
         file.write((char*)rp, sizeof(*rp));
