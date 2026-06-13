@@ -10,4 +10,5 @@
 #define MOD_LINK_FORUM L"https://steamcommunity.com/app/586140/discussions/0/3195868146163014015/"
 #define MOD_LINK_GITHUB L"https://github.com/libreofficecalc/BBCF-Improvement-Mod/releases"
 #define MOD_LINK_API_GITHUB_RELEASE L"https://api.github.com/repos/libreofficecalc/BBCF-Improvement-Mod/releases"
-#define REPLAY_DB_FRONTEND L"http://50.118.225.175:2000/"
+#define REPLAY_DB_FRONTEND L"http://89.167.76.6:2000/"
+// #define REPLAY_DB_FRONTEND L"http://50.118.225.175:2000/"

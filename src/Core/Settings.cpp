@@ -40,6 +40,12 @@ void Settings::applySettingsIni(D3DPRESENT_PARAMETERS* pPresentationParameters)
 	default:
 		break;
 	}
+
+
+	if (Settings::settingsIni.uploadReplayDataHost == "50.118.225.175") {
+		Settings::changeSetting("UploadReplayDataHost", "89.167.76.6");
+		Settings::settingsIni.uploadReplayDataHost = "89.167.76.6";
+	}
 	g_modVals.enableForeignPalettes = Settings::settingsIni.loadforeignpalettes;
 	g_modVals.save_states_save_keycode = Settings::getButtonValue(settingsIni.saveStateKeybind);
 	g_modVals.save_states_load_keycode = Settings::getButtonValue(settingsIni.loadStateKeybind);
@@ -52,7 +58,7 @@ void Settings::applySettingsIni(D3DPRESENT_PARAMETERS* pPresentationParameters)
 	g_modVals.frame_history_spacing = Settings::settingsIni.FrameHistorySpacing;
 
 	//CA2W pszwide (host_c_str);
-	g_modVals.uploadReplayDataHost = Settings::settingsIni.uploadReplayDataHost;;
+	g_modVals.uploadReplayDataHost = Settings::settingsIni.uploadReplayDataHost;
 	//std::string str2 = Settings::settingsIni.uploadReplayDataEndpoint;
 	//CA2W pszwide2(str2.c_str());
 	g_modVals.uploadReplayDataEndpoint = Settings::settingsIni.uploadReplayDataEndpoint;
@@ -60,6 +66,7 @@ void Settings::applySettingsIni(D3DPRESENT_PARAMETERS* pPresentationParameters)
 	//pPresentationParameters->Windowed = !Settings::settingsIni.fullscreen;
 
 	pPresentationParameters->PresentationInterval = settingsIni.vsync ? D3DPRESENT_INTERVAL_DEFAULT : D3DPRESENT_INTERVAL_IMMEDIATE;
+	
 	
 	//pPresentationParameters->Windowed = !settingsIni.fullscreen;
 	//if (settingsIni.fullscreen)
