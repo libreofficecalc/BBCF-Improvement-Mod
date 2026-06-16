@@ -76,6 +76,12 @@
     <ClCompile Include="src\Core\crashdump.cpp">
       <Filter>src</Filter>
     </ClCompile>
+    <ClCompile Include="src\Core\ControllerOverrideManager.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Core\DirectInputWrapper.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
     <ClCompile Include="src\Web\update_check.cpp">
       <Filter>src</Filter>
     </ClCompile>
@@ -202,6 +208,15 @@
       <Filter>include</Filter>
     </ClInclude>
     <ClInclude Include="src\Core\crashdump.h">
+      <Filter>include</Filter>
+    </ClInclude>
+    <ClInclude Include="src\Core\ControllerOverrideManager.h">
+      <Filter>include</Filter>
+    </ClInclude>
+    <ClInclude Include="src\Core\DirectInputWrapper.h">
+      <Filter>include</Filter>
+    </ClInclude>
+    <ClInclude Include="src\Core\dllmain.h">
       <Filter>include</Filter>
     </ClInclude>
     <ClInclude Include="src\Web\update_check.h">

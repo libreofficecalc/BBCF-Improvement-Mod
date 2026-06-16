@@ -14,6 +14,17 @@
 
 settingsIni_t Settings::settingsIni = {};
 savedSettings_t Settings::savedSettings = {};
+bool Settings::debugLoggingSettingMissing = false;
+
+namespace
+{
+bool IsSettingMissingInIni(LPCWSTR key, LPCWSTR filename)
+{
+        WCHAR buffer[2];
+        DWORD charsRead = GetPrivateProfileString(L"Settings", key, L"", buffer, ARRAYSIZE(buffer), filename);
+        return charsRead == 0;
+}
+}
 
 
 void Settings::applySettingsIni(D3DPRESENT_PARAMETERS* pPresentationParameters)
@@ -107,18 +118,20 @@ bool Settings::loadSettingsFile()
 	_wfullpath((wchar_t*)strINIPath.GetBuffer(MAX_PATH), L"settings.ini", MAX_PATH);
 	strINIPath.ReleaseBuffer();
 
-	if (GetFileAttributes(strINIPath) == 0xFFFFFFFF)
-	{
-		MessageBoxA(NULL, "Settings INI File Was Not Found!", "Error", MB_OK);
-		return false;
-	}
+        if (GetFileAttributes(strINIPath) == 0xFFFFFFFF)
+        {
+                MessageBoxA(NULL, "Settings INI File Was Not Found!", "Error", MB_OK);
+                return false;
+        }
 
-	void* iniPtr = 0;
+        void* iniPtr = 0;
 
-	//X-Macro
+        debugLoggingSettingMissing = IsSettingMissingInIni(L"GenerateDebugLogs", strINIPath);
+
+        //X-Macro
 #define SETTING(_type, _var, _inistring, _defaultval) \
-	iniPtr = &settingsIni.##_var; \
-	if(strcmp(#_type, "bool") == 0 || strcmp(#_type, "int") == 0) { \
+        iniPtr = &settingsIni.##_var; \
+        if(strcmp(#_type, "bool") == 0 || strcmp(#_type, "int") == 0) { \
 		*(int*)iniPtr = readSettingsFilePropertyInt(L##_inistring, L##_defaultval, strINIPath); } \
 	else if(strcmp(#_type, "float") == 0) { \
 		*(float*)iniPtr = readSettingsFilePropertyFloat(L##_inistring, L##_defaultval, strINIPath); } \
@@ -126,6 +139,11 @@ bool Settings::loadSettingsFile()
 		*(std::string*)iniPtr = readSettingsFilePropertyString(L##_inistring, L##_defaultval, strINIPath); }
 #include "settings.def"
 #undef SETTING
+
+        if (debugLoggingSettingMissing)
+        {
+                settingsIni.generateDebugLogs = true;
+        }
 
 	// Set buttons back to default if their values are incorrect
 	if (settingsIni.togglebutton.length() != 2 || settingsIni.togglebutton[0] != 'F')
@@ -182,12 +200,17 @@ void Settings::initSavedSettings()
 
 short Settings::getButtonValue(std::string button)
 {
-	auto maybe_keycode = keycode_mapper.find(button);
-	if (maybe_keycode != keycode_mapper.end())
-		return maybe_keycode->second;
-	else
-		return 112;
+        auto maybe_keycode = keycode_mapper.find(button);
+        if (maybe_keycode != keycode_mapper.end())
+                return maybe_keycode->second;
+        else
+                return 112;
 
+}
+
+bool Settings::WasDebugLoggingSettingMissing()
+{
+        return debugLoggingSettingMissing;
 }
 //int Settings::changeSetting(std::string setting_name, std::string new_value) { return 1; }
 int Settings::changeSetting(std::string setting_name, std::string new_value) {

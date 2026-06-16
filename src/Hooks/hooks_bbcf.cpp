@@ -15,6 +15,8 @@
 #include "Web/update_check.h"
 #include "Game/ReplayFiles/ReplayFileManager.h"
 
+extern "C" void HandleControllerWndProcMessage(UINT msg, WPARAM wParam, LPARAM lParam);
+
 
 
 
@@ -164,15 +166,23 @@ void __declspec(naked)PassMsgToImGui()
 	isWindowManagerInitialized = WindowManager::GetInstance().IsInitialized();
 	__asm popad
 
-	__asm
-	{
-		mov edi, [ebp + 0Ch]
-		mov ebx, ecx
-	}
+        __asm
+        {
+                mov edi, [ebp + 0Ch]
+                mov ebx, ecx
 
-	__asm
-	{
-		pushad
+                pushad
+                push[ebp + 10h] // lParam
+                push edi // wParam
+                push esi // msg
+                call HandleControllerWndProcMessage
+                add esp, 0Ch
+                popad
+        }
+
+        __asm
+        {
+                pushad
 
 		movzx eax, isWindowManagerInitialized
 		cmp eax, 0
