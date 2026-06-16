@@ -3,6 +3,7 @@
 #include "Core/interfaces.h"
 #include "Game/SnapshotApparatus/SnapshotApparatus.h"
 #include "Game/gamestates.h"
+#include "Core/Settings.h"
 #include "Overlay/imgui_utils.h"
 
 unsigned int ReplayRewindWindow::count_entities(bool unk_status2) {
@@ -75,7 +76,7 @@ std::vector<int> ReplayRewindWindow::find_nearest_checkpoint(std::vector<unsigne
 }
 void ReplayRewindWindow::Draw()
 {
-    
+
 #ifdef _DEBUG
     ImGui::Text("Active entities: %d", ReplayRewindWindow::count_entities(false));
     ImGui::Text("Active entities with unk_status2 = 2: %d", count_entities(true));
@@ -97,6 +98,21 @@ void ReplayRewindWindow::Draw()
 
         return;
     }
+
+
+    static bool b = Settings::settingsIni.autoopenrewind;
+    if (ImGui::Checkbox("Automatically open this window", &b)) {
+        if (Settings::settingsIni.autoopenrewind) {
+            Settings::changeSetting("AutoOpenRewind", std::to_string(0));
+            b = false;
+        }
+        else {
+            Settings::changeSetting("AutoOpenRewind", std::to_string(1));
+            b = true;
+        }
+        Settings::loadSettingsFile();
+    }
+
     if (*(bbcf_base_adress + 0x8F7758) == 0) {
         if (!g_interfaces.player1.IsCharDataNullPtr() && !g_interfaces.player2.IsCharDataNullPtr()) {
             ImGui::BeginGroup();
