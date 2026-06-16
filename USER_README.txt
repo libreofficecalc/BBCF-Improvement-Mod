@@ -86,7 +86,9 @@ Known issues
 4. Hitbox overlay shows phantom hitboxes that are disabled by the engine (shoutout to Shtkn for discovering this)
 
 5. Screen not displaying properly when Viewport in settings.ini is set to 2 or 3 with keep aspect ratio enabled in in-game settings. This is still being investigated. For now, either
-disable keep aspect ratio or keep the Viewport option set to 1. 
+disable keep aspect ratio or keep the Viewport option set to 1.
+
+6. Enabling "Separate Keyboard and Controllers" crashes the game on startup. The option is forced off each launch and no longer saves between sessions; enable it manually after the game loads if needed.
 
 Troubleshooting
 ==========================

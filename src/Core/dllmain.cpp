@@ -2,27 +2,42 @@
 #include "interfaces.h"
 #include "logger.h"
 #include "Settings.h"
+#include "dllmain.h"
+#include "ControllerOverrideManager.h"
+#include "DirectInputWrapper.h"
 
 #include "Hooks/hooks_detours.h"
+#include "Hooks/hooks_battle_input.h"
+#include "Hooks/hooks_system_input.h"
 #include "Overlay/WindowManager.h"
 
 #include <Windows.h>
 
 HMODULE hOriginalDinput;
-
-typedef HRESULT(WINAPI *DirectInput8Create_t)(HINSTANCE inst_handle, DWORD version, const IID& r_iid, LPVOID* out_wrapper, LPUNKNOWN p_unk);
 DirectInput8Create_t orig_DirectInput8Create;
 
 // Exported function
 HRESULT WINAPI DirectInput8Create(HINSTANCE hinstHandle, DWORD version, const IID& r_iid, LPVOID* outWrapper, LPUNKNOWN pUnk)
 {
-	LOG(1, "DirectInput8Create\n");
+        LOG(1, "DirectInput8Create\n");
 
-	HRESULT ret = orig_DirectInput8Create(hinstHandle, version, r_iid, outWrapper, pUnk);
+        HRESULT ret = orig_DirectInput8Create(hinstHandle, version, r_iid, outWrapper, pUnk);
 
-	LOG(1, "DirectInput8Create result: %d\n", ret);
+        if (SUCCEEDED(ret) && outWrapper)
+        {
+                if (r_iid == IID_IDirectInput8A)
+                {
+                        *outWrapper = new DirectInput8AWrapper(static_cast<IDirectInput8A*>(*outWrapper));
+                }
+                else if (r_iid == IID_IDirectInput8W)
+                {
+                        *outWrapper = new DirectInput8WWrapper(static_cast<IDirectInput8W*>(*outWrapper));
+                }
+        }
 
-	return ret;
+        LOG(1, "DirectInput8Create result: %d\n", ret);
+
+        return ret;
 }
 
 void CreateCustomDirectories()
@@ -76,35 +91,57 @@ bool LoadOriginalDinputDll()
 
 DWORD WINAPI BBCF_IM_Start(HMODULE hModule)
 {
-	openLogger();
+        if (!Settings::loadSettingsFile())
+        {
+                ExitProcess(0);
+        }
 
-	LOG(1, "Starting BBCF_IM_Start thread\n");
+        SetLoggingEnabled(Settings::settingsIni.generateDebugLogs);
 
-	CreateCustomDirectories();
-	SetUnhandledExceptionFilter(UnhandledExFilter);
+        if (Settings::WasDebugLoggingSettingMissing())
+        {
+                LOG(2, "GenerateDebugLogs setting missing in settings.ini; defaulting to enabled and adding it automatically.\n");
+                Settings::changeSetting("GenerateDebugLogs", Settings::settingsIni.generateDebugLogs ? "1" : "0");
+        }
 
-	if (!Settings::loadSettingsFile())
-	{
-		ExitProcess(0);
-	}
-	logSettingsIni();
-	Settings::initSavedSettings();
+        LOG(1, "Starting BBCF_IM_Start thread\n");
 
-	if (!LoadOriginalDinputDll())
-	{
-		MessageBoxA(nullptr, "Could not load original dinput8.dll!", "BBCFIM", MB_OK);
-		ExitProcess(0);
-	}
+        CreateCustomDirectories();
+        SetUnhandledExceptionFilter(UnhandledExFilter);
 
-	if (!placeHooks_detours())
-	{
-		MessageBoxA(nullptr, "Failed IAT hook", "BBCFIM", MB_OK);
-		ExitProcess(0);
-	}
+        logSettingsIni();
+        Settings::initSavedSettings();
 
-	g_interfaces.pPaletteManager = new PaletteManager();
+        if (!LoadOriginalDinputDll())
+        {
+            MessageBoxA(nullptr, "Could not load original dinput8.dll!", "BBCFIM", MB_OK);
+            ExitProcess(0);
+        }
 
-	return 0;
+        if (!placeHooks_detours())
+        {
+            MessageBoxA(nullptr, "Failed IAT hook", "BBCFIM", MB_OK);
+            ExitProcess(0);
+        }
+
+        // Install battle input hook (P1/P2 input write site)
+        if (!Hook_BattleInput())
+        {
+            // For now, don't hard-fail the entire mod - just log it.
+            // If you prefer, you can pop a MessageBox+ExitProcess instead.
+            LOG(2, "BBCF_IM_Start: Hook_BattleInput failed; P2 input PoC disabled.\n");
+        }
+
+        if (!InstallSystemInputHook())
+        {
+                LOG(2, "BBCF_IM_Start: InstallSystemInputHook failed; system input override disabled.\n");
+        }
+
+        LOG(1, "GetBbcfBaseAdress() = 0x%p\n", reinterpret_cast<void*>(GetBbcfBaseAdress()));
+
+        g_interfaces.pPaletteManager = new PaletteManager();
+
+        return 0;
 }
 
 BOOL WINAPI DllMain(HMODULE hinstDLL, DWORD ul_reason_for_call, LPVOID lpReserved)

@@ -17,6 +17,7 @@
     <ClCompile Include="depends\imgui\imgui_impl_dx9.cpp" />
     <ClCompile Include="src\Game\ScenesManager\ScenesManager.cpp" />
     <ClCompile Include="src\Game\ReplayRewind\ReplayRewind.cpp" />
+    <ClCompile Include="src\Hooks\hooks_battle_input.cpp" />
     <ClCompile Include="src\Overlay\Window\FrameAdvantage\FrameAdvantageWindow.cpp" />
     <ClCompile Include="src\Overlay\Window\FrameHistory\FrameHistory.cpp" />
     <ClCompile Include="src\Overlay\Window\FrameHistory\FrameHistoryWindow.cpp" />
@@ -54,10 +55,13 @@
     <ClCompile Include="src\Hooks\hooks_bbcf.cpp" />
     <ClCompile Include="src\Hooks\hooks_customGameModes.cpp" />
     <ClCompile Include="src\Hooks\hooks_detours.cpp" />
+    <ClCompile Include="src\Hooks\hooks_system_input.cpp" />
     <ClCompile Include="src\Hooks\hooks_palette.cpp" />
     <ClCompile Include="src\SteamApiWrapper\steamApiWrappers.cpp" />
     <ClCompile Include="src\Core\interfaces.cpp" />
     <ClCompile Include="src\Core\crashdump.cpp" />
+    <ClCompile Include="src\Core\ControllerOverrideManager.cpp" />
+    <ClCompile Include="src\Core\DirectInputWrapper.cpp" />
     <ClCompile Include="src\Network\NetworkManager.cpp" />
     <ClCompile Include="src\Network\OnlinePaletteManager.cpp" />
     <ClCompile Include="src\Network\RoomManager.cpp" />
@@ -111,6 +115,8 @@
     <ClInclude Include="src\Game\ReplayFiles\ReplayList.h" />
     <ClInclude Include="src\Game\ScenesManager\ScenesManager.h" />
     <ClInclude Include="src\Game\ReplayRewind\ReplayRewind.h" />
+    <ClInclude Include="src\Hooks\hooks_battle_input.h" />
+    <ClInclude Include="src\Hooks\hooks_system_input.h" />
     <ClInclude Include="src\Overlay\Window\FrameAdvantage\FrameAdvantageWindow.h" />
     <ClInclude Include="src\Overlay\Window\FrameHistory\FrameHistory.h" />
     <ClInclude Include="src\Overlay\Window\FrameHistory\FrameHistoryWindow.h" />
@@ -163,6 +169,9 @@
     <ClInclude Include="src\Game\CharData.h" />
     <ClInclude Include="src\Core\interfaces.h" />
     <ClInclude Include="src\Core\crashdump.h" />
+    <ClInclude Include="src\Core\ControllerOverrideManager.h" />
+    <ClInclude Include="src\Core\DirectInputWrapper.h" />
+    <ClInclude Include="src\Core\dllmain.h" />
     <ClInclude Include="src\Network\NetworkManager.h" />
     <ClInclude Include="src\Network\OnlinePaletteManager.h" />
     <ClInclude Include="src\Network\Packet.h" />
@@ -284,7 +293,7 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>DebugFull</GenerateDebugInformation>
-      <AdditionalDependencies>comsuppw.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>dinput8.lib;dxguid.lib;comsuppw.lib;winmm.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <ModuleDefinitionFile>export/dinput8.def</ModuleDefinitionFile>
     </Link>
   </ItemDefinitionGroup>
@@ -316,7 +325,7 @@
       <ModuleDefinitionFile>export/dinput8.def</ModuleDefinitionFile>
       <AdditionalLibraryDirectories>
       </AdditionalLibraryDirectories>
-      <AdditionalDependencies>comsuppw.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>dinput8.lib;dxguid.lib;comsuppw.lib;winmm.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

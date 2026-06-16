@@ -11,9 +11,12 @@
 #include "Overlay/WindowManager.h"
 #include "SteamApiWrapper/steamApiWrappers.h"
 #include "Core/info.h"
+#include "Core/ControllerOverrideManager.h"
 #include <string>
 #include "Web/update_check.h"
 #include "Game/ReplayFiles/ReplayFileManager.h"
+
+extern "C" void HandleControllerWndProcMessage(UINT msg, WPARAM wParam, LPARAM lParam);
 
 
 
@@ -164,15 +167,23 @@ void __declspec(naked)PassMsgToImGui()
 	isWindowManagerInitialized = WindowManager::GetInstance().IsInitialized();
 	__asm popad
 
-	__asm
-	{
-		mov edi, [ebp + 0Ch]
-		mov ebx, ecx
-	}
+        __asm
+        {
+                mov edi, [ebp + 0Ch]
+                mov ebx, ecx
 
-	__asm
-	{
-		pushad
+                pushad
+                push[ebp + 10h] // lParam
+                push edi // wParam
+                push esi // msg
+                call HandleControllerWndProcMessage
+                add esp, 0Ch
+                popad
+        }
+
+        __asm
+        {
+                pushad
 
 		movzx eax, isWindowManagerInitialized
 		cmp eax, 0
@@ -203,13 +214,18 @@ EXIT:
 
 int PassKeyboardInputToGame()
 {
-	if (GetForegroundWindow() != g_gameProc.hWndGameWindow ||
-		ImGui::GetIO().WantCaptureKeyboard)
-	{
-		return 0;
-	}
+        if (GetForegroundWindow() != g_gameProc.hWndGameWindow ||
+                ImGui::GetIO().WantCaptureKeyboard)
+        {
+                return 0;
+        }
 
-	return 1;
+        return 1;
+}
+
+extern "C" BOOL __stdcall GetKeyboardStateFiltered(PBYTE lpKeyState)
+{
+        return ControllerOverrideManager::GetInstance().GetFilteredKeyboardState(lpKeyState) ? TRUE : FALSE;
 }
 
 DWORD DenyKeyboardInputFromGameJmpBackAddr = 0;
@@ -221,14 +237,14 @@ void __declspec(naked)DenyKeyboardInputFromGame()
 	{
 		call PassKeyboardInputToGame
 		test eax, eax
-		jz EXIT
+                jz EXIT
 
-		lea     eax, [esi + 28h]
-		push    eax // lpKeyState
-		call    ds : GetKeyboardState
+                lea     eax, [esi + 28h]
+                push    eax // lpKeyState
+                call    GetKeyboardStateFiltered
 EXIT:
-		jmp[DenyKeyboardInputFromGameJmpBackAddr]
-	}
+                jmp[DenyKeyboardInputFromGameJmpBackAddr]
+        }
 }
 
 DWORD PacketProcessingFuncJmpBackAddr = 0;
