@@ -11,6 +11,7 @@ struct RankedHostLevelCacheEntry
 	uint64_t steamId = 0;
 	uint64_t lobbyId = 0;
 	uint32_t internalRank = 0;
+	bool hasRank = false;
 	DWORD tick = 0;
 };
 
@@ -24,6 +25,7 @@ public:
 	std::vector<RankedHostLevelCacheEntry> m_rankedHostLevelCache;
 
 	void CacheRankedHostLevel(CSteamID steamIDLobby, const char* value);
+	void CacheRankedLobbyOwnerId(CSteamID steamIDLobby, const char* value);
 	bool GetCachedRankedHostLevel(uint64_t steamId, uint32_t* outInternalRank) const;
 
 	int GetFavoriteGameCount();

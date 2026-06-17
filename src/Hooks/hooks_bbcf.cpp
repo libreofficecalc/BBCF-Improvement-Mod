@@ -2,6 +2,7 @@
 
 #include "Core/interfaces.h"
 #include "Core/logger.h"
+#include "Core/Settings.h"
 #include "Core/utils.h"
 #include "Game/MatchState.h"
 #include "Game/gamestates.h"
@@ -1405,6 +1406,11 @@ void LogRankUiProbeDword(const char* label, uint32_t value)
 
 void LogRankUiProbe(const char* tag)
 {
+	if (!Settings::settingsIni.enableInDevelopmentFeatures)
+	{
+		return;
+	}
+
 	static int s_budget = 12;
 	if (s_budget <= 0)
 	{
@@ -3672,6 +3678,12 @@ void TryBeginRankMenuRowLpTrace(const char* reason, void* selfValue)
 
 void BeginRankedSlotWriteTrace(uint32_t slotAddr, const char* reason)
 {
+	if (!Settings::settingsIni.enableInDevelopmentFeatures)
+	{
+		EndRankedSlotWriteTrace("dev_diagnostics_disabled");
+		return;
+	}
+
 	uint32_t slotLo = 0;
 	uint32_t slotHi = 0;
 	if (!ReadRankedTrackedSlotPair(slotAddr, &slotLo, &slotHi))
@@ -7217,6 +7229,12 @@ void NormalizeMenuExitModeIfNeeded()
 
 void RankedProbeTickFrameState()
 {
+	if (!Settings::settingsIni.enableInDevelopmentFeatures)
+	{
+		EndRankedSlotWriteTrace("dev_diagnostics_disabled");
+		return;
+	}
+
 	if (!g_gameVals.pGameMode || !g_gameVals.pGameState)
 	{
 		return;

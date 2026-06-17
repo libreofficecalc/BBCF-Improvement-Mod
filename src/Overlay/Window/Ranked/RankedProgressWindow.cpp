@@ -3735,7 +3735,7 @@ namespace
 		outSnapshot->currentRank = visibleRank;
 		outSnapshot->previousRank = visibleRank > 1u ? (visibleRank - 1u) : 0u;
 		outSnapshot->nextRank = visibleRank > 0u ? (visibleRank + 1u) : 1u;
-		if (visibleRank >= 38u || rowIndex == 7u)
+		if (IsRankedOverlayDiagnosticsEnabled() && (visibleRank >= 38u || rowIndex == 7u))
 		{
 			static std::array<uint64_t, 64> s_lastCoreLogSignature{};
 			static std::array<uint8_t, 64> s_hasCoreLogSignature{};
@@ -3994,11 +3994,31 @@ namespace
 		g_rankedUploadObservation.startedAtMs = GetTickCount64();
 		g_rankedUploadObservation.attemptedCharacterId = attemptedCharacterId;
 		g_rankedUploadObservation.uploadedScore = uploadedScore;
-		const bool capturedAny = TryCaptureAllRankedDisplayStates(
-			&g_rankedUploadObservation.baselineStates,
-			&g_rankedUploadObservation.hasBaseline);
+		bool capturedAny = false;
+		if (attemptedCharacterId < g_rankedUploadObservation.baselineStates.size())
+		{
+			RankedProgressDisplayState state{};
+			if (TryBuildDisplayStateForCharacter(attemptedCharacterId, nullptr, &state) && state.valid)
+			{
+				g_rankedUploadObservation.baselineStates[attemptedCharacterId] = state;
+				g_rankedUploadObservation.hasBaseline[attemptedCharacterId] = 1;
+				capturedAny = true;
+			}
+		}
+		else
+		{
+			capturedAny = TryCaptureAllRankedDisplayStates(
+				&g_rankedUploadObservation.baselineStates,
+				&g_rankedUploadObservation.hasBaseline);
+		}
 		uint32_t cachedBaselineCount = 0;
-		for (uint32_t characterId = 0; characterId < g_lastKnownRankDisplayByCharacter.size(); ++characterId)
+		const uint32_t cacheStart = attemptedCharacterId < g_lastKnownRankDisplayByCharacter.size()
+			? attemptedCharacterId
+			: 0u;
+		const uint32_t cacheEnd = attemptedCharacterId < g_lastKnownRankDisplayByCharacter.size()
+			? attemptedCharacterId + 1u
+			: static_cast<uint32_t>(g_lastKnownRankDisplayByCharacter.size());
+		for (uint32_t characterId = cacheStart; characterId < cacheEnd; ++characterId)
 		{
 			RankedProgressDisplayState cachedState{};
 			if (TryGetCachedRankedDisplayState(characterId, &cachedState) && cachedState.valid)
@@ -4084,7 +4104,22 @@ namespace
 
 		std::array<RankedProgressDisplayState, 64> currentStates{};
 		std::array<uint8_t, 64> hasCurrentState{};
-		if (!TryCaptureAllRankedDisplayStates(&currentStates, &hasCurrentState))
+		bool capturedCurrent = false;
+		if (g_rankedUploadObservation.attemptedCharacterId < currentStates.size())
+		{
+			RankedProgressDisplayState state{};
+			if (TryBuildDisplayStateForCharacter(g_rankedUploadObservation.attemptedCharacterId, nullptr, &state) && state.valid)
+			{
+				currentStates[g_rankedUploadObservation.attemptedCharacterId] = state;
+				hasCurrentState[g_rankedUploadObservation.attemptedCharacterId] = 1;
+				capturedCurrent = true;
+			}
+		}
+		else
+		{
+			capturedCurrent = TryCaptureAllRankedDisplayStates(&currentStates, &hasCurrentState);
+		}
+		if (!capturedCurrent)
 		{
 			return;
 		}
@@ -5504,6 +5539,19 @@ bool IsRankedOverlayRuntimeReady()
 	}
 }
 
+bool IsRankedOverlaySuppressedByTrainingMode()
+{
+	return g_gameVals.pGameMode && *g_gameVals.pGameMode == GameMode_Training;
+}
+
+void ResetRankedProgressRuntimeState()
+{
+	g_rankedProgressAnimation.active = false;
+	g_rankedProgressAnimationSnapshot = {};
+	g_rankedOverlayVisibility = {};
+	g_lastRankedOverlayCharacterId = kInvalidRankedCharacterId;
+}
+
 void DrawRankedProgressOverlayStandalone()
 {
 	LoadRankedProgressTopRowOptions();
@@ -5511,10 +5559,7 @@ void DrawRankedProgressOverlayStandalone()
 	if (!Settings::settingsIni.showRankedProgress && !g_manualRankedProgressOpen)
 	{
 		ClearRankedProgressOverlaySnapshot("setting_disabled");
-		g_rankedProgressAnimation.active = false;
-		g_rankedProgressAnimationSnapshot = {};
-		g_rankedOverlayVisibility = {};
-		g_lastRankedOverlayCharacterId = kInvalidRankedCharacterId;
+		ResetRankedProgressRuntimeState();
 		DrawRankedGlobalDialogs();
 		return;
 	}
@@ -5522,10 +5567,15 @@ void DrawRankedProgressOverlayStandalone()
 	if (!IsRankedOverlayRuntimeReady())
 	{
 		ClearRankedProgressOverlaySnapshot("runtime_not_ready");
-		g_rankedProgressAnimation.active = false;
-		g_rankedProgressAnimationSnapshot = {};
-		g_rankedOverlayVisibility = {};
-		g_lastRankedOverlayCharacterId = kInvalidRankedCharacterId;
+		ResetRankedProgressRuntimeState();
+		DrawRankedGlobalDialogs();
+		return;
+	}
+
+	if (IsRankedOverlaySuppressedByTrainingMode())
+	{
+		ClearRankedProgressOverlaySnapshot("training_mode");
+		ResetRankedProgressRuntimeState();
 		DrawRankedGlobalDialogs();
 		return;
 	}

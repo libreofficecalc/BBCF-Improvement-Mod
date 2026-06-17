@@ -445,7 +445,7 @@ namespace
 
 	void LogNetworkSquareColorDiagnostics(const NetworkSquareColorState& state)
 	{
-		if (!IsLoggingEnabled())
+		if (!Settings::settingsIni.enableInDevelopmentFeatures || !IsLoggingEnabled())
 		{
 			return;
 		}

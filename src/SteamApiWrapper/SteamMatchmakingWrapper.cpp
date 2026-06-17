@@ -160,36 +160,46 @@ void SteamMatchmakingWrapper::CacheRankedHostLevel(CSteamID steamIDLobby, const 
 	if (lobbyIt != m_rankedHostLevelCache.end())
 	{
 		lobbyIt->internalRank = internalRank;
+		lobbyIt->hasRank = true;
 		lobbyIt->tick = GetTickCount();
 		return;
 	}
 
-	const CSteamID owner = m_SteamMatchmaking->GetLobbyOwner(steamIDLobby);
-	uint64_t ownerId = owner.ConvertToUint64();
-	if (ownerId == 0u)
+	if (m_rankedHostLevelCache.size() >= 32u)
 	{
-		const char* const ownerIdText = m_SteamMatchmaking->GetLobbyData(steamIDLobby, "ownerID");
-		if (ownerIdText && ownerIdText[0] != '\0')
-		{
-			char* ownerEnd = nullptr;
-			const unsigned long long parsedOwner = std::strtoull(ownerIdText, &ownerEnd, 10);
-			if (ownerEnd != ownerIdText)
-			{
-				ownerId = static_cast<uint64_t>(parsedOwner);
-			}
-		}
+		m_rankedHostLevelCache.erase(m_rankedHostLevelCache.begin());
 	}
-	if (ownerId == 0u)
+	m_rankedHostLevelCache.push_back({});
+	RankedHostLevelCacheEntry& entry = m_rankedHostLevelCache.back();
+	entry.lobbyId = lobbyId;
+	entry.internalRank = internalRank;
+	entry.hasRank = true;
+	entry.tick = GetTickCount();
+
+	LOG(7, "[RANK][LobbyRankCache] lobby=%llu internal=%u visible=%u\n",
+		static_cast<unsigned long long>(lobbyId),
+		static_cast<unsigned int>(internalRank),
+		static_cast<unsigned int>(internalRank + 1u));
+}
+
+void SteamMatchmakingWrapper::CacheRankedLobbyOwnerId(CSteamID steamIDLobby, const char* value)
+{
+	if (!value || value[0] == '\0')
 	{
-		LOG(7, "[RANK][LobbyRankCache] missing owner lobby=%llu internal=%u visible=%u\n",
-			static_cast<unsigned long long>(steamIDLobby.ConvertToUint64()),
-			static_cast<unsigned int>(parsed),
-			static_cast<unsigned int>(parsed + 1));
 		return;
 	}
 
+	char* end = nullptr;
+	const unsigned long long parsedOwner = std::strtoull(value, &end, 10);
+	if (end == value || parsedOwner == 0ull)
+	{
+		return;
+	}
+
+	const uint64_t ownerId = static_cast<uint64_t>(parsedOwner);
+	const uint64_t lobbyId = steamIDLobby.ConvertToUint64();
 	auto it = std::find_if(m_rankedHostLevelCache.begin(), m_rankedHostLevelCache.end(),
-		[ownerId](const RankedHostLevelCacheEntry& entry) { return entry.steamId == ownerId; });
+		[lobbyId](const RankedHostLevelCacheEntry& entry) { return entry.lobbyId == lobbyId; });
 	if (it == m_rankedHostLevelCache.end())
 	{
 		if (m_rankedHostLevelCache.size() >= 32u)
@@ -202,14 +212,13 @@ void SteamMatchmakingWrapper::CacheRankedHostLevel(CSteamID steamIDLobby, const 
 
 	it->steamId = ownerId;
 	it->lobbyId = lobbyId;
-	it->internalRank = internalRank;
 	it->tick = GetTickCount();
 
 	LOG(7, "[RANK][LobbyRankCache] ownerSteam=%llu lobby=%llu internal=%u visible=%u\n",
 		static_cast<unsigned long long>(ownerId),
 		static_cast<unsigned long long>(lobbyId),
-		static_cast<unsigned int>(internalRank),
-		static_cast<unsigned int>(internalRank + 1u));
+		static_cast<unsigned int>(it->internalRank),
+		static_cast<unsigned int>(it->internalRank + 1u));
 }
 
 bool SteamMatchmakingWrapper::GetCachedRankedHostLevel(uint64_t steamId, uint32_t* outInternalRank) const
@@ -221,7 +230,7 @@ bool SteamMatchmakingWrapper::GetCachedRankedHostLevel(uint64_t steamId, uint32_
 
 	for (auto it = m_rankedHostLevelCache.rbegin(); it != m_rankedHostLevelCache.rend(); ++it)
 	{
-		if (it->steamId == steamId)
+		if (it->steamId == steamId && it->hasRank)
 		{
 			*outInternalRank = it->internalRank;
 			return true;
@@ -367,6 +376,10 @@ const char* SteamMatchmakingWrapper::GetLobbyData(CSteamID steamIDLobby, const c
 	{
 		CacheRankedHostLevel(steamIDLobby, ret);
 	}
+	else if (ret && pchKey && std::strcmp(pchKey, "ownerID") == 0)
+	{
+		CacheRankedLobbyOwnerId(steamIDLobby, ret);
+	}
 
 	return ret;
 }
@@ -394,6 +407,10 @@ bool SteamMatchmakingWrapper::GetLobbyDataByIndex(CSteamID steamIDLobby, int iLo
 		if (pchKey && std::strcmp(pchKey, "RANK_HOST_LEVEL") == 0)
 		{
 			CacheRankedHostLevel(steamIDLobby, pchValue);
+		}
+		else if (pchKey && std::strcmp(pchKey, "ownerID") == 0)
+		{
+			CacheRankedLobbyOwnerId(steamIDLobby, pchValue);
 		}
 		if (Settings::settingsIni.enableInDevelopmentFeatures && IsRankLobbyKey(pchKey))
 		{
