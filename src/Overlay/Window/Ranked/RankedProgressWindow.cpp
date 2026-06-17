@@ -179,6 +179,11 @@ namespace
 	// Any upload with serial > this value happened during or after the current match.
 	uint64_t g_uploadSerialAtMatchEntry = 0;
 
+	bool IsRankedOverlayDiagnosticsEnabled()
+	{
+		return Settings::settingsIni.enableInDevelopmentFeatures;
+	}
+
 		struct RankedProgressDisplayState
 		{
 			bool valid = false;
@@ -3325,6 +3330,11 @@ namespace
 
 	void LogRankedSnapshotCore(const char* tag, const RankedProgressOverlaySnapshot& snapshot)
 	{
+		if (!IsRankedOverlayDiagnosticsEnabled())
+		{
+			return;
+		}
+
 		const uint32_t internalRank = snapshot.rawPackedField00 & 0xFFFFu;
 		const uint32_t uploadedPacked = (internalRank << 16) | (snapshot.packedSubscore & 0xFFFFu);
 		const uint32_t rankProgress = snapshot.currentLp >= snapshot.cumulativeBase
@@ -3379,6 +3389,11 @@ namespace
 
 	void LogRankedDisplayStateCore(const char* tag, const RankedProgressDisplayState& state)
 	{
+		if (!IsRankedOverlayDiagnosticsEnabled())
+		{
+			return;
+		}
+
 		const uint32_t internalRank = VisibleRankToInternalRank(state.visibleRank);
 		const uint32_t uploadedPacked = (internalRank << 16) | (state.packedSubscore & 0xFFFFu);
 		const uint32_t rankProgress = state.currentLp >= state.cumulativeBase
@@ -3422,7 +3437,7 @@ namespace
 
 	void MaybeLogRankedRowDump(uint32_t rowIndex, const uint8_t* rowObject, const RankedProgressOverlaySnapshot& snapshot)
 	{
-		if (!rowObject || rowIndex >= 0x40)
+		if (!IsRankedOverlayDiagnosticsEnabled() || !rowObject || rowIndex >= 0x40)
 		{
 			return;
 		}
@@ -3882,26 +3897,29 @@ namespace
 		g_rankedDemotionToast.characterId = target.characterId;
 		g_rankedDemotionToast.delta = demotionDelta;
 		g_rankedDemotionToast.startTime = g_rankedProgressAnimation.startTime;
-		LOG(1, "[RANK][OverlayAnim] start char=%u fromRank=%u fromLp=%u fromNext=%u fromPromo=%u/%u fromDemo=%u/%u toRank=%u toLp=%u toNext=%u toPromo=%u/%u toDemo=%u/%u delta=%+d promoDelta=%+d demoDelta=%+d uploadSerial=%llu\n",
-			static_cast<unsigned int>(target.characterId),
-			static_cast<unsigned int>(source.visibleRank),
-			static_cast<unsigned int>(source.currentLp),
-			static_cast<unsigned int>(source.nextThreshold),
-			static_cast<unsigned int>(source.promotionCounter),
-			static_cast<unsigned int>(source.promotionCounterLimit),
-			static_cast<unsigned int>(source.demotionCounter),
-			static_cast<unsigned int>(source.demotionCounterLimit),
-			static_cast<unsigned int>(target.visibleRank),
-			static_cast<unsigned int>(target.currentLp),
-			static_cast<unsigned int>(target.nextThreshold),
-			static_cast<unsigned int>(target.promotionCounter),
-			static_cast<unsigned int>(target.promotionCounterLimit),
-			static_cast<unsigned int>(target.demotionCounter),
-			static_cast<unsigned int>(target.demotionCounterLimit),
-			delta,
-			promotionDelta,
-			demotionDelta,
-			static_cast<unsigned long long>(uploadSerial));
+		if (IsRankedOverlayDiagnosticsEnabled())
+		{
+			LOG(1, "[RANK][OverlayAnim] start char=%u fromRank=%u fromLp=%u fromNext=%u fromPromo=%u/%u fromDemo=%u/%u toRank=%u toLp=%u toNext=%u toPromo=%u/%u toDemo=%u/%u delta=%+d promoDelta=%+d demoDelta=%+d uploadSerial=%llu\n",
+				static_cast<unsigned int>(target.characterId),
+				static_cast<unsigned int>(source.visibleRank),
+				static_cast<unsigned int>(source.currentLp),
+				static_cast<unsigned int>(source.nextThreshold),
+				static_cast<unsigned int>(source.promotionCounter),
+				static_cast<unsigned int>(source.promotionCounterLimit),
+				static_cast<unsigned int>(source.demotionCounter),
+				static_cast<unsigned int>(source.demotionCounterLimit),
+				static_cast<unsigned int>(target.visibleRank),
+				static_cast<unsigned int>(target.currentLp),
+				static_cast<unsigned int>(target.nextThreshold),
+				static_cast<unsigned int>(target.promotionCounter),
+				static_cast<unsigned int>(target.promotionCounterLimit),
+				static_cast<unsigned int>(target.demotionCounter),
+				static_cast<unsigned int>(target.demotionCounterLimit),
+				delta,
+				promotionDelta,
+				demotionDelta,
+				static_cast<unsigned long long>(uploadSerial));
+		}
 	}
 
 	float ComputeToastAlpha(RankedDeltaToastState* toast, const RankedProgressDisplayState& displayState, int32_t* outDelta)
@@ -3990,20 +4008,26 @@ namespace
 				++cachedBaselineCount;
 			}
 		}
-		LOG(1, "[RANK][OverlayObserve] begin serial=%llu attemptedChar=%u uploadedScore=%d capturedAny=%d\n",
-			static_cast<unsigned long long>(g_rankedUploadObservation.serial),
-			static_cast<unsigned int>(attemptedCharacterId),
-			uploadedScore,
-			capturedAny ? 1 : 0);
-		const uint32_t uploadedInternalRank = (static_cast<uint32_t>(uploadedScore) >> 16) & 0xFFFFu;
-		const uint32_t uploadedSubscore = static_cast<uint32_t>(uploadedScore) & 0xFFFFu;
-		LOG(1, "[RANK][OverlayObserve] upload-split serial=%llu attemptedChar=%u uploadedScore=0x%08X uploadedInternal=%u uploadedVisible=%u uploadedSub=%u\n",
-			static_cast<unsigned long long>(g_rankedUploadObservation.serial),
-			static_cast<unsigned int>(attemptedCharacterId),
-			static_cast<unsigned int>(static_cast<uint32_t>(uploadedScore)),
-			static_cast<unsigned int>(uploadedInternalRank),
-			static_cast<unsigned int>(InternalRankToVisibleRank(uploadedInternalRank, false)),
-			static_cast<unsigned int>(uploadedSubscore));
+		if (IsRankedOverlayDiagnosticsEnabled())
+		{
+			LOG(1, "[RANK][OverlayObserve] begin serial=%llu attemptedChar=%u uploadedScore=%d capturedAny=%d\n",
+				static_cast<unsigned long long>(g_rankedUploadObservation.serial),
+				static_cast<unsigned int>(attemptedCharacterId),
+				uploadedScore,
+				capturedAny ? 1 : 0);
+		}
+		if (IsRankedOverlayDiagnosticsEnabled())
+		{
+			const uint32_t uploadedInternalRank = (static_cast<uint32_t>(uploadedScore) >> 16) & 0xFFFFu;
+			const uint32_t uploadedSubscore = static_cast<uint32_t>(uploadedScore) & 0xFFFFu;
+			LOG(1, "[RANK][OverlayObserve] upload-split serial=%llu attemptedChar=%u uploadedScore=0x%08X uploadedInternal=%u uploadedVisible=%u uploadedSub=%u\n",
+				static_cast<unsigned long long>(g_rankedUploadObservation.serial),
+				static_cast<unsigned int>(attemptedCharacterId),
+				static_cast<unsigned int>(static_cast<uint32_t>(uploadedScore)),
+				static_cast<unsigned int>(uploadedInternalRank),
+				static_cast<unsigned int>(InternalRankToVisibleRank(uploadedInternalRank, false)),
+				static_cast<unsigned int>(uploadedSubscore));
+		}
 		if (attemptedCharacterId < g_rankedUploadObservation.baselineStates.size() &&
 			g_rankedUploadObservation.hasBaseline[attemptedCharacterId])
 		{
@@ -4022,7 +4046,7 @@ namespace
 				LogRankedDisplayStateCore("UploadBeginHighRankBaseline", state);
 			}
 		}
-		if (cachedBaselineCount > 0)
+		if (cachedBaselineCount > 0 && IsRankedOverlayDiagnosticsEnabled())
 		{
 			LOG(1, "[RANK][OverlayObserve] cached-baseline serial=%llu count=%u attemptedChar=%u\n",
 				static_cast<unsigned long long>(g_rankedUploadObservation.serial),
@@ -4047,10 +4071,13 @@ namespace
 		g_rankedUploadObservation.lastScanAtMs = nowMs;
 		if (nowMs > g_rankedUploadObservation.startedAtMs + 15000ull)
 		{
-			LOG(1, "[RANK][OverlayObserve] timeout serial=%llu attemptedChar=%u uploadedScore=%d\n",
-				static_cast<unsigned long long>(g_rankedUploadObservation.serial),
-				static_cast<unsigned int>(g_rankedUploadObservation.attemptedCharacterId),
-				g_rankedUploadObservation.uploadedScore);
+			if (IsRankedOverlayDiagnosticsEnabled())
+			{
+				LOG(1, "[RANK][OverlayObserve] timeout serial=%llu attemptedChar=%u uploadedScore=%d\n",
+					static_cast<unsigned long long>(g_rankedUploadObservation.serial),
+					static_cast<unsigned int>(g_rankedUploadObservation.attemptedCharacterId),
+					g_rankedUploadObservation.uploadedScore);
+			}
 			g_rankedUploadObservation.pending = false;
 			return;
 		}
@@ -4085,46 +4112,49 @@ namespace
 			}
 
 			++backingChangeCount;
-			LOG(1, "[RANK][OverlayObserve] backing-change serial=%llu char=%u displayChanged=%d rank=%u->%u lp=%u->%u next=%u->%u rawSub=%u->%u rawBounds=%u..%u->%u..%u cumBase=%u->%u rankSpan=%u->%u promotion=%u/%u->%u/%u demotion=%u/%u->%u/%u packed00=0x%08X->0x%08X raw04=0x%08X->0x%08X raw0C=0x%08X->0x%08X raw10=0x%08X->0x%08X raw20=0x%08X->0x%08X nextMeta=%u->%u\n",
-				static_cast<unsigned long long>(g_rankedUploadObservation.serial),
-				static_cast<unsigned int>(characterId),
-				displayChanged ? 1 : 0,
-				static_cast<unsigned int>(before.visibleRank),
-				static_cast<unsigned int>(after.visibleRank),
-				static_cast<unsigned int>(before.currentLp),
-				static_cast<unsigned int>(after.currentLp),
-				static_cast<unsigned int>(before.nextThreshold),
-				static_cast<unsigned int>(after.nextThreshold),
-				static_cast<unsigned int>(before.packedSubscore),
-				static_cast<unsigned int>(after.packedSubscore),
-				static_cast<unsigned int>(before.rawLowerThreshold),
-				static_cast<unsigned int>(before.rawUpperThreshold),
-				static_cast<unsigned int>(after.rawLowerThreshold),
-				static_cast<unsigned int>(after.rawUpperThreshold),
-				static_cast<unsigned int>(before.cumulativeBase),
-				static_cast<unsigned int>(after.cumulativeBase),
-				static_cast<unsigned int>(before.rankSpan),
-				static_cast<unsigned int>(after.rankSpan),
-				static_cast<unsigned int>(before.promotionCounter),
-				static_cast<unsigned int>(before.promotionCounterLimit),
-				static_cast<unsigned int>(after.promotionCounter),
-				static_cast<unsigned int>(after.promotionCounterLimit),
-				static_cast<unsigned int>(before.demotionCounter),
-				static_cast<unsigned int>(before.demotionCounterLimit),
-				static_cast<unsigned int>(after.demotionCounter),
-				static_cast<unsigned int>(after.demotionCounterLimit),
-				static_cast<unsigned int>(before.rawPackedField00),
-				static_cast<unsigned int>(after.rawPackedField00),
-				static_cast<unsigned int>(before.rawField04),
-				static_cast<unsigned int>(after.rawField04),
-				static_cast<unsigned int>(before.rawField0C),
-				static_cast<unsigned int>(after.rawField0C),
-				static_cast<unsigned int>(before.rawField10),
-				static_cast<unsigned int>(after.rawField10),
-				static_cast<unsigned int>(before.rawField20),
-				static_cast<unsigned int>(after.rawField20),
-				static_cast<unsigned int>(before.metadataNextRank),
-				static_cast<unsigned int>(after.metadataNextRank));
+			if (IsRankedOverlayDiagnosticsEnabled())
+			{
+				LOG(1, "[RANK][OverlayObserve] backing-change serial=%llu char=%u displayChanged=%d rank=%u->%u lp=%u->%u next=%u->%u rawSub=%u->%u rawBounds=%u..%u->%u..%u cumBase=%u->%u rankSpan=%u->%u promotion=%u/%u->%u/%u demotion=%u/%u->%u/%u packed00=0x%08X->0x%08X raw04=0x%08X->0x%08X raw0C=0x%08X->0x%08X raw10=0x%08X->0x%08X raw20=0x%08X->0x%08X nextMeta=%u->%u\n",
+					static_cast<unsigned long long>(g_rankedUploadObservation.serial),
+					static_cast<unsigned int>(characterId),
+					displayChanged ? 1 : 0,
+					static_cast<unsigned int>(before.visibleRank),
+					static_cast<unsigned int>(after.visibleRank),
+					static_cast<unsigned int>(before.currentLp),
+					static_cast<unsigned int>(after.currentLp),
+					static_cast<unsigned int>(before.nextThreshold),
+					static_cast<unsigned int>(after.nextThreshold),
+					static_cast<unsigned int>(before.packedSubscore),
+					static_cast<unsigned int>(after.packedSubscore),
+					static_cast<unsigned int>(before.rawLowerThreshold),
+					static_cast<unsigned int>(before.rawUpperThreshold),
+					static_cast<unsigned int>(after.rawLowerThreshold),
+					static_cast<unsigned int>(after.rawUpperThreshold),
+					static_cast<unsigned int>(before.cumulativeBase),
+					static_cast<unsigned int>(after.cumulativeBase),
+					static_cast<unsigned int>(before.rankSpan),
+					static_cast<unsigned int>(after.rankSpan),
+					static_cast<unsigned int>(before.promotionCounter),
+					static_cast<unsigned int>(before.promotionCounterLimit),
+					static_cast<unsigned int>(after.promotionCounter),
+					static_cast<unsigned int>(after.promotionCounterLimit),
+					static_cast<unsigned int>(before.demotionCounter),
+					static_cast<unsigned int>(before.demotionCounterLimit),
+					static_cast<unsigned int>(after.demotionCounter),
+					static_cast<unsigned int>(after.demotionCounterLimit),
+					static_cast<unsigned int>(before.rawPackedField00),
+					static_cast<unsigned int>(after.rawPackedField00),
+					static_cast<unsigned int>(before.rawField04),
+					static_cast<unsigned int>(after.rawField04),
+					static_cast<unsigned int>(before.rawField0C),
+					static_cast<unsigned int>(after.rawField0C),
+					static_cast<unsigned int>(before.rawField10),
+					static_cast<unsigned int>(after.rawField10),
+					static_cast<unsigned int>(before.rawField20),
+					static_cast<unsigned int>(after.rawField20),
+					static_cast<unsigned int>(before.metadataNextRank),
+					static_cast<unsigned int>(after.metadataNextRank));
+			}
 			LogRankedDisplayStateCore("BackingChangeBefore", before);
 			LogRankedDisplayStateCore("BackingChangeAfter", after);
 		}
@@ -4134,11 +4164,14 @@ namespace
 			{
 				g_rankedUploadObservation.firstBackingChangeAtMs = nowMs;
 			}
-			LOG(1, "[RANK][OverlayObserve] backing-change-summary serial=%llu count=%u attemptedChar=%u uploadedScore=%d\n",
-				static_cast<unsigned long long>(g_rankedUploadObservation.serial),
-				static_cast<unsigned int>(backingChangeCount),
-				static_cast<unsigned int>(g_rankedUploadObservation.attemptedCharacterId),
-				g_rankedUploadObservation.uploadedScore);
+			if (IsRankedOverlayDiagnosticsEnabled())
+			{
+				LOG(1, "[RANK][OverlayObserve] backing-change-summary serial=%llu count=%u attemptedChar=%u uploadedScore=%d\n",
+					static_cast<unsigned long long>(g_rankedUploadObservation.serial),
+					static_cast<unsigned int>(backingChangeCount),
+					static_cast<unsigned int>(g_rankedUploadObservation.attemptedCharacterId),
+					g_rankedUploadObservation.uploadedScore);
+			}
 			if (nowMs < g_rankedUploadObservation.firstBackingChangeAtMs + 250ull)
 			{
 				return;
@@ -4198,14 +4231,17 @@ namespace
 		g_rankedOverlayVisibility.uploadFadeInStart = ImGui::GetTime();
 		g_rankedOverlayVisibility.uploadFadeOutStart = 0.0;
 		g_lastRankedOverlayCharacterId = targetState.characterId;
-		LOG(1, "[RANK][OverlayObserve] animate serial=%llu char=%u fromLp=%u toLp=%u fromRank=%u toRank=%u delta=%+d\n",
-			static_cast<unsigned long long>(g_rankedUploadObservation.serial),
-			static_cast<unsigned int>(targetState.characterId),
-			static_cast<unsigned int>(sourceState.currentLp),
-			static_cast<unsigned int>(targetState.currentLp),
-			static_cast<unsigned int>(sourceState.visibleRank),
-			static_cast<unsigned int>(targetState.visibleRank),
-			selectedDelta);
+		if (IsRankedOverlayDiagnosticsEnabled())
+		{
+			LOG(1, "[RANK][OverlayObserve] animate serial=%llu char=%u fromLp=%u toLp=%u fromRank=%u toRank=%u delta=%+d\n",
+				static_cast<unsigned long long>(g_rankedUploadObservation.serial),
+				static_cast<unsigned int>(targetState.characterId),
+				static_cast<unsigned int>(sourceState.currentLp),
+				static_cast<unsigned int>(targetState.currentLp),
+				static_cast<unsigned int>(sourceState.visibleRank),
+				static_cast<unsigned int>(targetState.visibleRank),
+				selectedDelta);
+		}
 		g_rankedUploadObservation.pending = false;
 	}
 
@@ -4278,12 +4314,15 @@ namespace
 		{
 			*outState = g_rankedProgressAnimation.target;
 			g_rankedProgressAnimation.active = false;
-			LOG(1, "[RANK][OverlayAnim] complete char=%u rank=%u lp=%u next=%u uploadSerial=%llu\n",
-				static_cast<unsigned int>(outState->characterId),
-				static_cast<unsigned int>(outState->visibleRank),
-				static_cast<unsigned int>(outState->currentLp),
-				static_cast<unsigned int>(outState->nextThreshold),
-				static_cast<unsigned long long>(g_rankedProgressAnimation.uploadSerial));
+			if (IsRankedOverlayDiagnosticsEnabled())
+			{
+				LOG(1, "[RANK][OverlayAnim] complete char=%u rank=%u lp=%u next=%u uploadSerial=%llu\n",
+					static_cast<unsigned int>(outState->characterId),
+					static_cast<unsigned int>(outState->visibleRank),
+					static_cast<unsigned int>(outState->currentLp),
+					static_cast<unsigned int>(outState->nextThreshold),
+					static_cast<unsigned long long>(g_rankedProgressAnimation.uploadSerial));
+			}
 		}
 		else if (!rankChanged)
 		{
@@ -4636,7 +4675,7 @@ namespace
 			s_last.networkState != snapshot.networkState ||
 			s_last.networkState1 != snapshot.networkState1;
 		g_rankedProgressOverlaySnapshot = snapshot;
-		if (changed)
+		if (changed && IsRankedOverlayDiagnosticsEnabled())
 		{
 			LOG(1, "[RANK][OverlayProgress] active=%d row=%u selector=%u cursor=%u rank=%u prev=%u next=%u lp=%u nextLp=%u remainingLp=%u promotion=%u/%u demotion=%u/%u wins=%u matches=%u remainingMatches=%u percent=%.4f state=%d/%d unranked=%d metadataNext=%u packed00=0x%08X packedSub=%u f4=0x%08X raw04=0x%08X raw0C=0x%08X raw10=0x%08X raw14=0x%08X raw18=0x%08X raw20=0x%08X rawE0=0x%08X rawE4=0x%08X rawE8=0x%08X rawEC=0x%08X\n",
 				snapshot.active ? 1 : 0,
@@ -4681,7 +4720,7 @@ namespace
 
 	void ClearRankedProgressOverlaySnapshot(const char* reason)
 	{
-		if (g_rankedProgressOverlaySnapshot.active)
+		if (g_rankedProgressOverlaySnapshot.active && IsRankedOverlayDiagnosticsEnabled())
 		{
 			LOG(1, "[RANK][OverlayProgress] active=0 reason=%s\n", reason ? reason : "(none)");
 		}
@@ -4717,22 +4756,25 @@ void NoteRankedUploadAttempt(int32_t characterId, int32_t score, const char* lea
 	g_rankedUploadOverlayState.internalRank = (static_cast<uint32_t>(score) >> 16) & 0xFFFFu;
 	g_rankedUploadOverlayState.visibleRank = InternalRankToVisibleRank(g_rankedUploadOverlayState.internalRank, false);
 	g_rankedUploadOverlayState.subscore = static_cast<uint32_t>(score) & 0xFFFFu;
-	LOG(1, "[RANK][OverlayObserve] trigger leaderboard='%s' char=%u visibleRank=%u subscore=%u packedScore=%d resolvedByPackedRow=%d\n",
-		leaderboardName ? leaderboardName : "<unknown>",
-		static_cast<unsigned int>(g_rankedUploadOverlayState.characterId),
-		static_cast<unsigned int>(g_rankedUploadOverlayState.visibleRank),
-		static_cast<unsigned int>(g_rankedUploadOverlayState.subscore),
-		score,
-		resolvedByPackedRow ? 1 : 0);
-	LOG(1, "[RANK][OverlayObserve] trigger-split leaderboard='%s' char=%u internal=%u visible=%u rawSub=%u packedScore=0x%08X expectedPacked00=0x%08X resolvedByPackedRow=%d\n",
-		leaderboardName ? leaderboardName : "<unknown>",
-		static_cast<unsigned int>(g_rankedUploadOverlayState.characterId),
-		static_cast<unsigned int>(g_rankedUploadOverlayState.internalRank),
-		static_cast<unsigned int>(g_rankedUploadOverlayState.visibleRank),
-		static_cast<unsigned int>(g_rankedUploadOverlayState.subscore),
-		static_cast<unsigned int>(static_cast<uint32_t>(score)),
-		static_cast<unsigned int>((g_rankedUploadOverlayState.subscore << 16) | (g_rankedUploadOverlayState.internalRank & 0xFFFFu)),
-		resolvedByPackedRow ? 1 : 0);
+	if (IsRankedOverlayDiagnosticsEnabled())
+	{
+		LOG(1, "[RANK][OverlayObserve] trigger leaderboard='%s' char=%u visibleRank=%u subscore=%u packedScore=%d resolvedByPackedRow=%d\n",
+			leaderboardName ? leaderboardName : "<unknown>",
+			static_cast<unsigned int>(g_rankedUploadOverlayState.characterId),
+			static_cast<unsigned int>(g_rankedUploadOverlayState.visibleRank),
+			static_cast<unsigned int>(g_rankedUploadOverlayState.subscore),
+			score,
+			resolvedByPackedRow ? 1 : 0);
+		LOG(1, "[RANK][OverlayObserve] trigger-split leaderboard='%s' char=%u internal=%u visible=%u rawSub=%u packedScore=0x%08X expectedPacked00=0x%08X resolvedByPackedRow=%d\n",
+			leaderboardName ? leaderboardName : "<unknown>",
+			static_cast<unsigned int>(g_rankedUploadOverlayState.characterId),
+			static_cast<unsigned int>(g_rankedUploadOverlayState.internalRank),
+			static_cast<unsigned int>(g_rankedUploadOverlayState.visibleRank),
+			static_cast<unsigned int>(g_rankedUploadOverlayState.subscore),
+			static_cast<unsigned int>(static_cast<uint32_t>(score)),
+			static_cast<unsigned int>((g_rankedUploadOverlayState.subscore << 16) | (g_rankedUploadOverlayState.internalRank & 0xFFFFu)),
+			resolvedByPackedRow ? 1 : 0);
+	}
 	BeginObservedRankedUploadWindow(g_rankedUploadOverlayState.characterId, score);
 }
 
@@ -4783,31 +4825,34 @@ void NoteRankedUploadCompletion(const char* origin, bool success, bool scoreChan
 		g_hasLastSuccessfulRankScoreByCharacter[characterId] = 1;
 	}
 
-	LOG(1, "[RANK][OverlayUpload] origin='%s' success=%d changed=%d char=%u visibleRank=%u subscore=%u score=%d delta=%d rankDelta=%d subDelta=%d newGlobalRank=%d prevGlobalRank=%d\n",
-		origin ? origin : "<null>",
-		success ? 1 : 0,
-		scoreChanged ? 1 : 0,
-		static_cast<unsigned int>(g_rankedUploadOverlayState.characterId),
-		static_cast<unsigned int>(g_rankedUploadOverlayState.visibleRank),
-		static_cast<unsigned int>(g_rankedUploadOverlayState.subscore),
-		score,
-		g_rankedUploadOverlayState.scoreDelta,
-		g_rankedUploadOverlayState.visibleRankDelta,
-		g_rankedUploadOverlayState.subscoreDelta,
-		newGlobalRank,
-		previousGlobalRank);
-	LOG(1, "[RANK][OverlayUpload] split origin='%s' success=%d changed=%d char=%u internal=%u visible=%u rawSub=%u packedScore=0x%08X scoreDelta=%d rankDelta=%d subDelta=%d\n",
-		origin ? origin : "<null>",
-		success ? 1 : 0,
-		scoreChanged ? 1 : 0,
-		static_cast<unsigned int>(g_rankedUploadOverlayState.characterId),
-		static_cast<unsigned int>(g_rankedUploadOverlayState.internalRank),
-		static_cast<unsigned int>(g_rankedUploadOverlayState.visibleRank),
-		static_cast<unsigned int>(g_rankedUploadOverlayState.subscore),
-		static_cast<unsigned int>(static_cast<uint32_t>(score)),
-		g_rankedUploadOverlayState.scoreDelta,
-		g_rankedUploadOverlayState.visibleRankDelta,
-		g_rankedUploadOverlayState.subscoreDelta);
+	if (IsRankedOverlayDiagnosticsEnabled())
+	{
+		LOG(1, "[RANK][OverlayUpload] origin='%s' success=%d changed=%d char=%u visibleRank=%u subscore=%u score=%d delta=%d rankDelta=%d subDelta=%d newGlobalRank=%d prevGlobalRank=%d\n",
+			origin ? origin : "<null>",
+			success ? 1 : 0,
+			scoreChanged ? 1 : 0,
+			static_cast<unsigned int>(g_rankedUploadOverlayState.characterId),
+			static_cast<unsigned int>(g_rankedUploadOverlayState.visibleRank),
+			static_cast<unsigned int>(g_rankedUploadOverlayState.subscore),
+			score,
+			g_rankedUploadOverlayState.scoreDelta,
+			g_rankedUploadOverlayState.visibleRankDelta,
+			g_rankedUploadOverlayState.subscoreDelta,
+			newGlobalRank,
+			previousGlobalRank);
+		LOG(1, "[RANK][OverlayUpload] split origin='%s' success=%d changed=%d char=%u internal=%u visible=%u rawSub=%u packedScore=0x%08X scoreDelta=%d rankDelta=%d subDelta=%d\n",
+			origin ? origin : "<null>",
+			success ? 1 : 0,
+			scoreChanged ? 1 : 0,
+			static_cast<unsigned int>(g_rankedUploadOverlayState.characterId),
+			static_cast<unsigned int>(g_rankedUploadOverlayState.internalRank),
+			static_cast<unsigned int>(g_rankedUploadOverlayState.visibleRank),
+			static_cast<unsigned int>(g_rankedUploadOverlayState.subscore),
+			static_cast<unsigned int>(static_cast<uint32_t>(score)),
+			g_rankedUploadOverlayState.scoreDelta,
+			g_rankedUploadOverlayState.visibleRankDelta,
+			g_rankedUploadOverlayState.subscoreDelta);
+	}
 }
 
 bool GetRankedUploadOverlayState(RankedUploadOverlayState* outState)
@@ -4864,12 +4909,15 @@ bool TriggerRankedProgressAutomationAnimation(uint32_t characterId, int32_t lpDe
 	g_rankedOverlayVisibility.uploadFadeInStart = ImGui::GetTime();
 	g_rankedOverlayVisibility.uploadFadeOutStart = 0.0;
 	g_lastRankedOverlayCharacterId = characterId;
-	LOG(1, "[RANK][OverlayProbe] trigger char=%u delta=%+d fromLp=%u toLp=%u serial=%llu\n",
-		static_cast<unsigned int>(characterId),
-		lpDelta,
-		static_cast<unsigned int>(sourceState.currentLp),
-		static_cast<unsigned int>(targetState.currentLp),
-		static_cast<unsigned long long>(serial));
+	if (IsRankedOverlayDiagnosticsEnabled())
+	{
+		LOG(1, "[RANK][OverlayProbe] trigger char=%u delta=%+d fromLp=%u toLp=%u serial=%llu\n",
+			static_cast<unsigned int>(characterId),
+			lpDelta,
+			static_cast<unsigned int>(sourceState.currentLp),
+			static_cast<unsigned int>(targetState.currentLp),
+			static_cast<unsigned long long>(serial));
+	}
 	return true;
 }
 
@@ -4994,6 +5042,11 @@ namespace
 		uint64_t opponentSteamId,
 		uint32_t opponentCharacterId)
 	{
+		if (!IsRankedOverlayDiagnosticsEnabled())
+		{
+			return;
+		}
+
 		static uint64_t s_lastSignature = 0;
 		uint64_t signature = 1469598103934665603ull;
 		const auto mixSignature = [&signature](uint64_t value) {
@@ -5169,6 +5222,11 @@ namespace
 		uint64_t steamId,
 		uint32_t localCharacterId)
 	{
+		if (!IsRankedOverlayDiagnosticsEnabled())
+		{
+			return;
+		}
+
 		const uintptr_t moduleBase = reinterpret_cast<uintptr_t>(GetBbcfBaseAdress());
 		if (!moduleBase) return;
 		const uint8_t* const netUserData = reinterpret_cast<const uint8_t*>(moduleBase + kNetworkUserDataRva);
