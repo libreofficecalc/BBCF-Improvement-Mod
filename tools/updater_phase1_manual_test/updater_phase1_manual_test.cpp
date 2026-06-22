@@ -182,7 +182,7 @@ namespace
 		if (!Updater::TryParseSemVersion(currentVersion, current))
 			return false;
 
-		return Updater::EvaluateGitHubReleaseForUpdate(release, manifestJson, current, result);
+		return Updater::EvaluateGitHubReleaseForUpdate(release, manifestJson, current, false, result);
 	}
 
 	void TestReleaseEvaluation()

@@ -19,6 +19,7 @@
 #include "Overlay/Widget/ActiveGameModeWidget.h"
 #include "Overlay/Widget/GameModeSelectWidget.h"
 #include "Overlay/Widget/StageSelectWidget.h"
+#include "Updater/UpdateCoordinator.h"
 
 #include <Windows.h>
 
@@ -109,6 +110,7 @@ void MainWindow::Draw()
 
 	DrawCurrentPlayersCount();
 	DrawLinkButtons();
+	Updater::UpdateCoordinator::GetInstance().DrawSkippedMainMenuLink();
 }
 
 void MainWindow::DrawLanguageSelector()

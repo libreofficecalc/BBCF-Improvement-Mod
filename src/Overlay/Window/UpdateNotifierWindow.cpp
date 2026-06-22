@@ -19,12 +19,37 @@ void UpdateNotifierWindow::Draw()
 
 	ImGui::TextAlignedHorizontalCenter("BBCF Improvement Mod %s has been released!", tag);
 	ImGui::Spacing();
+	if (update.developmentChannel)
+		ImGui::TextDisabled("Development update channel");
 	if (!update.name.empty())
 		ImGui::TextWrapped("%s", update.name.c_str());
 	if (!update.publishedAt.empty())
 		ImGui::TextDisabled("%s", update.publishedAt.c_str());
 
-	if (!update.body.empty())
+	if (!update.releaseNotes.empty())
+	{
+		ImGui::Spacing();
+		ImGui::BeginChild("ReleaseNotes", ImVec2(0, 240), true);
+		for (size_t i = 0; i < update.releaseNotes.size(); ++i)
+		{
+			const Updater::GitHubRelease& release = update.releaseNotes[i];
+			ImGui::TextWrapped("%s", release.tagName.c_str());
+			if (!release.name.empty())
+				ImGui::TextWrapped("%s", release.name.c_str());
+			if (!release.publishedAt.empty())
+				ImGui::TextDisabled("%s", release.publishedAt.c_str());
+			if (!release.body.empty())
+				ImGui::TextWrapped("%s", release.body.c_str());
+			if (i + 1 < update.releaseNotes.size())
+			{
+				ImGui::Spacing();
+				ImGui::Separator();
+				ImGui::Spacing();
+			}
+		}
+		ImGui::EndChild();
+	}
+	else if (!update.body.empty())
 	{
 		ImGui::Spacing();
 		ImGui::BeginChild("ReleaseNotes", ImVec2(0, 190), true);

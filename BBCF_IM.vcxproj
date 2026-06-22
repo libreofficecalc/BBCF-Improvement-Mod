@@ -305,6 +305,12 @@
     <ResourceCompile Include="resource\resource.rc" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="BBCFIMUpdater.vcxproj">
+      <Project>{E56550BE-41EA-4AA7-A234-585BF23E441C}</Project>
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+    </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
     <Text Include="USER_README.txt" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
@@ -526,6 +532,7 @@
     <Copy SourceFiles="$(ProjectDir)$(OutDir)$(TargetName).dll" DestinationFolder="$(BbcfInstallDir)" OverwriteReadOnlyFiles="true" SkipUnchangedFiles="false" Condition="('$(Configuration)'=='ReleaseDeploy' or '$(Configuration)'=='DebugDeploy') and '$(BbcfDeployEnabled)'=='true' and '$(BbcfCopyDll)'=='true' and '$(BbcfInstallDir)'!=''" />
     <Copy SourceFiles="$(ProjectDir)resource\palettes.ini" DestinationFolder="$(BbcfInstallDir)" OverwriteReadOnlyFiles="true" SkipUnchangedFiles="false" Condition="('$(Configuration)'=='ReleaseDeploy' or '$(Configuration)'=='DebugDeploy') and '$(BbcfDeployEnabled)'=='true' and '$(BbcfCopyPalettes)'=='true' and '$(BbcfInstallDir)'!=''" />
     <Copy SourceFiles="$(ProjectDir)resource\settings.ini" DestinationFolder="$(BbcfInstallDir)" OverwriteReadOnlyFiles="true" SkipUnchangedFiles="false" Condition="('$(Configuration)'=='ReleaseDeploy' or '$(Configuration)'=='DebugDeploy') and '$(BbcfDeployEnabled)'=='true' and '$(BbcfCopySettings)'=='true' and '$(BbcfInstallDir)'!=''" />
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(ProjectDir)tools\package_release.ps1&quot; -Configuration &quot;$(Configuration)&quot;" Condition="'$(Configuration)'=='Release'" />
     <Exec Command="$(BbcfLaunchCommand)" Condition="('$(Configuration)'=='ReleaseDeploy' or '$(Configuration)'=='DebugDeploy') and '$(BbcfDeployEnabled)'=='true' and '$(BbcfLaunchAfterDeploy)'=='true' and '$(BbcfLaunchCommand)'!=''" />
   </Target>
 </Project>

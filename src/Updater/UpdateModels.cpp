@@ -73,6 +73,11 @@ namespace Updater
 		return L"https://api.github.com/repos/HaiKamDesu/BBCF-Improvement-Mod/releases/latest";
 	}
 
+	const wchar_t* GetGitHubReleasesApiUrl()
+	{
+		return L"https://api.github.com/repos/HaiKamDesu/BBCF-Improvement-Mod/releases?per_page=30";
+	}
+
 	const wchar_t* GetGitHubReleasesPageUrl()
 	{
 		return L"https://github.com/HaiKamDesu/BBCF-Improvement-Mod/releases";
@@ -120,6 +125,58 @@ namespace Updater
 		return true;
 	}
 
+	bool ParseGitHubReleasesJson(const std::string& json, std::vector<GitHubRelease>& outReleases, std::string& error)
+	{
+		outReleases.clear();
+
+		JsonValue root;
+		if (!ParseJson(json, root, error))
+			return false;
+
+		if (!root.IsArray())
+		{
+			error = "GitHub releases JSON root is not an array.";
+			return false;
+		}
+
+		const std::vector<JsonValue>& items = root.AsArray();
+		for (size_t i = 0; i < items.size(); ++i)
+		{
+			if (!items[i].IsObject())
+				continue;
+
+			GitHubRelease release;
+			release.tagName = GetStringField(items[i], "tag_name");
+			release.name = GetStringField(items[i], "name");
+			release.body = GetStringField(items[i], "body");
+			release.htmlUrl = GetStringField(items[i], "html_url");
+			release.publishedAt = GetStringField(items[i], "published_at");
+			release.draft = GetBoolField(items[i], "draft");
+			release.prerelease = GetBoolField(items[i], "prerelease");
+
+			const JsonValue* assets = items[i].Find("assets");
+			if (assets && assets->IsArray())
+			{
+				const std::vector<JsonValue>& assetArray = assets->AsArray();
+				for (size_t assetIndex = 0; assetIndex < assetArray.size(); ++assetIndex)
+				{
+					if (!assetArray[assetIndex].IsObject())
+						continue;
+
+					GitHubReleaseAsset asset;
+					asset.name = GetStringField(assetArray[assetIndex], "name");
+					asset.browserDownloadUrl = GetStringField(assetArray[assetIndex], "browser_download_url");
+					asset.size = GetUnsignedField(assetArray[assetIndex], "size");
+					release.assets.push_back(asset);
+				}
+			}
+
+			outReleases.push_back(release);
+		}
+
+		return true;
+	}
+
 	bool ParseUpdateManifestJson(const std::string& json, UpdateManifest& outManifest, std::string& error)
 	{
 		JsonValue root;
@@ -155,6 +212,7 @@ namespace Updater
 		const GitHubRelease& release,
 		const std::string& manifestJson,
 		const SemVersion& currentVersion,
+		bool allowPrerelease,
 		UpdateCheckResult& outResult)
 	{
 		outResult = UpdateCheckResult();
@@ -166,7 +224,7 @@ namespace Updater
 			return false;
 		}
 
-		if (release.prerelease)
+		if (release.prerelease && !allowPrerelease)
 		{
 			outResult.status = UpdateCheckStatus_InvalidRelease;
 			outResult.message = "Release is a prerelease.";

@@ -52,7 +52,9 @@ void CheckUpdate()
 	}
 
 	Updater::GitHubReleaseClient client;
-	Updater::UpdateCheckResult result = client.CheckLatestRelease(currentVersion);
+	Updater::UpdateCheckResult result = client.CheckForUpdates(
+		currentVersion,
+		IsDebuggerPresent() || Settings::settingsIni.enableInDevelopmentFeatures);
 	if (result.status == Updater::UpdateCheckStatus_UpdateAvailable)
 	{
 		newVersionNum = result.update.release.tagName;

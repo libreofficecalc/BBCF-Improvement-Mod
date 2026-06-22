@@ -105,9 +105,10 @@ namespace Updater
 		if (!ValidateManifestTagAndVersion(manifest, parsedVersion, error))
 			return false;
 
-		if (!EqualsIgnoreCase(manifest.channel, "stable"))
+		if (!EqualsIgnoreCase(manifest.channel, "stable") &&
+			!EqualsIgnoreCase(manifest.channel, "prerelease"))
 		{
-			error = "Manifest channel must be stable.";
+			error = "Manifest channel must be stable or prerelease.";
 			return false;
 		}
 

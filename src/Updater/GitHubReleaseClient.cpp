@@ -4,6 +4,7 @@
 
 #include <Windows.h>
 #include <wininet.h>
+#include <algorithm>
 #include <cwchar>
 
 #pragma comment(lib, "wininet.lib")
@@ -30,56 +31,63 @@ namespace Updater
 
 	UpdateCheckResult GitHubReleaseClient::CheckLatestRelease(const SemVersion& currentVersion) const
 	{
+		return CheckForUpdates(currentVersion, false);
+	}
+
+	UpdateCheckResult GitHubReleaseClient::CheckForUpdates(const SemVersion& currentVersion, bool includePrereleases) const
+	{
 		UpdateCheckResult result;
 
-		std::string releaseJson;
+		std::string releasesJson;
 		std::string error;
-		if (!GetText(GetGitHubLatestReleaseApiUrl(), releaseJson, error))
+		if (!GetText(GetGitHubReleasesApiUrl(), releasesJson, error))
 		{
 			result.status = UpdateCheckStatus_NetworkError;
 			result.message = error;
 			return result;
 		}
 
-		GitHubRelease release;
-		if (!ParseGitHubReleaseJson(releaseJson, release, error))
+		std::vector<GitHubRelease> releases;
+		if (!ParseGitHubReleasesJson(releasesJson, releases, error))
 		{
 			result.status = UpdateCheckStatus_ParseError;
 			result.message = error;
 			return result;
 		}
 
-		if (release.draft)
+		std::vector<GitHubRelease> newerReleases;
+		for (size_t i = 0; i < releases.size(); ++i)
 		{
-			result.status = UpdateCheckStatus_InvalidRelease;
-			result.message = "Release is a draft.";
-			return result;
+			if (releases[i].draft)
+				continue;
+			if (releases[i].prerelease && !includePrereleases)
+				continue;
+
+			SemVersion version;
+			if (!TryParseSemVersion(releases[i].tagName, version))
+				continue;
+			if (CompareSemVersion(version, currentVersion) > 0)
+				newerReleases.push_back(releases[i]);
 		}
 
-		if (release.prerelease)
-		{
-			result.status = UpdateCheckStatus_InvalidRelease;
-			result.message = "Release is a prerelease.";
-			return result;
-		}
+		std::sort(newerReleases.begin(), newerReleases.end(),
+			[](const GitHubRelease& lhs, const GitHubRelease& rhs)
+			{
+				SemVersion left;
+				SemVersion right;
+				TryParseSemVersion(lhs.tagName, left);
+				TryParseSemVersion(rhs.tagName, right);
+				return CompareSemVersion(left, right) > 0;
+			});
 
-		SemVersion releaseVersion;
-		if (!TryParseSemVersion(release.tagName, releaseVersion))
-		{
-			result.status = UpdateCheckStatus_InvalidRelease;
-			result.message = "Release tag is not semantic version text.";
-			return result;
-		}
-
-		result.update.release = release;
-		result.update.version = releaseVersion;
-
-		if (CompareSemVersion(releaseVersion, currentVersion) <= 0)
+		if (newerReleases.empty())
 		{
 			result.status = UpdateCheckStatus_NoUpdate;
-			result.message = "Release is not newer than current version.";
+			result.message = "No newer release in selected update channel.";
 			return result;
 		}
+
+		const GitHubRelease& release = newerReleases.front();
 
 		const GitHubReleaseAsset* manifestAsset = nullptr;
 		for (size_t i = 0; i < release.assets.size(); ++i)
@@ -113,7 +121,9 @@ namespace Updater
 			return result;
 		}
 
-		EvaluateGitHubReleaseForUpdate(release, manifestJson, currentVersion, result);
+		EvaluateGitHubReleaseForUpdate(release, manifestJson, currentVersion, includePrereleases, result);
+		if (result.status == UpdateCheckStatus_UpdateAvailable)
+			result.update.releaseNotes = newerReleases;
 		return result;
 	}
 

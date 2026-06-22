@@ -11,6 +11,7 @@ namespace Updater
 	const char* GetGitHubRepoOwner();
 	const char* GetGitHubRepoName();
 	const wchar_t* GetGitHubLatestReleaseApiUrl();
+	const wchar_t* GetGitHubReleasesApiUrl();
 	const wchar_t* GetGitHubReleasesPageUrl();
 
 	enum UpdateCheckStatus
@@ -45,6 +46,7 @@ namespace Updater
 	struct AvailableUpdate
 	{
 		GitHubRelease release;
+		std::vector<GitHubRelease> releaseNotes;
 		UpdateManifest manifest;
 		SemVersion version;
 		GitHubReleaseAsset manifestAsset;
@@ -61,10 +63,12 @@ namespace Updater
 	};
 
 	bool ParseGitHubReleaseJson(const std::string& json, GitHubRelease& outRelease, std::string& error);
+	bool ParseGitHubReleasesJson(const std::string& json, std::vector<GitHubRelease>& outReleases, std::string& error);
 	bool ParseUpdateManifestJson(const std::string& json, UpdateManifest& outManifest, std::string& error);
 	bool EvaluateGitHubReleaseForUpdate(
 		const GitHubRelease& release,
 		const std::string& manifestJson,
 		const SemVersion& currentVersion,
+		bool allowPrerelease,
 		UpdateCheckResult& outResult);
 }

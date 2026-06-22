@@ -35,6 +35,11 @@ namespace Updater
 		{
 			return std::string("BBCFIM/") + MOD_VERSION;
 		}
+
+		bool ShouldUseDevelopmentUpdateChannel()
+		{
+			return IsDebuggerPresent() || Settings::settingsIni.enableInDevelopmentFeatures;
+		}
 	}
 
 	UpdateCoordinator& UpdateCoordinator::GetInstance()
@@ -57,6 +62,18 @@ namespace Updater
 	{
 		if (MOD_FORCE_DISABLE_UPDATE_CHECK || !Settings::settingsIni.checkupdates)
 			return;
+
+		if (IsWineOrProton())
+		{
+			EnterCriticalSection(&m_lock);
+			m_snapshot.state = UpdateUiState_Idle;
+			m_snapshot.statusText = "Update checks are disabled under Wine/Proton.";
+			m_snapshot.autoApplySupported = false;
+			m_snapshot.autoApplyDisabledReason = "Auto-update is disabled under Wine/Proton. Open GitHub releases manually.";
+			LeaveCriticalSection(&m_lock);
+			LOG(2, "Update check skipped under Wine/Proton.\n");
+			return;
+		}
 
 		EnterCriticalSection(&m_lock);
 		if (m_checkStarted)
@@ -156,6 +173,26 @@ namespace Updater
 		ImGui::PopStyleColor();
 	}
 
+	void UpdateCoordinator::DrawSkippedMainMenuLink()
+	{
+		UpdateUiSnapshot snapshot = GetSnapshot();
+		if (!snapshot.hasUpdate || !snapshot.skipped)
+			return;
+
+		ImGui::Spacing();
+		ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.65f, 0.65f, 0.65f, 1.0f));
+		std::string text = "Update to " + snapshot.tag;
+		if (ImGui::SmallButton(text.c_str()))
+		{
+			EnterCriticalSection(&m_lock);
+			m_snapshot.skipped = false;
+			m_snapshot.state = UpdateUiState_Available;
+			LeaveCriticalSection(&m_lock);
+			OpenPopup();
+		}
+		ImGui::PopStyleColor();
+	}
+
 	DWORD WINAPI UpdateCoordinator::CheckThreadProc(LPVOID param)
 	{
 		static_cast<UpdateCoordinator*>(param)->CheckThread();
@@ -174,8 +211,9 @@ namespace Updater
 		if (!TryParseSemVersion(MOD_VERSION, currentVersion))
 			return;
 
+		const bool developmentChannel = ShouldUseDevelopmentUpdateChannel();
 		GitHubReleaseClient client;
-		UpdateCheckResult result = client.CheckLatestRelease(currentVersion);
+		UpdateCheckResult result = client.CheckForUpdates(currentVersion, developmentChannel);
 		UpdateState state;
 		UpdateStateStore store(GetStatePath());
 		store.Load(state);
@@ -186,12 +224,6 @@ namespace Updater
 				state.lastFailureUtc = state.lastCheckUtc;
 			store.Save(state);
 			return;
-		}
-
-		if (IsWineOrProton())
-		{
-			result.update.autoApplySupported = false;
-			result.update.autoApplyDisabledReason = "Auto-apply is disabled under Wine/Proton. Open the GitHub release page instead.";
 		}
 
 		state.lastSeenReleaseTag = result.update.release.tagName;
@@ -316,6 +348,8 @@ namespace Updater
 		m_snapshot.body = update.release.body;
 		m_snapshot.publishedAt = update.release.publishedAt;
 		m_snapshot.releaseUrl = update.release.htmlUrl;
+		m_snapshot.releaseNotes = update.releaseNotes;
+		m_snapshot.developmentChannel = ShouldUseDevelopmentUpdateChannel();
 		m_snapshot.statusText.clear();
 		m_snapshot.errorText.clear();
 	}

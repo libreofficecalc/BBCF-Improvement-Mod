@@ -5,6 +5,7 @@
 #include <Windows.h>
 
 #include <string>
+#include <vector>
 
 namespace Updater
 {
@@ -34,9 +35,11 @@ namespace Updater
 		std::string body;
 		std::string publishedAt;
 		std::string releaseUrl;
+		std::vector<GitHubRelease> releaseNotes;
 		std::string statusText;
 		std::string errorText;
 		std::string autoApplyDisabledReason;
+		bool developmentChannel = false;
 	};
 
 	class UpdateCoordinator
@@ -49,6 +52,7 @@ namespace Updater
 		void SkipCurrentVersion();
 		void StartUpdate();
 		void DrawSkippedLink();
+		void DrawSkippedMainMenuLink();
 		UpdateUiSnapshot GetSnapshot();
 
 	private:
