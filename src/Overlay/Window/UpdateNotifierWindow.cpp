@@ -1,6 +1,7 @@
 #include "UpdateNotifierWindow.h"
 
 #include "Core/info.h"
+#include "Core/Localization.h"
 #include "Overlay/imgui_utils.h"
 #include "Web/update_check.h"
 #include "Updater/UpdateCoordinator.h"
@@ -8,6 +9,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
+#include <cstring>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -189,14 +191,29 @@ namespace
 
 	void DrawReleaseNotes(const Updater::GitHubRelease& release)
 	{
-		ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.95f, 1.0f, 1.0f));
-		ImGui::TextWrapped("%s", release.tagName.c_str());
+		ImGui::TextColoredAlignedHorizontalCenter(ImVec4(0.58f, 0.58f, 0.62f, 1.0f), release.tagName.c_str());
+		if (!release.name.empty())
+		{
+			ImGui::SetWindowFontScale(1.18f);
+			ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.98f, 0.98f, 1.0f, 1.0f));
+			ImGui::TextAlignedHorizontalCenter("%s", release.name.c_str());
+			ImGui::PopStyleColor();
+			ImGui::SetWindowFontScale(1.0f);
+		}
+		else
+		{
+			ImGui::SetWindowFontScale(1.18f);
+			ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.98f, 0.98f, 1.0f, 1.0f));
+			ImGui::TextAlignedHorizontalCenter("%s", release.tagName.c_str());
+			ImGui::PopStyleColor();
+			ImGui::SetWindowFontScale(1.0f);
+		}
+
+		ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.58f, 0.58f, 0.62f, 1.0f));
+		if (!release.publishedAt.empty())
+			ImGui::TextAlignedHorizontalCenter("%s", FormatGitHubDate(release.publishedAt).c_str());
 		ImGui::PopStyleColor();
 
-		if (!release.name.empty())
-			ImGui::TextWrapped("%s", release.name.c_str());
-		if (!release.publishedAt.empty())
-			ImGui::TextDisabled("%s", FormatGitHubDate(release.publishedAt).c_str());
 		if (!release.body.empty())
 		{
 			ImGui::Spacing();
@@ -219,8 +236,9 @@ void UpdateNotifierWindow::Update()
 		return;
 
 	BeforeDraw();
-	ImGui::OpenPopup(m_windowTitle.c_str());
-	if (ImGui::BeginPopupModal(m_windowTitle.c_str(), nullptr, m_windowFlags))
+	const char* popupTitle = L("Update available").c_str();
+	ImGui::OpenPopup(popupTitle);
+	if (ImGui::BeginPopupModal(popupTitle, nullptr, m_windowFlags))
 	{
 		Draw();
 		ImGui::EndPopup();
@@ -229,7 +247,8 @@ void UpdateNotifierWindow::Update()
 
 void UpdateNotifierWindow::BeforeDraw()
 {
-	ImGui::SetNextWindowPosCenter(ImGuiCond_Once);
+	const ImGuiIO& io = ImGui::GetIO();
+	ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
 	ImGui::SetNextWindowSize(ImVec2(760, 600), ImGuiCond_Appearing);
 	ImGui::SetNextWindowSizeConstraints(ImVec2(620, 420), ImVec2(920, 760));
 }
@@ -241,12 +260,12 @@ void UpdateNotifierWindow::Draw()
 	const bool busy = IsBusy(update);
 
 	ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.95f, 1.0f, 1.0f));
-	ImGui::TextAlignedHorizontalCenter("BBCF Improvement Mod %s is available", tag);
+	ImGui::TextAlignedHorizontalCenter(L("BBCF Improvement Mod %s is available").c_str(), tag);
 	ImGui::PopStyleColor();
 	ImGui::Spacing();
 
 	if (update.developmentChannel)
-		ImGui::TextDisabled("Development update channel");
+		ImGui::TextDisabled("%s", L("Development update channel").c_str());
 	if (!update.name.empty())
 		ImGui::TextWrapped("%s", update.name.c_str());
 	if (!update.publishedAt.empty())
@@ -257,7 +276,7 @@ void UpdateNotifierWindow::Draw()
 	if (!update.releaseNotes.empty())
 	{
 		ImGui::Spacing();
-		ImGui::TextDisabled("Release notes");
+		ImGui::TextDisabled("%s", L("Release notes").c_str());
 		ImGui::BeginChild("ReleaseNotes", ImVec2(0, 310), true);
 		for (size_t i = 0; i < update.releaseNotes.size(); ++i)
 		{
@@ -274,7 +293,7 @@ void UpdateNotifierWindow::Draw()
 	else if (!update.body.empty())
 	{
 		ImGui::Spacing();
-		ImGui::TextDisabled("Release notes");
+		ImGui::TextDisabled("%s", L("Release notes").c_str());
 		ImGui::BeginChild("ReleaseNotes", ImVec2(0, 260), true);
 		DrawMarkdownText(update.body);
 		ImGui::EndChild();
@@ -303,7 +322,7 @@ void UpdateNotifierWindow::Draw()
 		ImGui::TextWrapped("%s", update.autoApplyDisabledReason.c_str());
 	}
 
-	ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 7));
+	ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(12, 7));
 
 	const ImVec2 buttonSize = ImVec2(150, 24);
 	const float rowWidth = (buttonSize.x * 3.0f) + (ImGui::GetStyle().ItemSpacing.x * 2.0f);
@@ -311,35 +330,35 @@ void UpdateNotifierWindow::Draw()
 	ImGui::AlignItemHorizontalCenter(rowWidth);
 	if (update.autoApplySupported)
 	{
-		if (!busy && ImGui::Button("Update", buttonSize))
+		if (!busy && ImGui::Button(L("Update").c_str(), buttonSize))
 			Updater::UpdateCoordinator::GetInstance().StartUpdate();
 		else if (busy)
-			ImGui::Button("Update", buttonSize);
+			ImGui::Button(L("Update").c_str(), buttonSize);
 	}
-	else if (ImGui::ButtonUrl("Open release page", GetNewVersionReleaseUrl(), buttonSize))
+	else if (ImGui::ButtonUrl(L("Open release page"), GetNewVersionReleaseUrl(), buttonSize))
 	{
 		ImGui::CloseCurrentPopup();
 		Close();
 	}
 
 	ImGui::SameLine();
-	if (!busy && ImGui::Button("Skip this version", buttonSize))
+	if (!busy && ImGui::Button(L("Later").c_str(), buttonSize))
+	{
+		ImGui::CloseCurrentPopup();
+		Close();
+	}
+	else if (busy)
+		ImGui::Button(L("Later").c_str(), buttonSize);
+
+	ImGui::SameLine();
+	if (!busy && ImGui::Button(L("Skip this version").c_str(), buttonSize))
 	{
 		Updater::UpdateCoordinator::GetInstance().SkipCurrentVersion();
 		ImGui::CloseCurrentPopup();
 		Close();
 	}
 	else if (busy)
-		ImGui::Button("Skip this version", buttonSize);
-
-	ImGui::SameLine();
-	if (!busy && ImGui::Button("Later", buttonSize))
-	{
-		ImGui::CloseCurrentPopup();
-		Close();
-	}
-	else if (busy)
-		ImGui::Button("Later", buttonSize);
+		ImGui::Button(L("Skip this version").c_str(), buttonSize);
 
 	ImGui::PopStyleVar();
 

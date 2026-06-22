@@ -725,3 +725,12 @@ Top color,Top color,Color máximo
 Bottom color,Bottom color,Color mínimo
 Color changes at %u / %u and counter resets to %u after a color change.,Color changes at %u / %u and counter resets to %u after a color change.,El color cambia en %u / %u y el contador vuelve a %u tras un cambio de color.
 "Wins increase the counter; losses decrease it. Same-color matches are the ones that move square color.","Wins increase the counter; losses decrease it. Same-color matches are the ones that move square color.","Las victorias suben el contador; las derrotas lo bajan. Las partidas contra el mismo color son las que mueven el color de square."
+Update available,Update available,Actualización disponible
+BBCF Improvement Mod %s is available,BBCF Improvement Mod %s is available,BBCF Improvement Mod %s está disponible
+Development update channel,Development update channel,Canal de actualizaciones de desarrollo
+Release notes,Release notes,Notas de la versión
+Update,Update,Actualizar
+Later,Later,Más tarde
+Skip this version,Skip this version,Omitir esta versión
+Open release page,Open release page,Abrir página de la versión
+Update to %s,Update to %s,Actualizar a %s

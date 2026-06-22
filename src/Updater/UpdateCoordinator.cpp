@@ -6,6 +6,7 @@
 #include "UpdateStateStore.h"
 
 #include "Core/info.h"
+#include "Core/Localization.h"
 #include "Core/RuntimePlatform.h"
 #include "Core/Settings.h"
 #include "Core/logger.h"
@@ -16,6 +17,7 @@
 #include <imgui.h>
 #include <handleapi.h>
 #include <processthreadsapi.h>
+#include <cstdio>
 
 namespace Updater
 {
@@ -144,33 +146,6 @@ namespace Updater
 
 	void UpdateCoordinator::DrawSkippedLink()
 	{
-		UpdateUiSnapshot snapshot = GetSnapshot();
-		if (!snapshot.hasUpdate || !snapshot.skipped)
-			return;
-
-		const ImGuiIO& io = ImGui::GetIO();
-		ImGui::SetNextWindowPos(ImVec2(12.0f, io.DisplaySize.y - 32.0f), ImGuiCond_Always);
-		ImGui::SetNextWindowSize(ImVec2(220.0f, 24.0f), ImGuiCond_Always);
-		ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0, 0, 0, 0));
-		if (ImGui::Begin("BBCFIMUpdateSkippedLink", nullptr,
-			ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
-			ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings |
-			ImGuiWindowFlags_NoFocusOnAppearing))
-		{
-			ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.65f, 0.65f, 0.65f, 1.0f));
-			std::string text = "Update to " + snapshot.tag;
-			if (ImGui::SmallButton(text.c_str()))
-			{
-				EnterCriticalSection(&m_lock);
-				m_snapshot.skipped = false;
-				m_snapshot.state = UpdateUiState_Available;
-				LeaveCriticalSection(&m_lock);
-				OpenPopup();
-			}
-			ImGui::PopStyleColor();
-		}
-		ImGui::End();
-		ImGui::PopStyleColor();
 	}
 
 	void UpdateCoordinator::DrawSkippedMainMenuLink()
@@ -180,9 +155,33 @@ namespace Updater
 			return;
 
 		ImGui::Spacing();
-		ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.65f, 0.65f, 0.65f, 1.0f));
-		std::string text = "Update to " + snapshot.tag;
-		if (ImGui::SmallButton(text.c_str()))
+
+		char text[128] = {};
+		const std::string format = L("Update to %s");
+		std::snprintf(text, sizeof(text), format.c_str(), snapshot.tag.c_str());
+
+		const ImVec4 linkColor = ImVec4(0.58f, 0.58f, 0.62f, 1.0f);
+		const ImVec4 hoverColor = ImVec4(0.76f, 0.76f, 0.80f, 1.0f);
+
+		const ImVec2 pos = ImGui::GetCursorScreenPos();
+		const ImVec2 textSize = ImGui::CalcTextSize(text);
+		ImGui::InvisibleButton("##BBCFIMUpdateMainMenuLink", textSize);
+		const bool hovered = ImGui::IsItemHovered();
+		const bool clicked = ImGui::IsItemClicked();
+
+		ImGui::GetWindowDrawList()->AddText(
+			pos,
+			ImGui::ColorConvertFloat4ToU32(hovered ? hoverColor : linkColor),
+			text);
+		if (hovered)
+		{
+			ImGui::GetWindowDrawList()->AddLine(
+				ImVec2(pos.x, pos.y + textSize.y),
+				ImVec2(pos.x + textSize.x, pos.y + textSize.y),
+				ImGui::ColorConvertFloat4ToU32(hoverColor));
+		}
+
+		if (clicked)
 		{
 			EnterCriticalSection(&m_lock);
 			m_snapshot.skipped = false;
@@ -190,7 +189,6 @@ namespace Updater
 			LeaveCriticalSection(&m_lock);
 			OpenPopup();
 		}
-		ImGui::PopStyleColor();
 	}
 
 	DWORD WINAPI UpdateCoordinator::CheckThreadProc(LPVOID param)

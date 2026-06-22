@@ -1676,6 +1676,33 @@ struct LocalizationKeysAccessor
 
         // Wins increase the counter; losses decrease it. Same-color matches are the ones that move square color.
         inline const char* Wins_increase_the_counter_losses_decrease_it_Same_color_matches_are_the_ones_that_move_square_color() const { return Get("Wins increase the counter; losses decrease it. Same-color matches are the ones that move square color."); }
+
+        // Update available
+        inline const char* Update_available() const { return Get("Update available"); }
+
+        // BBCF Improvement Mod %s is available
+        inline const char* BBCF_Improvement_Mod_s_is_available() const { return Get("BBCF Improvement Mod %s is available"); }
+
+        // Development update channel
+        inline const char* Development_update_channel() const { return Get("Development update channel"); }
+
+        // Release notes
+        inline const char* Release_notes() const { return Get("Release notes"); }
+
+        // Update
+        inline const char* Update() const { return Get("Update"); }
+
+        // Later
+        inline const char* Later() const { return Get("Later"); }
+
+        // Skip this version
+        inline const char* Skip_this_version() const { return Get("Skip this version"); }
+
+        // Open release page
+        inline const char* Open_release_page() const { return Get("Open release page"); }
+
+        // Update to %s
+        inline const char* Update_to_s() const { return Get("Update to %s"); }
 };
 
 
