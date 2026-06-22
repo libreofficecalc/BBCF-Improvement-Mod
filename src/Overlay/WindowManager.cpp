@@ -5,6 +5,7 @@
 #include "WindowContainer/WindowContainer.h"
 #include "Window/LogWindow.h"
 #include "Window/MainWindow.h"
+#include "Window/NetworkSquareColorWindow.h"
 #include "Window/Ranked/RankedProgressWindow.h"
 #include "Window/WinePopupWindow.h"
 
@@ -242,6 +243,11 @@ void WindowManager::Render()
 		return;
 	}
 
+	if (!g_interfaces.pSteamApiHelper)
+	{
+		return;
+	}
+
 	if (g_interfaces.pSteamApiHelper->IsSteamOverlayActive())
 	{
 		return;
@@ -262,6 +268,7 @@ void WindowManager::Render()
 	ImGui::GetIO().MouseDrawCursor = false;
 	for (auto p : m_windowContainer->GetWindows()) {
 		if (p.first == WindowType_HitboxOverlay) continue; // ignore windows that don't need a mouse
+		if (!p.second) continue;
 		if (p.second->IsOpen()) {
 			ImGui::GetIO().MouseDrawCursor = true;
 			break;
@@ -280,6 +287,7 @@ void WindowManager::Render()
 
 	DrawAllWindows();
 	DrawRankedProgressOverlayStandalone();
+	DrawNetworkSquareColorProgressStandalone();
 	Updater::UpdateCoordinator::GetInstance().DrawSkippedLink();
 
 	g_notificationBar->DrawNotifications();
@@ -314,6 +322,10 @@ void WindowManager::DrawAllWindows() const
 {
 	for (const auto& window : m_windowContainer->GetWindows())
 	{
+		if (!window.second)
+		{
+			continue;
+		}
 		window.second->Update();
 	}
 }

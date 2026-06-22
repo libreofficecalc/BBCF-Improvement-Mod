@@ -5,6 +5,10 @@
 #include <fstream>
 #include <vector>
 #include <regex>
+#ifndef _SILENCE_EXPERIMENTAL_FILESYSTEM_DEPRECATION_WARNING
+#define _SILENCE_EXPERIMENTAL_FILESYSTEM_DEPRECATION_WARNING
+#endif
+
 #include <experimental/filesystem>
 #include "Game/characters.h"
 #include "Game/ScenesManager/ScenesManager.h"
@@ -14,6 +18,8 @@
 #include <atlstr.h>
 #include <Web/url_downloader.h>
 #include "ReplayList.h"
+
+namespace fs = std::experimental::filesystem;
 
 //#define REPLAY_FILE_SIZE 65536
 //#define REPLAY_FOLDER_PATH "./Save/Replay/"
@@ -214,7 +220,7 @@ void replace_all(
 
 	void ReplayFileManager::archive_replays() {
         std::vector<std::string> replay_paths;
-        for (const auto& entry : std::experimental::filesystem::directory_iterator(REPLAY_FOLDER_PATH)) {
+        for (const auto& entry : fs::directory_iterator(REPLAY_FOLDER_PATH)) {
             std::string path = std::string(entry.path().string());
             
             std::regex r(".+(replay\\d\\d.dat)");
@@ -319,7 +325,7 @@ void ReplayFileManager::load_replay_list_default_repair() {
         std::string name = std::to_string(j);
         name = "Save/Replay/replay" + std::string(2 - min(2, name.length()), '0') + name + ".dat";
         
-        if (std::experimental::filesystem::exists(name)) {
+        if (fs::exists(name)) {
             std::ifstream f(name, std::ios::binary);
             f.seekg(8, std::ios_base::beg);
             f.read((char*)&replay_list->replays[j], 0x390);
@@ -364,7 +370,7 @@ bool ReplayFileManager::check_file_validity(ReplayFile* file) {
 void ReplayFileManager::load_replay_list_from_archive(int page) {
     // load filenames
     std::vector<std::string> all_filenames;
-    for (const auto& f : std::experimental::filesystem::directory_iterator(REPLAY_ARCHIVE_FOLDER_PATH)) {
+    for (const auto& f : fs::directory_iterator(REPLAY_ARCHIVE_FOLDER_PATH)) {
         std::string pp = f.path().filename().string();
         all_filenames.push_back(pp);
     }

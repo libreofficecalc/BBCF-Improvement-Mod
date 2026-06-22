@@ -339,9 +339,12 @@ Rewind pos: +%d,Rewind pos: +%d,Pos de rebobinado: +%d
 snap_apparatus snapshot_count: %d,snap_apparatus snapshot_count: %d,snap_apparatus snapshot_count: %d
 %d: Framecount:%d,%d: Framecount:%d,%d: Cuenta de Frames:%d
 Ranked_search_warning,You cannot use this feature while searching for a ranked match,No puedes utilizar esta funcionalidad mientras buscas una partida
+Network Matches,Network Matches,Partidas de red
 Ranked Matches,Ranked Matches,Partidas clasificatorias
 Show ranked progress,Show ranked progress,Mostrar progreso de rango
 "Shows a movable ranked progress window during ranked character select, ranked menu flow, and after a successful ranked LP upload.","Shows a movable ranked progress window during ranked character select, ranked menu flow, and after a successful ranked LP upload.","Muestra una ventana movible de progreso de rango durante la selección de personaje clasificatoria, el flujo de menú clasificatorio y después de una subida exitosa de LP."
+Show square color progress,Show square color progress,Mostrar progreso de color de square
+Shows a movable network square color progress window while inside network mode.,Shows a movable network square color progress window while inside network mode.,Muestra una ventana movible de progreso de color de square dentro del modo network.
 Show ranked prediction,Show ranked prediction,Mostrar predicción de rango
 Shows win/loss ranked outcome predictions during ranked match confirmation and ranked rematch screens when opponent rank data is available.,Shows win/loss ranked outcome predictions during ranked match confirmation and ranked rematch screens when opponent rank data is available.,Muestra predicciones de victoria y derrota durante la confirmación y la revancha clasificatoria cuando el rango del rival está disponible.
 Ranked ladder,Ranked ladder,Escalera clasificatoria
@@ -682,3 +685,43 @@ Selected playback cache missing.,Selected playback cache missing.,Falta la cach�
 Triggered [%s]: %s%s,Triggered [%s]: %s%s,Activado [%s]: %s%s
 Slot %d,Slot %d,Ranura %d
 Replay %s,Replay %s,Replay %s
+Slot moved.,Slot moved.,Ranura movida.
+All slots enabled.,All slots enabled.,Todas las ranuras activadas.
+All slots disabled.,All slots disabled.,Todas las ranuras desactivadas.
+Dragged slot: %s,Dragged slot: %s,Ranura arrastrada: %s
+Current Slot - %s,Current Slot - %s,Ranura actual - %s
+Slot list,Slot list,Lista de ranuras
+Move up,Move up,Subir
+Move down,Move down,Bajar
+Set index...,Set index...,Fijar índice...
+Set Slot Index,Set Slot Index,Fijar índice de ranura
+Index,Index,Índice
+Valid range: 1-%d,Valid range: 1-%d,Rango válido: 1-%d
+Move,Move,Mover
+Turn ALL slots off,Turn ALL slots off,Desactivar TODAS las ranuras
+Turn ALL slots on,Turn ALL slots on,Activar TODAS las ranuras
+Network Square Color,Network Square Color,Color de Network Square
+White,White,Blanco
+Purple,Purple,Morado
+Red,Red,Rojo
+Orange,Orange,Naranja
+Yellow,Yellow,Amarillo
+Green,Green,Verde
+Blue,Blue,Azul
+Teal,Teal,Verde azulado
+Black,Black,Negro
+Unknown (%u),Unknown (%u),Desconocido (%u)
+Invalid (%u),Invalid (%u),Inválido (%u)
+Unavailable,Unavailable,No disponible
+Offline or unavailable,Offline or unavailable,Sin conexión o no disponible
+Local color,Local color,Color local
+Counter,Counter,Contador
+Next color,Next color,Siguiente color
+Previous color,Previous color,Color anterior
+Distance to rank up,Distance to rank up,Distancia para subir color
+Distance to rank down,Distance to rank down,Distancia para bajar color
+Opponent color,Opponent color,Color del rival
+Top color,Top color,Color máximo
+Bottom color,Bottom color,Color mínimo
+Color changes at %u / %u and counter resets to %u after a color change.,Color changes at %u / %u and counter resets to %u after a color change.,El color cambia en %u / %u y el contador vuelve a %u tras un cambio de color.
+"Wins increase the counter; losses decrease it. Same-color matches are the ones that move square color.","Wins increase the counter; losses decrease it. Same-color matches are the ones that move square color.","Las victorias suben el contador; las derrotas lo bajan. Las partidas contra el mismo color son las que mueven el color de square."

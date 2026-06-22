@@ -2,6 +2,7 @@
 
 #include "Core/interfaces.h"
 #include "Core/logger.h"
+#include "Core/Settings.h"
 #include "Core/utils.h"
 #include "Game/MatchState.h"
 #include "Game/gamestates.h"
@@ -1405,6 +1406,11 @@ void LogRankUiProbeDword(const char* label, uint32_t value)
 
 void LogRankUiProbe(const char* tag)
 {
+	if (!Settings::settingsIni.enableInDevelopmentFeatures)
+	{
+		return;
+	}
+
 	static int s_budget = 12;
 	if (s_budget <= 0)
 	{
@@ -3672,6 +3678,12 @@ void TryBeginRankMenuRowLpTrace(const char* reason, void* selfValue)
 
 void BeginRankedSlotWriteTrace(uint32_t slotAddr, const char* reason)
 {
+	if (!Settings::settingsIni.enableInDevelopmentFeatures)
+	{
+		EndRankedSlotWriteTrace("dev_diagnostics_disabled");
+		return;
+	}
+
 	uint32_t slotLo = 0;
 	uint32_t slotHi = 0;
 	if (!ReadRankedTrackedSlotPair(slotAddr, &slotLo, &slotHi))
@@ -7217,6 +7229,12 @@ void NormalizeMenuExitModeIfNeeded()
 
 void RankedProbeTickFrameState()
 {
+	if (!Settings::settingsIni.enableInDevelopmentFeatures)
+	{
+		EndRankedSlotWriteTrace("dev_diagnostics_disabled");
+		return;
+	}
+
 	if (!g_gameVals.pGameMode || !g_gameVals.pGameState)
 	{
 		return;
@@ -8333,6 +8351,7 @@ void __declspec(naked)GetGameStateTitleScreen()
 	InitManagers();
 
 	WindowManager::GetInstance().Initialize(g_gameProc.hWndGameWindow, g_interfaces.pD3D9ExWrapper);
+	LOG_ASM(1, "[TitleHook] after WindowManager::Initialize\n");
 
 	__asm
 	{
@@ -8377,11 +8396,17 @@ void __declspec(naked)GetGameStateMenuScreen()
 	}
 
 	WindowManager::GetInstance().Initialize(g_gameProc.hWndGameWindow, g_interfaces.pD3D9ExWrapper);
+	LOG_ASM(1, "[MenuHook] after WindowManager::Initialize\n");
 	HandleMenuScreenMatchEnd();
+	LOG_ASM(1, "[MenuHook] after HandleMenuScreenMatchEnd\n");
 
 	// shouldn't be needed, but just in case something writes replay_list to file from some odd place, make sure it's kept in the correct state
 	if (g_rep_manager.template_modified)
+	{
+		LOG_ASM(1, "[MenuHook] before load_replay_list_default\n");
 		g_rep_manager.load_replay_list_default();
+		LOG_ASM(1, "[MenuHook] after load_replay_list_default\n");
+	}
 
 	__asm
 	{

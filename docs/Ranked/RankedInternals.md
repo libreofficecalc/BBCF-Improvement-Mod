@@ -374,13 +374,14 @@ overlaps with `inPostMatchRematch`; both conditions kept for safety) or while
 soon as none of those conditions holds.
 
 **Opponent cache across match boundary:**
-During `inMatch`, `DrawRankedPredictionWindow` calls
-`TryGetRankedPredictionOpponent` each frame and writes the result to the
-short-lived `s_lastPredictionOpponentSteamId / CharacterId / SeenAt` statics.
-This keeps the cache timestamp fresh so the 15-second fallback window starts
-from the last in-match frame, not from the pre-match confirmation screen
-(which may be many minutes earlier). Without this, the fallback expires before
-the post-match rematch lobby appears.
+During `inMatch`, `DrawRankedPredictionWindow` refreshes
+`TryGetRankedPredictionOpponent` on a short cooldown instead of every UI frame
+and writes the result to the short-lived
+`s_lastPredictionOpponentSteamId / CharacterId / SeenAt` statics. This keeps
+the cache timestamp fresh so the 15-second fallback window starts from the
+last in-match poll, not from the pre-match confirmation screen (which may be
+many minutes earlier), without allocating/scanning the room-member vector every
+rendered frame.
 
 - game is not in match
 - if opponent data is not ready yet, draw a visible waiting/unavailable card
@@ -394,6 +395,17 @@ the post-match rematch lobby appears.
 - on the ranked rematch screen, character-specific opponent lookup is allowed
   to refresh again after a short cooldown even if the same opponent/character
   was already queried before the match
+
+Performance notes:
+
+- `TryGetRankedTableBase` caches the BBCF ranked table base while the module
+  base is stable and the table pointer remains readable. This avoids repeatedly
+  calling the game helper from UI paths that build ranked display states.
+- Upload observation scans all 64 ranked rows on a 100 ms cadence while pending
+  instead of every rendered frame.
+- Prediction visibility logs intentionally key on semantic state only
+  (game/network/rematch state, flags, and opponent identity). Volatile delay
+  fields remain in the log line but do not make `LOG(1)` flush every frame.
 
 Prediction model:
 

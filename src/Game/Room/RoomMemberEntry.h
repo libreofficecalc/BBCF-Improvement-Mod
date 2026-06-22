@@ -17,9 +17,14 @@ public:
 	uint8_t N00009349; //0x0035
 	uint8_t N0000934C; //0x0036
 	uint8_t N0000934A; //0x0037
-	char pad_0038[64]; //0x0038
+	char pad_0038[34]; //0x0038
+	uint8_t netcolor; //0x005A
+	uint8_t N0000914A; //0x005B
+	char pad_005C[28]; //0x005C
 	uint64_t N0000914B; //0x0078
 	char pad_0080[24]; //0x0080
 }; //Size: 0x0098
+
+static_assert(sizeof(RoomMemberEntry) == 0x98, "RoomMemberEntry layout changed");
 
 #pragma pack(pop)

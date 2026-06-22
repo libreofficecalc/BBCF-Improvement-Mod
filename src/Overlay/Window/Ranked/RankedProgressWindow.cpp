@@ -12,6 +12,7 @@
 #include "Game/gamestates.h"
 #include "Game/characters.h"
 #include "Overlay/imgui_utils.h"
+#include "Overlay/WindowManager.h"
 
 #include <Windows.h>
 
@@ -178,6 +179,11 @@ namespace
 	// Any upload with serial > this value happened during or after the current match.
 	uint64_t g_uploadSerialAtMatchEntry = 0;
 
+	bool IsRankedOverlayDiagnosticsEnabled()
+	{
+		return Settings::settingsIni.enableInDevelopmentFeatures;
+	}
+
 		struct RankedProgressDisplayState
 		{
 			bool valid = false;
@@ -206,6 +212,16 @@ namespace
 			uint32_t metadataNextRank = 0;
 			float progress = 0.0f;
 		};
+
+	bool IsRankedDisplayReadyForOverlay(const RankedProgressDisplayState& state)
+	{
+		return state.valid &&
+			!state.isUnranked &&
+			state.thresholdKnown &&
+			state.characterId != kInvalidRankedCharacterId &&
+			state.characterId < kRankAllCharacterId &&
+			state.visibleRank > 0u;
+	}
 
 	enum class RankedPredictionResultKind
 	{
@@ -301,17 +317,46 @@ namespace
 		bool showWins = true;
 		bool showLosses = false;
 		bool showWinrate = true;
-		bool showCharacterLeaderboardPlacement = true;
-		bool showGlobalLeaderboardPlacement = true;
+		bool showCharacterLeaderboardPlacement = false;
+		bool showGlobalLeaderboardPlacement = false;
 	};
 
 	RankedProgressTopRowOptions g_rankedProgressTopRowOptions{};
+	bool g_rankedProgressTopRowOptionsLoaded = false;
+
+	void LoadRankedProgressTopRowOptions()
+	{
+		if (g_rankedProgressTopRowOptionsLoaded)
+		{
+			return;
+		}
+
+		g_rankedProgressTopRowOptions.showMatches = Settings::settingsIni.rankedProgressShowMatches;
+		g_rankedProgressTopRowOptions.showWins = Settings::settingsIni.rankedProgressShowWins;
+		g_rankedProgressTopRowOptions.showLosses = Settings::settingsIni.rankedProgressShowLosses;
+		g_rankedProgressTopRowOptions.showWinrate = Settings::settingsIni.rankedProgressShowWinrate;
+		g_rankedProgressTopRowOptions.showCharacterLeaderboardPlacement = Settings::settingsIni.rankedProgressShowCharacterLeaderboardPlacement;
+		g_rankedProgressTopRowOptions.showGlobalLeaderboardPlacement = Settings::settingsIni.rankedProgressShowGlobalLeaderboardPlacement;
+		g_rankedProgressTopRowOptionsLoaded = true;
+	}
+
+	void SaveRankedProgressTopRowOption(const char* settingName, bool value, bool* backingField)
+	{
+		if (!settingName || !backingField || *backingField == value)
+		{
+			return;
+		}
+
+		*backingField = value;
+		Settings::changeSetting(settingName, value ? "1" : "0");
+	}
 
 	struct RankedUploadObservationState
 	{
 		bool pending = false;
 		uint64_t serial = 0;
 		ULONGLONG startedAtMs = 0;
+		ULONGLONG lastScanAtMs = 0;
 		ULONGLONG firstBackingChangeAtMs = 0;
 		uint32_t attemptedCharacterId = kInvalidRankedCharacterId;
 		int32_t uploadedScore = 0;
@@ -3285,6 +3330,11 @@ namespace
 
 	void LogRankedSnapshotCore(const char* tag, const RankedProgressOverlaySnapshot& snapshot)
 	{
+		if (!IsRankedOverlayDiagnosticsEnabled())
+		{
+			return;
+		}
+
 		const uint32_t internalRank = snapshot.rawPackedField00 & 0xFFFFu;
 		const uint32_t uploadedPacked = (internalRank << 16) | (snapshot.packedSubscore & 0xFFFFu);
 		const uint32_t rankProgress = snapshot.currentLp >= snapshot.cumulativeBase
@@ -3339,6 +3389,11 @@ namespace
 
 	void LogRankedDisplayStateCore(const char* tag, const RankedProgressDisplayState& state)
 	{
+		if (!IsRankedOverlayDiagnosticsEnabled())
+		{
+			return;
+		}
+
 		const uint32_t internalRank = VisibleRankToInternalRank(state.visibleRank);
 		const uint32_t uploadedPacked = (internalRank << 16) | (state.packedSubscore & 0xFFFFu);
 		const uint32_t rankProgress = state.currentLp >= state.cumulativeBase
@@ -3382,7 +3437,7 @@ namespace
 
 	void MaybeLogRankedRowDump(uint32_t rowIndex, const uint8_t* rowObject, const RankedProgressOverlaySnapshot& snapshot)
 	{
-		if (!rowObject || rowIndex >= 0x40)
+		if (!IsRankedOverlayDiagnosticsEnabled() || !rowObject || rowIndex >= 0x40)
 		{
 			return;
 		}
@@ -3513,7 +3568,7 @@ namespace
 		typedef uintptr_t(__cdecl* RankedTableBaseFn)();
 		const RankedTableBaseFn rankedTableBaseFn = reinterpret_cast<RankedTableBaseFn>(moduleBase + kRankedTableBaseFnRva);
 		const uintptr_t rankedTableBase = rankedTableBaseFn ? rankedTableBaseFn() : 0;
-		if (rankedTableBase == 0)
+		if (rankedTableBase == 0 || IsBadReadPtr(reinterpret_cast<const void*>(rankedTableBase + 0xD4), 4))
 		{
 			return false;
 		}
@@ -3680,7 +3735,7 @@ namespace
 		outSnapshot->currentRank = visibleRank;
 		outSnapshot->previousRank = visibleRank > 1u ? (visibleRank - 1u) : 0u;
 		outSnapshot->nextRank = visibleRank > 0u ? (visibleRank + 1u) : 1u;
-		if (visibleRank >= 38u || rowIndex == 7u)
+		if (IsRankedOverlayDiagnosticsEnabled() && (visibleRank >= 38u || rowIndex == 7u))
 		{
 			static std::array<uint64_t, 64> s_lastCoreLogSignature{};
 			static std::array<uint8_t, 64> s_hasCoreLogSignature{};
@@ -3842,26 +3897,29 @@ namespace
 		g_rankedDemotionToast.characterId = target.characterId;
 		g_rankedDemotionToast.delta = demotionDelta;
 		g_rankedDemotionToast.startTime = g_rankedProgressAnimation.startTime;
-		LOG(1, "[RANK][OverlayAnim] start char=%u fromRank=%u fromLp=%u fromNext=%u fromPromo=%u/%u fromDemo=%u/%u toRank=%u toLp=%u toNext=%u toPromo=%u/%u toDemo=%u/%u delta=%+d promoDelta=%+d demoDelta=%+d uploadSerial=%llu\n",
-			static_cast<unsigned int>(target.characterId),
-			static_cast<unsigned int>(source.visibleRank),
-			static_cast<unsigned int>(source.currentLp),
-			static_cast<unsigned int>(source.nextThreshold),
-			static_cast<unsigned int>(source.promotionCounter),
-			static_cast<unsigned int>(source.promotionCounterLimit),
-			static_cast<unsigned int>(source.demotionCounter),
-			static_cast<unsigned int>(source.demotionCounterLimit),
-			static_cast<unsigned int>(target.visibleRank),
-			static_cast<unsigned int>(target.currentLp),
-			static_cast<unsigned int>(target.nextThreshold),
-			static_cast<unsigned int>(target.promotionCounter),
-			static_cast<unsigned int>(target.promotionCounterLimit),
-			static_cast<unsigned int>(target.demotionCounter),
-			static_cast<unsigned int>(target.demotionCounterLimit),
-			delta,
-			promotionDelta,
-			demotionDelta,
-			static_cast<unsigned long long>(uploadSerial));
+		if (IsRankedOverlayDiagnosticsEnabled())
+		{
+			LOG(1, "[RANK][OverlayAnim] start char=%u fromRank=%u fromLp=%u fromNext=%u fromPromo=%u/%u fromDemo=%u/%u toRank=%u toLp=%u toNext=%u toPromo=%u/%u toDemo=%u/%u delta=%+d promoDelta=%+d demoDelta=%+d uploadSerial=%llu\n",
+				static_cast<unsigned int>(target.characterId),
+				static_cast<unsigned int>(source.visibleRank),
+				static_cast<unsigned int>(source.currentLp),
+				static_cast<unsigned int>(source.nextThreshold),
+				static_cast<unsigned int>(source.promotionCounter),
+				static_cast<unsigned int>(source.promotionCounterLimit),
+				static_cast<unsigned int>(source.demotionCounter),
+				static_cast<unsigned int>(source.demotionCounterLimit),
+				static_cast<unsigned int>(target.visibleRank),
+				static_cast<unsigned int>(target.currentLp),
+				static_cast<unsigned int>(target.nextThreshold),
+				static_cast<unsigned int>(target.promotionCounter),
+				static_cast<unsigned int>(target.promotionCounterLimit),
+				static_cast<unsigned int>(target.demotionCounter),
+				static_cast<unsigned int>(target.demotionCounterLimit),
+				delta,
+				promotionDelta,
+				demotionDelta,
+				static_cast<unsigned long long>(uploadSerial));
+		}
 	}
 
 	float ComputeToastAlpha(RankedDeltaToastState* toast, const RankedProgressDisplayState& displayState, int32_t* outDelta)
@@ -3936,11 +3994,31 @@ namespace
 		g_rankedUploadObservation.startedAtMs = GetTickCount64();
 		g_rankedUploadObservation.attemptedCharacterId = attemptedCharacterId;
 		g_rankedUploadObservation.uploadedScore = uploadedScore;
-		const bool capturedAny = TryCaptureAllRankedDisplayStates(
-			&g_rankedUploadObservation.baselineStates,
-			&g_rankedUploadObservation.hasBaseline);
+		bool capturedAny = false;
+		if (attemptedCharacterId < g_rankedUploadObservation.baselineStates.size())
+		{
+			RankedProgressDisplayState state{};
+			if (TryBuildDisplayStateForCharacter(attemptedCharacterId, nullptr, &state) && state.valid)
+			{
+				g_rankedUploadObservation.baselineStates[attemptedCharacterId] = state;
+				g_rankedUploadObservation.hasBaseline[attemptedCharacterId] = 1;
+				capturedAny = true;
+			}
+		}
+		else
+		{
+			capturedAny = TryCaptureAllRankedDisplayStates(
+				&g_rankedUploadObservation.baselineStates,
+				&g_rankedUploadObservation.hasBaseline);
+		}
 		uint32_t cachedBaselineCount = 0;
-		for (uint32_t characterId = 0; characterId < g_lastKnownRankDisplayByCharacter.size(); ++characterId)
+		const uint32_t cacheStart = attemptedCharacterId < g_lastKnownRankDisplayByCharacter.size()
+			? attemptedCharacterId
+			: 0u;
+		const uint32_t cacheEnd = attemptedCharacterId < g_lastKnownRankDisplayByCharacter.size()
+			? attemptedCharacterId + 1u
+			: static_cast<uint32_t>(g_lastKnownRankDisplayByCharacter.size());
+		for (uint32_t characterId = cacheStart; characterId < cacheEnd; ++characterId)
 		{
 			RankedProgressDisplayState cachedState{};
 			if (TryGetCachedRankedDisplayState(characterId, &cachedState) && cachedState.valid)
@@ -3950,20 +4028,26 @@ namespace
 				++cachedBaselineCount;
 			}
 		}
-		LOG(1, "[RANK][OverlayObserve] begin serial=%llu attemptedChar=%u uploadedScore=%d capturedAny=%d\n",
-			static_cast<unsigned long long>(g_rankedUploadObservation.serial),
-			static_cast<unsigned int>(attemptedCharacterId),
-			uploadedScore,
-			capturedAny ? 1 : 0);
-		const uint32_t uploadedInternalRank = (static_cast<uint32_t>(uploadedScore) >> 16) & 0xFFFFu;
-		const uint32_t uploadedSubscore = static_cast<uint32_t>(uploadedScore) & 0xFFFFu;
-		LOG(1, "[RANK][OverlayObserve] upload-split serial=%llu attemptedChar=%u uploadedScore=0x%08X uploadedInternal=%u uploadedVisible=%u uploadedSub=%u\n",
-			static_cast<unsigned long long>(g_rankedUploadObservation.serial),
-			static_cast<unsigned int>(attemptedCharacterId),
-			static_cast<unsigned int>(static_cast<uint32_t>(uploadedScore)),
-			static_cast<unsigned int>(uploadedInternalRank),
-			static_cast<unsigned int>(InternalRankToVisibleRank(uploadedInternalRank, false)),
-			static_cast<unsigned int>(uploadedSubscore));
+		if (IsRankedOverlayDiagnosticsEnabled())
+		{
+			LOG(1, "[RANK][OverlayObserve] begin serial=%llu attemptedChar=%u uploadedScore=%d capturedAny=%d\n",
+				static_cast<unsigned long long>(g_rankedUploadObservation.serial),
+				static_cast<unsigned int>(attemptedCharacterId),
+				uploadedScore,
+				capturedAny ? 1 : 0);
+		}
+		if (IsRankedOverlayDiagnosticsEnabled())
+		{
+			const uint32_t uploadedInternalRank = (static_cast<uint32_t>(uploadedScore) >> 16) & 0xFFFFu;
+			const uint32_t uploadedSubscore = static_cast<uint32_t>(uploadedScore) & 0xFFFFu;
+			LOG(1, "[RANK][OverlayObserve] upload-split serial=%llu attemptedChar=%u uploadedScore=0x%08X uploadedInternal=%u uploadedVisible=%u uploadedSub=%u\n",
+				static_cast<unsigned long long>(g_rankedUploadObservation.serial),
+				static_cast<unsigned int>(attemptedCharacterId),
+				static_cast<unsigned int>(static_cast<uint32_t>(uploadedScore)),
+				static_cast<unsigned int>(uploadedInternalRank),
+				static_cast<unsigned int>(InternalRankToVisibleRank(uploadedInternalRank, false)),
+				static_cast<unsigned int>(uploadedSubscore));
+		}
 		if (attemptedCharacterId < g_rankedUploadObservation.baselineStates.size() &&
 			g_rankedUploadObservation.hasBaseline[attemptedCharacterId])
 		{
@@ -3982,7 +4066,7 @@ namespace
 				LogRankedDisplayStateCore("UploadBeginHighRankBaseline", state);
 			}
 		}
-		if (cachedBaselineCount > 0)
+		if (cachedBaselineCount > 0 && IsRankedOverlayDiagnosticsEnabled())
 		{
 			LOG(1, "[RANK][OverlayObserve] cached-baseline serial=%llu count=%u attemptedChar=%u\n",
 				static_cast<unsigned long long>(g_rankedUploadObservation.serial),
@@ -3999,19 +4083,43 @@ namespace
 		}
 
 		const ULONGLONG nowMs = GetTickCount64();
+		if (g_rankedUploadObservation.lastScanAtMs != 0 &&
+			nowMs < g_rankedUploadObservation.lastScanAtMs + 100ull)
+		{
+			return;
+		}
+		g_rankedUploadObservation.lastScanAtMs = nowMs;
 		if (nowMs > g_rankedUploadObservation.startedAtMs + 15000ull)
 		{
-			LOG(1, "[RANK][OverlayObserve] timeout serial=%llu attemptedChar=%u uploadedScore=%d\n",
-				static_cast<unsigned long long>(g_rankedUploadObservation.serial),
-				static_cast<unsigned int>(g_rankedUploadObservation.attemptedCharacterId),
-				g_rankedUploadObservation.uploadedScore);
+			if (IsRankedOverlayDiagnosticsEnabled())
+			{
+				LOG(1, "[RANK][OverlayObserve] timeout serial=%llu attemptedChar=%u uploadedScore=%d\n",
+					static_cast<unsigned long long>(g_rankedUploadObservation.serial),
+					static_cast<unsigned int>(g_rankedUploadObservation.attemptedCharacterId),
+					g_rankedUploadObservation.uploadedScore);
+			}
 			g_rankedUploadObservation.pending = false;
 			return;
 		}
 
 		std::array<RankedProgressDisplayState, 64> currentStates{};
 		std::array<uint8_t, 64> hasCurrentState{};
-		if (!TryCaptureAllRankedDisplayStates(&currentStates, &hasCurrentState))
+		bool capturedCurrent = false;
+		if (g_rankedUploadObservation.attemptedCharacterId < currentStates.size())
+		{
+			RankedProgressDisplayState state{};
+			if (TryBuildDisplayStateForCharacter(g_rankedUploadObservation.attemptedCharacterId, nullptr, &state) && state.valid)
+			{
+				currentStates[g_rankedUploadObservation.attemptedCharacterId] = state;
+				hasCurrentState[g_rankedUploadObservation.attemptedCharacterId] = 1;
+				capturedCurrent = true;
+			}
+		}
+		else
+		{
+			capturedCurrent = TryCaptureAllRankedDisplayStates(&currentStates, &hasCurrentState);
+		}
+		if (!capturedCurrent)
 		{
 			return;
 		}
@@ -4039,46 +4147,49 @@ namespace
 			}
 
 			++backingChangeCount;
-			LOG(1, "[RANK][OverlayObserve] backing-change serial=%llu char=%u displayChanged=%d rank=%u->%u lp=%u->%u next=%u->%u rawSub=%u->%u rawBounds=%u..%u->%u..%u cumBase=%u->%u rankSpan=%u->%u promotion=%u/%u->%u/%u demotion=%u/%u->%u/%u packed00=0x%08X->0x%08X raw04=0x%08X->0x%08X raw0C=0x%08X->0x%08X raw10=0x%08X->0x%08X raw20=0x%08X->0x%08X nextMeta=%u->%u\n",
-				static_cast<unsigned long long>(g_rankedUploadObservation.serial),
-				static_cast<unsigned int>(characterId),
-				displayChanged ? 1 : 0,
-				static_cast<unsigned int>(before.visibleRank),
-				static_cast<unsigned int>(after.visibleRank),
-				static_cast<unsigned int>(before.currentLp),
-				static_cast<unsigned int>(after.currentLp),
-				static_cast<unsigned int>(before.nextThreshold),
-				static_cast<unsigned int>(after.nextThreshold),
-				static_cast<unsigned int>(before.packedSubscore),
-				static_cast<unsigned int>(after.packedSubscore),
-				static_cast<unsigned int>(before.rawLowerThreshold),
-				static_cast<unsigned int>(before.rawUpperThreshold),
-				static_cast<unsigned int>(after.rawLowerThreshold),
-				static_cast<unsigned int>(after.rawUpperThreshold),
-				static_cast<unsigned int>(before.cumulativeBase),
-				static_cast<unsigned int>(after.cumulativeBase),
-				static_cast<unsigned int>(before.rankSpan),
-				static_cast<unsigned int>(after.rankSpan),
-				static_cast<unsigned int>(before.promotionCounter),
-				static_cast<unsigned int>(before.promotionCounterLimit),
-				static_cast<unsigned int>(after.promotionCounter),
-				static_cast<unsigned int>(after.promotionCounterLimit),
-				static_cast<unsigned int>(before.demotionCounter),
-				static_cast<unsigned int>(before.demotionCounterLimit),
-				static_cast<unsigned int>(after.demotionCounter),
-				static_cast<unsigned int>(after.demotionCounterLimit),
-				static_cast<unsigned int>(before.rawPackedField00),
-				static_cast<unsigned int>(after.rawPackedField00),
-				static_cast<unsigned int>(before.rawField04),
-				static_cast<unsigned int>(after.rawField04),
-				static_cast<unsigned int>(before.rawField0C),
-				static_cast<unsigned int>(after.rawField0C),
-				static_cast<unsigned int>(before.rawField10),
-				static_cast<unsigned int>(after.rawField10),
-				static_cast<unsigned int>(before.rawField20),
-				static_cast<unsigned int>(after.rawField20),
-				static_cast<unsigned int>(before.metadataNextRank),
-				static_cast<unsigned int>(after.metadataNextRank));
+			if (IsRankedOverlayDiagnosticsEnabled())
+			{
+				LOG(1, "[RANK][OverlayObserve] backing-change serial=%llu char=%u displayChanged=%d rank=%u->%u lp=%u->%u next=%u->%u rawSub=%u->%u rawBounds=%u..%u->%u..%u cumBase=%u->%u rankSpan=%u->%u promotion=%u/%u->%u/%u demotion=%u/%u->%u/%u packed00=0x%08X->0x%08X raw04=0x%08X->0x%08X raw0C=0x%08X->0x%08X raw10=0x%08X->0x%08X raw20=0x%08X->0x%08X nextMeta=%u->%u\n",
+					static_cast<unsigned long long>(g_rankedUploadObservation.serial),
+					static_cast<unsigned int>(characterId),
+					displayChanged ? 1 : 0,
+					static_cast<unsigned int>(before.visibleRank),
+					static_cast<unsigned int>(after.visibleRank),
+					static_cast<unsigned int>(before.currentLp),
+					static_cast<unsigned int>(after.currentLp),
+					static_cast<unsigned int>(before.nextThreshold),
+					static_cast<unsigned int>(after.nextThreshold),
+					static_cast<unsigned int>(before.packedSubscore),
+					static_cast<unsigned int>(after.packedSubscore),
+					static_cast<unsigned int>(before.rawLowerThreshold),
+					static_cast<unsigned int>(before.rawUpperThreshold),
+					static_cast<unsigned int>(after.rawLowerThreshold),
+					static_cast<unsigned int>(after.rawUpperThreshold),
+					static_cast<unsigned int>(before.cumulativeBase),
+					static_cast<unsigned int>(after.cumulativeBase),
+					static_cast<unsigned int>(before.rankSpan),
+					static_cast<unsigned int>(after.rankSpan),
+					static_cast<unsigned int>(before.promotionCounter),
+					static_cast<unsigned int>(before.promotionCounterLimit),
+					static_cast<unsigned int>(after.promotionCounter),
+					static_cast<unsigned int>(after.promotionCounterLimit),
+					static_cast<unsigned int>(before.demotionCounter),
+					static_cast<unsigned int>(before.demotionCounterLimit),
+					static_cast<unsigned int>(after.demotionCounter),
+					static_cast<unsigned int>(after.demotionCounterLimit),
+					static_cast<unsigned int>(before.rawPackedField00),
+					static_cast<unsigned int>(after.rawPackedField00),
+					static_cast<unsigned int>(before.rawField04),
+					static_cast<unsigned int>(after.rawField04),
+					static_cast<unsigned int>(before.rawField0C),
+					static_cast<unsigned int>(after.rawField0C),
+					static_cast<unsigned int>(before.rawField10),
+					static_cast<unsigned int>(after.rawField10),
+					static_cast<unsigned int>(before.rawField20),
+					static_cast<unsigned int>(after.rawField20),
+					static_cast<unsigned int>(before.metadataNextRank),
+					static_cast<unsigned int>(after.metadataNextRank));
+			}
 			LogRankedDisplayStateCore("BackingChangeBefore", before);
 			LogRankedDisplayStateCore("BackingChangeAfter", after);
 		}
@@ -4088,11 +4199,14 @@ namespace
 			{
 				g_rankedUploadObservation.firstBackingChangeAtMs = nowMs;
 			}
-			LOG(1, "[RANK][OverlayObserve] backing-change-summary serial=%llu count=%u attemptedChar=%u uploadedScore=%d\n",
-				static_cast<unsigned long long>(g_rankedUploadObservation.serial),
-				static_cast<unsigned int>(backingChangeCount),
-				static_cast<unsigned int>(g_rankedUploadObservation.attemptedCharacterId),
-				g_rankedUploadObservation.uploadedScore);
+			if (IsRankedOverlayDiagnosticsEnabled())
+			{
+				LOG(1, "[RANK][OverlayObserve] backing-change-summary serial=%llu count=%u attemptedChar=%u uploadedScore=%d\n",
+					static_cast<unsigned long long>(g_rankedUploadObservation.serial),
+					static_cast<unsigned int>(backingChangeCount),
+					static_cast<unsigned int>(g_rankedUploadObservation.attemptedCharacterId),
+					g_rankedUploadObservation.uploadedScore);
+			}
 			if (nowMs < g_rankedUploadObservation.firstBackingChangeAtMs + 250ull)
 			{
 				return;
@@ -4152,14 +4266,17 @@ namespace
 		g_rankedOverlayVisibility.uploadFadeInStart = ImGui::GetTime();
 		g_rankedOverlayVisibility.uploadFadeOutStart = 0.0;
 		g_lastRankedOverlayCharacterId = targetState.characterId;
-		LOG(1, "[RANK][OverlayObserve] animate serial=%llu char=%u fromLp=%u toLp=%u fromRank=%u toRank=%u delta=%+d\n",
-			static_cast<unsigned long long>(g_rankedUploadObservation.serial),
-			static_cast<unsigned int>(targetState.characterId),
-			static_cast<unsigned int>(sourceState.currentLp),
-			static_cast<unsigned int>(targetState.currentLp),
-			static_cast<unsigned int>(sourceState.visibleRank),
-			static_cast<unsigned int>(targetState.visibleRank),
-			selectedDelta);
+		if (IsRankedOverlayDiagnosticsEnabled())
+		{
+			LOG(1, "[RANK][OverlayObserve] animate serial=%llu char=%u fromLp=%u toLp=%u fromRank=%u toRank=%u delta=%+d\n",
+				static_cast<unsigned long long>(g_rankedUploadObservation.serial),
+				static_cast<unsigned int>(targetState.characterId),
+				static_cast<unsigned int>(sourceState.currentLp),
+				static_cast<unsigned int>(targetState.currentLp),
+				static_cast<unsigned int>(sourceState.visibleRank),
+				static_cast<unsigned int>(targetState.visibleRank),
+				selectedDelta);
+		}
 		g_rankedUploadObservation.pending = false;
 	}
 
@@ -4232,18 +4349,22 @@ namespace
 		{
 			*outState = g_rankedProgressAnimation.target;
 			g_rankedProgressAnimation.active = false;
-			LOG(1, "[RANK][OverlayAnim] complete char=%u rank=%u lp=%u next=%u uploadSerial=%llu\n",
-				static_cast<unsigned int>(outState->characterId),
-				static_cast<unsigned int>(outState->visibleRank),
-				static_cast<unsigned int>(outState->currentLp),
-				static_cast<unsigned int>(outState->nextThreshold),
-				static_cast<unsigned long long>(g_rankedProgressAnimation.uploadSerial));
+			if (IsRankedOverlayDiagnosticsEnabled())
+			{
+				LOG(1, "[RANK][OverlayAnim] complete char=%u rank=%u lp=%u next=%u uploadSerial=%llu\n",
+					static_cast<unsigned int>(outState->characterId),
+					static_cast<unsigned int>(outState->visibleRank),
+					static_cast<unsigned int>(outState->currentLp),
+					static_cast<unsigned int>(outState->nextThreshold),
+					static_cast<unsigned long long>(g_rankedProgressAnimation.uploadSerial));
+			}
 		}
 		else if (!rankChanged)
 		{
 			const float t = static_cast<float>(elapsed / totalDuration);
 			outState->valid = true;
 			outState->isUnranked = g_rankedProgressAnimation.target.isUnranked;
+			outState->thresholdKnown = g_rankedProgressAnimation.target.thresholdKnown;
 			outState->characterId = g_rankedProgressAnimation.target.characterId;
 			outState->visibleRank = g_rankedProgressAnimation.target.visibleRank;
 			outState->currentLp = LerpUint(g_rankedProgressAnimation.source.currentLp, g_rankedProgressAnimation.target.currentLp, t);
@@ -4263,6 +4384,7 @@ namespace
 				const float t = static_cast<float>(elapsed / static_cast<double>(g_rankedOverlayTuning.rankPhaseDuration));
 				outState->valid = true;
 				outState->isUnranked = g_rankedProgressAnimation.source.isUnranked;
+				outState->thresholdKnown = g_rankedProgressAnimation.source.thresholdKnown;
 				outState->characterId = g_rankedProgressAnimation.source.characterId;
 				outState->visibleRank = g_rankedProgressAnimation.source.visibleRank;
 				outState->currentLp = LerpUint(g_rankedProgressAnimation.source.currentLp,
@@ -4285,6 +4407,7 @@ namespace
 				const float t = static_cast<float>(phaseElapsed / static_cast<double>(g_rankedOverlayTuning.rankSettleDuration));
 				outState->valid = true;
 				outState->isUnranked = g_rankedProgressAnimation.target.isUnranked;
+				outState->thresholdKnown = g_rankedProgressAnimation.target.thresholdKnown;
 				outState->characterId = g_rankedProgressAnimation.target.characterId;
 				outState->visibleRank = g_rankedProgressAnimation.target.visibleRank;
 				outState->currentLp = LerpUint(rankUp ? g_rankedProgressAnimation.target.lowerThreshold : g_rankedProgressAnimation.target.nextThreshold,
@@ -4587,7 +4710,7 @@ namespace
 			s_last.networkState != snapshot.networkState ||
 			s_last.networkState1 != snapshot.networkState1;
 		g_rankedProgressOverlaySnapshot = snapshot;
-		if (changed)
+		if (changed && IsRankedOverlayDiagnosticsEnabled())
 		{
 			LOG(1, "[RANK][OverlayProgress] active=%d row=%u selector=%u cursor=%u rank=%u prev=%u next=%u lp=%u nextLp=%u remainingLp=%u promotion=%u/%u demotion=%u/%u wins=%u matches=%u remainingMatches=%u percent=%.4f state=%d/%d unranked=%d metadataNext=%u packed00=0x%08X packedSub=%u f4=0x%08X raw04=0x%08X raw0C=0x%08X raw10=0x%08X raw14=0x%08X raw18=0x%08X raw20=0x%08X rawE0=0x%08X rawE4=0x%08X rawE8=0x%08X rawEC=0x%08X\n",
 				snapshot.active ? 1 : 0,
@@ -4632,7 +4755,7 @@ namespace
 
 	void ClearRankedProgressOverlaySnapshot(const char* reason)
 	{
-		if (g_rankedProgressOverlaySnapshot.active)
+		if (g_rankedProgressOverlaySnapshot.active && IsRankedOverlayDiagnosticsEnabled())
 		{
 			LOG(1, "[RANK][OverlayProgress] active=0 reason=%s\n", reason ? reason : "(none)");
 		}
@@ -4668,22 +4791,25 @@ void NoteRankedUploadAttempt(int32_t characterId, int32_t score, const char* lea
 	g_rankedUploadOverlayState.internalRank = (static_cast<uint32_t>(score) >> 16) & 0xFFFFu;
 	g_rankedUploadOverlayState.visibleRank = InternalRankToVisibleRank(g_rankedUploadOverlayState.internalRank, false);
 	g_rankedUploadOverlayState.subscore = static_cast<uint32_t>(score) & 0xFFFFu;
-	LOG(1, "[RANK][OverlayObserve] trigger leaderboard='%s' char=%u visibleRank=%u subscore=%u packedScore=%d resolvedByPackedRow=%d\n",
-		leaderboardName ? leaderboardName : "<unknown>",
-		static_cast<unsigned int>(g_rankedUploadOverlayState.characterId),
-		static_cast<unsigned int>(g_rankedUploadOverlayState.visibleRank),
-		static_cast<unsigned int>(g_rankedUploadOverlayState.subscore),
-		score,
-		resolvedByPackedRow ? 1 : 0);
-	LOG(1, "[RANK][OverlayObserve] trigger-split leaderboard='%s' char=%u internal=%u visible=%u rawSub=%u packedScore=0x%08X expectedPacked00=0x%08X resolvedByPackedRow=%d\n",
-		leaderboardName ? leaderboardName : "<unknown>",
-		static_cast<unsigned int>(g_rankedUploadOverlayState.characterId),
-		static_cast<unsigned int>(g_rankedUploadOverlayState.internalRank),
-		static_cast<unsigned int>(g_rankedUploadOverlayState.visibleRank),
-		static_cast<unsigned int>(g_rankedUploadOverlayState.subscore),
-		static_cast<unsigned int>(static_cast<uint32_t>(score)),
-		static_cast<unsigned int>((g_rankedUploadOverlayState.subscore << 16) | (g_rankedUploadOverlayState.internalRank & 0xFFFFu)),
-		resolvedByPackedRow ? 1 : 0);
+	if (IsRankedOverlayDiagnosticsEnabled())
+	{
+		LOG(1, "[RANK][OverlayObserve] trigger leaderboard='%s' char=%u visibleRank=%u subscore=%u packedScore=%d resolvedByPackedRow=%d\n",
+			leaderboardName ? leaderboardName : "<unknown>",
+			static_cast<unsigned int>(g_rankedUploadOverlayState.characterId),
+			static_cast<unsigned int>(g_rankedUploadOverlayState.visibleRank),
+			static_cast<unsigned int>(g_rankedUploadOverlayState.subscore),
+			score,
+			resolvedByPackedRow ? 1 : 0);
+		LOG(1, "[RANK][OverlayObserve] trigger-split leaderboard='%s' char=%u internal=%u visible=%u rawSub=%u packedScore=0x%08X expectedPacked00=0x%08X resolvedByPackedRow=%d\n",
+			leaderboardName ? leaderboardName : "<unknown>",
+			static_cast<unsigned int>(g_rankedUploadOverlayState.characterId),
+			static_cast<unsigned int>(g_rankedUploadOverlayState.internalRank),
+			static_cast<unsigned int>(g_rankedUploadOverlayState.visibleRank),
+			static_cast<unsigned int>(g_rankedUploadOverlayState.subscore),
+			static_cast<unsigned int>(static_cast<uint32_t>(score)),
+			static_cast<unsigned int>((g_rankedUploadOverlayState.subscore << 16) | (g_rankedUploadOverlayState.internalRank & 0xFFFFu)),
+			resolvedByPackedRow ? 1 : 0);
+	}
 	BeginObservedRankedUploadWindow(g_rankedUploadOverlayState.characterId, score);
 }
 
@@ -4734,31 +4860,34 @@ void NoteRankedUploadCompletion(const char* origin, bool success, bool scoreChan
 		g_hasLastSuccessfulRankScoreByCharacter[characterId] = 1;
 	}
 
-	LOG(1, "[RANK][OverlayUpload] origin='%s' success=%d changed=%d char=%u visibleRank=%u subscore=%u score=%d delta=%d rankDelta=%d subDelta=%d newGlobalRank=%d prevGlobalRank=%d\n",
-		origin ? origin : "<null>",
-		success ? 1 : 0,
-		scoreChanged ? 1 : 0,
-		static_cast<unsigned int>(g_rankedUploadOverlayState.characterId),
-		static_cast<unsigned int>(g_rankedUploadOverlayState.visibleRank),
-		static_cast<unsigned int>(g_rankedUploadOverlayState.subscore),
-		score,
-		g_rankedUploadOverlayState.scoreDelta,
-		g_rankedUploadOverlayState.visibleRankDelta,
-		g_rankedUploadOverlayState.subscoreDelta,
-		newGlobalRank,
-		previousGlobalRank);
-	LOG(1, "[RANK][OverlayUpload] split origin='%s' success=%d changed=%d char=%u internal=%u visible=%u rawSub=%u packedScore=0x%08X scoreDelta=%d rankDelta=%d subDelta=%d\n",
-		origin ? origin : "<null>",
-		success ? 1 : 0,
-		scoreChanged ? 1 : 0,
-		static_cast<unsigned int>(g_rankedUploadOverlayState.characterId),
-		static_cast<unsigned int>(g_rankedUploadOverlayState.internalRank),
-		static_cast<unsigned int>(g_rankedUploadOverlayState.visibleRank),
-		static_cast<unsigned int>(g_rankedUploadOverlayState.subscore),
-		static_cast<unsigned int>(static_cast<uint32_t>(score)),
-		g_rankedUploadOverlayState.scoreDelta,
-		g_rankedUploadOverlayState.visibleRankDelta,
-		g_rankedUploadOverlayState.subscoreDelta);
+	if (IsRankedOverlayDiagnosticsEnabled())
+	{
+		LOG(1, "[RANK][OverlayUpload] origin='%s' success=%d changed=%d char=%u visibleRank=%u subscore=%u score=%d delta=%d rankDelta=%d subDelta=%d newGlobalRank=%d prevGlobalRank=%d\n",
+			origin ? origin : "<null>",
+			success ? 1 : 0,
+			scoreChanged ? 1 : 0,
+			static_cast<unsigned int>(g_rankedUploadOverlayState.characterId),
+			static_cast<unsigned int>(g_rankedUploadOverlayState.visibleRank),
+			static_cast<unsigned int>(g_rankedUploadOverlayState.subscore),
+			score,
+			g_rankedUploadOverlayState.scoreDelta,
+			g_rankedUploadOverlayState.visibleRankDelta,
+			g_rankedUploadOverlayState.subscoreDelta,
+			newGlobalRank,
+			previousGlobalRank);
+		LOG(1, "[RANK][OverlayUpload] split origin='%s' success=%d changed=%d char=%u internal=%u visible=%u rawSub=%u packedScore=0x%08X scoreDelta=%d rankDelta=%d subDelta=%d\n",
+			origin ? origin : "<null>",
+			success ? 1 : 0,
+			scoreChanged ? 1 : 0,
+			static_cast<unsigned int>(g_rankedUploadOverlayState.characterId),
+			static_cast<unsigned int>(g_rankedUploadOverlayState.internalRank),
+			static_cast<unsigned int>(g_rankedUploadOverlayState.visibleRank),
+			static_cast<unsigned int>(g_rankedUploadOverlayState.subscore),
+			static_cast<unsigned int>(static_cast<uint32_t>(score)),
+			g_rankedUploadOverlayState.scoreDelta,
+			g_rankedUploadOverlayState.visibleRankDelta,
+			g_rankedUploadOverlayState.subscoreDelta);
+	}
 }
 
 bool GetRankedUploadOverlayState(RankedUploadOverlayState* outState)
@@ -4815,12 +4944,15 @@ bool TriggerRankedProgressAutomationAnimation(uint32_t characterId, int32_t lpDe
 	g_rankedOverlayVisibility.uploadFadeInStart = ImGui::GetTime();
 	g_rankedOverlayVisibility.uploadFadeOutStart = 0.0;
 	g_lastRankedOverlayCharacterId = characterId;
-	LOG(1, "[RANK][OverlayProbe] trigger char=%u delta=%+d fromLp=%u toLp=%u serial=%llu\n",
-		static_cast<unsigned int>(characterId),
-		lpDelta,
-		static_cast<unsigned int>(sourceState.currentLp),
-		static_cast<unsigned int>(targetState.currentLp),
-		static_cast<unsigned long long>(serial));
+	if (IsRankedOverlayDiagnosticsEnabled())
+	{
+		LOG(1, "[RANK][OverlayProbe] trigger char=%u delta=%+d fromLp=%u toLp=%u serial=%llu\n",
+			static_cast<unsigned int>(characterId),
+			lpDelta,
+			static_cast<unsigned int>(sourceState.currentLp),
+			static_cast<unsigned int>(targetState.currentLp),
+			static_cast<unsigned long long>(serial));
+	}
 	return true;
 }
 
@@ -4945,24 +5077,29 @@ namespace
 		uint64_t opponentSteamId,
 		uint32_t opponentCharacterId)
 	{
+		if (!IsRankedOverlayDiagnosticsEnabled())
+		{
+			return;
+		}
+
 		static uint64_t s_lastSignature = 0;
-		const uint64_t signature =
-			(static_cast<uint64_t>(static_cast<uint32_t>(networkState.state & 0xFFFF)) << 48) ^
-			(static_cast<uint64_t>(static_cast<uint32_t>(networkState.state1 & 0xFFFF)) << 32) ^
-			(static_cast<uint64_t>(rankedEntryActive ? 1u : 0u) << 31) ^
-			(static_cast<uint64_t>(inMatch ? 1u : 0u) << 30) ^
-			(static_cast<uint64_t>(rankedRematchScreen ? 1u : 0u) << 29) ^
-			(static_cast<uint64_t>(sawState58ThisVictoryCycle ? 1u : 0u) << 28) ^
-			(static_cast<uint64_t>(opponentCharacterId & 0x3Fu) << 24) ^
-			(opponentSteamId & 0x3FFFFFFFull) ^
-			(static_cast<uint64_t>(static_cast<uint32_t>(networkState.x08)) * 0x100000007ULL) ^
-			(static_cast<uint64_t>(static_cast<uint32_t>(networkState.x0c)) * 0x10000000003ULL) ^
-			(static_cast<uint64_t>(static_cast<uint32_t>(networkState.xe0)) * 0x1000000000009ULL) ^
-			(static_cast<uint64_t>(static_cast<uint32_t>(networkState.xf4)) * 0x100000000002bULL) ^
-			(static_cast<uint64_t>(static_cast<uint32_t>(victoryStep.step)) * 0x1000000000063ULL) ^
-			(static_cast<uint64_t>(static_cast<uint32_t>(victoryStep.rematchMode)) * 0x1000000000099ULL) ^
-			(static_cast<uint64_t>(static_cast<uint32_t>(victoryStep.rematchPending)) * 0x10000000000f5ULL) ^
-			(static_cast<uint64_t>(static_cast<uint32_t>(victoryStep.inputDelay)) * 0x100000000013bULL);
+		uint64_t signature = 1469598103934665603ull;
+		const auto mixSignature = [&signature](uint64_t value) {
+			signature ^= value;
+			signature *= 1099511628211ull;
+		};
+		mixSignature(static_cast<uint64_t>(static_cast<uint32_t>(gameState)));
+		mixSignature(static_cast<uint64_t>(static_cast<uint32_t>(networkState.state)));
+		mixSignature(static_cast<uint64_t>(static_cast<uint32_t>(networkState.state1)));
+		mixSignature(static_cast<uint64_t>(static_cast<uint32_t>(victoryStep.step)));
+		mixSignature(static_cast<uint64_t>(static_cast<uint32_t>(victoryStep.rematchMode)));
+		mixSignature(static_cast<uint64_t>(static_cast<uint32_t>(victoryStep.rematchPending)));
+		mixSignature(rankedEntryActive ? 1u : 0u);
+		mixSignature(inMatch ? 1u : 0u);
+		mixSignature(rankedRematchScreen ? 1u : 0u);
+		mixSignature(sawState58ThisVictoryCycle ? 1u : 0u);
+		mixSignature(opponentSteamId);
+		mixSignature(static_cast<uint64_t>(opponentCharacterId));
 		if (s_lastSignature == signature)
 		{
 			return;
@@ -5120,6 +5257,11 @@ namespace
 		uint64_t steamId,
 		uint32_t localCharacterId)
 	{
+		if (!IsRankedOverlayDiagnosticsEnabled())
+		{
+			return;
+		}
+
 		const uintptr_t moduleBase = reinterpret_cast<uintptr_t>(GetBbcfBaseAdress());
 		if (!moduleBase) return;
 		const uint8_t* const netUserData = reinterpret_cast<const uint8_t*>(moduleBase + kNetworkUserDataRva);
@@ -5198,6 +5340,8 @@ namespace
 		static uint64_t s_lastPredictionOpponentSteamId = 0;
 		static uint32_t s_lastPredictionOpponentCharacterId = kInvalidRankedCharacterId;
 		static double s_lastPredictionOpponentSeenAt = -30.0;
+		static double s_lastPredictionOpponentPollAt = -30.0;
+		static double s_lastInMatchOpponentPollAt = -30.0;
 
 		if (!Settings::settingsIni.showRankedProgress || !Settings::settingsIni.showRankedPrediction)
 		{
@@ -5206,17 +5350,22 @@ namespace
 		}
 		const bool inPostMatchRematch = IsRankedVictoryWindowState(gameState, networkState);
 		const bool predictionContext = IsRankedPredictionMenuState(networkState) || rankedRematchScreen || inPostMatchRematch;
+		const double now = ImGui::GetTime();
 		if (inMatch)
 		{
 			// Keep the cache warm with in-match opponent data so it's immediately valid
 			// when the match ends and the post-match rematch lobby appears.
-			uint64_t inMatchSteamId = 0;
-			uint32_t inMatchCharId = kInvalidRankedCharacterId;
-			if (TryGetRankedPredictionOpponent(&inMatchSteamId, &inMatchCharId) && inMatchSteamId != 0u)
+			if (now >= s_lastInMatchOpponentPollAt + 0.25)
 			{
-				s_lastPredictionOpponentSteamId = inMatchSteamId;
-				s_lastPredictionOpponentCharacterId = inMatchCharId;
-				s_lastPredictionOpponentSeenAt = ImGui::GetTime();
+				s_lastInMatchOpponentPollAt = now;
+				uint64_t inMatchSteamId = 0;
+				uint32_t inMatchCharId = kInvalidRankedCharacterId;
+				if (TryGetRankedPredictionOpponent(&inMatchSteamId, &inMatchCharId) && inMatchSteamId != 0u)
+				{
+					s_lastPredictionOpponentSteamId = inMatchSteamId;
+					s_lastPredictionOpponentCharacterId = inMatchCharId;
+					s_lastPredictionOpponentSeenAt = now;
+				}
 			}
 			return;
 		}
@@ -5231,15 +5380,20 @@ namespace
 
 		uint64_t opponentSteamId = 0;
 		uint32_t opponentCharacterId = kInvalidRankedCharacterId;
-		bool hasOpponentSteamId = TryGetRankedPredictionOpponent(&opponentSteamId, &opponentCharacterId);
-		const double now = ImGui::GetTime();
-		if (hasOpponentSteamId)
+		bool hasOpponentSteamId = false;
+		if (now >= s_lastPredictionOpponentPollAt + 0.25)
 		{
-			s_lastPredictionOpponentSteamId = opponentSteamId;
-			s_lastPredictionOpponentCharacterId = opponentCharacterId;
-			s_lastPredictionOpponentSeenAt = now;
+			s_lastPredictionOpponentPollAt = now;
+			hasOpponentSteamId = TryGetRankedPredictionOpponent(&opponentSteamId, &opponentCharacterId);
+			if (hasOpponentSteamId)
+			{
+				s_lastPredictionOpponentSteamId = opponentSteamId;
+				s_lastPredictionOpponentCharacterId = opponentCharacterId;
+				s_lastPredictionOpponentSeenAt = now;
+			}
 		}
-		else if ((IsRankedPredictionMenuState(networkState) || rankedRematchScreen || inPostMatchRematch) &&
+		if (!hasOpponentSteamId &&
+			(IsRankedPredictionMenuState(networkState) || rankedRematchScreen || inPostMatchRematch) &&
 			s_lastPredictionOpponentSteamId != 0u &&
 			now < s_lastPredictionOpponentSeenAt + 15.0)
 		{
@@ -5279,6 +5433,15 @@ namespace
 		{
 			hasOpponentInfo = TryGetCachedLobbyOpponentInfo(opponentSteamId, &opponent);
 		}
+		const bool opponentRankKnown = hasOpponentInfo &&
+			opponent.valid &&
+			opponent.visibleRank > 0u &&
+			TryGetRankedLpBounds(opponent.internalRank, nullptr, nullptr, nullptr, nullptr);
+		if (!IsRankedDisplayReadyForOverlay(self) || !opponentRankKnown)
+		{
+			LogRankedPredictionVisibility("data_unavailable", gameState, networkState, victoryStep, rankedEntryActive, inMatch, rankedRematchScreen, sawState58ThisVictoryCycle, opponentSteamId, opponentCharacterId);
+			return;
+		}
 
 		ImGui::SetNextWindowPos(ImVec2(360.0f, 150.0f), ImGuiCond_FirstUseEver);
 		ImGui::SetNextWindowSize(ImVec2(520.0f, 196.0f), ImGuiCond_FirstUseEver);
@@ -5291,13 +5454,8 @@ namespace
 		}
 
 		const std::string opponentName = opponent.displayName.empty() ? L("Opponent") : opponent.displayName;
-		const bool opponentRankKnown = hasOpponentInfo && opponent.valid && opponent.visibleRank > 0u;
-		const std::string opponentRank = opponentRankKnown
-			? FormatVisibleRankLabel(opponent.visibleRank, false)
-			: std::string(!hasOpponentSteamId ? L("Waiting for opponent...") : (opponent.pending ? L("Loading rank...") : L("Rank unavailable")));
-		const ImVec4 opponentRankColor = opponentRankKnown
-			? GetVisibleRankColor(opponent.visibleRank, false)
-			: g_rankedOverlayTuning.predictionNothingColor;
+		const std::string opponentRank = FormatVisibleRankLabel(opponent.visibleRank, false);
+		const ImVec4 opponentRankColor = GetVisibleRankColor(opponent.visibleRank, false);
 		ImDrawList* const drawList = ImGui::GetWindowDrawList();
 		const float headerWidth = ImGui::GetContentRegionAvail().x;
 		const std::string headerPrefix = opponentName + " ";
@@ -5311,17 +5469,14 @@ namespace
 
 		RankedPredictionOutcome win{};
 		RankedPredictionOutcome loss{};
-		if (opponentRankKnown)
+		win = PredictRankedWin(self, opponent.internalRank);
+		loss = PredictRankedLoss(self, opponent.internalRank);
+		if (win.kind == RankedPredictionResultKind::Unknown || loss.kind == RankedPredictionResultKind::Unknown)
 		{
-			win = PredictRankedWin(self, opponent.internalRank);
-			loss = PredictRankedLoss(self, opponent.internalRank);
-		}
-		else
-		{
-			win.reason = !hasOpponentSteamId
-				? "Waiting for ranked opponent data."
-				: (!hasOpponentCharacter ? "Opponent lobby rank unavailable." : (opponent.pending ? "Waiting for leaderboard lookup." : "Opponent leaderboard entry unavailable."));
-			loss.reason = win.reason;
+			ImGui::End();
+			ImGui::PopStyleVar();
+			LogRankedPredictionVisibility("prediction_unknown", gameState, networkState, victoryStep, rankedEntryActive, inMatch, rankedRematchScreen, sawState58ThisVictoryCycle, opponentSteamId, opponentCharacterId);
+			return;
 		}
 
 		const ImGuiStyle& style = ImGui::GetStyle();
@@ -5360,17 +5515,67 @@ void DrawRankedMatchesMainMenuSection()
 		g_rankedRulesDialog.selectorOpenedFromMainMenu = true;
 		g_rankedRulesDialog.selectorOpenRequested = true;
 	}
+	if ((actions & RankedUi::RankedMainMenuAction_OpenOnline) != 0u)
+	{
+		WindowManager::GetInstance().GetWindowContainer()->GetWindow(WindowType_Room)->ToggleOpen();
+	}
+}
+
+bool IsRankedOverlayRuntimeReady()
+{
+	if (GetGameSceneStatus() < GameSceneStatus_Running || !g_gameVals.pGameState)
+	{
+		return false;
+	}
+
+	switch (*g_gameVals.pGameState)
+	{
+	case GameState_ArcsysLogo:
+	case GameState_IntroVideoPlaying:
+	case GameState_TitleScreen:
+		return false;
+	default:
+		return true;
+	}
+}
+
+bool IsRankedOverlaySuppressedByTrainingMode()
+{
+	return g_gameVals.pGameMode && *g_gameVals.pGameMode == GameMode_Training;
+}
+
+void ResetRankedProgressRuntimeState()
+{
+	g_rankedProgressAnimation.active = false;
+	g_rankedProgressAnimationSnapshot = {};
+	g_rankedOverlayVisibility = {};
+	g_lastRankedOverlayCharacterId = kInvalidRankedCharacterId;
 }
 
 void DrawRankedProgressOverlayStandalone()
 {
+	LoadRankedProgressTopRowOptions();
+
 	if (!Settings::settingsIni.showRankedProgress && !g_manualRankedProgressOpen)
 	{
 		ClearRankedProgressOverlaySnapshot("setting_disabled");
-		g_rankedProgressAnimation.active = false;
-		g_rankedProgressAnimationSnapshot = {};
-		g_rankedOverlayVisibility = {};
-		g_lastRankedOverlayCharacterId = kInvalidRankedCharacterId;
+		ResetRankedProgressRuntimeState();
+		DrawRankedGlobalDialogs();
+		return;
+	}
+
+	if (!IsRankedOverlayRuntimeReady())
+	{
+		ClearRankedProgressOverlaySnapshot("runtime_not_ready");
+		ResetRankedProgressRuntimeState();
+		DrawRankedGlobalDialogs();
+		return;
+	}
+
+	if (IsRankedOverlaySuppressedByTrainingMode())
+	{
+		ClearRankedProgressOverlaySnapshot("training_mode");
+		ResetRankedProgressRuntimeState();
 		DrawRankedGlobalDialogs();
 		return;
 	}
@@ -5498,49 +5703,11 @@ void DrawRankedProgressOverlayStandalone()
 		return;
 	}
 
-	ImGui::SetNextWindowPos(ImVec2(360.0f, 20.0f), ImGuiCond_FirstUseEver);
-	ImGui::SetNextWindowSizeConstraints(ImVec2(640.0f, 108.0f), ImVec2(10000.0f, 180.0f));
-	const float windowAlpha = showUploadCard ? uploadOverlayAlpha : 1.0f;
-	const ImVec4 windowBgColor = ImVec4(0.06f, 0.06f, 0.08f, 0.92f * windowAlpha);
-	ImGui::PushStyleColor(ImGuiCol_WindowBg, windowBgColor);
-	ImGui::PushStyleVar(ImGuiStyleVar_Alpha, windowAlpha);
 	const bool manualRankedProgressWindow =
 		g_manualRankedProgressOpen &&
 		!hasLiveSnapshot &&
 		!g_rankedOverlayVisibility.stickyRankedSessionVisible &&
 		!showUploadCard;
-	bool* rankedProgressOpenPtr = manualRankedProgressWindow ? &g_manualRankedProgressOpen : nullptr;
-	if (!ImGui::Begin(L("Ranked Progress###RankedProgressOverlay").c_str(), rankedProgressOpenPtr,
-		ImGuiWindowFlags_NoCollapse))
-	{
-		ImGui::End();
-		ImGui::PopStyleVar();
-		ImGui::PopStyleColor();
-		DrawRankedGlobalDialogs();
-		return;
-	}
-
-	ImGui::SetWindowSize(ImVec2(g_rankedOverlayTuning.overlayWidth, 118.0f), ImGuiCond_FirstUseEver);
-	if (ImGui::BeginPopupContextWindow("ranked_progress_context", 1, true))
-	{
-		if (ImGui::MenuItem(L("Ranked ladder").c_str()))
-		{
-			g_showRankedLadderWindow = true;
-		}
-		if (ImGui::MenuItem(L("How does my rank work?").c_str()))
-		{
-			g_rankedRulesDialog.requestOpenForCurrentRank = true;
-		}
-		ImGui::Separator();
-		ImGui::MenuItem(L("Show matches").c_str(), nullptr, &g_rankedProgressTopRowOptions.showMatches);
-		ImGui::MenuItem(L("Show wins").c_str(), nullptr, &g_rankedProgressTopRowOptions.showWins);
-		ImGui::MenuItem(L("Show losses").c_str(), nullptr, &g_rankedProgressTopRowOptions.showLosses);
-		ImGui::MenuItem(L("Show winrate %").c_str(), nullptr, &g_rankedProgressTopRowOptions.showWinrate);
-		ImGui::MenuItem(L("Show character leaderboard placement").c_str(), nullptr, &g_rankedProgressTopRowOptions.showCharacterLeaderboardPlacement);
-		ImGui::MenuItem(L("Show global leaderboard placement").c_str(), nullptr, &g_rankedProgressTopRowOptions.showGlobalLeaderboardPlacement);
-		ImGui::EndPopup();
-	}
-
 	RankedProgressDisplayState baseDisplay{};
 	RankedProgressOverlaySnapshot statsSnapshot{};
 	bool hasStatsSnapshot = false;
@@ -5583,14 +5750,78 @@ void DrawRankedProgressOverlayStandalone()
 		}
 	}
 
-	if (!baseDisplay.valid)
+	if (!IsRankedDisplayReadyForOverlay(baseDisplay))
 	{
-		ImGui::TextDisabled("%s", L("No ranked progress data available.").c_str());
+		DrawRankedGlobalDialogs();
+		return;
+	}
+
+	ImGui::SetNextWindowPos(ImVec2(360.0f, 20.0f), ImGuiCond_FirstUseEver);
+	ImGui::SetNextWindowSizeConstraints(ImVec2(640.0f, 108.0f), ImVec2(10000.0f, 180.0f));
+	const float windowAlpha = showUploadCard ? uploadOverlayAlpha : 1.0f;
+	const ImVec4 windowBgColor = ImVec4(0.06f, 0.06f, 0.08f, 0.92f * windowAlpha);
+	ImGui::PushStyleColor(ImGuiCol_WindowBg, windowBgColor);
+	ImGui::PushStyleVar(ImGuiStyleVar_Alpha, windowAlpha);
+	bool* rankedProgressOpenPtr = manualRankedProgressWindow ? &g_manualRankedProgressOpen : nullptr;
+	if (!ImGui::Begin(L("Ranked Progress###RankedProgressOverlay").c_str(), rankedProgressOpenPtr,
+		ImGuiWindowFlags_NoCollapse))
+	{
 		ImGui::End();
 		ImGui::PopStyleVar();
 		ImGui::PopStyleColor();
 		DrawRankedGlobalDialogs();
 		return;
+	}
+
+	ImGui::SetWindowSize(ImVec2(g_rankedOverlayTuning.overlayWidth, 118.0f), ImGuiCond_FirstUseEver);
+	if (ImGui::BeginPopupContextWindow("ranked_progress_context", 1, true))
+	{
+		if (ImGui::MenuItem(L("Ranked ladder").c_str()))
+		{
+			g_showRankedLadderWindow = true;
+		}
+		if (ImGui::MenuItem(L("How does my rank work?").c_str()))
+		{
+			g_rankedRulesDialog.requestOpenForCurrentRank = true;
+		}
+		ImGui::Separator();
+		if (ImGui::MenuItem(L("Show matches").c_str(), nullptr, g_rankedProgressTopRowOptions.showMatches))
+		{
+			const bool value = !g_rankedProgressTopRowOptions.showMatches;
+			g_rankedProgressTopRowOptions.showMatches = value;
+			SaveRankedProgressTopRowOption("RankedProgressShowMatches", value, &Settings::settingsIni.rankedProgressShowMatches);
+		}
+		if (ImGui::MenuItem(L("Show wins").c_str(), nullptr, g_rankedProgressTopRowOptions.showWins))
+		{
+			const bool value = !g_rankedProgressTopRowOptions.showWins;
+			g_rankedProgressTopRowOptions.showWins = value;
+			SaveRankedProgressTopRowOption("RankedProgressShowWins", value, &Settings::settingsIni.rankedProgressShowWins);
+		}
+		if (ImGui::MenuItem(L("Show losses").c_str(), nullptr, g_rankedProgressTopRowOptions.showLosses))
+		{
+			const bool value = !g_rankedProgressTopRowOptions.showLosses;
+			g_rankedProgressTopRowOptions.showLosses = value;
+			SaveRankedProgressTopRowOption("RankedProgressShowLosses", value, &Settings::settingsIni.rankedProgressShowLosses);
+		}
+		if (ImGui::MenuItem(L("Show winrate %").c_str(), nullptr, g_rankedProgressTopRowOptions.showWinrate))
+		{
+			const bool value = !g_rankedProgressTopRowOptions.showWinrate;
+			g_rankedProgressTopRowOptions.showWinrate = value;
+			SaveRankedProgressTopRowOption("RankedProgressShowWinrate", value, &Settings::settingsIni.rankedProgressShowWinrate);
+		}
+		if (ImGui::MenuItem(L("Show character leaderboard placement").c_str(), nullptr, g_rankedProgressTopRowOptions.showCharacterLeaderboardPlacement))
+		{
+			const bool value = !g_rankedProgressTopRowOptions.showCharacterLeaderboardPlacement;
+			g_rankedProgressTopRowOptions.showCharacterLeaderboardPlacement = value;
+			SaveRankedProgressTopRowOption("RankedProgressShowCharacterLeaderboardPlacement", value, &Settings::settingsIni.rankedProgressShowCharacterLeaderboardPlacement);
+		}
+		if (ImGui::MenuItem(L("Show global leaderboard placement").c_str(), nullptr, g_rankedProgressTopRowOptions.showGlobalLeaderboardPlacement))
+		{
+			const bool value = !g_rankedProgressTopRowOptions.showGlobalLeaderboardPlacement;
+			g_rankedProgressTopRowOptions.showGlobalLeaderboardPlacement = value;
+			SaveRankedProgressTopRowOption("RankedProgressShowGlobalLeaderboardPlacement", value, &Settings::settingsIni.rankedProgressShowGlobalLeaderboardPlacement);
+		}
+		ImGui::EndPopup();
 	}
 
 	RankedProgressDisplayState renderedDisplay{};
@@ -5602,10 +5833,24 @@ void DrawRankedProgressOverlayStandalone()
 	float demotionDeltaAlpha = 0.0f;
 	uint32_t animationPhase = 0;
 	BuildAnimatedDisplayState(baseDisplay, &renderedDisplay, &renderedDelta, &deltaAlpha, &animationPhase);
+	if (!IsRankedDisplayReadyForOverlay(renderedDisplay))
+	{
+		ImGui::End();
+		ImGui::PopStyleVar();
+		ImGui::PopStyleColor();
+		DrawRankedGlobalDialogs();
+		return;
+	}
 	promotionDeltaAlpha = ComputeToastAlpha(&g_rankedPromotionToast, renderedDisplay, &promotionDelta);
 	demotionDeltaAlpha = ComputeToastAlpha(&g_rankedDemotionToast, renderedDisplay, &demotionDelta);
 	RememberRankedDisplayState(renderedDisplay);
-	g_rankedLeaderboardTracker.Tick(renderedDisplay.characterId);
+	const bool wantsLeaderboardPlacements =
+		g_rankedProgressTopRowOptions.showCharacterLeaderboardPlacement ||
+		g_rankedProgressTopRowOptions.showGlobalLeaderboardPlacement;
+	if (wantsLeaderboardPlacements)
+	{
+		g_rankedLeaderboardTracker.Tick(renderedDisplay.characterId);
+	}
 	if (g_rankedRulesDialog.requestOpenForCurrentRank)
 	{
 		OpenRankedRulesDialogForRank(VisibleRankToInternalRank(renderedDisplay.visibleRank));
@@ -5722,14 +5967,7 @@ void DrawRankedProgressOverlayStandalone()
 	char leftBuffer[64] = {};
 	char rightBuffer[64] = {};
 	std::snprintf(leftBuffer, sizeof(leftBuffer), "%u LP", static_cast<unsigned int>(renderedDisplay.currentLp));
-	if (renderedDisplay.thresholdKnown)
-	{
-		std::snprintf(rightBuffer, sizeof(rightBuffer), "%u LP", static_cast<unsigned int>(renderedDisplay.nextThreshold));
-	}
-	else
-	{
-		std::snprintf(rightBuffer, sizeof(rightBuffer), "???");
-	}
+	std::snprintf(rightBuffer, sizeof(rightBuffer), "%u LP", static_cast<unsigned int>(renderedDisplay.nextThreshold));
 	ImGui::TextUnformatted(leftBuffer);
 	if (std::abs(renderedDelta) > 0 && deltaAlpha > 0.0f)
 	{

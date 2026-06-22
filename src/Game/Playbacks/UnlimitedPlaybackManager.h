@@ -94,6 +94,8 @@ public:
     bool IsReplayRecordingAsP1() const;
     int GetReplayRecordingStartFrame() const;
     bool RemoveEntryByIndex(size_t idx);
+    bool MoveEntry(size_t fromIdx, size_t toIdx);
+    void SetAllEntriesEnabled(bool enabled);
     bool RenameEntry(size_t idx, const std::string& newName);
 
     bool LoadEntryIntoSlot(size_t idx, int slot);

@@ -28,6 +28,7 @@ namespace {
 const char* kUnlimitedPlaybackProfileFolder = "BBCF_IM/unlimited_playbacks/profiles";
 const char* kUnlimitedPlaybackImportFolder = "BBCF_IM/unlimited_playbacks/imports";
 const char* kUnlimitedPlaybackExportFolder = "BBCF_IM/unlimited_playbacks/exports";
+const char* kUnlimitedPlaybackDragDropPayload = "UP_SLOT";
 constexpr int kControllerBindBase = 0x1000;
 
 struct ControllerBindingDef {
@@ -443,6 +444,49 @@ void CenterNextButtonsRow(float totalWidth) {
     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + offset);
 }
 
+void DrawContextMenuHeader(const char* text) {
+    ImGui::Separator();
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.58f, 0.58f, 0.58f, 1.0f));
+    ImGui::SetWindowFontScale(0.86f);
+    ImGui::TextUnformatted(text);
+    ImGui::SetWindowFontScale(1.0f);
+    ImGui::PopStyleColor();
+}
+
+int AdjustSelectedEntryAfterMove(int selectedEntry, int fromIndex, int toIndex) {
+    if (selectedEntry < 0 || fromIndex == toIndex) {
+        return selectedEntry;
+    }
+    if (selectedEntry == fromIndex) {
+        return toIndex;
+    }
+    if (fromIndex < toIndex && selectedEntry > fromIndex && selectedEntry <= toIndex) {
+        return selectedEntry - 1;
+    }
+    if (toIndex < fromIndex && selectedEntry >= toIndex && selectedEntry < fromIndex) {
+        return selectedEntry + 1;
+    }
+    return selectedEntry;
+}
+
+int ComputeMoveTargetFromInsertionIndex(int fromIndex, int insertionIndex, int entryCount) {
+    if (fromIndex < 0 || fromIndex >= entryCount || insertionIndex < 0 || insertionIndex > entryCount) {
+        return fromIndex;
+    }
+
+    int toIndex = insertionIndex;
+    if (toIndex > fromIndex) {
+        --toIndex;
+    }
+    if (toIndex < 0) {
+        toIndex = 0;
+    }
+    if (toIndex >= entryCount) {
+        toIndex = entryCount - 1;
+    }
+    return toIndex;
+}
+
 bool TrainingMatchAvailable() {
     return g_gameVals.pGameMode &&
         g_gameVals.pGameState &&
@@ -476,6 +520,8 @@ void UnlimitedPlaybackWindow::Draw() {
     static int entryPendingDelete = -1;
     static int entryPendingEdit = -1;
     static int entryPendingSend = -1;
+    static int entryPendingSetIndex = -1;
+    static int entrySetIndexValue = 1;
     static int selectedTriggerType = UnlimitedPlaybackManager::Trigger_Wakeup;
     static char captureName[128] = "";
     static char replayCaptureName[128] = "";
@@ -498,6 +544,7 @@ void UnlimitedPlaybackWindow::Draw() {
     static bool openEntryEditModal = false;
     static bool openEntryPlaybackEditorModal = false;
     static bool openSendToSlotModal = false;
+    static bool openSetIndexModal = false;
     static bool openDefaultConfirmModal = false;
     static bool openDeleteEntryConfirmModal = false;
     const bool inTrainingMatch = TrainingMatchAvailable();
@@ -681,6 +728,8 @@ void UnlimitedPlaybackWindow::Draw() {
         ImGui::GetStyle().ItemSpacing.y;
     ImGui::BeginChild("up_library_entries", ImVec2(0, -libraryControlsHeight), true);
     const auto& entries = mgr.GetEntries();
+    int entryMoveFrom = -1;
+    int entryMoveTo = -1;
     for (int i = 0; i < static_cast<int>(entries.size()); ++i) {
         const auto& e = entries[i];
         ImGui::PushID(i);
@@ -696,7 +745,45 @@ void UnlimitedPlaybackWindow::Draw() {
         if (ImGui::Selectable(e.name.c_str(), selectedEntry == i, 0, ImVec2(labelWidth, 0.0f))) {
             selectedEntry = i;
         }
+        const ImVec2 slotMin = ImGui::GetItemRectMin();
+        const ImVec2 slotMax = ImGui::GetItemRectMax();
+        if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID)) {
+            ImGui::SetDragDropPayload(kUnlimitedPlaybackDragDropPayload, &i, sizeof(i));
+            ImGui::Text("%s", FormatText(L("Dragged slot: %s").c_str(), e.name.c_str()).c_str());
+            ImGui::EndDragDropSource();
+        }
+        if (ImGui::BeginDragDropTarget()) {
+            const ImGuiDragDropFlags flags =
+                ImGuiDragDropFlags_AcceptBeforeDelivery |
+                ImGuiDragDropFlags_AcceptNoDrawDefaultRect;
+            if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(kUnlimitedPlaybackDragDropPayload, flags)) {
+                if (payload->DataSize == sizeof(int)) {
+                    const int from = *static_cast<const int*>(payload->Data);
+                    const int entryCount = static_cast<int>(entries.size());
+                    if (from >= 0 && from < entryCount) {
+                        const float midpointY = (slotMin.y + slotMax.y) * 0.5f;
+                        const bool insertAfterHovered = ImGui::GetIO().MousePos.y >= midpointY;
+                        const int insertionIndex = i + (insertAfterHovered ? 1 : 0);
+                        const int to = ComputeMoveTargetFromInsertionIndex(from, insertionIndex, entryCount);
+                        if (to != from) {
+                            const float y = insertAfterHovered ? slotMax.y : slotMin.y;
+                            ImGui::GetWindowDrawList()->AddLine(
+                                ImVec2(slotMin.x, y),
+                                ImVec2(slotMax.x, y),
+                                IM_COL32(120, 200, 255, 220),
+                                1.5f);
+                            if (payload->IsDelivery()) {
+                                entryMoveFrom = from;
+                                entryMoveTo = to;
+                            }
+                        }
+                    }
+                }
+            }
+            ImGui::EndDragDropTarget();
+        }
         if (ImGui::BeginPopupContextItem("entry_context")) {
+            DrawContextMenuHeader(FormatText(L("Current Slot - %s").c_str(), e.name.c_str()).c_str());
             if (ImGui::MenuItem(L("Send to CF Slot").c_str(), nullptr, false, inTrainingMatch)) {
                 entryPendingSend = i;
                 openSendToSlotModal = true;
@@ -709,6 +796,28 @@ void UnlimitedPlaybackWindow::Draw() {
                     initialExportPath,
                     L("Export playback entry file dialog open...").c_str(),
                     i);
+            }
+            const bool canMoveUp = entries.size() > 1 && i > 0;
+            const bool canMoveDown = entries.size() > 1 && i < static_cast<int>(entries.size()) - 1;
+            if (ImGui::MenuItem(L("Move up").c_str(), nullptr, false, canMoveUp)) {
+                entryMoveFrom = i;
+                entryMoveTo = i - 1;
+            }
+            if (ImGui::MenuItem(L("Move down").c_str(), nullptr, false, canMoveDown)) {
+                entryMoveFrom = i;
+                entryMoveTo = i + 1;
+            }
+            if (ImGui::MenuItem(L("Set index...").c_str(), nullptr, false, entries.size() > 1)) {
+                entryPendingSetIndex = i;
+                entrySetIndexValue = i + 1;
+                openSetIndexModal = true;
+            }
+            DrawContextMenuHeader(L("Slot list").c_str());
+            if (ImGui::MenuItem(L("Turn ALL slots off").c_str())) {
+                mgr.SetAllEntriesEnabled(false);
+            }
+            if (ImGui::MenuItem(L("Turn ALL slots on").c_str())) {
+                mgr.SetAllEntriesEnabled(true);
             }
             ImGui::EndPopup();
         }
@@ -735,6 +844,14 @@ void UnlimitedPlaybackWindow::Draw() {
         }
         DrawButtonTooltip(L("Delete").c_str());
         ImGui::PopID();
+    }
+    if (entryMoveFrom >= 0 && entryMoveTo >= 0 &&
+        entryMoveFrom < static_cast<int>(mgr.GetEntries().size()) &&
+        entryMoveTo < static_cast<int>(mgr.GetEntries().size())) {
+        const int oldSelectedEntry = selectedEntry;
+        if (mgr.MoveEntry(static_cast<size_t>(entryMoveFrom), static_cast<size_t>(entryMoveTo))) {
+            selectedEntry = AdjustSelectedEntryAfterMove(oldSelectedEntry, entryMoveFrom, entryMoveTo);
+        }
     }
     ImGui::EndChild();
     const char* libraryButtons[] = { L("Load").c_str(), L("Save").c_str(), L("Default").c_str() };
@@ -995,6 +1112,49 @@ void UnlimitedPlaybackWindow::Draw() {
         if (ImGui::Button(FormatText("%s##confirm_entry", L("Cancel").c_str()).c_str())) {
             entryPendingDelete = -1;
             ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+    if (openSetIndexModal) {
+        const ImVec2 displayCenter = ImVec2(ImGui::GetIO().DisplaySize.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f);
+        ImGui::SetNextWindowPos(displayCenter, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+        ImGui::SetNextWindowSize(ImVec2(340.0f, 0.0f), ImGuiCond_Appearing);
+        ImGui::OpenPopup(L("Set Slot Index").c_str());
+        openSetIndexModal = false;
+    }
+    if (ImGui::BeginPopupModal(L("Set Slot Index").c_str(), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        const int entryCount = static_cast<int>(mgr.GetEntries().size());
+        if (entryPendingSetIndex < 0 || entryPendingSetIndex >= entryCount || entryCount <= 0) {
+            ImGui::TextDisabled("%s", L("Entry no longer exists.").c_str());
+            if (ImGui::Button(FormatText("%s##set_index_missing", L("Close").c_str()).c_str())) {
+                entryPendingSetIndex = -1;
+                ImGui::CloseCurrentPopup();
+            }
+        } else {
+            ImGui::InputInt(L("Index").c_str(), &entrySetIndexValue);
+            if (entrySetIndexValue < 1) {
+                entrySetIndexValue = 1;
+            }
+            if (entrySetIndexValue > entryCount) {
+                entrySetIndexValue = entryCount;
+            }
+            ImGui::TextDisabled(L("Valid range: 1-%d").c_str(), entryCount);
+            CenterNextButtonsRow(180.0f + ImGui::GetStyle().ItemSpacing.x);
+            if (ImGui::Button(FormatText("%s##set_index", L("Move").c_str()).c_str())) {
+                const int from = entryPendingSetIndex;
+                const int to = entrySetIndexValue - 1;
+                const int oldSelectedEntry = selectedEntry;
+                if (mgr.MoveEntry(static_cast<size_t>(from), static_cast<size_t>(to))) {
+                    selectedEntry = AdjustSelectedEntryAfterMove(oldSelectedEntry, from, to);
+                }
+                entryPendingSetIndex = -1;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button(FormatText("%s##set_index", L("Cancel").c_str()).c_str())) {
+                entryPendingSetIndex = -1;
+                ImGui::CloseCurrentPopup();
+            }
         }
         ImGui::EndPopup();
     }

@@ -609,6 +609,9 @@ struct LocalizationKeysAccessor
         // Ranked_search_warning
         inline const char* Ranked_search_warning() const { return Get("Ranked_search_warning"); }
 
+        // Network Matches
+        inline const char* Network_Matches() const { return Get("Network Matches"); }
+
         // Ranked Matches
         inline const char* Ranked_Matches() const { return Get("Ranked Matches"); }
 
@@ -617,6 +620,12 @@ struct LocalizationKeysAccessor
 
         // Shows a movable ranked progress window during ranked character select, ranked menu flow, and after a successful ranked LP upload.
         inline const char* Shows_a_movable_ranked_progress_window_during_ranked_character_select_ranked_menu_flow_and_after_a_successful_ranked_LP_upload() const { return Get("Shows a movable ranked progress window during ranked character select, ranked menu flow, and after a successful ranked LP upload."); }
+
+        // Show square color progress
+        inline const char* Show_square_color_progress() const { return Get("Show square color progress"); }
+
+        // Shows a movable network square color progress window while inside network mode.
+        inline const char* Shows_a_movable_network_square_color_progress_window_while_inside_network_mode() const { return Get("Shows a movable network square color progress window while inside network mode."); }
 
         // Show ranked prediction
         inline const char* Show_ranked_prediction() const { return Get("Show ranked prediction"); }
@@ -1547,6 +1556,126 @@ struct LocalizationKeysAccessor
 
         // Replay %s
         inline const char* Replay_s() const { return Get("Replay %s"); }
+
+        // Slot moved.
+        inline const char* Slot_moved() const { return Get("Slot moved."); }
+
+        // All slots enabled.
+        inline const char* All_slots_enabled() const { return Get("All slots enabled."); }
+
+        // All slots disabled.
+        inline const char* All_slots_disabled() const { return Get("All slots disabled."); }
+
+        // Dragged slot: %s
+        inline const char* Dragged_slot_s() const { return Get("Dragged slot: %s"); }
+
+        // Current Slot - %s
+        inline const char* Current_Slot_s() const { return Get("Current Slot - %s"); }
+
+        // Slot list
+        inline const char* Slot_list() const { return Get("Slot list"); }
+
+        // Move up
+        inline const char* Move_up() const { return Get("Move up"); }
+
+        // Move down
+        inline const char* Move_down() const { return Get("Move down"); }
+
+        // Set index...
+        inline const char* Set_index() const { return Get("Set index..."); }
+
+        // Set Slot Index
+        inline const char* Set_Slot_Index() const { return Get("Set Slot Index"); }
+
+        // Index
+        inline const char* Index() const { return Get("Index"); }
+
+        // Valid range: 1-%d
+        inline const char* Valid_range_1_d() const { return Get("Valid range: 1-%d"); }
+
+        // Move
+        inline const char* Move() const { return Get("Move"); }
+
+        // Turn ALL slots off
+        inline const char* Turn_ALL_slots_off() const { return Get("Turn ALL slots off"); }
+
+        // Turn ALL slots on
+        inline const char* Turn_ALL_slots_on() const { return Get("Turn ALL slots on"); }
+
+        // Network Square Color
+        inline const char* Network_Square_Color() const { return Get("Network Square Color"); }
+
+        // White
+        inline const char* White() const { return Get("White"); }
+
+        // Purple
+        inline const char* Purple() const { return Get("Purple"); }
+
+        // Red
+        inline const char* Red() const { return Get("Red"); }
+
+        // Orange
+        inline const char* Orange() const { return Get("Orange"); }
+
+        // Yellow
+        inline const char* Yellow() const { return Get("Yellow"); }
+
+        // Green
+        inline const char* Green() const { return Get("Green"); }
+
+        // Blue
+        inline const char* Blue() const { return Get("Blue"); }
+
+        // Teal
+        inline const char* Teal() const { return Get("Teal"); }
+
+        // Black
+        inline const char* Black() const { return Get("Black"); }
+
+        // Unknown (%u)
+        inline const char* Unknown_u() const { return Get("Unknown (%u)"); }
+
+        // Invalid (%u)
+        inline const char* Invalid_u() const { return Get("Invalid (%u)"); }
+
+        // Unavailable
+        inline const char* Unavailable() const { return Get("Unavailable"); }
+
+        // Offline or unavailable
+        inline const char* Offline_or_unavailable() const { return Get("Offline or unavailable"); }
+
+        // Local color
+        inline const char* Local_color() const { return Get("Local color"); }
+
+        // Counter
+        inline const char* Counter() const { return Get("Counter"); }
+
+        // Next color
+        inline const char* Next_color() const { return Get("Next color"); }
+
+        // Previous color
+        inline const char* Previous_color() const { return Get("Previous color"); }
+
+        // Distance to rank up
+        inline const char* Distance_to_rank_up() const { return Get("Distance to rank up"); }
+
+        // Distance to rank down
+        inline const char* Distance_to_rank_down() const { return Get("Distance to rank down"); }
+
+        // Opponent color
+        inline const char* Opponent_color() const { return Get("Opponent color"); }
+
+        // Top color
+        inline const char* Top_color() const { return Get("Top color"); }
+
+        // Bottom color
+        inline const char* Bottom_color() const { return Get("Bottom color"); }
+
+        // Color changes at %u / %u and counter resets to %u after a color change.
+        inline const char* Color_changes_at_u_u_and_counter_resets_to_u_after_a_color_change() const { return Get("Color changes at %u / %u and counter resets to %u after a color change."); }
+
+        // Wins increase the counter; losses decrease it. Same-color matches are the ones that move square color.
+        inline const char* Wins_increase_the_counter_losses_decrease_it_Same_color_matches_are_the_ones_that_move_square_color() const { return Get("Wins increase the counter; losses decrease it. Same-color matches are the ones that move square color."); }
 };
 
 

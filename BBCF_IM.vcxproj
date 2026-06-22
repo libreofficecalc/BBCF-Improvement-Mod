@@ -56,6 +56,7 @@
     <ClCompile Include="src\Overlay\Window\InputBufferWindow.cpp" />
     <ClCompile Include="src\Overlay\Window\PlaybackEditorWindow.cpp" />
     <ClCompile Include="src\Overlay\Window\UnlimitedPlaybackWindow.cpp" />
+    <ClCompile Include="src\Overlay\Window\NetworkSquareColorWindow.cpp" />
     <ClCompile Include="src\Overlay\Window\ReplayRewindWindow.cpp" />
     <ClCompile Include="src\Overlay\Window\RoomWindow.cpp" />
     <ClCompile Include="src\Overlay\Window\ScrWindow.cpp" />
@@ -189,6 +190,7 @@
     <ClInclude Include="src\Overlay\Window\InputBufferWindow.h" />
     <ClInclude Include="src\Overlay\Window\PlaybackEditorWindow.h" />
     <ClInclude Include="src\Overlay\Window\UnlimitedPlaybackWindow.h" />
+    <ClInclude Include="src\Overlay\Window\NetworkSquareColorWindow.h" />
     <ClInclude Include="src\Overlay\Window\ReplayRewindWindow.h" />
     <ClInclude Include="src\Overlay\Window\RoomWindow.h" />
     <ClInclude Include="src\Overlay\Window\ScrWindow.h" />
@@ -316,28 +318,28 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v145</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
     <WholeProgramOptimization>false</WholeProgramOptimization>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='DebugDeploy|Win32'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v145</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
     <WholeProgramOptimization>false</WholeProgramOptimization>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v145</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseDeploy|Win32'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v145</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
