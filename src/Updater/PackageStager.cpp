@@ -84,10 +84,12 @@ namespace Updater
 			}
 
 			const std::string prefix = "bbcf_im/updater/defaults/";
-			const std::string suffix = ".ini";
-			return lower.compare(0, prefix.size(), prefix) == 0 &&
-				lower.size() > prefix.size() + suffix.size() &&
-				lower.compare(lower.size() - suffix.size(), suffix.size(), suffix) == 0;
+			if (lower.compare(0, prefix.size(), prefix) != 0)
+				return false;
+
+			const std::string fileName = lower.substr(prefix.size());
+			return fileName == "settings.ini.default" ||
+				fileName == "palettes.ini.default";
 		}
 
 		std::wstring GetParentDirectory(const std::wstring& path)

@@ -322,9 +322,13 @@ namespace
 		const std::wstring bad = L"BBCF_IM\\Updater\\phase_test_bad.zip";
 		Check(WriteBytes(good, MakeTinyCentralDirectoryZip("dinput8.dll")), "write valid tiny zip fixture");
 		Check(Updater::ValidateUpdateZip(good).valid, "zip allowlist accepts dinput8.dll");
+		Check(WriteBytes(good, MakeTinyCentralDirectoryZip("BBCF_IM\\Updater\\defaults\\palettes.ini.default")), "write nested defaults zip fixture");
+		Check(Updater::ValidateUpdateZip(good).valid, "zip allowlist accepts updater palette defaults");
 
 		Check(WriteBytes(bad, MakeTinyCentralDirectoryZip("../dinput8.dll")), "write bad tiny zip fixture");
 		Check(!Updater::ValidateUpdateZip(bad).valid, "zip traversal rejected");
+		Check(WriteBytes(bad, MakeTinyCentralDirectoryZip("BBCF_IM\\Updater\\defaults\\not_allowed.ini")), "write bad nested zip fixture");
+		Check(!Updater::ValidateUpdateZip(bad).valid, "zip allowlist rejects unexpected updater defaults");
 
 		std::string hash;
 		std::string error;

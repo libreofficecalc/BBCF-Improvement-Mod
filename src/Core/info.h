@@ -1,5 +1,5 @@
 #pragma once
-#define MOD_VERSION	"v3.110"
+#define MOD_VERSION	"v6.0"
 #define MOD_VERSION_NUM	MOD_VERSION " BO BLEIS edition"
 #define MOD_WINDOW_TITLE "BBCF IM"
 

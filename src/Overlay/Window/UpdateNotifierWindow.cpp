@@ -5,41 +5,263 @@
 #include "Web/update_check.h"
 #include "Updater/UpdateCoordinator.h"
 
+#include <algorithm>
+#include <cctype>
+#include <cstdio>
+#include <sstream>
+#include <string>
+#include <vector>
+
+namespace
+{
+	std::string Trim(const std::string& value)
+	{
+		size_t first = 0;
+		while (first < value.size() && std::isspace(static_cast<unsigned char>(value[first])))
+			++first;
+
+		size_t last = value.size();
+		while (last > first && std::isspace(static_cast<unsigned char>(value[last - 1])))
+			--last;
+
+		return value.substr(first, last - first);
+	}
+
+	bool StartsWith(const std::string& value, const char* prefix)
+	{
+		const size_t prefixLen = std::strlen(prefix);
+		return value.size() >= prefixLen && value.compare(0, prefixLen, prefix) == 0;
+	}
+
+	std::vector<std::string> SplitLines(const std::string& text)
+	{
+		std::vector<std::string> lines;
+		std::stringstream stream(text);
+		std::string line;
+		while (std::getline(stream, line))
+		{
+			if (!line.empty() && line[line.size() - 1] == '\r')
+				line.erase(line.size() - 1);
+			lines.push_back(line);
+		}
+		if (text.empty())
+			lines.push_back(std::string());
+		return lines;
+	}
+
+	std::string StripInlineMarkdown(const std::string& text)
+	{
+		std::string out;
+		out.reserve(text.size());
+		bool inLinkText = false;
+		bool skippingUrl = false;
+
+		for (size_t i = 0; i < text.size(); ++i)
+		{
+			const char c = text[i];
+			if (skippingUrl)
+			{
+				if (c == ')')
+					skippingUrl = false;
+				continue;
+			}
+			if (c == '[')
+			{
+				inLinkText = true;
+				continue;
+			}
+			if (inLinkText && c == ']' && i + 1 < text.size() && text[i + 1] == '(')
+			{
+				inLinkText = false;
+				skippingUrl = true;
+				++i;
+				continue;
+			}
+			if (c == '*' || c == '_' || c == '`' || c == '~')
+				continue;
+			out.push_back(c);
+		}
+
+		return Trim(out);
+	}
+
+	std::string FormatGitHubDate(const std::string& value)
+	{
+		int year = 0;
+		int month = 0;
+		int day = 0;
+		int hour = 0;
+		int minute = 0;
+		if (std::sscanf(value.c_str(), "%d-%d-%dT%d:%d", &year, &month, &day, &hour, &minute) != 5)
+			return value;
+
+		static const char* months[] = {
+			"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+			"Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+		};
+		if (month < 1 || month > 12)
+			return value;
+
+		char buffer[64] = {};
+		std::snprintf(buffer, sizeof(buffer), "%s %d, %d at %02d:%02d UTC", months[month - 1], day, year, hour, minute);
+		return buffer;
+	}
+
+	void DrawMarkdownText(const std::string& markdown)
+	{
+		const std::vector<std::string> lines = SplitLines(markdown);
+		bool inCodeBlock = false;
+		for (size_t i = 0; i < lines.size(); ++i)
+		{
+			std::string line = lines[i];
+			std::string trimmed = Trim(line);
+
+			if (StartsWith(trimmed, "```"))
+			{
+				inCodeBlock = !inCodeBlock;
+				if (!inCodeBlock)
+					ImGui::Spacing();
+				continue;
+			}
+
+			if (trimmed.empty())
+			{
+				ImGui::Spacing();
+				continue;
+			}
+
+			if (inCodeBlock)
+			{
+				ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.78f, 0.86f, 0.95f, 1.0f));
+				ImGui::TextWrapped("%s", line.c_str());
+				ImGui::PopStyleColor();
+				continue;
+			}
+
+			int headingLevel = 0;
+			while (headingLevel < static_cast<int>(trimmed.size()) && headingLevel < 6 && trimmed[headingLevel] == '#')
+				++headingLevel;
+			if (headingLevel > 0 && headingLevel < static_cast<int>(trimmed.size()) && trimmed[headingLevel] == ' ')
+			{
+				ImGui::Spacing();
+				ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.95f, 1.0f, 1.0f));
+				ImGui::TextWrapped("%s", StripInlineMarkdown(trimmed.substr(headingLevel + 1)).c_str());
+				ImGui::PopStyleColor();
+				ImGui::Separator();
+				continue;
+			}
+
+			if (trimmed == "---" || trimmed == "***")
+			{
+				ImGui::Separator();
+				continue;
+			}
+
+			if (StartsWith(trimmed, ">"))
+			{
+				ImGui::Indent(8.0f);
+				ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.72f, 0.72f, 0.76f, 1.0f));
+				ImGui::TextWrapped("%s", StripInlineMarkdown(Trim(trimmed.substr(1))).c_str());
+				ImGui::PopStyleColor();
+				ImGui::Unindent(8.0f);
+				continue;
+			}
+
+			const bool unordered = StartsWith(trimmed, "- ") || StartsWith(trimmed, "* ");
+			const bool ordered =
+				trimmed.size() > 3 &&
+				std::isdigit(static_cast<unsigned char>(trimmed[0])) &&
+				trimmed[1] == '.' &&
+				trimmed[2] == ' ';
+			if (unordered || ordered)
+			{
+				ImGui::Bullet();
+				ImGui::SameLine();
+				ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x);
+				ImGui::TextWrapped("%s", StripInlineMarkdown(trimmed.substr(unordered ? 2 : 3)).c_str());
+				ImGui::PopTextWrapPos();
+				continue;
+			}
+
+			ImGui::TextWrapped("%s", StripInlineMarkdown(trimmed).c_str());
+		}
+	}
+
+	void DrawReleaseNotes(const Updater::GitHubRelease& release)
+	{
+		ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.95f, 1.0f, 1.0f));
+		ImGui::TextWrapped("%s", release.tagName.c_str());
+		ImGui::PopStyleColor();
+
+		if (!release.name.empty())
+			ImGui::TextWrapped("%s", release.name.c_str());
+		if (!release.publishedAt.empty())
+			ImGui::TextDisabled("%s", FormatGitHubDate(release.publishedAt).c_str());
+		if (!release.body.empty())
+		{
+			ImGui::Spacing();
+			DrawMarkdownText(release.body);
+		}
+	}
+
+	bool IsBusy(const Updater::UpdateUiSnapshot& update)
+	{
+		return update.state == Updater::UpdateUiState_Downloading ||
+			update.state == Updater::UpdateUiState_Verifying ||
+			update.state == Updater::UpdateUiState_Staging ||
+			update.state == Updater::UpdateUiState_LaunchingUpdater;
+	}
+}
+
+void UpdateNotifierWindow::Update()
+{
+	if (!m_windowOpen)
+		return;
+
+	BeforeDraw();
+	ImGui::OpenPopup(m_windowTitle.c_str());
+	if (ImGui::BeginPopupModal(m_windowTitle.c_str(), nullptr, m_windowFlags))
+	{
+		Draw();
+		ImGui::EndPopup();
+	}
+}
 
 void UpdateNotifierWindow::BeforeDraw()
 {
 	ImGui::SetNextWindowPosCenter(ImGuiCond_Once);
-	ImGui::SetNextWindowSizeConstraints(ImVec2(460, 220), ImVec2(680, 620));
+	ImGui::SetNextWindowSize(ImVec2(760, 600), ImGuiCond_Appearing);
+	ImGui::SetNextWindowSizeConstraints(ImVec2(620, 420), ImVec2(920, 760));
 }
 
 void UpdateNotifierWindow::Draw()
 {
 	Updater::UpdateUiSnapshot update = Updater::UpdateCoordinator::GetInstance().GetSnapshot();
 	const char* tag = update.tag.empty() ? GetNewVersionNum().c_str() : update.tag.c_str();
+	const bool busy = IsBusy(update);
 
-	ImGui::TextAlignedHorizontalCenter("BBCF Improvement Mod %s has been released!", tag);
+	ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.95f, 1.0f, 1.0f));
+	ImGui::TextAlignedHorizontalCenter("BBCF Improvement Mod %s is available", tag);
+	ImGui::PopStyleColor();
 	ImGui::Spacing();
+
 	if (update.developmentChannel)
 		ImGui::TextDisabled("Development update channel");
 	if (!update.name.empty())
 		ImGui::TextWrapped("%s", update.name.c_str());
 	if (!update.publishedAt.empty())
-		ImGui::TextDisabled("%s", update.publishedAt.c_str());
+		ImGui::TextDisabled("%s", FormatGitHubDate(update.publishedAt).c_str());
 
+	ImGui::Spacing();
+	ImGui::Separator();
 	if (!update.releaseNotes.empty())
 	{
 		ImGui::Spacing();
-		ImGui::BeginChild("ReleaseNotes", ImVec2(0, 240), true);
+		ImGui::TextDisabled("Release notes");
+		ImGui::BeginChild("ReleaseNotes", ImVec2(0, 310), true);
 		for (size_t i = 0; i < update.releaseNotes.size(); ++i)
 		{
-			const Updater::GitHubRelease& release = update.releaseNotes[i];
-			ImGui::TextWrapped("%s", release.tagName.c_str());
-			if (!release.name.empty())
-				ImGui::TextWrapped("%s", release.name.c_str());
-			if (!release.publishedAt.empty())
-				ImGui::TextDisabled("%s", release.publishedAt.c_str());
-			if (!release.body.empty())
-				ImGui::TextWrapped("%s", release.body.c_str());
+			DrawReleaseNotes(update.releaseNotes[i]);
 			if (i + 1 < update.releaseNotes.size())
 			{
 				ImGui::Spacing();
@@ -52,8 +274,9 @@ void UpdateNotifierWindow::Draw()
 	else if (!update.body.empty())
 	{
 		ImGui::Spacing();
-		ImGui::BeginChild("ReleaseNotes", ImVec2(0, 190), true);
-		ImGui::TextWrapped("%s", update.body.c_str());
+		ImGui::TextDisabled("Release notes");
+		ImGui::BeginChild("ReleaseNotes", ImVec2(0, 260), true);
+		DrawMarkdownText(update.body);
 		ImGui::EndChild();
 	}
 
@@ -82,34 +305,41 @@ void UpdateNotifierWindow::Draw()
 
 	ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 7));
 
-	const bool busy =
-		update.state == Updater::UpdateUiState_Downloading ||
-		update.state == Updater::UpdateUiState_Verifying ||
-		update.state == Updater::UpdateUiState_Staging ||
-		update.state == Updater::UpdateUiState_LaunchingUpdater;
-	const ImVec2 buttonSize = ImVec2(150, 23);
+	const ImVec2 buttonSize = ImVec2(150, 24);
+	const float rowWidth = (buttonSize.x * 3.0f) + (ImGui::GetStyle().ItemSpacing.x * 2.0f);
 
-	ImGui::AlignItemHorizontalCenter(buttonSize.x);
+	ImGui::AlignItemHorizontalCenter(rowWidth);
 	if (update.autoApplySupported)
 	{
 		if (!busy && ImGui::Button("Update", buttonSize))
 			Updater::UpdateCoordinator::GetInstance().StartUpdate();
+		else if (busy)
+			ImGui::Button("Update", buttonSize);
 	}
 	else if (ImGui::ButtonUrl("Open release page", GetNewVersionReleaseUrl(), buttonSize))
 	{
+		ImGui::CloseCurrentPopup();
 		Close();
 	}
 
-	ImGui::AlignItemHorizontalCenter(buttonSize.x);
+	ImGui::SameLine();
 	if (!busy && ImGui::Button("Skip this version", buttonSize))
 	{
 		Updater::UpdateCoordinator::GetInstance().SkipCurrentVersion();
+		ImGui::CloseCurrentPopup();
 		Close();
 	}
+	else if (busy)
+		ImGui::Button("Skip this version", buttonSize);
 
-	ImGui::AlignItemHorizontalCenter(buttonSize.x);
+	ImGui::SameLine();
 	if (!busy && ImGui::Button("Later", buttonSize))
+	{
+		ImGui::CloseCurrentPopup();
 		Close();
+	}
+	else if (busy)
+		ImGui::Button("Later", buttonSize);
 
 	ImGui::PopStyleVar();
 

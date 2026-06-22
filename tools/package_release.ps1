@@ -47,7 +47,6 @@ Copy-Item (Join-Path $repoRoot "resource\settings.ini") (Join-Path $stage "BBCF_
 Copy-Item (Join-Path $repoRoot "resource\palettes.ini") (Join-Path $stage "BBCF_IM\Updater\defaults\palettes.ini.default") -Force
 Copy-Item (Join-Path $repoRoot "USER_README.txt") (Join-Path $stage "USER_README.txt") -Force
 
-Remove-Item -Force (Join-Path $outRoot "BBCFIMUpdater.pdb") -ErrorAction SilentlyContinue
 Remove-Item -Force $zipPath -ErrorAction SilentlyContinue
 Compress-Archive -Path (Join-Path $stage "*") -DestinationPath $zipPath -Force
 $sha = (Get-FileHash -Algorithm SHA256 $zipPath).Hash.ToLowerInvariant()
@@ -69,6 +68,12 @@ $manifest = [ordered]@{
 $manifestJson = $manifest | ConvertTo-Json -Depth 4
 $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 [System.IO.File]::WriteAllText($manifestPath, $manifestJson, $utf8NoBom)
+
+Remove-Item -Force (Join-Path $outRoot "BBCFIMUpdater.exe") -ErrorAction SilentlyContinue
+Remove-Item -Force (Join-Path $outRoot "BBCFIMUpdater.pdb") -ErrorAction SilentlyContinue
+Remove-Item -Force (Join-Path $outRoot "dinput8.dll") -ErrorAction SilentlyContinue
+Remove-Item -Force (Join-Path $outRoot "settings.ini") -ErrorAction SilentlyContinue
+Remove-Item -Force (Join-Path $outRoot "palettes.ini") -ErrorAction SilentlyContinue
 
 Write-Host "Wrote $zipPath"
 Write-Host "Wrote $manifestPath"

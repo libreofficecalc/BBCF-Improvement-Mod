@@ -77,4 +77,8 @@
     <ClCompile Include="src\BBCFIMUpdater\BBCFIMUpdater.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <Target Name="CleanPackageOutputBeforeBuild" BeforeTargets="PrepareForBuild" Condition="'$(Configuration)'=='Debug' or '$(Configuration)'=='Release'">
+    <RemoveDir Directories="$(ProjectDir)$(OutDir)" Condition="Exists('$(ProjectDir)$(OutDir)')" />
+    <MakeDir Directories="$(ProjectDir)$(OutDir)" />
+  </Target>
 </Project>

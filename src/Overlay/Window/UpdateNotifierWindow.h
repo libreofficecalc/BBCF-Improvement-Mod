@@ -8,6 +8,7 @@ public:
 		ImGuiWindowFlags windowFlags)
 		: IWindow(windowTitle, windowClosable, windowFlags) {}
 	~UpdateNotifierWindow() override = default;
+	void Update() override;
 protected:
 	void BeforeDraw() override;
 	void Draw() override;

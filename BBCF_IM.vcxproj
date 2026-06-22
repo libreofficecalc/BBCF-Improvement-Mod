@@ -373,6 +373,7 @@
     <LibraryPath>$(SolutionDir)\depends\detour;$(SolutionDir)\depends\directx_sdk\Lib\x86;$(SolutionDir)\depends\steam_api\redistributable_bin;$(LibraryPath)</LibraryPath>
     <OutDir>bin\$(Configuration)\</OutDir>
     <IntDir>build\$(Configuration)\</IntDir>
+    <UpdaterBinaryDir>bin\Debug\</UpdaterBinaryDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='DebugDeploy|Win32'">
     <LinkIncremental>true</LinkIncremental>
@@ -387,6 +388,7 @@
     <LibraryPath>$(SolutionDir)\depends\detour;$(SolutionDir)\depends\directx_sdk\Lib\x86;$(SolutionDir)\depends\steam_api\redistributable_bin;$(LibraryPath)</LibraryPath>
     <OutDir>bin\DebugDeploy\</OutDir>
     <IntDir>build\DebugDeploy\</IntDir>
+    <UpdaterBinaryDir>bin\Debug\</UpdaterBinaryDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <LinkIncremental>false</LinkIncremental>
@@ -395,6 +397,7 @@
     <LibraryPath>$(SolutionDir)\depends\detour;$(SolutionDir)\depends\directx_sdk\Lib\x86;$(SolutionDir)\depends\steam_api\redistributable_bin;$(LibraryPath)</LibraryPath>
     <OutDir>bin\$(Configuration)\</OutDir>
     <IntDir>build\$(Configuration)\</IntDir>
+    <UpdaterBinaryDir>bin\Release\</UpdaterBinaryDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseDeploy|Win32'">
     <LinkIncremental>false</LinkIncremental>
@@ -410,6 +413,7 @@
     <LibraryPath>$(SolutionDir)\depends\detour;$(SolutionDir)\depends\directx_sdk\Lib\x86;$(SolutionDir)\depends\steam_api\redistributable_bin;$(LibraryPath)</LibraryPath>
     <OutDir>bin\Release\</OutDir>
     <IntDir>build\ReleaseDeploy\</IntDir>
+    <UpdaterBinaryDir>bin\Release\</UpdaterBinaryDir>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -532,7 +536,15 @@
     <Copy SourceFiles="$(ProjectDir)$(OutDir)$(TargetName).dll" DestinationFolder="$(BbcfInstallDir)" OverwriteReadOnlyFiles="true" SkipUnchangedFiles="false" Condition="('$(Configuration)'=='ReleaseDeploy' or '$(Configuration)'=='DebugDeploy') and '$(BbcfDeployEnabled)'=='true' and '$(BbcfCopyDll)'=='true' and '$(BbcfInstallDir)'!=''" />
     <Copy SourceFiles="$(ProjectDir)resource\palettes.ini" DestinationFolder="$(BbcfInstallDir)" OverwriteReadOnlyFiles="true" SkipUnchangedFiles="false" Condition="('$(Configuration)'=='ReleaseDeploy' or '$(Configuration)'=='DebugDeploy') and '$(BbcfDeployEnabled)'=='true' and '$(BbcfCopyPalettes)'=='true' and '$(BbcfInstallDir)'!=''" />
     <Copy SourceFiles="$(ProjectDir)resource\settings.ini" DestinationFolder="$(BbcfInstallDir)" OverwriteReadOnlyFiles="true" SkipUnchangedFiles="false" Condition="('$(Configuration)'=='ReleaseDeploy' or '$(Configuration)'=='DebugDeploy') and '$(BbcfDeployEnabled)'=='true' and '$(BbcfCopySettings)'=='true' and '$(BbcfInstallDir)'!=''" />
-    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(ProjectDir)tools\package_release.ps1&quot; -Configuration &quot;$(Configuration)&quot;" Condition="'$(Configuration)'=='Release'" />
+    <Copy SourceFiles="$(ProjectDir)$(UpdaterBinaryDir)BBCFIMUpdater.exe" DestinationFolder="$(BbcfInstallDir)" OverwriteReadOnlyFiles="true" SkipUnchangedFiles="false" Condition="('$(Configuration)'=='ReleaseDeploy' or '$(Configuration)'=='DebugDeploy') and '$(BbcfDeployEnabled)'=='true' and '$(BbcfInstallDir)'!='' and Exists('$(ProjectDir)$(UpdaterBinaryDir)BBCFIMUpdater.exe')" />
+    <Copy SourceFiles="$(ProjectDir)USER_README.txt" DestinationFolder="$(BbcfInstallDir)" OverwriteReadOnlyFiles="true" SkipUnchangedFiles="false" Condition="('$(Configuration)'=='ReleaseDeploy' or '$(Configuration)'=='DebugDeploy') and '$(BbcfDeployEnabled)'=='true' and '$(BbcfInstallDir)'!=''" />
+    <MakeDir Directories="$(BbcfInstallDir)\BBCF_IM\Updater\defaults" Condition="('$(Configuration)'=='ReleaseDeploy' or '$(Configuration)'=='DebugDeploy') and '$(BbcfDeployEnabled)'=='true' and '$(BbcfInstallDir)'!=''" />
+    <Copy SourceFiles="$(ProjectDir)resource\settings.ini" DestinationFiles="$(BbcfInstallDir)\settings.ini.default" OverwriteReadOnlyFiles="true" SkipUnchangedFiles="false" Condition="('$(Configuration)'=='ReleaseDeploy' or '$(Configuration)'=='DebugDeploy') and '$(BbcfDeployEnabled)'=='true' and '$(BbcfInstallDir)'!=''" />
+    <Copy SourceFiles="$(ProjectDir)resource\settings.ini" DestinationFiles="$(BbcfInstallDir)\BBCF_IM\Updater\defaults\settings.ini.default" OverwriteReadOnlyFiles="true" SkipUnchangedFiles="false" Condition="('$(Configuration)'=='ReleaseDeploy' or '$(Configuration)'=='DebugDeploy') and '$(BbcfDeployEnabled)'=='true' and '$(BbcfInstallDir)'!=''" />
+    <Copy SourceFiles="$(ProjectDir)resource\palettes.ini" DestinationFiles="$(BbcfInstallDir)\palettes.ini.default" OverwriteReadOnlyFiles="true" SkipUnchangedFiles="false" Condition="('$(Configuration)'=='ReleaseDeploy' or '$(Configuration)'=='DebugDeploy') and '$(BbcfDeployEnabled)'=='true' and '$(BbcfInstallDir)'!=''" />
+    <Copy SourceFiles="$(ProjectDir)resource\palettes.ini" DestinationFiles="$(BbcfInstallDir)\BBCF_IM\Updater\defaults\palettes.ini.default" OverwriteReadOnlyFiles="true" SkipUnchangedFiles="false" Condition="('$(Configuration)'=='ReleaseDeploy' or '$(Configuration)'=='DebugDeploy') and '$(BbcfDeployEnabled)'=='true' and '$(BbcfInstallDir)'!=''" />
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(ProjectDir)tools\package_release.ps1&quot; -Configuration &quot;$(Configuration)&quot; -Channel prerelease" Condition="'$(Configuration)'=='Debug'" />
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(ProjectDir)tools\package_release.ps1&quot; -Configuration &quot;$(Configuration)&quot; -Channel stable" Condition="'$(Configuration)'=='Release'" />
     <Exec Command="$(BbcfLaunchCommand)" Condition="('$(Configuration)'=='ReleaseDeploy' or '$(Configuration)'=='DebugDeploy') and '$(BbcfDeployEnabled)'=='true' and '$(BbcfLaunchAfterDeploy)'=='true' and '$(BbcfLaunchCommand)'!=''" />
   </Target>
 </Project>
