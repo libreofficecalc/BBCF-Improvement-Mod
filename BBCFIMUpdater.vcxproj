@@ -9,13 +9,20 @@
       <Configuration>Release</Configuration>
       <Platform>Win32</Platform>
     </ProjectConfiguration>
+    <ProjectConfiguration Include="DebugDeploy|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="ReleaseDeploy|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectGuid>{7D9EB60E-A30F-4D3A-A9DD-1E252F4D2AC0}</ProjectGuid>
+    <ProjectGuid>{E56550BE-41EA-4AA7-A234-585BF23E441C}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
-    <RootNamespace>UpdaterPhase1ManualTest</RootNamespace>
+    <RootNamespace>BBCFIMUpdater</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
-    <ProjectName>UpdaterPhase1ManualTest</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
@@ -28,65 +35,46 @@
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
-    <CharacterSet>Unicode</CharacterSet>
     <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
-  <PropertyGroup Label="UserMacros" />
   <PropertyGroup>
-    <RootDir>$(MSBuildThisFileDirectory)..\..\</RootDir>
-    <OutDir>$(RootDir)build\updater_phase1_manual_test\$(Configuration)\</OutDir>
-    <IntDir>$(RootDir)build\updater_phase1_manual_test\obj\$(Configuration)\</IntDir>
-    <IncludePath>$(RootDir)src;$(IncludePath)</IncludePath>
+    <OutDir>bin\$(Configuration)\</OutDir>
+    <IntDir>build\BBCFIMUpdater\$(Configuration)\</IntDir>
+    <TargetName>BBCFIMUpdater</TargetName>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
-      <WarningLevel>Level4</WarningLevel>
+      <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
-      <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <SDLCheck>true</SDLCheck>
-      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <PrecompiledHeader />
     </ClCompile>
     <Link>
-      <SubSystem>Console</SubSystem>
+      <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
-      <WarningLevel>Level4</WarningLevel>
+      <WarningLevel>Level3</WarningLevel>
       <Optimization>MaxSpeed</Optimization>
-      <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <SDLCheck>true</SDLCheck>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <PrecompiledHeader />
     </ClCompile>
     <Link>
-      <SubSystem>Console</SubSystem>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="updater_phase1_manual_test.cpp" />
-    <ClCompile Include="$(RootDir)src\Updater\FileUtil.cpp" />
-    <ClCompile Include="$(RootDir)src\Updater\JsonValue.cpp" />
-    <ClCompile Include="$(RootDir)src\Updater\PackageStager.cpp" />
-    <ClCompile Include="$(RootDir)src\Updater\SemVersion.cpp" />
-    <ClCompile Include="$(RootDir)src\Updater\UpdateModels.cpp" />
-    <ClCompile Include="$(RootDir)src\Updater\UpdateManifest.cpp" />
-    <ClCompile Include="$(RootDir)src\Updater\UpdateStateStore.cpp" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="$(RootDir)src\Updater\FileUtil.h" />
-    <ClInclude Include="$(RootDir)src\Updater\JsonValue.h" />
-    <ClInclude Include="$(RootDir)src\Updater\PackageStager.h" />
-    <ClInclude Include="$(RootDir)src\Updater\SemVersion.h" />
-    <ClInclude Include="$(RootDir)src\Updater\UpdateModels.h" />
-    <ClInclude Include="$(RootDir)src\Updater\UpdateManifest.h" />
-    <ClInclude Include="$(RootDir)src\Updater\UpdateState.h" />
-    <ClInclude Include="$(RootDir)src\Updater\UpdateStateStore.h" />
+    <ClCompile Include="src\BBCFIMUpdater\BBCFIMUpdater.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

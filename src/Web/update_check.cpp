@@ -8,6 +8,7 @@
 #include "Overlay/Logger/ImGuiLogger.h"
 #include "Overlay/WindowManager.h"
 #include "Updater/GitHubReleaseClient.h"
+#include "Updater/UpdateCoordinator.h"
 
 #include <handleapi.h>
 #include <processthreadsapi.h>
@@ -27,6 +28,14 @@ std::string GetNewVersionNum()
 
 const wchar_t* GetNewVersionReleaseUrl()
 {
+	Updater::UpdateUiSnapshot snapshot = Updater::UpdateCoordinator::GetInstance().GetSnapshot();
+	static std::wstring releaseUrl;
+	if (!snapshot.releaseUrl.empty())
+	{
+		releaseUrl.assign(snapshot.releaseUrl.begin(), snapshot.releaseUrl.end());
+		return releaseUrl.c_str();
+	}
+
 	if (!newVersionReleaseUrl.empty())
 		return newVersionReleaseUrl.c_str();
 
@@ -76,13 +85,7 @@ void CheckUpdate()
 
 void StartAsyncUpdateCheck()
 {
-	if (MOD_FORCE_DISABLE_UPDATE_CHECK)
-		return;
-
-	if (Settings::settingsIni.checkupdates)
-	{
-		CloseHandle(CreateThread(nullptr, 0, (LPTHREAD_START_ROUTINE)CheckUpdate, nullptr, 0, nullptr));
-	}
+	Updater::UpdateCoordinator::GetInstance().StartAsyncCheck();
 }
 
 

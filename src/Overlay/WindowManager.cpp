@@ -17,6 +17,7 @@
 #include "Core/WineCheck.h"
 #include "Core/utils.h"
 #include "Web/update_check.h"
+#include "Updater/UpdateCoordinator.h"
 
 #include <imgui.h>
 #include <imgui_impl_dx9.h>
@@ -279,6 +280,7 @@ void WindowManager::Render()
 
 	DrawAllWindows();
 	DrawRankedProgressOverlayStandalone();
+	Updater::UpdateCoordinator::GetInstance().DrawSkippedLink();
 
 	g_notificationBar->DrawNotifications();
 

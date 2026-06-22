@@ -192,13 +192,22 @@
     <ClCompile Include="src\Hooks\hooks_battle_input.cpp" />
     <ClCompile Include="src\Hooks\RankedAutomationHarness.cpp" />
     <ClCompile Include="src\Core\Localization.cpp" />
+    <ClCompile Include="src\Updater\FileUtil.cpp">
+      <Filter>src\Updater</Filter>
+    </ClCompile>
     <ClCompile Include="src\Updater\GitHubReleaseClient.cpp">
       <Filter>src\Updater</Filter>
     </ClCompile>
     <ClCompile Include="src\Updater\JsonValue.cpp">
       <Filter>src\Updater</Filter>
     </ClCompile>
+    <ClCompile Include="src\Updater\PackageStager.cpp">
+      <Filter>src\Updater</Filter>
+    </ClCompile>
     <ClCompile Include="src\Updater\SemVersion.cpp">
+      <Filter>src\Updater</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Updater\UpdateCoordinator.cpp">
       <Filter>src\Updater</Filter>
     </ClCompile>
     <ClCompile Include="src\Updater\UpdateModels.cpp">
@@ -392,13 +401,22 @@
     <ClInclude Include="src\Hooks\RankedAutomationHarness.h" />
     <ClInclude Include="src\Core\Localization.h" />
     <ClInclude Include="src\Palette\impl_templates.h" />
+    <ClInclude Include="src\Updater\FileUtil.h">
+      <Filter>src\Updater</Filter>
+    </ClInclude>
     <ClInclude Include="src\Updater\GitHubReleaseClient.h">
       <Filter>src\Updater</Filter>
     </ClInclude>
     <ClInclude Include="src\Updater\JsonValue.h">
       <Filter>src\Updater</Filter>
     </ClInclude>
+    <ClInclude Include="src\Updater\PackageStager.h">
+      <Filter>src\Updater</Filter>
+    </ClInclude>
     <ClInclude Include="src\Updater\SemVersion.h">
+      <Filter>src\Updater</Filter>
+    </ClInclude>
+    <ClInclude Include="src\Updater\UpdateCoordinator.h">
       <Filter>src\Updater</Filter>
     </ClInclude>
     <ClInclude Include="src\Updater\UpdateModels.h">

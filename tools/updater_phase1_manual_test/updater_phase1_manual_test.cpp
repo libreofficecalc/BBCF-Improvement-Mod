@@ -1,12 +1,14 @@
 #include "../../src/Updater/SemVersion.h"
 #include "../../src/Updater/UpdateManifest.h"
 #include "../../src/Updater/UpdateModels.h"
+#include "../../src/Updater/PackageStager.h"
 #include "../../src/Updater/UpdateStateStore.h"
 
 #include <Windows.h>
 
 #include <cstdio>
 #include <string>
+#include <vector>
 
 namespace
 {
@@ -240,6 +242,98 @@ namespace
 			result), "v5.0 greater than v3.110 accepted");
 		Check(result.status == Updater::UpdateCheckStatus_UpdateAvailable, "v5.0 update status");
 	}
+
+	void AppendU16(std::string& bytes, unsigned int value)
+	{
+		bytes.push_back(static_cast<char>(value & 0xff));
+		bytes.push_back(static_cast<char>((value >> 8) & 0xff));
+	}
+
+	void AppendU32(std::string& bytes, unsigned int value)
+	{
+		bytes.push_back(static_cast<char>(value & 0xff));
+		bytes.push_back(static_cast<char>((value >> 8) & 0xff));
+		bytes.push_back(static_cast<char>((value >> 16) & 0xff));
+		bytes.push_back(static_cast<char>((value >> 24) & 0xff));
+	}
+
+	bool WriteBytes(const std::wstring& path, const std::string& bytes)
+	{
+		HANDLE file = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+		if (file == INVALID_HANDLE_VALUE)
+			return false;
+		DWORD written = 0;
+		const BOOL ok = WriteFile(file, bytes.data(), static_cast<DWORD>(bytes.size()), &written, nullptr);
+		CloseHandle(file);
+		return ok && written == bytes.size();
+	}
+
+	std::string MakeTinyCentralDirectoryZip(const std::string& name)
+	{
+		std::string bytes;
+		AppendU32(bytes, 0x04034b50);
+		AppendU16(bytes, 20);
+		AppendU16(bytes, 0);
+		AppendU16(bytes, 0);
+		AppendU16(bytes, 0);
+		AppendU16(bytes, 0);
+		AppendU32(bytes, 0);
+		AppendU32(bytes, 0);
+		AppendU32(bytes, 0);
+		AppendU16(bytes, static_cast<unsigned int>(name.size()));
+		AppendU16(bytes, 0);
+		bytes += name;
+
+		const unsigned int centralOffset = static_cast<unsigned int>(bytes.size());
+		AppendU32(bytes, 0x02014b50);
+		AppendU16(bytes, 20);
+		AppendU16(bytes, 20);
+		AppendU16(bytes, 0);
+		AppendU16(bytes, 0);
+		AppendU16(bytes, 0);
+		AppendU16(bytes, 0);
+		AppendU32(bytes, 0);
+		AppendU32(bytes, 0);
+		AppendU32(bytes, 0);
+		AppendU16(bytes, static_cast<unsigned int>(name.size()));
+		AppendU16(bytes, 0);
+		AppendU16(bytes, 0);
+		AppendU16(bytes, 0);
+		AppendU16(bytes, 0);
+		AppendU32(bytes, 0);
+		AppendU32(bytes, 0);
+		bytes += name;
+		const unsigned int centralSize = static_cast<unsigned int>(bytes.size() - centralOffset);
+
+		AppendU32(bytes, 0x06054b50);
+		AppendU16(bytes, 0);
+		AppendU16(bytes, 0);
+		AppendU16(bytes, 1);
+		AppendU16(bytes, 1);
+		AppendU32(bytes, centralSize);
+		AppendU32(bytes, centralOffset);
+		AppendU16(bytes, 0);
+		return bytes;
+	}
+
+	void TestPackageValidation()
+	{
+		const std::wstring good = L"BBCF_IM\\Updater\\phase_test_good.zip";
+		const std::wstring bad = L"BBCF_IM\\Updater\\phase_test_bad.zip";
+		Check(WriteBytes(good, MakeTinyCentralDirectoryZip("dinput8.dll")), "write valid tiny zip fixture");
+		Check(Updater::ValidateUpdateZip(good).valid, "zip allowlist accepts dinput8.dll");
+
+		Check(WriteBytes(bad, MakeTinyCentralDirectoryZip("../dinput8.dll")), "write bad tiny zip fixture");
+		Check(!Updater::ValidateUpdateZip(bad).valid, "zip traversal rejected");
+
+		std::string hash;
+		std::string error;
+		Check(Updater::ComputeFileSha256Hex(good, hash, error), "compute package sha");
+		Check(hash != "0000000000000000000000000000000000000000000000000000000000000000", "sha mismatch can be detected");
+
+		DeleteFileW(good.c_str());
+		DeleteFileW(bad.c_str());
+	}
 }
 
 int main()
@@ -248,6 +342,7 @@ int main()
 	TestManifest();
 	TestStateStore();
 	TestReleaseEvaluation();
+	TestPackageValidation();
 
 	if (g_failures != 0)
 	{
@@ -255,6 +350,6 @@ int main()
 		return 1;
 	}
 
-	std::printf("All updater phase 1/2 manual tests passed.\n");
+	std::printf("All updater manual tests passed.\n");
 	return 0;
 }

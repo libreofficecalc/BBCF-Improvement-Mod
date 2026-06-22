@@ -40,7 +40,12 @@
       "Bash(dd if=/mnt/c/Users/Usuario/source/repos/HaiKamDesu/BBCF-Improvement-Mod/tools/bbcf_disasm_ascii.txt bs=2 skip=1)",
       "Bash(\"/mnt/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe\" /mnt/c/Users/Usuario/source/repos/HaiKamDesu/BBCF-Improvement-Mod/BBCF_IM.sln /m /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v143)",
       "Bash(\"/mnt/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe\" \"C:\\\\\\\\Users\\\\\\\\Usuario\\\\\\\\source\\\\\\\\repos\\\\\\\\HaiKamDesu\\\\\\\\BBCF-Improvement-Mod\\\\\\\\BBCF_IM.sln\" /m /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v143)",
-      "Skill(grep-and-read)"
+      "Skill(grep-and-read)",
+      "Bash(gh release *)",
+      "Bash(gh api *)",
+      "Bash(gh auth *)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:api.github.com)"
     ]
   }
 }

@@ -121,9 +121,12 @@
     <ClCompile Include="src\SteamApiWrapper\SteamUserStatsWrapper.cpp" />
     <ClCompile Include="src\SteamApiWrapper\SteamUserWrapper.cpp" />
     <ClCompile Include="src\SteamApiWrapper\SteamUtilsWrapper.cpp" />
+    <ClCompile Include="src\Updater\FileUtil.cpp" />
     <ClCompile Include="src\Updater\GitHubReleaseClient.cpp" />
     <ClCompile Include="src\Updater\JsonValue.cpp" />
+    <ClCompile Include="src\Updater\PackageStager.cpp" />
     <ClCompile Include="src\Updater\SemVersion.cpp" />
+    <ClCompile Include="src\Updater\UpdateCoordinator.cpp" />
     <ClCompile Include="src\Updater\UpdateModels.cpp" />
     <ClCompile Include="src\Updater\UpdateManifest.cpp" />
     <ClCompile Include="src\Updater\UpdateStateStore.cpp" />
@@ -251,9 +254,12 @@
     <ClInclude Include="src\Core\Settings.h" />
     <ClInclude Include="src\Game\gamestates.h" />
     <ClInclude Include="src\Palette\PaletteManager.h" />
+    <ClInclude Include="src\Updater\FileUtil.h" />
     <ClInclude Include="src\Updater\GitHubReleaseClient.h" />
     <ClInclude Include="src\Updater\JsonValue.h" />
+    <ClInclude Include="src\Updater\PackageStager.h" />
     <ClInclude Include="src\Updater\SemVersion.h" />
+    <ClInclude Include="src\Updater\UpdateCoordinator.h" />
     <ClInclude Include="src\Updater\UpdateModels.h" />
     <ClInclude Include="src\Updater\UpdateManifest.h" />
     <ClInclude Include="src\Updater\UpdateState.h" />

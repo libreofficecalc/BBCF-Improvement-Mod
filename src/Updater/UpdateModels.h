@@ -49,6 +49,8 @@ namespace Updater
 		SemVersion version;
 		GitHubReleaseAsset manifestAsset;
 		GitHubReleaseAsset packageAsset;
+		bool autoApplySupported = true;
+		std::string autoApplyDisabledReason;
 	};
 
 	struct UpdateCheckResult
