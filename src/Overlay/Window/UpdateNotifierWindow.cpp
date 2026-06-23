@@ -243,6 +243,13 @@ namespace
 			update.state == Updater::UpdateUiState_Staging ||
 			update.state == Updater::UpdateUiState_LaunchingUpdater;
 	}
+
+	float EstimateWrappedHeight(const std::string& text, float wrapWidth)
+	{
+		if (text.empty())
+			return 0.0f;
+		return ImGui::CalcTextSize(text.c_str(), nullptr, false, wrapWidth).y;
+	}
 }
 
 void UpdateNotifierWindow::Update()
@@ -263,9 +270,8 @@ void UpdateNotifierWindow::Update()
 void UpdateNotifierWindow::BeforeDraw()
 {
 	const ImGuiIO& io = ImGui::GetIO();
-	ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-	ImGui::SetNextWindowSize(ImVec2(760, 600), ImGuiCond_Appearing);
-	ImGui::SetNextWindowSizeConstraints(ImVec2(620, 420), ImVec2(920, 760));
+	ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+	ImGui::SetNextWindowSize(ImVec2(760, 600), ImGuiCond_FirstUseEver);
 }
 
 void UpdateNotifierWindow::Draw()
@@ -273,6 +279,11 @@ void UpdateNotifierWindow::Draw()
 	Updater::UpdateUiSnapshot update = Updater::UpdateCoordinator::GetInstance().GetSnapshot();
 	const char* tag = update.tag.empty() ? GetNewVersionNum().c_str() : update.tag.c_str();
 	const bool busy = IsBusy(update);
+	if (ImGui::IsWindowAppearing() || m_lastReleaseNotesTag != tag)
+	{
+		m_lastReleaseNotesTag = tag;
+		m_resetReleaseNotesScroll = true;
+	}
 
 	ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.95f, 1.0f, 1.0f));
 	ImGui::TextAlignedHorizontalCenter(L("BBCF Improvement Mod %s is available").c_str(), tag);
@@ -284,11 +295,27 @@ void UpdateNotifierWindow::Draw()
 
 	ImGui::Spacing();
 	ImGui::Separator();
+	const ImVec2 buttonSize = ImVec2(150, 24);
+	const float rowWidth = (buttonSize.x * 3.0f) + (ImGui::GetStyle().ItemSpacing.x * 2.0f);
+	const float wrapWidth = ImGui::GetContentRegionAvail().x;
+	float bottomReserve = ImGui::GetStyle().ItemSpacing.y + buttonSize.y + ImGui::GetStyle().ItemSpacing.y;
+	if (!update.statusText.empty())
+		bottomReserve += ImGui::GetStyle().ItemSpacing.y + EstimateWrappedHeight(update.statusText, wrapWidth);
+	if (busy)
+		bottomReserve += ImGui::GetStyle().ItemSpacing.y + ImGui::GetFrameHeight();
+	if (!update.errorText.empty())
+		bottomReserve += ImGui::GetStyle().ItemSpacing.y + EstimateWrappedHeight(update.errorText, wrapWidth);
+	if (!update.autoApplySupported && !update.autoApplyDisabledReason.empty())
+		bottomReserve += ImGui::GetStyle().ItemSpacing.y + EstimateWrappedHeight(update.autoApplyDisabledReason, wrapWidth);
+	bottomReserve += ImGui::GetStyle().ItemSpacing.y;
+
 	if (!update.releaseNotes.empty())
 	{
 		ImGui::Spacing();
 		ImGui::TextDisabled("%s", L("Release notes").c_str());
-		ImGui::BeginChild("ReleaseNotes", ImVec2(0, 310), true);
+		ImGui::BeginChild("ReleaseNotes", ImVec2(0, -bottomReserve), true);
+		if (m_resetReleaseNotesScroll)
+			ImGui::SetScrollY(0.0f);
 		for (size_t i = 0; i < update.releaseNotes.size(); ++i)
 		{
 			DrawReleaseNotes(update.releaseNotes[i]);
@@ -305,10 +332,13 @@ void UpdateNotifierWindow::Draw()
 	{
 		ImGui::Spacing();
 		ImGui::TextDisabled("%s", L("Release notes").c_str());
-		ImGui::BeginChild("ReleaseNotes", ImVec2(0, 260), true);
+		ImGui::BeginChild("ReleaseNotes", ImVec2(0, -bottomReserve), true);
+		if (m_resetReleaseNotesScroll)
+			ImGui::SetScrollY(0.0f);
 		DrawMarkdownText(update.body);
 		ImGui::EndChild();
 	}
+	m_resetReleaseNotesScroll = false;
 
 	if (!update.statusText.empty())
 	{
@@ -334,9 +364,6 @@ void UpdateNotifierWindow::Draw()
 	}
 
 	ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(12, 7));
-
-	const ImVec2 buttonSize = ImVec2(150, 24);
-	const float rowWidth = (buttonSize.x * 3.0f) + (ImGui::GetStyle().ItemSpacing.x * 2.0f);
 
 	ImGui::AlignItemHorizontalCenter(rowWidth);
 	if (update.autoApplySupported)

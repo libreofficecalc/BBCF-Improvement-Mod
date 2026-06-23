@@ -42,7 +42,7 @@ WindowContainer::WindowContainer()
 
 	AddWindow(WindowType_UpdateNotifier,
 		new UpdateNotifierWindow("Update available", true,
-			ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse));
+			ImGuiWindowFlags_NoCollapse));
 
         AddWindow(WindowType_PaletteEditor,
                 new PaletteEditorWindow("Palette Editor", true));

@@ -168,6 +168,43 @@ namespace Updater
 					codePoint = (codePoint << 4) | static_cast<unsigned int>(digit);
 				}
 
+				if (codePoint >= 0xD800 && codePoint <= 0xDBFF)
+				{
+					if (m_pos + 6 <= m_text.size() && m_text[m_pos] == '\\' && m_text[m_pos + 1] == 'u')
+					{
+						m_pos += 2;
+						unsigned int lowSurrogate = 0;
+						for (int i = 0; i < 4; ++i)
+						{
+							const int digit = HexDigit(m_text[m_pos++]);
+							if (digit < 0)
+							{
+								error = "Invalid JSON unicode surrogate escape.";
+								return false;
+							}
+							lowSurrogate = (lowSurrogate << 4) | static_cast<unsigned int>(digit);
+						}
+
+						if (lowSurrogate >= 0xDC00 && lowSurrogate <= 0xDFFF)
+						{
+							codePoint = 0x10000 +
+								(((codePoint - 0xD800) << 10) | (lowSurrogate - 0xDC00));
+						}
+						else
+						{
+							codePoint = 0xFFFD;
+						}
+					}
+					else
+					{
+						codePoint = 0xFFFD;
+					}
+				}
+				else if (codePoint >= 0xDC00 && codePoint <= 0xDFFF)
+				{
+					codePoint = 0xFFFD;
+				}
+
 				AppendUtf8(codePoint, outString);
 				return true;
 			}
@@ -356,9 +393,19 @@ namespace Updater
 				}
 				else
 				{
-					outString.push_back(static_cast<char>(0xE0 | ((codePoint >> 12) & 0x0F)));
-					outString.push_back(static_cast<char>(0x80 | ((codePoint >> 6) & 0x3F)));
-					outString.push_back(static_cast<char>(0x80 | (codePoint & 0x3F)));
+					if (codePoint <= 0xFFFF)
+					{
+						outString.push_back(static_cast<char>(0xE0 | ((codePoint >> 12) & 0x0F)));
+						outString.push_back(static_cast<char>(0x80 | ((codePoint >> 6) & 0x3F)));
+						outString.push_back(static_cast<char>(0x80 | (codePoint & 0x3F)));
+					}
+					else
+					{
+						outString.push_back(static_cast<char>(0xF0 | ((codePoint >> 18) & 0x07)));
+						outString.push_back(static_cast<char>(0x80 | ((codePoint >> 12) & 0x3F)));
+						outString.push_back(static_cast<char>(0x80 | ((codePoint >> 6) & 0x3F)));
+						outString.push_back(static_cast<char>(0x80 | (codePoint & 0x3F)));
+					}
 				}
 			}
 

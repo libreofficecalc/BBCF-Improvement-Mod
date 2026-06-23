@@ -1,6 +1,8 @@
 #pragma once
 #include "IWindow.h"
 
+#include <string>
+
 class UpdateNotifierWindow : public IWindow
 {
 public:
@@ -12,4 +14,7 @@ public:
 protected:
 	void BeforeDraw() override;
 	void Draw() override;
+private:
+	std::string m_lastReleaseNotesTag;
+	bool m_resetReleaseNotesScroll = false;
 };

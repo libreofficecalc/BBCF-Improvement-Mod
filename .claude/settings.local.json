@@ -45,7 +45,8 @@
       "Bash(gh api *)",
       "Bash(gh auth *)",
       "WebFetch(domain:github.com)",
-      "WebFetch(domain:api.github.com)"
+      "WebFetch(domain:api.github.com)",
+      "Bash(curl -s \"https://api.github.com/repos/HaiKamDesu/BBCF-Improvement-Mod/releases?per_page=100\")"
     ]
   }
 }
