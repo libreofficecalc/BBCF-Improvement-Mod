@@ -191,6 +191,7 @@ void MainWindow::DrawUtilButtons() const
 	{
 		m_pWindowContainer->GetWindow(WindowType_Debug)->ToggleOpen();
 	}
+	ImGui::SameLine();
 #endif
 
 	if (ImGui::Button(Messages.Log(), BTN_SIZE))

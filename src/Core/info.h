@@ -1,6 +1,6 @@
 #pragma once
-#define MOD_VERSION	"v6.0"
-#define MOD_VERSION_NUM	MOD_VERSION " BO BLEIS edition"
+#define MOD_VERSION	"v7.1"
+#define MOD_VERSION_NUM	MOD_VERSION " Oceanya Edition"
 #define MOD_WINDOW_TITLE "BBCF IM"
 
 #define MOD_FORCE_DISABLE_UPDATE_CHECK 0
@@ -11,4 +11,4 @@
 #define MOD_LINK_GITHUB L"https://github.com/HaiKamDesu/BBCF-Improvement-Mod/releases"
 #define MOD_LINK_API_GITHUB_RELEASE L"https://api.github.com/repos/HaiKamDesu/BBCF-Improvement-Mod/releases/latest"
 #define REPLAY_DB_FRONTEND L"http://89.167.76.6:2000/"
-// #define REPLAY_DB_FRONTEND L"http://50.118.225.175:2000/"
+// #define REPLAY_DB_FRONTEND L"http://50.118.225.175:2000/"jj
