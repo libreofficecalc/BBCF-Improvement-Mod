@@ -151,7 +151,7 @@ namespace Updater
 	void UpdateCoordinator::DrawSkippedMainMenuLink()
 	{
 		UpdateUiSnapshot snapshot = GetSnapshot();
-		if (!snapshot.hasUpdate || !snapshot.skipped)
+		if (!snapshot.hasUpdate)
 			return;
 
 		ImGui::Spacing();

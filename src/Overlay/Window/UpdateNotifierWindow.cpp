@@ -10,6 +10,7 @@
 #include <cctype>
 #include <cstdio>
 #include <cstring>
+#include <shellapi.h>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -191,22 +192,36 @@ namespace
 
 	void DrawReleaseNotes(const Updater::GitHubRelease& release)
 	{
+		const std::string title = release.name.empty() ? release.tagName : release.name;
+		const ImVec4 titleColor = ImVec4(0.98f, 0.98f, 1.0f, 1.0f);
+		const ImVec4 titleHoverColor = ImVec4(0.76f, 0.76f, 0.80f, 1.0f);
+
 		ImGui::TextColoredAlignedHorizontalCenter(ImVec4(0.58f, 0.58f, 0.62f, 1.0f), release.tagName.c_str());
-		if (!release.name.empty())
+
+		ImGui::SetWindowFontScale(1.18f);
+		const ImVec2 textSize = ImGui::CalcTextSize(title.c_str());
+		ImGui::AlignItemHorizontalCenter(textSize.x);
+		const ImVec2 pos = ImGui::GetCursorScreenPos();
+		ImGui::InvisibleButton(("##ReleaseLink" + release.tagName).c_str(), textSize);
+		const bool hovered = ImGui::IsItemHovered();
+		const bool clicked = ImGui::IsItemClicked();
+
+		ImGui::GetWindowDrawList()->AddText(
+			pos,
+			ImGui::ColorConvertFloat4ToU32(hovered ? titleHoverColor : titleColor),
+			title.c_str());
+		if (hovered)
 		{
-			ImGui::SetWindowFontScale(1.18f);
-			ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.98f, 0.98f, 1.0f, 1.0f));
-			ImGui::TextAlignedHorizontalCenter("%s", release.name.c_str());
-			ImGui::PopStyleColor();
-			ImGui::SetWindowFontScale(1.0f);
+			ImGui::GetWindowDrawList()->AddLine(
+				ImVec2(pos.x, pos.y + textSize.y),
+				ImVec2(pos.x + textSize.x, pos.y + textSize.y),
+				ImGui::ColorConvertFloat4ToU32(titleHoverColor));
 		}
-		else
+		ImGui::SetWindowFontScale(1.0f);
+		if (clicked && !release.htmlUrl.empty())
 		{
-			ImGui::SetWindowFontScale(1.18f);
-			ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.98f, 0.98f, 1.0f, 1.0f));
-			ImGui::TextAlignedHorizontalCenter("%s", release.tagName.c_str());
-			ImGui::PopStyleColor();
-			ImGui::SetWindowFontScale(1.0f);
+			const std::wstring url(release.htmlUrl.begin(), release.htmlUrl.end());
+			ShellExecuteW(nullptr, L"open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
 		}
 
 		ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.58f, 0.58f, 0.62f, 1.0f));
@@ -265,11 +280,7 @@ void UpdateNotifierWindow::Draw()
 	ImGui::Spacing();
 
 	if (update.developmentChannel)
-		ImGui::TextDisabled("%s", L("Development update channel").c_str());
-	if (!update.name.empty())
-		ImGui::TextWrapped("%s", update.name.c_str());
-	if (!update.publishedAt.empty())
-		ImGui::TextDisabled("%s", FormatGitHubDate(update.publishedAt).c_str());
+		ImGui::TextColoredAlignedHorizontalCenter(ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled), L("Development update channel").c_str());
 
 	ImGui::Spacing();
 	ImGui::Separator();
