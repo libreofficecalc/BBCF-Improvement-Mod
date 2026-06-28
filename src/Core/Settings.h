@@ -2,6 +2,7 @@
 #include "D3D9EXWrapper/d3d9.h"
 
 #include <string>
+#include <map>
 
 struct settingsIni_t
 {
@@ -19,6 +20,7 @@ struct savedSettings_t
 	D3DXVECTOR2 origViewportRes;
 	bool isDuelFieldSprite;
 	bool isFiltering;
+
 };
 
 class Settings
@@ -32,8 +34,11 @@ public:
 	static void initSavedSettings();
 	//static void setViewportSize(D3DVIEWPORT9 Viewport);
 	static short getButtonValue(std::string button);
+
+	static int changeSetting(std::string setting_name, std::string new_value);
 private:
 	static int readSettingsFilePropertyInt(LPCWSTR key, LPCWSTR defaultVal, LPCWSTR filename);
 	static float readSettingsFilePropertyFloat(LPCWSTR key, LPCWSTR defaultVal, LPCWSTR filename);
 	static std::string readSettingsFilePropertyString(LPCWSTR key, LPCWSTR defaultVal, LPCWSTR filename);
 };
+

@@ -2,9 +2,11 @@
 
 #include "Core/logger.h"
 
+
+
 RoomManager::RoomManager(NetworkManager* pNetworkManager, ISteamFriends* pSteamFriends, CSteamID steamID)
 	: m_pNetworkManager(pNetworkManager), m_pSteamFriends(pSteamFriends),
-	m_thisPlayerSteamID(steamID), m_pFFAThisPlayerIndex(nullptr), m_pRoom(nullptr)
+	m_thisPlayerSteamID(steamID), m_pFFAThisPlayerIndex(nullptr), m_pRoom(nullptr), m_pRoomSettings(GetRoomSettingsStaticBaseAdress())
 {
 	m_imPlayers.resize(8);
 }
@@ -92,7 +94,28 @@ void RoomManager::SendPacketToSameMatchIMPlayers(Packet* packet)
 		}
 	}
 }
+void RoomManager::SendPacketToSameMatchIMPlayersNonSpectator(Packet* packet)
+{
+	LOG(2, "RoomManager::SendPacketToSameMatchIMPlayers\n");
 
+	packet->roomMemberIndex = GetThisPlayerRoomMemberIndex();
+
+	for (IMPlayer& imPlayer : GetIMPlayersInCurrentMatchNonSpec())
+	{
+		// Remove from IM users list if player has left the room
+		if (!IsPlayerInRoom(imPlayer))
+		{
+			RemoveIMPlayerFromRoom(imPlayer.roomMemberIndex);
+			continue;
+		}
+
+		// Send to all other non spectating IM players
+		if (!IsThisPlayer(imPlayer.steamID.ConvertToUint64()))
+		{
+				m_pNetworkManager->SendPacket(&imPlayer.steamID, packet);
+		}
+	}
+}
 bool RoomManager::IsPacketFromSameRoom(Packet* packet) const
 {
 	LOG(7, "RoomManager::IsPacketFromSameRoom\n");
@@ -256,6 +279,17 @@ std::vector<const RoomMemberEntry*> RoomManager::GetOtherRoomMemberEntriesInCurr
 
 	return currentMatchRoomMembers;
 }
+std::vector<IMPlayer> RoomManager::GetIMPlayersInCurrentMatchNonSpec() const
+{
+	std::vector<IMPlayer> currentMatchIMPlayers = GetIMPlayersInCurrentMatch();
+	std::vector<IMPlayer> non_spec_im_players;
+	for (auto& player : currentMatchIMPlayers) {
+		if (player.matchPlayerIndex < 2) {
+			non_spec_im_players.push_back(player);
+		}
+	}
+	return non_spec_im_players;
+}
 
 void RoomManager::AddIMPlayerToRoom(const IMPlayer& imPlayer)
 {
@@ -349,4 +383,45 @@ bool RoomManager::IsPlayerInRoom(const IMPlayer& player) const
 bool RoomManager::IsThisPlayer(const uint64_t otherSteamID) const
 {
 	return otherSteamID == m_thisPlayerSteamID.ConvertToUint64();
+}
+
+RoomSettingsStatic* RoomManager::GetRoomSettingsStaticBaseAdress() {
+
+	return (RoomSettingsStatic*)(GetBbcfBaseAdress() + 0x8F7A64);
+}
+bool RoomManager::ChangeRematchAmnt(signed int new_amnt) {
+	//rematch_count: -1 for unlimited, 0 for no rematch, 2 for ft2, 3 for ft3, 5 for ft5, 10 for ft10
+	if (!IsRoomFunctional()) {
+		return false;
+	}
+	switch (new_amnt) {
+	case (-1):
+		m_pRoom->rematch = RoomRematch::RematchType_Unlimited;
+		m_pRoomSettings->rematch = RoomSettingsRematchStatic::FixedRematchType_Unlimited;
+		return true;
+	case (0):
+		m_pRoom->rematch = RoomRematch::RematchType_Disabled;
+		m_pRoomSettings->rematch = RoomSettingsRematchStatic::FixedRematchType_Disabled;
+		return true;
+	case (2):
+		m_pRoom->rematch = RoomRematch::RematchType_Ft2;
+		m_pRoomSettings->rematch = RoomSettingsRematchStatic::FixedRematchType_Ft2;
+		return true;
+	case (3):
+		m_pRoom->rematch = RoomRematch::RematchType_Ft3;
+		m_pRoomSettings->rematch = RoomSettingsRematchStatic::FixedRematchType_Ft3;
+		return true;
+	case (5):
+		m_pRoom->rematch = RoomRematch::RematchType_Ft5;
+		m_pRoomSettings->rematch = RoomSettingsRematchStatic::FixedRematchType_Ft5;
+		return true;
+	case (10):
+		m_pRoom->rematch = RoomRematch::RematchType_Ft10;
+		m_pRoomSettings->rematch = RoomSettingsRematchStatic::FixedRematchType_Ft10;
+		return true;
+	default:
+		return false;
+
+	}
+	return false;
 }

@@ -87,6 +87,11 @@ bool WindowManager::Initialize(void *hwnd, IDirect3DDevice9 *device)
 		ImGui::GetIO().Fonts->AddFontFromMemoryCompressedTTF(DroidSans_compressed_data, DroidSans_compressed_size, 20);
 		unicodeFontSize = 25;
 	}
+	else if (Settings::settingsIni.menusize == 4)
+	{
+		ImGui::GetIO().Fonts->AddFontFromMemoryCompressedTTF(DroidSans_compressed_data, DroidSans_compressed_size, 30);
+		unicodeFontSize = 35;
+	}
 	else
 	{
 		ImGui::GetIO().Fonts->AddFontDefault();
@@ -106,6 +111,8 @@ bool WindowManager::Initialize(void *hwnd, IDirect3DDevice9 *device)
 	ImGui::GetIO().Fonts->AddFontFromMemoryCompressedTTF(mplusMedium_compressed_data, mplusMedium_compressed_size,
 		unicodeFontSize, &config, ranges);
 
+
+	//ImGui::GetIO().Fonts->AddFontFromMemoryCompressedTTF(DroidSans_compressed_data, DroidSans_compressed_size, 20);
 	// Set up toggle buttons
 
 	keyToggleMainWindow = Settings::getButtonValue(Settings::settingsIni.togglebutton);
@@ -130,6 +137,15 @@ bool WindowManager::Initialize(void *hwnd, IDirect3DDevice9 *device)
 	srand(time(NULL));
 
 	StartAsyncUpdateCheck();
+	//StartAsyncReplayUpload();
+
+	if (g_modVals.uploadReplayData == -1)
+	{
+		m_windowContainer->GetWindow(WindowType_ReplayDBPopup)->Open();
+	}
+
+
+
 
 	std::string notificationText = MOD_WINDOW_TITLE;
 	notificationText += " ";
@@ -198,27 +214,27 @@ void WindowManager::Render()
 		return;
 	}
 
+	if (IsIconic(g_gameProc.hWndGameWindow))
+	{
+		return; // don't render when window is minimized, since this sometimes moves ui around
+	}
+
+
 	LOG(7, "WindowManager::Render\n");
 
 	HandleButtons();
 
 	ImGui_ImplDX9_NewFrame();
 
-	bool isMainWindowOpen =
-		m_windowContainer->GetWindow(WindowType_Main)->IsOpen();
-	bool isUpdateNotifierWindowOpen =
-		m_windowContainer->GetWindow(WindowType_UpdateNotifier)->IsOpen();
-	bool isPaletteEditorWindowOpen =
-		m_windowContainer->GetWindow(WindowType_PaletteEditor)->IsOpen();
-	bool isLogWindowOpen =
-		m_windowContainer->GetWindow(WindowType_Log)->IsOpen();
-	bool isRoomWindowOpen =
-		m_windowContainer->GetWindow(WindowType_Room)->IsOpen();
-	bool isDebugWindowOpen =
-		m_windowContainer->GetWindow(WindowType_Debug)->IsOpen();
+	ImGui::GetIO().MouseDrawCursor = false;
+	for (auto p : m_windowContainer->GetWindows()) {
+		if (p.first == WindowType_HitboxOverlay) continue; // ignore windows that don't need a mouse
+		if (p.second->IsOpen()) {
+			ImGui::GetIO().MouseDrawCursor = true;
+			break;
+		}
+	}
 
-	ImGui::GetIO().MouseDrawCursor = isMainWindowOpen || isLogWindowOpen || isPaletteEditorWindowOpen
-		|| isUpdateNotifierWindowOpen || isRoomWindowOpen || isDebugWindowOpen;
 
 	if (Settings::settingsIni.viewport == 2)
 	{

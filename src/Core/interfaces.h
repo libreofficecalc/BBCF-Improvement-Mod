@@ -5,9 +5,12 @@
 #include "D3D9EXWrapper/ID3D9EXWrapper_Device.h"
 #include "Game/Player.h"
 #include "Game/Room/Room.h"
+#include "Game/ReplayRewind/ReplayRewind.h"
+
 #include "Network/NetworkManager.h"
 #include "Network/OnlineGameModeManager.h"
 #include "Network/OnlinePaletteManager.h"
+#include "Network/ReplayUploadManager.h"
 #include "Network/RoomManager.h"
 #include "Palette/PaletteManager.h"
 #include "SteamApiWrapper/SteamApiHelper.h"
@@ -39,6 +42,9 @@ struct interfaces_t
 	GameModeManager* pGameModeManager;
 	OnlineGameModeManager* pOnlineGameModeManager;
 
+	ReplayUploadManager* pReplayUploadManager;
+	ReplayRewind* pReplayRewindManager;
+
 	Player player1;
 	Player player2;
 };
@@ -59,7 +65,7 @@ struct gameVals_t
 	byte* playerAvatarAcc2;
 
 	int isP1CPU;
-
+	//DWORD P1InputJumpBackAdress;
 	unsigned char* stageListMemory;
 	int *stageSelect_X;
 	int *stageSelect_Y;
@@ -87,14 +93,31 @@ struct gameVals_t
 	int* pEntityList;
 	int entityCount;
 
+
 	Room* pRoom;
+	
 };
 
 struct gameProc_t
 {
 	HWND hWndGameWindow;
 };
-
+struct modValues_t {
+	bool enableForeignPalettes = true; 
+	int save_states_save_keycode;
+	int save_states_load_keycode;
+	int replay_takeover_load_keycode;
+	int freeze_frame_keycode;
+	int step_frames_keycode;
+	int uploadReplayData;
+	std::string uploadReplayDataHost; 
+	std::string uploadReplayDataEndpoint;
+	unsigned short uploadReplayDataPort;
+	bool uploadReplayDataVeto = false; //this refers to when other players disable replay upload
+	float frame_history_width;
+	float frame_history_height;
+	float frame_history_spacing;
+};
 //temporary placeholders until wrappers are created / final addresses updated
 struct temps_t
 {
@@ -110,6 +133,8 @@ extern interfaces_t g_interfaces;
 extern gameProc_t g_gameProc;
 extern gameVals_t g_gameVals;
 extern temps_t g_tempVals;
+extern modValues_t g_modVals;
 
+int GetGameSceneStatus();
 void InitManagers();
 void CleanupInterfaces();

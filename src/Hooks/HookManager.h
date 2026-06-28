@@ -23,8 +23,9 @@ struct functionhook_t
 class HookManager
 {
 public:
-	static JMPBACKADDR SetHook(const char* label, const char* pattern, const char* mask, const int length, void* newFunc, bool activate = true); //returns 0 if hook failed
-	static bool SetHook(const char* label, void* newFunc, bool activate = true);
+	static JMPBACKADDR SetHook(const char* label, const char* pattern, const char* mask, const int length, void* newFunc, bool activate = true); //Hooks to a found adress, returns 0 if hook failed
+	static JMPBACKADDR SetHook(const char* label, DWORD startAddress, const int length, void* newFunc, bool activate = true); //Hooks to direct adress, returns 0 if hook failed
+	static bool SetHook(const char* label, void* newFunc, bool activate = true); 
 	static bool IsHookActivated(const char* label);
 	static bool ActivateHook(const char* label); //0 hook not found, 1 success
 	static bool DeactivateHook(const char* label); // 0 hook not found, 1 success

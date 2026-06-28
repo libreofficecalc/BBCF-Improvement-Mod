@@ -1,0 +1,2059 @@
+#include "ScrWindow.h"
+
+#include "Core/interfaces.h"
+#include "Core/Settings.h"
+#include "Core/utils.h"
+#include "Game/gamestates.h"
+#include "Game/ReplayStates/FrameState.h"
+#include "Game/ReplayFiles/ReplayFile.h"
+#include "Game/ReplayFiles/ReplayList.h"
+#include "Game/ReplayFiles/ReplayFileManager.h"
+#include "Game/Menus/TrainingSetupMenu.h"
+#include "Game/ScenesManager/ScenesManager.h"
+#include "Overlay/NotificationBar/NotificationBar.h"
+#include "Overlay/WindowManager.h"
+#include "Overlay/Window/HitboxOverlay.h"
+#include "Overlay/imgui_utils.h"
+#include "Psapi.h"
+#include <ctime>
+#include <cstdlib>
+#include <iostream>
+#include <fstream>
+#include <array>
+#include "Core/info.h"
+#include <windows.h>
+#include "Game/Playbacks/PlaybackManager.h"
+#include "Overlay/imgui_utils.h"
+#include <cstdlib>
+#include <ctime>
+#include <algorithm>
+
+
+
+
+void ScrWindow::Draw()
+{
+    
+    static bool random_seeded = false;
+    if (!random_seeded){
+        std::srand(static_cast<unsigned int>(std::time(nullptr)));
+        random_seeded = true;
+    }
+    if (m_showDemoWindow)
+    {
+        ImGui::ShowDemoWindow(&m_showDemoWindow);
+    }
+    DrawGenericOptionsSection();
+    DrawStatesSection();
+    DrawPlaybackSection();
+    DrawSaveStates();
+    DrawReplayTheaterSection();
+    
+    
+    DrawReplayTakeover();
+    DrawRoomSection();
+    DrawInputBufferButton();
+    DrawComboDataButton();
+}
+void ScrWindow::DrawComboDataButton() {
+    if (ImGui::Button("Combo Data"))
+    {
+        ScrWindow::m_pWindowContainer->GetWindow(WindowType_ComboData)->ToggleOpen();
+    }
+}
+void ScrWindow::DrawInputBufferButton() {
+    if (ImGui::Button("Input Buffer P1"))
+    {
+        ScrWindow::m_pWindowContainer->GetWindow(WindowType_InputBufferP1)->ToggleOpen();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Input Buffer P2"))
+    {
+        ScrWindow::m_pWindowContainer->GetWindow(WindowType_InputBufferP2)->ToggleOpen();
+    }
+}
+void ScrWindow::DrawWakeupDelayControl() {
+    //ImGui::BeginChild("zbmjxc");
+    const char* items[] = { "Disabled", "Neutral", "Forward", "Backward", "Quick", "Random" };
+    
+    static int32_t wakeup_delay_current_item = 0;
+    //gets the start of the fourth page of training setup menu
+    ImGui::BeginChild("wakeup_delay_child##wakeup_delay", ImVec2(160, 30));
+    ImGui::Text("Delay: ");
+    ImGui::SameLine();
+    if (ImGui::InputInt("##wakeup_delay", &(ScrWindow::wakeup_delay))) {
+        
+        if (ScrWindow::wakeup_delay > 39) {
+            ScrWindow::wakeup_delay = 39;
+        }
+        if (ScrWindow::wakeup_delay < 0) {
+            ScrWindow::wakeup_delay = 0;
+        }
+    }
+    ImGui::EndChild();
+    ImGui::SameLine();
+    ImGui::BeginChild("wakeup_skew_child##wakeup_delay", ImVec2(263, 30));
+    ImGui::Text("Skew range: ");
+    ImGui::SameLine();
+    if (ImGui::InputInt("##wakeup_skew", &(ScrWindow::wakeup_delay_skew))) {
+        ScrWindow::wakeup_delay_skew_change_flag = true;
+        if (ScrWindow::wakeup_delay_skew > 39) {
+            ScrWindow::wakeup_delay_skew = 39;
+        }
+        if (ScrWindow::wakeup_delay_skew < -39) {
+            ScrWindow::wakeup_delay_skew = -39;
+        }
+    };
+    ImGui::EndChild();
+    //ImGui::SameLine(); 
+    //ImGui::HorizontalSpacing(30);
+    //ImGui::BeginChild("wakeup_type_child##wakeup_delay", ImVec2(190, 30));
+    ImGui::Text("Wake-up: ");
+    ImGui::SameLine();
+    ImGui::BeginChild("tst##wakeup_delay", ImVec2(263, 100));
+    static bool selected[6] = {};
+    for (int i = 0; i < 6; i++)
+    {
+        char label[15];
+        sprintf(label, items[i]);
+        //if (i % 2) { ImGui::NextColumn(); ImGui::SameLine(); }  //ImGui::NextColumn(); }
+        ImGui::Selectable(label, &selected[i]); // FIXME-TABLE: Selection overlap
+    }
+    //I should probably make it so that all cases are random tbh
+    std::vector<int> selected_index = {};
+    for (int i = 0; i < 6; i++) {
+        if (selected[i]) {
+            selected_index.push_back(i);
+        }
+    }
+    if (!selected_index.empty()) {
+        ScrWindow::wakeup_type = selected_index[std::rand() % selected_index.size()];
+    }
+    ImGui::EndChild();
+
+   // if (ImGui::Combo("##wakeup_delay", &wakeup_delay_current_item, items, IM_ARRAYSIZE(items)))
+  //  {
+   //     ScrWindow::wakeup_type= wakeup_delay_current_item;
+  //  }
+    //ImGui::EndChild();
+    
+  
+    //ImGui::SameLine();
+    
+    
+    
+    //ImGui::EndChild();
+
+}
+void ScrWindow::check_wakeup_delay() {
+    TrainingSetupMenu* menu = (TrainingSetupMenu*)(ScrWindow::bbcf_base_adress + 0x902BDC);
+    menu->emergency_roll = 0;
+    auto current_action = std::string(g_interfaces.player2.GetData()->currentAction);
+    auto action_time = g_interfaces.player2.GetData()->actionTime;
+    /*finds the random "skew" both for positiveand negative "skews".Yes I know this doesnt fit 
+    the true statistical definition of skew but I couldn't think of a better name fuck off*/
+    static int wakeup_delay_random_skew = 0;
+    //this is necessary to make sure people dont get stuck in unreacheable action_times when changing the skew
+    if (ScrWindow::wakeup_delay_skew_change_flag) {
+        wakeup_delay_random_skew = 0;
+        ScrWindow::wakeup_delay_skew_change_flag = false;
+    }
+    
+    if (ScrWindow::wakeup_delay_skew && !wakeup_delay_random_skew) {
+        wakeup_delay_random_skew = (std::rand() % std::abs(ScrWindow::wakeup_delay_skew))
+                                                            * (ScrWindow::wakeup_delay_skew / std::abs(ScrWindow::wakeup_delay_skew));
+    }
+    //searches for CmnActFDownLoop and CmnActBDownLoop, this state after 10f is the one that allows for non emergency tech action
+    auto wakeup_action_trigger_find = current_action.find("DownLoop");
+    if (ScrWindow::wakeup_type
+        && wakeup_action_trigger_find != std::string::npos
+        && action_time == 10 + ScrWindow::wakeup_delay + wakeup_delay_random_skew) {
+        menu->wake_up = wakeup_type;
+        wakeup_delay_random_skew = 0;
+    }
+    else {
+        menu->wake_up = 0;
+    }
+
+}
+void ScrWindow::DrawGenericOptionsSection() {
+    static bool check_dummy = g_modVals.enableForeignPalettes;
+    if (ImGui::Checkbox("Load foreign palettes", &check_dummy)) {
+        g_modVals.enableForeignPalettes = !g_modVals.enableForeignPalettes;
+
+    }
+    ImGui::SameLine();
+    ImGui::ShowHelpMarker("If you're having crash issues when joining ranked from training mode, disable this when searching in training mode, can be reenabled for any other situation. It stops your game from loading foreign palettes. This is just a stopgap, grim will come with the real fix.");
+    if (*g_gameVals.pGameMode == GameMode_Training && !g_interfaces.player2.IsCharDataNullPtr()) {
+        static bool check_enable_wakeup_delay = false;
+        ImGui::Checkbox("Enable wakeup delay override", &check_enable_wakeup_delay);
+        if (check_enable_wakeup_delay) {
+            DrawWakeupDelayControl();
+            check_wakeup_delay();
+        } 
+    }
+}
+void ScrWindow::swap_character_coordinates() {
+    CharData* p1 = g_interfaces.player1.GetData();
+    CharData* p2 = g_interfaces.player2.GetData();
+    auto posx1 = p1->position_x;
+    auto posy1 = p1->position_y;
+    p1->facingLeft = !p1->facingLeft;
+    p1->position_x = p2->position_x;
+    p1->position_y = p2->position_y;
+    p2->position_x = posx1;
+    p2->position_y = posy1;
+    p2->facingLeft = !p2->facingLeft;
+}
+std::string interpret_frame_invuln_enum(FrameInvuln value) {
+    switch (value) {
+    case FrameInvuln::None:
+        return "None";
+    case FrameInvuln::Head:
+        return "Head";
+    case FrameInvuln::Body:
+        return "Body";
+    case FrameInvuln::Foot:
+        return "Foot";
+    case FrameInvuln::Throw:
+        return "Throw";
+    case FrameInvuln::HeadBody:
+        return "HeadBody";
+    case FrameInvuln::HeadFoot:
+        return "HeadFoot";
+    case FrameInvuln::HeadThrow:
+        return "HeadThrow";
+    case FrameInvuln::BodyFoot:
+        return "BodyFoot";
+    case FrameInvuln::BodyThrow:
+        return "BodyThrow";
+    case FrameInvuln::FootThrow:
+        return "FootThrow";
+    case FrameInvuln::HeadBodyFoot:
+        return "HeadBodyFoot";
+    case FrameInvuln::HeadBodyThrow:
+        return "HeadBodyThrow";
+    case FrameInvuln::HeadFootThrow:
+        return "HeadFootThrow";
+    case FrameInvuln::BodyFootThrow:
+        return "BodyFootThrow";
+    case FrameInvuln::All:
+        return "All";
+    default:
+        return "Unknown";
+    }
+}
+bool find_substring_in_vector(std::vector<std::string> string_vector, std::string substr) {
+    for (auto& str : string_vector) {
+        if (substr.find(str) != std::string::npos) {
+            return true;
+        }
+    };
+    return false;
+}
+void ScrWindow::DrawStatesSection()
+{
+    if (*g_gameVals.pGameMode == GameMode_Training) {
+		if (ImGui::Button("Swap character coordinates")) {
+            ScrWindow::swap_character_coordinates();
+        }
+        ImGui::SameLine();
+        static bool swap_character_coords_toggle = false;
+        ImGui::Checkbox("Always swap coordinates", &swap_character_coords_toggle);
+        if (swap_character_coords_toggle && *g_gameVals.pFrameCount ==5) {
+            ScrWindow::swap_character_coordinates();
+        }
+
+
+    }
+
+
+    if (!ImGui::CollapsingHeader("States"))
+        return;
+    if (*g_gameVals.pGameMode != GameMode_Training) {
+        ImGui::Text("Only works in training mode");
+        return;
+    }
+    if (g_interfaces.player2.IsCharDataNullPtr()  || g_interfaces.player2.GetData()->charIndex == g_interfaces.player1.GetData()->charIndex) {
+        ImGui::TextWrapped("Something invalid, you are in training mode char select, have 2 of the same characters or some other shit i haven't figured out yet that you should tell me so i can fix");
+        return;
+    }
+    static int selected = 0;
+    //Code for auto loading script upon character switch, prob move it to OnMatchInit() or smth
+   if (p2_old_char_data == NULL || p2_old_char_data != (void*)g_interfaces.player2.GetData()){
+        char* bbcf_base_adress = GetBbcfBaseAdress();
+        std::vector<scrState*> states = parse_scr(bbcf_base_adress, 2);
+        g_interfaces.player2.SetScrStates(states);
+        g_interfaces.player2.states = states;
+        p2_old_char_data = (void*)g_interfaces.player2.GetData();
+        for (auto& state : states) {
+            if (state->name == "CmnActBurstBegin") {
+                burst_action = state;
+            }
+            if (state->name == "CmnActAirBurstBegin") {
+                air_burst_action = state;
+            }
+        }
+        frame_to_burst_onhit = 0;
+        gap_register = {};
+        wakeup_register = {};
+        onhit_register = {};
+        selected = 0;
+    }
+
+
+    if (ImGui::Button("Force Load P2 Script")) {
+        char* bbcf_base_adress = GetBbcfBaseAdress();
+        std::vector<scrState*> states = parse_scr(bbcf_base_adress, 2);
+        g_interfaces.player2.SetScrStates(states);
+        g_interfaces.player2.states = states;
+        gap_register = {};
+        wakeup_register = {};
+        selected = 0;
+    }
+    auto states = g_interfaces.player2.states;
+    {
+        ImGui::BeginChild("left pane", ImVec2(200, 0), true);
+        for (int i = 0; i < g_interfaces.player2.states.size(); i++)
+        {
+            std::string label= g_interfaces.player2.states[i]->name;
+            if (ImGui::Selectable(label.c_str(), selected == i))
+                selected = i;
+        }
+        ImGui::EndChild();
+        ImGui::SameLine();
+    }
+    // Right
+    {
+        ImGui::BeginGroup();
+        static bool isActive_old;
+        static bool isActive = false;
+        if (ImGui::Checkbox("Naoto EN specials toggle", &isActive)) {
+            memset(&g_interfaces.player2.GetData()->slot2_or_slot4, 0x00000018, 4);
+        }
+        if (isActive) {
+            memset(&g_interfaces.player2.GetData()->slot2_or_slot4, 0x00000018, 4);
+        }
+        else {
+            if (isActive != isActive_old) {
+                memset(&g_interfaces.player2.GetData()->slot2_or_slot4, 0, 4);
+            }
+        }
+        isActive_old = isActive;
+        //ImGui::BeginChild("item view", ImVec2(0, -ImGui::GetFrameHeightWithSpacing() - 100)); // Leave room for 1 line below us
+        ImGui::BeginChild("item view", ImVec2(0, -ImGui::GetFrameHeightWithSpacing() - 150)); // Leave room for 1 line below us
+        if (states.size() > 0) {
+            auto selected_state = states[selected];
+            ImGui::Text("%s", selected_state->name.c_str());
+            ImGui::Separator();
+            ImGui::Text("Addr: 0x%x", selected_state->addr);
+            ImGui::Text("Frames: %d", selected_state->frames);
+            ImGui::Text("Damage: %d", selected_state->damage);
+            ImGui::Text("Atk_level: %d", selected_state->atk_level);
+            ImGui::Text("Hitstun: %d", selected_state->hitstun);
+            ImGui::Text("Blockstun: %d", selected_state->blockstun);
+            ImGui::Text("Hitstop: %d", selected_state->hitstop);
+            ImGui::Text("Starter_rating: %d", selected_state->starter_rating);
+            ImGui::Text("Atk_P1: %d", selected_state->attack_p1);
+            ImGui::Text("Atk_P2: %d", selected_state->attack_p2);
+            ImGui::Text("Hit_overhead: %d", selected_state->hit_overhead);
+            ImGui::Text("Hit_low: %d", selected_state->hit_low);
+            ImGui::Text("Hit_air_ublockable: %d", selected_state->hit_air_unblockable);
+            ImGui::Text("fatal_counter: %d", selected_state->fatal_counter);
+            if (ImGui::TreeNode("Frame Breakdown")) {
+                ImGui::ShowHelpMarker("Red numbers are active frames, blue numbers are startup/recovery, black numbers are inactive. \n\nWhite borders are full invul/GP, green borders are partial invul/GP(hover for details). Projectile invul not yet being displayed.\n\n\"Non-deterministic\" frame length means that it is not fixed, landing recovery for example. After a non-deterministic state all values will be +\"n\", representing that would be n frames after the frames in question. They are not wrong, they just can't be statically computed.  \n\nSome are still incorrect, however they should be for the most part pretty obvious, around ~85% are done so far.");
+                auto iter_scr_frames = 1;
+                float window_visible_x2 = ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x;
+                ImGuiStyle& style = ImGui::GetStyle();
+                int after_non_deterministic = 0;
+                for (auto& frame_activity : selected_state->frame_activity_status) {
+                    if (iter_scr_frames > 500) {//needed to limit the amount of drawn frames to keep it from crashing on way too long states(rp based probably/too many branches prob)
+                        ImGui::Text("+ Too long to show all"); 
+                        break; }
+
+
+                    auto color = IM_COL32(0, 255, 255, 255);
+
+                    if (frame_activity == FrameActivity::Active || frame_activity == FrameActivity::NonDeterministicAcive) {
+                        color = IM_COL32(255, 0, 0, 255);
+                    }
+
+                    ImGui::PushStyleColor(ImGuiCol_Text, color);
+                    //ImGui::PushStyleColor(ImGuiCol_TextBg, ImVec4(0.0f, 1.0f, 0.0f, 1.0f));
+                    if (frame_activity == FrameActivity::NonDeterministicAcive || frame_activity == FrameActivity::NonDeterministicInactive) {
+                        ImGui::Text("Non Deterministic");// check jin's NmlAtk5B, seems to be wrong, should start hitbox at frame 7 not 8. jn201_03's sprite call says 2 frames, but actually is 3 frames long
+                        after_non_deterministic = 1;
+                    }
+                    else {
+                        if (after_non_deterministic) {
+                            ImGui::Text("+%d", after_non_deterministic);
+                            after_non_deterministic++;
+                        }
+                        else {
+                            ImGui::Text("%d", iter_scr_frames);
+                        }
+                    }
+                    auto invuln_color = IM_COL32(50, 50, 50, 255);
+                    if (selected_state->frame_invuln_status.at(iter_scr_frames - 1) == FrameInvuln::All) {
+                        invuln_color = IM_COL32(200, 200, 200, 255);
+                    }
+                    else if (selected_state->frame_invuln_status.at(iter_scr_frames - 1) != FrameInvuln::None) {//its not none and its not full invuln, this is where the permutations come in
+                        invuln_color = IM_COL32(100, 200, 100, 255);
+                    }
+                    ImGui::GetWindowDrawList()->AddRect(ImVec2(ImGui::GetItemRectMin().x - 1.5f, ImGui::GetItemRectMin().y - 1),
+                        ImVec2(ImGui::GetItemRectMax().x + 2, ImGui::GetItemRectMax().y + 1),
+                        invuln_color);//draws the square around representing invuln
+                    ImVec2 mousePos = ImGui::GetMousePos();
+                    if ((mousePos.x >= ImGui::GetItemRectMin().x - 1.5f && mousePos.x <= ImGui::GetItemRectMax().x + 2 &&
+                        mousePos.y >= ImGui::GetItemRectMin().y - 1 && mousePos.y <= ImGui::GetItemRectMax().y + 1))
+                    {
+                        ImGui::BeginTooltip();
+                        ImGui::PushTextWrapPos(450.0f);
+                        ImGui::Text("Invuln/GP: %s", interpret_frame_invuln_enum(selected_state->frame_invuln_status.at(iter_scr_frames - 1)).c_str());
+                        ImGui::PopTextWrapPos();
+                        ImGui::EndTooltip();
+                    }
+                    ImGui::PopStyleColor();
+                    float last_button_x2 = ImGui::GetItemRectMax().x;
+                    float next_button_x2 = last_button_x2 + style.ItemSpacing.x + 10.0f; // Expected position if next button was on same line
+                    if (iter_scr_frames < selected_state->frame_activity_status.size() && next_button_x2 < window_visible_x2)
+                        ImGui::SameLine();
+                    iter_scr_frames++;
+                }
+
+                for (auto& ea_state_pair : selected_state->frame_EA_effect_pairs) {
+                    if (selected_state->frame_EA_effect_pairs.size() > 10) { break;//this is necessary because if you spawn an enourmous amount, the vertices crash. Happened with arakunes "UltimateAntiAirShotOD"
+                    }
+                    iter_scr_frames = 1;
+                    auto frames_before_ptr = &ea_state_pair.first;
+                    std::vector<FrameActivity>* frame_activity_status_ptr = &ea_state_pair.second.frame_activity_status;
+                    //std::string fstring = "A";
+                    if (!std::any_of(frame_activity_status_ptr->begin(), 
+                        frame_activity_status_ptr->end(), 
+                        [](FrameActivity frame_activity) {
+                            return frame_activity == FrameActivity::Active;})
+                        ) {
+                        continue;
+                    }
+                    //if (std::find(frame_activity_status_ptr->begin(), frame_activity_status_ptr->end(), fstring) != frame_activity_status_ptr->end()) {
+                   //     continue;
+                   // }
+                    ImGui::Text("%s", ea_state_pair.second.name.c_str());
+                    //will not draw unless there are active frames on the EA state
+                    
+                    std::vector<FrameActivity> temp_vect = {};
+                    for (int i = 0; i < *frames_before_ptr; i++) {
+                        temp_vect.push_back(FrameActivity::Padding); //adds the padding frames
+                    }
+                    temp_vect.insert(temp_vect.end(), frame_activity_status_ptr->begin(), frame_activity_status_ptr->end());
+                    for (auto& frame_activity : temp_vect) {
+                        auto color = IM_COL32(0, 255, 255, 255);
+                        if (frame_activity == FrameActivity::Active) {
+                            color = IM_COL32(255, 0, 0, 255);
+                        }
+                        else if (frame_activity == FrameActivity::Padding) {
+                            color = IM_COL32(0, 0, 0, 255);
+                        }
+
+                        ImGui::PushStyleColor(ImGuiCol_Text, color);
+                        //ImGui::PushStyleColor(ImGuiCol_TextBg, ImVec4(0.0f, 1.0f, 0.0f, 1.0f));
+                        ImGui::Text("%d", iter_scr_frames);
+                        ImGui::GetWindowDrawList()->AddRect(ImVec2(ImGui::GetItemRectMin().x - 1.5f, ImGui::GetItemRectMin().y - 1),
+                            ImVec2(ImGui::GetItemRectMax().x + 2, ImGui::GetItemRectMax().y + 1),
+                            IM_COL32(50, 50, 50, 255));//draws the square around
+                        ImGui::PopStyleColor();
+                        float last_button_x2 = ImGui::GetItemRectMax().x;
+                        float next_button_x2 = last_button_x2 + style.ItemSpacing.x + 10.0f; // Expected position if next button was on same line
+                        if (iter_scr_frames < temp_vect.size() && next_button_x2 < window_visible_x2)
+                            ImGui::SameLine();
+                        iter_scr_frames++;
+                    }
+                }
+                ImGui::TreePop();
+            }
+            ImGui::Text("%s", " ");
+            ImGui::Text("%s", " ");
+            ImGui::Text("Whiff_cancels:", selected_state->fatal_counter);
+            for (std::string name : selected_state->whiff_cancel) {
+                ImGui::Text("    %s", name.c_str());
+            }
+            ImGui::Text("Hit_or_block_cancels(gatlings):", selected_state->fatal_counter);
+            int item_view_len;
+            if (selected_state->hit_or_block_cancel.size() > 5) {
+                item_view_len = 100;
+            }
+            else {
+                item_view_len = selected_state->hit_or_block_cancel.size() * 20;
+            }
+            ImGui::BeginChild("item view", ImVec2(0, item_view_len));
+            for (std::string name : selected_state->hit_or_block_cancel) {
+                ImGui::Text("    %s", name.c_str());
+            }
+            ImGui::EndChild();
+        }
+        ImGui::EndChild();
+
+
+
+        ImGui::Separator();
+        static bool burst_onhit_toggle = false;
+        static int burst_onhit_delay = 0;
+        static int burst_onhit_cooldown_frames = 700;
+        static bool action_delays_toggle = false;
+        static int wakeup_delay = 0;
+        static int gap_delay = 0;
+        static int onhit_delay = 0;
+        static int throwtech_delay = 0;
+
+          
+        ImGui::Checkbox("Burst on hit", &burst_onhit_toggle);
+        if (burst_onhit_toggle) {
+            onhit_register = {};
+            std::string lastAction = g_interfaces.player2.GetData()->lastAction;
+            std::string weird_current_action_q = g_interfaces.player2.GetData()->current_action2;
+            std::string set_action_override_hitstop_q = g_interfaces.player2.GetData()->set_action_override;
+            std::string currentAction = g_interfaces.player2.GetData()->currentAction;
+            std::string hitByWhichAction = g_interfaces.player2.GetData()->hitByWhichAction;
+
+            if (*g_gameVals.pFrameCount <20 || (frame_to_burst_onhit && frame_to_burst_onhit+ burst_onhit_cooldown_frames < *g_gameVals.pFrameCount)) {
+                frame_to_burst_onhit = 0;
+            }
+            if (!frame_to_burst_onhit) {
+                if (//(set_action_override_hitstop_q.find("CmnActHit") !=  std::string::npos || set_action_override_hitstop_q.find("CmnActFreeze") != std::string::npos)
+                    //&& 
+                    //hitByWhichAction != ""
+                    g_interfaces.player2.GetData()->hitstun > 0
+                    //&&
+                    //lastAction.find("CmnActBurst") == std::string::npos
+                    &&
+                    currentAction.find("CmnActBurst") == std::string::npos
+                    &&
+                    currentAction.find("CmnActUkemi") == std::string::npos
+                    ) {
+                    frame_to_burst_onhit = *g_gameVals.pFrameCount + burst_onhit_delay;
+
+                }
+            }
+            if (*g_gameVals.pFrameCount == frame_to_burst_onhit) {
+                if (g_interfaces.player2.GetData()->position_y > 0) {
+                    /*memcpy(&(g_interfaces.player2.GetData()->nextScriptLineLocationInMemory), &(air_burst_action->addr), 4);
+                    g_interfaces.player2.GetData()->frameCounterCurrentSprite = g_interfaces.player2.GetData()->frameLengthCurrentSprite2;
+                    memcpy(&(g_interfaces.player2.GetData()->currentAction), &(air_burst_action->name[0]), 20);
+                    memcpy(&(g_interfaces.player2.GetData()->weird_current_action_q), &(air_burst_action->name[0]), 20);*/
+                    memcpy(&(g_interfaces.player2.GetData()->set_action_override), &(air_burst_action->name[0]), 20);
+                    //uint32_t* kding_p2Inputs2 = (uint32_t*)GetBbcfBaseAdress() + 0xE19888;
+                    //*kding_p2Inputs2 = 0xCCF5;
+                    //memcpy(kding_p2Inputs2, &burst_act,4);
+                }
+                else {
+                    /*memcpy(&(g_interfaces.player2.GetData()->nextScriptLineLocationInMemory), &(burst_action->addr), 4);
+                    g_interfaces.player2.GetData()->frameCounterCurrentSprite = g_interfaces.player2.GetData()->frameLengthCurrentSprite2;
+                    memcpy(&(g_interfaces.player2.GetData()->currentAction), &(burst_action->name[0]), 20);
+                    memcpy(&(g_interfaces.player2.GetData()->weird_current_action_q), &(burst_action->name[0]), 20);*/
+                    memcpy(&(g_interfaces.player2.GetData()->set_action_override), &(burst_action->name[0]), 20);
+                    //uint32_t* kding_p2Inputs2 = (uint32_t*)GetBbcfBaseAdress() + 0xE19888;
+                    //*kding_p2Inputs2 = 0xCCF5;
+                    //memcpy(kding_p2Inputs2, &burst_act,4);
+                  
+                }
+            }
+            ImGui::BeginChild("burst_buttons##states", ImVec2(0, 60));
+            ImGui::Text("Burst delay(+hitstop): ");
+            ImGui::SameLine();
+            ImGui::InputInt("##state_burst_onhit_delay", &burst_onhit_delay);
+            ImGui::Text("Burst cooldown: ");
+            ImGui::SameLine();
+            ImGui::InputInt("##state_burst_onhit_cooldown_frames", &burst_onhit_cooldown_frames);
+            ImGui::EndChild();
+        }
+        ImGui::Checkbox("Add delays to actions", &action_delays_toggle);
+        if (action_delays_toggle) {
+            ImGui::BeginChild("delay_actions##states", ImVec2(0, 60));
+            ImGui::Text("Wakeup: ");
+            ImGui::SameLine();
+            ImGui::InputInt("##state_wakeup_delay", &wakeup_delay);
+            ImGui::Text("Gap: ");
+            ImGui::SameLine();
+            ImGui::InputInt("##state_gap_delay", &gap_delay);
+            ImGui::Text("Tech: ");
+            ImGui::SameLine();
+            ImGui::InputInt("##state_throwtech_delay", &throwtech_delay);
+            /*ImGui::Text("On Hit Delay: ");
+            ImGui::SameLine();
+            ImGui::InputInt("##state_onhit_delay", &onhit_delay);*/
+            ImGui::EndChild();
+        }
+        else {
+            wakeup_delay = 0;
+            gap_delay = 0;
+            onhit_delay = 0;
+            throwtech_delay = 0;
+        }
+
+
+
+
+         
+        if (ImGui::Button("Set as on hit action")) {
+            onhit_register = {};
+            onhit_register_delays = {};
+            states = g_interfaces.player2.states;
+            onhit_register.push_back(states[selected]);
+            onhit_register_delays.push_back(onhit_delay);
+
+        }
+        //ImGui::InputInt("Burst delay##slot1", &slot_buffer[0]);
+        if (ImGui::Button("Set as wakeup action")) {
+            wakeup_register = {};
+            wakeup_register_delays = {};
+            states_wakeup_random_pos = 0;
+            states = g_interfaces.player2.states;
+            wakeup_register.push_back(states[selected]);
+            wakeup_register_delays.push_back(wakeup_delay);
+
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Set as gap action")) {
+            states = g_interfaces.player2.states;
+            gap_register = {};
+            gap_register_delays = {};
+            states_gap_random_pos = 0;
+            gap_register.push_back(states[selected]);
+            gap_register_delays.push_back(gap_delay);
+            auto selected_state = states[selected];
+
+        }
+        ImGui::SameLine();
+       
+        if (ImGui::Button("Set as tech action")) {
+            states = g_interfaces.player2.states;
+            throwtech_register = {};
+            throwtech_register_delays = {};
+            states_throwtech_random_pos = 0;
+            throwtech_register.push_back(states[selected]);
+            throwtech_register_delays.push_back(throwtech_delay);
+            auto selected_state = states[selected];
+
+        }
+        if (ImGui::Button("Use")) {
+            states = g_interfaces.player2.states;
+            auto selected_state = states[selected];
+            //auto tst = g_interfaces.player2.GetData();
+            memcpy(&(g_interfaces.player2.GetData()->nextScriptLineLocationInMemory), &(selected_state->addr), 4);
+            g_interfaces.player2.GetData()->frameCounterCurrentSprite = g_interfaces.player2.GetData()->frameLengthCurrentSprite2 - 1;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Reset")) {
+            states = g_interfaces.player2.states;
+            for (auto state : states) {
+                if (state->replaced_state_script[0]) {
+                    memcpy(state->addr + 36, state->replaced_state_script, 36);
+                    state->replaced_state_script[0] = 0;
+                }
+            }
+            gap_register = {};
+            gap_register_delays = {};
+            wakeup_register = {};
+            wakeup_register_delays = {};
+            onhit_register = {};
+            onhit_register_delays = {};
+            throwtech_register = {};
+            throwtech_register_delays = {};
+        }
+
+
+        if (ImGui::CollapsingHeader("Gap/wakeup random actions")) {
+            ImGui::Columns(2);
+            if (ImGui::Button("Add to wakeup action")) {
+                states = g_interfaces.player2.states;
+                wakeup_register.push_back(states[selected]);
+                wakeup_register_delays.push_back(wakeup_delay);
+            }
+            ImGui::BeginChild("wakeup_register_display", ImVec2(0, 80));
+            for (auto e : wakeup_register) {
+                ImGui::Text(e->name.c_str());
+            }
+            ImGui::EndChild();
+            ImGui::NextColumn();
+            if (ImGui::Button("Add to gap action")) {
+                states = g_interfaces.player2.states;
+                gap_register.push_back(states[selected]);
+                gap_register_delays.push_back(gap_delay);
+            }
+
+            ImGui::BeginChild("gap_register_display", ImVec2(0, 80));
+            for (auto e : gap_register) {
+                ImGui::Text(e->name.c_str());
+            }
+            ImGui::EndChild();
+            ImGui::Columns(1);
+
+
+
+        }
+        //static bool old_way = false;
+        //ImGui::Checkbox("old_way##testchoose", &old_way);
+        //static bool hitstun_0 = true;
+        //ImGui::Checkbox("hitstun_0##testchoose", &hitstun_0);
+        //static bool curr_action_not_ukemi = false;
+        //ImGui::Checkbox("curr_action_not_ukemi##testchoose", &curr_action_not_ukemi);      
+        //static bool hitstun_0_curr_action_not_ukemi = false;
+        //ImGui::Checkbox("hitstun_0_curr_action_not_ukemi##testchoose", &hitstun_0_curr_action_not_ukemi);
+
+        static std::vector<std::tuple<std::string, int>> wakeup_length_pairs{
+            //{"CmnActUkemiLandN",30} ,
+           {"CmnActUkemiLandNLanding",1},
+            {"CmnActUkemiLandF",30 },
+            {"CmnActUkemiLandB",30 },
+            {"CmnActFDown2Stand", 14},
+            {"CmnActBDown2Stand", 14},
+            {"CmnActUkemiStagger",7} }; //this in theory should be an on hit trigger, but its an ukemi so i'll consider it wakeup due to how it works
+        //"CmnActFDown2Stand", 14 seems to be 20 so far
+        //"CmnActFDown2Stand", 14
+        if (!wakeup_register.empty()) {
+            states = g_interfaces.player2.states;
+
+            for (std::tuple<std::string, int> wakeup_length_pair : wakeup_length_pairs) {
+                auto name = std::get<0>(wakeup_length_pair);
+                auto len = std::get<1>(wakeup_length_pair);
+                if (g_interfaces.player2.GetData()->currentAction == name
+                    &&
+                    g_interfaces.player2.GetData()->actionTime == len
+                    &&
+                    g_interfaces.player2.GetData()->lastAction != name
+                    ) {
+                    states_wakeup_random_pos = std::rand() % wakeup_register.size();
+                    states_wakeup_frame_to_do_action = *g_gameVals.pFrameCount + wakeup_register_delays[states_wakeup_random_pos];
+
+                    
+                }
+                //the hitstun check is necessary to make sure it doesnt trigger once the action is already stopped by a hit before it triggers, in the case of delayed ones
+                // this used to be a check on the histun, but since sometimes the hitstun isn't reset upon knockdown it wouldn't trigger the action in some situations when it should,
+                // so it'll filter out being interrupted by checking if the state itself the character is in is one of hitstun, It doesn't seem like it triggers a 1f delay as I was concerned,
+                // but could be wrong
+                if (states_wakeup_frame_to_do_action && std::string(g_interfaces.player2.GetData()->currentAction).find("CmnActHit") == std::string::npos){
+                    //old_way && (states_wakeup_frame_to_do_action)
+                   // ||
+               //     hitstun_0 && (states_wakeup_frame_to_do_action && g_interfaces.player2.GetData()->hitstun == 0)
+               //     || 
+             //       curr_action_not_ukemi && (states_wakeup_frame_to_do_action && std::string(g_interfaces.player2.GetData()->currentAction).find("CmnActHit") == std::string::npos)
+             //      {
+                 
+
+
+                     if (*g_gameVals.pFrameCount == states_wakeup_frame_to_do_action) {
+                        memcpy(&(g_interfaces.player2.GetData()->nextScriptLineLocationInMemory), &(wakeup_register[states_wakeup_random_pos]->addr), 4);
+                        g_interfaces.player2.GetData()->frameCounterCurrentSprite = g_interfaces.player2.GetData()->frameLengthCurrentSprite2 -1;
+                        //memcpy(&(g_interfaces.player2.GetData()->currentAction), &(wakeup_register[states_wakeup_random_pos]->name[0]), 20);
+                        states_wakeup_frame_to_do_action = 0;
+                        states_wakeup_random_pos = 0;
+                        break;
+                    }
+                    else if (*g_gameVals.pFrameCount > states_wakeup_frame_to_do_action) {
+                        states_wakeup_frame_to_do_action = 0;
+                        states_wakeup_random_pos = 0;
+                        break;
+                    }
+
+                }
+            }
+        }
+
+        if (!throwtech_register.empty()) {
+            states = g_interfaces.player2.states;
+            auto throwtech_action_trigger_find = std::string(g_interfaces.player2.GetData()->currentAction).find("LockReject");
+
+                
+                if (g_interfaces.player2.GetData()->timeAfterTechIsPerformed == 29 && throwtech_action_trigger_find != std::string::npos){
+                    states_throwtech_random_pos = std::rand() % throwtech_register.size();
+                    states_throwtech_frame_to_do_action = *g_gameVals.pFrameCount + throwtech_register_delays[states_throwtech_random_pos];
+
+
+                }
+               
+                if (*g_gameVals.pFrameCount == states_throwtech_frame_to_do_action) {
+                    memcpy(&(g_interfaces.player2.GetData()->nextScriptLineLocationInMemory), &(throwtech_register[states_throwtech_random_pos]->addr), 4);
+                    g_interfaces.player2.GetData()->frameCounterCurrentSprite = g_interfaces.player2.GetData()->frameLengthCurrentSprite2 - 1;
+                    //memcpy(&(g_interfaces.player2.GetData()->currentAction), &(wakeup_register[states_wakeup_random_pos]->name[0]), 20);
+                    states_throwtech_frame_to_do_action = 0;
+                    states_throwtech_random_pos = 0;
+                }
+                else if (*g_gameVals.pFrameCount > states_throwtech_frame_to_do_action && states_throwtech_frame_to_do_action != 0) {
+                    states_throwtech_frame_to_do_action = 0;
+                    states_throwtech_random_pos = 0;
+                };
+
+                }
+            
+        
+        if (!gap_register.empty()) {
+            states = g_interfaces.player2.states;
+            //if (!state_gap_random_pos) { state_gap_random_pos = std::rand() % gap_register.size(); }
+            // Note that you can't rely on "GuardEnd"to be there, it can be skipped if there is a mash frame 1
+            auto selected_state = states[selected];
+            std::string substr = "GuardEnd";
+
+            std::string curr_action = g_interfaces.player2.GetData()->currentAction;
+            std::string prev_action = g_interfaces.player2.GetData()->lastAction;
+            int prev_blockstun = g_interfaces.player2.GetData()->blockstun;
+
+            if (
+                // Doing it this way is necessary because otherwise you have a 1f delay, due to GuardEnd being skipped on frame 1 mash
+                // blockstun for now seems to be the most reliable metric
+                (g_interfaces.player2.GetData()->blockstun == 1
+                    &&
+                    curr_action.find("Guard") != std::string::npos
+
+                    )
+
+
+                ) {
+
+
+                states_gap_random_pos = std::rand() % gap_register.size();
+                states_gap_frame_to_do_action = *g_gameVals.pFrameCount + gap_register_delays[states_gap_random_pos];
+
+
+            }
+            //the hitstun check is necessary to make sure it doesnt trigger once the action is already stopped by a hit before it triggers, in the case of delayed ones
+            if (states_gap_frame_to_do_action && g_interfaces.player2.GetData()->hitstun == 0) {
+
+
+
+                if (*g_gameVals.pFrameCount == states_gap_frame_to_do_action) {
+                    memcpy(&(g_interfaces.player2.GetData()->nextScriptLineLocationInMemory), &(gap_register[states_gap_random_pos]->addr), 4);
+                    g_interfaces.player2.GetData()->frameCounterCurrentSprite = g_interfaces.player2.GetData()->frameLengthCurrentSprite2 - 1;
+                    //memcpy(&(g_interfaces.player2.GetData()->currentAction), &(gap_register[state_gap_random_pos]->name[0]), 20);
+                    states_gap_frame_to_do_action = 0;
+                    states_gap_random_pos = 0;
+
+                }
+                else if (*g_gameVals.pFrameCount > states_gap_frame_to_do_action) {
+                    states_gap_frame_to_do_action = 0;
+                    states_gap_random_pos = 0;
+                }
+
+            }
+        }
+
+        if (!onhit_register.empty()) {
+            states = g_interfaces.player2.states;
+            int random_pos = std::rand() % onhit_register.size();
+            static std::vector<std::string>loops_bound{ "Loop" , "Bound", "CmnActBDownCrash", "CmnActBDownDown"};/*necessary to stop the on hit actions from activating in a ukemi situation, once ukemi
+                                                                                              comes into play it becomes a wakeup action.
+                                                                                              Only reason CmdActBDownCrash is being fully specified and not as a substring is because 
+                                                                                              a lot of moves prob have "Crash" in the name*/
+            std::string curr_action = g_interfaces.player2.GetData()->currentAction;
+            
+            if ((g_interfaces.player2.GetData()->hitstun == 1) & !find_substring_in_vector(loops_bound,curr_action)) {
+                memcpy(&(g_interfaces.player2.GetData()->nextScriptLineLocationInMemory), &(onhit_register[random_pos]->addr), 4);
+                memcpy(&(g_interfaces.player2.GetData()->currentAction), &(onhit_register[random_pos]->name[0]), 20);
+            }
+
+
+        }
+    
+        ImGui::EndGroup(); 
+    
+    }
+
+};
+std::string interpret_move(char move) {
+    //auto button_bits = move & ((4 << 1) - 1);
+    auto button_bits = move & 0xf0;
+    auto direction_bits = move & 0x0f;
+    //auto direction_bits = move & ((8 << 1) - 1);
+    std::string move_t{ "" };
+    switch (direction_bits) {
+    case 0x5:
+        move_t += "Neutral";
+        break;
+    case 0x4:
+        move_t += "Left";
+        break;
+    case 0x1:
+        move_t += "DownLeft";
+        break;
+    case 0x2:
+        move_t += "Down";
+        break;
+    case 0x3:
+        move_t += "DownRight";
+        break;
+    case 0x6:
+        move_t += "Right";
+        break;
+    case 0x9:
+        move_t += "UpRight";
+        break;
+    case 0x8:
+        move_t += "Up";
+        break;
+    case 0x7:
+        move_t += "UpLeft";
+        break;
+    }
+    switch (button_bits) {
+    case 0x10:
+        move_t += "+A";
+        break;
+    case 0x20:
+        move_t += "+B";
+        break;
+    case 0x40:
+        move_t += "+C";
+        break;
+    case 0x80:
+        move_t += "+D";
+        break;
+    case 0x30:
+        move_t += "+A+B";
+        break;
+    case 0x50:
+        move_t += "+A+C";
+        break;
+    case 0x90:
+        move_t += "+A+D";
+        break;
+    case 0x60:
+        move_t += "+B+C";
+        break;
+    case 0xA0:
+        move_t += "+B+D";
+        break;
+    case 0xC0:
+        move_t += "+C+D";
+        break;
+    case 0xB0:
+        move_t += "+A+B+D";
+        break;
+    case 0x70:
+        move_t += "+A+B+D";
+        break;
+    case 0xD0:
+        move_t += "+A+C+D";
+        break;
+    case 0xE0:
+        move_t += "+B+C+D";
+        break;
+    case 0xF0:
+        move_t += "+A+B+C+D";
+        break;
+    }
+
+    return move_t;
+}
+
+
+
+void treat_random_slot_checkbox(std::vector<int> &slot_vec, bool slot_toggle, int slot_num) {
+    if (slot_toggle) {
+        slot_vec.push_back(slot_num);
+    }
+    else {
+        auto iterator = std::find(slot_vec.begin(), slot_vec.end(), slot_num);
+        if (iterator != slot_vec.end()) {
+            slot_vec.erase(std::find(slot_vec.begin(), slot_vec.end(), slot_num));
+        }
+    }
+};
+void ScrWindow::draw_playback_slot_section(int slot) {
+    ImGui::PushID(int("slot") + slot);
+    char* fpath;
+    switch (slot)
+    {
+    case 1:
+        fpath = fpath_s1;
+        break;
+    case 2:
+        fpath = fpath_s2;
+        break;
+    case 3:
+        fpath = fpath_s3;
+        break;
+    case 4:
+        fpath = fpath_s4;
+        break;
+
+    default:
+        fpath = fpath_s1;
+        break;
+    }
+    PlaybackSlot selected_slot = playback_manager.slots[slot - 1];
+   
+
+    int facing_direction;
+    memcpy(&facing_direction, selected_slot.facing_direction_p, 4);
+
+
+
+    std::vector<char> slot_recording_frames = selected_slot.get_slot_buffer();
+    if (ImGui::Button("Save")) {
+        playback_manager.save_to_file(slot_recording_frames, facing_direction, fpath);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Load")) {
+        playback_manager.load_from_file_into_slot(fpath,slot);
+
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Trim Playback")) {
+        slot_recording_frames = playback_manager.trim_playback(slot_recording_frames);
+        playback_manager.load_into_slot(slot_recording_frames, slot);
+        //load_trimmed_playback(slot_recording_frames, selected_slot.frame_len_slot_p, start_of_slot_inputs);
+    }
+
+    ImGui::InputText("File Path", fpath, 1200);// IM_ARRAYSIZE(fpath));
+    ImGui::TextWrapped("All input files expect the .playback extension now, please add the extension to your old playback files. You can still load the files with .playback extension without writing the extension in the field.");
+    ImGui::TextWrapped("If the field isn't accepting keyboard input, try alt-tabbing out and back in, if that doesn't work copy and paste should still work(or restarting the game)");
+    if (ImGui::Button("Set as gap action")) {
+        slot_gap = slot;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Set as wakeup action")) {
+        slot_wakeup = slot;
+    }
+    if (ImGui::Button("Set as onblock action")) {
+        slot_onblock = slot;
+    }
+
+    ImGui::SameLine();
+    if (ImGui::Button("Set as onhit action::experimental")) {
+        slot_onhit = slot;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Set as tech action")) {
+        slot_throwtech = slot;
+    }
+    if (ImGui::Button("Reset")) {
+        slot_gap = 0;
+        slot_wakeup = 0;
+        slot_onblock = 0;
+        slot_onhit = 0;
+        slot_throwtech = 0;
+    }
+    ImGui::InputInt("Buffer frames", &slot_buffer[slot-1]);
+    ImGui::TextWrapped("Buffer frames only works currently with wakeup actions");
+    ImGui::Separator();
+    auto old_val = 0; auto frame_counter = 0;
+    for (auto el : slot_recording_frames) {
+        frame_counter++;
+        if (old_val != el) {
+            std::string move_string = interpret_move(el);
+            ImGui::Text("frame %d: %s (0x%x)", frame_counter, move_string.c_str(), el);
+            old_val = el;
+        }
+    }
+    ImGui::PopID();
+};
+void ScrWindow::DrawPlaybackEditor() {
+    if (ImGui::Button("Open Playback Editor")) {
+        ScrWindow::m_pWindowContainer->GetWindow(WindowType_PlaybackEditor)->ToggleOpen();
+    }
+}
+void ScrWindow::DrawPlaybackSection() {
+    char* bbcf_base_adress = GetBbcfBaseAdress();
+    char* active_slot = bbcf_base_adress + 0x902C3C;
+    static bool loop_playback = false;
+   
+    //ScrWindow::DrawPlaybackEditor();
+    if (ImGui::CollapsingHeader("Playback")) {
+        ImGui::Checkbox("Loop current playback", &loop_playback);
+        ImGui::SameLine();
+        ImGui::ShowHelpMarker("This will continuously loop the current recording slot, subject to absolute positioning.");
+        ScrWindow::DrawPlaybackEditor();
+        if (ImGui::CollapsingHeader("SLOT_1")) {
+            draw_playback_slot_section(1);
+
+        }
+        if (ImGui::CollapsingHeader("SLOT_2")) {
+            draw_playback_slot_section(2);
+        }
+        
+        if (ImGui::CollapsingHeader("SLOT_3")) {
+            draw_playback_slot_section(3);
+        }
+
+        if (ImGui::CollapsingHeader("SLOT_4")) {
+            draw_playback_slot_section(4);
+        }
+        
+
+        //setup for randomized slots
+        static bool random_wakeup_slot_toggle = false;
+        static bool random_gap_slot_toggle = false;
+        ImGui::Columns(2);
+        ImGui::Checkbox("Gap random slots##gap_random_slots", &random_gap_slot_toggle);
+        if (random_gap_slot_toggle){
+            if (ImGui::Checkbox("Slot1##gap_random_slots", &random_gap_slot1)) {
+                treat_random_slot_checkbox(random_gap, random_gap_slot1, 1);
+            }
+        
+            if(ImGui::Checkbox("Slot2##gap_random_slots", &random_gap_slot2)) {
+                treat_random_slot_checkbox(random_gap, random_gap_slot2, 2);
+
+            }
+           
+            if(ImGui::Checkbox("Slot3##gap_random_slots", &random_gap_slot3)) {
+                treat_random_slot_checkbox(random_gap, random_gap_slot3, 3);
+            }
+           
+            if (ImGui::Checkbox("Slot4##gap_random_slots", &random_gap_slot4)) {
+                treat_random_slot_checkbox(random_gap, random_gap_slot4, 4);
+            }
+          
+        
+        }
+        ImGui::NextColumn();
+        ImGui::Checkbox("Wakeup random slots##wakeup_random_slots", &random_wakeup_slot_toggle);
+        if (random_wakeup_slot_toggle) {
+            if (ImGui::Checkbox("Slot1##wakeup_random_slots", &random_wakeup_slot1)) {
+                treat_random_slot_checkbox(random_wakeup, random_wakeup_slot1, 1);
+            }
+           
+            if(ImGui::Checkbox("Slot2##wakeup_random_slots", &random_wakeup_slot2)) {
+                treat_random_slot_checkbox(random_wakeup, random_wakeup_slot2, 2);
+            }
+             
+            if(ImGui::Checkbox("Slot3##wakeup_random_slots", &random_wakeup_slot3)) {
+                treat_random_slot_checkbox(random_wakeup, random_wakeup_slot3, 3);
+            }
+            
+            if(ImGui::Checkbox("Slot4##wakeup_random_slots", &random_wakeup_slot4)) {
+                treat_random_slot_checkbox(random_wakeup, random_wakeup_slot4, 4);
+            }
+            
+        }
+        ImGui::Columns(1);
+        if (!g_interfaces.player2.IsCharDataNullPtr()) {
+            //loops the current playback
+            //memcpy(playback_control_ptr, &val_set, 2);
+            if (loop_playback) {
+                playback_manager.set_playback_control(3);
+            }
+
+
+
+
+            //does gap action for recorded slot
+            //can optimize later by checking for same memory address
+            std::string current_action = g_interfaces.player2.GetData()->currentAction;
+            //replace by the action in the manager
+            char* playback_control_ptr = bbcf_base_adress + 0x1392d10 + 0x1ac2c; //set to 3 to start playback without direction adjustment, 0 for dummy, 1 for recording standby, 2 for bugged recording, 3 for playback, 4 for controller, 5 for cpu, 6 for continuous playback
+            int val_set = 3;
+            int slot = 0;
+
+
+
+
+
+
+
+            //checking for gap action
+///std::string substr = "GuardEnd";
+            auto gap_action_trigger_find = current_action.find("Guard");
+            if (random_gap_slot_toggle && !random_gap.empty()
+                && g_interfaces.player2.GetData()->blockstun == 1
+
+                && gap_action_trigger_find != std::string::npos) {
+                //does randomized
+                int rand = std::rand();
+                int random_pos = rand % random_gap.size();
+                slot = random_gap[random_pos] - 1;
+                memcpy(active_slot, &slot, 4);
+                memcpy(playback_control_ptr, &val_set, 2);
+
+            }
+            else if //(slot_gap != 0 && gap_action_trigger_find != std::string::npos
+                (slot_gap != 0 && g_interfaces.player2.GetData()->blockstun == 1
+                    &&
+                    gap_action_trigger_find != std::string::npos) {
+                //does pre-defined
+                slot = slot_gap - 1;
+                memcpy(active_slot, &slot, 4);
+                memcpy(playback_control_ptr, &val_set, 2);
+            }
+
+
+            auto onblock_action_trigger_find = current_action.find("GuardLoop");
+            if (slot_onblock != 0 && onblock_action_trigger_find != std::string::npos) {
+                //does pre-defined
+                slot = slot_onblock - 1;
+                memcpy(active_slot, &slot, 4);
+                memcpy(playback_control_ptr, &val_set, 2);
+            }
+
+            auto onhit_action_trigger_find = [&]()-> size_t {
+                for (auto& el : std::vector<std::string>{ "CmnActHit", "CmnActBDown", "CmnActFDown", "CmnActVDown", "CmnActStaggerLoop", "CmnActSlideAir" , "CmnActSkeleton", "CmnActBlowoff"}) {
+                    if (current_action.find(el) != std::string::npos) {
+                        return current_action.find(el);
+                    }
+                };
+                return std::string::npos;
+            }();
+            //auto onhit_action_trigger_find = current_action.find("CmnActHit");
+            if (slot_onhit != 0 && g_interfaces.player2.GetData()->hitstun > 0 && onhit_action_trigger_find != std::string::npos) {
+                slot = slot_onhit - 1;
+                memcpy(active_slot, &slot, 4);
+                memcpy(playback_control_ptr, &val_set, 2);
+            }
+
+            auto throwtech__action_trigger_find = current_action.find("LockReject");
+            if (slot_throwtech != 0 && g_interfaces.player2.GetData()->timeAfterTechIsPerformed == 29 && throwtech__action_trigger_find != std::string::npos) {
+                slot = slot_throwtech - 1;
+                memcpy(active_slot, &slot, 4);
+                memcpy(playback_control_ptr, &val_set, 2);
+            }
+
+
+
+            //change to const later?
+            //states that happen immediately before CmnActUkemiLandNLanding that I know of, not an exhaustive list
+            //static std::vector<std::tuple<std::string, int>> wakeup_buffer_actions{ {"ActFDownDown", 9} ,  //lasts 9 frames
+            //                {"ActVDownDown", 18}, //lasts 18 frames
+            //                {"ActBDownDown", 20}, //lasts 20 frames
+            //                {"ActWallBoundDown", 15}
+            //}; //lasts 15 frames
+            static std::vector<std::tuple<std::string, int>> wakeup_buffer_actions{
+                {"ActUkemiLandN",30 } ,
+                {"ActUkemiLandF",30 },
+                {"ActUkemiLandB",30 },
+            {"ActFDown2Stand", 14},
+            {"ActBDown2Stand", 14}
+            };
+
+         
+
+            static int base_frame_count_triggered = 0; // hold the pFrameCount a certain action started
+            static int slot_to_run = 0; 
+            static std::vector<int> frame_count_to_activate_vector = { 0,0,0,0 }; // will start the recording when pFrameCount reaches this number for each slot
+            static std::string prev_action;
+            //static std::map<std::string, int> slot_frame_count_to_activate_map = {;
+            //will run buffered for non random wakeup slot
+            if (slot_wakeup != 0 || !random_wakeup.empty()) {// && slot_buffer[slot_wakeup - 1] != 0) {
+                if (prev_action != current_action) {
+                    //sets the internal frame count to trigger shit
+                    //int iter = 0;
+
+                    for (auto pair : wakeup_buffer_actions) {
+                        if (base_frame_count_triggered == 0 && current_action.find(std::get<0>(pair)) != std::string::npos) {
+                            for (int iter = 0; iter < 4; iter++) {
+                              
+                                auto buffer = 0;
+                               
+                                buffer = slot_buffer[iter];
+                                base_frame_count_triggered = *g_gameVals.pFrameCount;
+                             
+                                frame_count_to_activate_vector[iter] = base_frame_count_triggered + std::get<1>(pair) - buffer; //sets the frame count to activate to base + (len of action- buffer)
+                               
+                                if (random_wakeup_slot_toggle && !random_wakeup.empty()) {
+                                    int frame_count_tmp = std::rand() % random_wakeup.size(); //actually the slot that should be used for the next random slot
+                                    slot_to_run = random_wakeup[frame_count_tmp] - 1;
+                                }
+                                else {
+                                    slot_to_run = slot_wakeup-1;
+                                }
+                                
+                            }
+
+
+                        }
+                    }
+                    for (auto& frame_count : frame_count_to_activate_vector) {
+                        if (frame_count < *g_gameVals.pFrameCount || base_frame_count_triggered > *g_gameVals.pFrameCount) { //sanity check
+                            base_frame_count_triggered = 0;
+                            frame_count = 0;
+                        }
+                    }
+
+
+                }
+                //for (auto& frame_count : frame_count_to_activate_vector) {
+                if (random_wakeup_slot_toggle && !random_wakeup.empty()) {
+                    if (frame_count_to_activate_vector.size() >= slot_to_run) {
+                        int frame_count = frame_count_to_activate_vector[slot_to_run];
+
+                        if (frame_count != 0 && *g_gameVals.pFrameCount == frame_count) {
+                            //checks if there is a random slot, for now if its set to random the buffer is not individual to every single random action, still need to implement this.
+                            if (random_wakeup_slot_toggle && !random_wakeup.empty()) {
+
+                          
+                                slot = slot_to_run + 1; //slot_to_run has the value already adjusted for 0 start, need to add 1 so that it becomes 1,2,3,4 as set_active_slot expects.
+                                if (*playback_control_ptr != 3) {
+                                    PlaybackManager().set_active_slot(slot);
+                                    PlaybackManager().set_playback_control(val_set);
+                                    //memcpy(active_slot, &slot, 4);
+                                    //memcpy(playback_control_ptr, &val_set, 2);
+                                    // if not in listed states reset the internal frame counts
+                                    base_frame_count_triggered = 0;
+                                    slot_to_run = 0;
+                                    //frame_count_to_activate = 0;
+                                    frame_count_to_activate_vector[0] = 0;
+                                    frame_count_to_activate_vector[1] = 0;
+                                    frame_count_to_activate_vector[2] = 0;
+                                    frame_count_to_activate_vector[3] = 0;
+                                }
+                            }
+                        }
+                    }
+                }
+                else if (frame_count_to_activate_vector[slot_to_run] != 0 && *g_gameVals.pFrameCount == frame_count_to_activate_vector[slot_to_run]) {
+
+                    slot = slot_to_run+ 1  ; //slot_to_run has the value already adjusted for 0 start, need to add 1 so that it becomes 1,2,3,4 as set_active_slot expects.
+
+              
+                    if (*playback_control_ptr != 3) {
+                        PlaybackManager().set_active_slot(slot);
+                        PlaybackManager().set_playback_control(val_set);
+                        //memcpy(active_slot, &slot, 4);
+                       // memcpy(playback_control_ptr, &val_set, 2);
+                        // if not in listed states reset the internal frame counts
+                        base_frame_count_triggered = 0;
+                        slot_to_run = 0;
+                        //frame_count_to_activate = 0;
+                        frame_count_to_activate_vector[0] = 0;
+                        frame_count_to_activate_vector[1] = 0;
+                        frame_count_to_activate_vector[2] = 0;
+                        frame_count_to_activate_vector[3] = 0;
+                    }
+
+                
+
+                }
+            }
+            
+
+            /* OLD CODE FOR WAKEUP ACTION, JUST LEAVING FOR REFERENCE FOR SOMETHING IM DOING
+            //checking for wakeup action
+            //std::string substr = "CmnActUkemiLandNLanding";
+            // I think I need to change this later to fit the above activation criteria, otherwise it may have ~3 frames gap? needs more testing!
+            //auto wakeup_action_trigger_find = current_action.find("CmnActUkemiLandNLanding");
+            //if (random_wakeup_slot_toggle && !random_wakeup.empty() && wakeup_action_trigger_find != std::string::npos) {
+            //    //does randomized
+            //    int random_pos = std::rand() % random_wakeup.size();
+            //    slot = random_wakeup[random_pos] - 1;
+            //    memcpy(active_slot, &slot, 4);
+            //    memcpy(playback_control_ptr, &val_set, 2);
+
+            //}
+            //else if (slot_wakeup != 0 && wakeup_action_trigger_find != std::string::npos) {
+            //    //does pre-defined
+            //    slot = slot_wakeup - 1;
+            //    memcpy(active_slot, &slot, 4);
+            //    memcpy(playback_control_ptr, &val_set, 2);
+            //}
+
+            */
+            prev_action = current_action;
+            
+        }
+}
+} 
+//void get_files_in_directory(char** items) {
+//    std::string path = "./Save/Replay/locals";
+//    //char items[500] = {};
+//    items = {}; int i = 0;
+//    for (const auto& entry : std::filesystem::directory_iterator(path)) {
+//        if (i >= 500) {
+//            break;
+//        }
+//        //items.push_back(&(entry.path().string())[0]);
+//        items[i] = entry.path().string().data();
+//    }
+//}
+
+void ScrWindow::DrawSaveStates() {
+    static SnapshotApparatus* snap_apparatus = nullptr;
+    
+    if (!ImGui::CollapsingHeader("Save states"))
+        return;
+    if (*(bbcf_base_adress + 0x8F7758) == 0) {
+        if (!g_interfaces.player1.IsCharDataNullPtr() && !g_interfaces.player2.IsCharDataNullPtr()) {
+            if (snap_apparatus == nullptr) {
+
+                snap_apparatus = new SnapshotApparatus();
+            }
+            if (!snap_apparatus->check_if_valid(g_interfaces.player1.GetData(),
+                g_interfaces.player2.GetData())) {
+                delete snap_apparatus;
+                snap_apparatus = new SnapshotApparatus();
+            }
+            static float wait_before_exec_s = 0;
+
+            if (ImGui::Button("Save snapshot") || ImGui::IsKeyPressed(g_modVals.save_states_save_keycode)) {
+                snap_apparatus->save_snapshot(0);
+            }
+            ImGui::SameLine();
+            ImGui::ShowHelpMarker("You can use a hotkey to activate it, default is F5 but can be changed in settings.ini between F1-9.");
+            ImGui::SameLine();
+            if (snap_apparatus->snapshot_count != 0) {
+                if (ImGui::Button("Load snapshot") || ImGui::IsKeyPressed(g_modVals.save_states_load_keycode)) {
+                    snap_apparatus->load_snapshot(0);
+                    if (wait_before_exec_s > 0) {
+                        g_gameVals.isFrameFrozen = true;
+
+                        this->is_setup_time_running = true;
+                        this->base_time = wait_before_exec_s;
+                    }
+
+                }
+            }
+            else {
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.5f, 0.5f, 0.5f, 1.0f));
+                ImGui::Button("Load snapshot");
+                ImGui::PopStyleColor();
+
+            }
+            ImGui::SameLine();
+            ImGui::ShowHelpMarker("You can use a hotkey to activate it, default is F9 but can be changed in settings.ini between F1-9.");
+
+            ImGui::InputFloat("Setup time(s)", &wait_before_exec_s, 0.3f);
+            ImGui::SameLine();
+            ImGui::ShowHelpMarker("This pauses the game once you load a state for the amount set in order to adjust hand position. Set to 0 if no delay is desired.");
+            if (is_setup_time_running == true) {
+                this->base_time -= ImGui::GetIO().DeltaTime;
+                ImGui::OpenPopup("progress_bar");
+                ImGui::SetNextWindowSize(ImVec2(400, 50));
+                if (ImGui::BeginPopupModal("progress_bar", NULL, ImGuiWindowFlags_NoTitleBar)) {
+
+                    float progress = this->base_time / (wait_before_exec_s);
+                    ImGui::ProgressBar(progress);
+                    if (progress <= 0) {
+                        ImGui::CloseCurrentPopup();
+                    }
+                    ImGui::EndPopup();
+                }
+
+                if (this->base_time < 0) {
+                    g_gameVals.isFrameFrozen = false;
+                    this->is_setup_time_running = false;
+                }
+            }
+        }
+        else {
+            ImGui::Text("You must be in a mode where state can be saved");
+        }
+
+    }
+    else {
+        ImGui::Text("You cannot use this feature while searching for a ranked match");
+    }
+}
+bool compareFiles(const std::string& p1, const std::string& p2) {
+    std::ifstream f1(p1, std::ifstream::binary | std::ifstream::ate);
+    std::ifstream f2(p2, std::ifstream::binary | std::ifstream::ate);
+
+    if (f1.fail() || f2.fail()) {
+        return false; //file problem
+    }
+
+    if (f1.tellg() != f2.tellg()) {
+        return false; //size mismatch
+    }
+
+    //seek back to beginning and use std::equal to compare contents
+    f1.seekg(0, std::ifstream::beg);
+    f2.seekg(0, std::ifstream::beg);
+    return std::equal(std::istreambuf_iterator<char>(f1.rdbuf()),
+        std::istreambuf_iterator<char>(),
+        std::istreambuf_iterator<char>(f2.rdbuf()));
+}
+
+void set_local_replay(char* replayname, int fname_size_max) {
+    int bbcf_base = (int)GetBbcfBaseAdress();
+    uintptr_t replay_file_template = bbcf_base + 0x4AA66C;
+    WriteToProtectedMemory(replay_file_template, replayname, fname_size_max);
+
+}
+void restore_replays(int fname_size_max) {
+    int bbcf_base = (int)GetBbcfBaseAdress();
+    uintptr_t replay_file_template = bbcf_base + 0x4AA66C;
+    char* original_name = "replay%02d.dat\0\0replay_list.dat";
+
+    WriteToProtectedMemory(replay_file_template, original_name, fname_size_max);
+
+}
+
+
+#include <wininet.h> // only for InternetCanonicalizeUrlA
+
+
+void ScrWindow::DrawReplayTheaterSection() {
+    /*std::filesystem::path targetParent = "./Save/Replay/locals";
+    std::filesystem::create_directories(targetParent);*/
+    
+
+
+    const int FNAME_SIZE_MAX = 31;
+    static bool local_replay_loaded = false;
+    static std::string local_replay_loaded_name = "";
+    ReplayFileManager& rep_manager = g_rep_manager;
+    if (*g_gameVals.pGameMode != GameMode_ReplayTheater && local_replay_loaded) {
+        restore_replays(FNAME_SIZE_MAX);
+    }
+    if (*g_gameVals.pGameMode == GameMode_ReplayTheater && local_replay_loaded) {
+        set_local_replay(&local_replay_loaded_name[0], FNAME_SIZE_MAX);
+    }
+    if (ImGui::CollapsingHeader("Local Replays")) {
+        
+        static int view_type = 0; // 0 for default, 1 for archive, 2 for db
+        static int page = 0;
+        static int character1 = -1;
+        static char player1[200] = "";
+        static int character2 = -1;
+        static char player2[200] = "";
+
+       
+        
+        
+        static char local_replay_name[FNAME_SIZE_MAX] = "fname";
+        ImGui::InputText("File Name##replay_theater", local_replay_name, IM_ARRAYSIZE(local_replay_name));
+        ImGui::SameLine();
+        ImGui::ShowHelpMarker("The replay file must be in Save/Replay/, to load archived replays move them from Save/Replay/archive/ to Save/Replay/. Filenames must not exceed 31 chars. ");
+ 
+        if (ImGui::Button("Load##replay_theater")) {
+            set_local_replay(local_replay_name, FNAME_SIZE_MAX);
+            local_replay_loaded = true;
+            local_replay_loaded_name = local_replay_name;
+        }
+        ImGui::SameLine();
+        ImGui::ShowHelpMarker("Loads the specified File Name. Once done you can select any replay from the list and it will play the loaded replay file.");
+        ImGui::SameLine();
+
+        if (ImGui::Button("Restore original replays##replay_theater")) {
+            restore_replays(FNAME_SIZE_MAX);
+            local_replay_loaded = false;
+        }
+        ImGui::SameLine();
+        ImGui::ShowHelpMarker("Restores your replays to their original files, reverting the effect of \"Load\".");
+
+
+        
+        
+        if (ImGui::Button("Archive replay files")) {
+            rep_manager.archive_replays();
+
+        }
+        ImGui::SameLine();
+        ImGui::ShowHelpMarker("Archiving will copy and rename all current replays to Save/Replay/archive/ .");
+
+        ImGui::SameLine();
+        if (ImGui::Checkbox("Auto archive saved replays", &Settings::settingsIni.autoArchive)) {
+            Settings::changeSetting("autoArchive", std::to_string((int)Settings::settingsIni.autoArchive));
+        }
+
+
+
+
+
+        if (ImGui::TreeNode("(Experimental)Replay database download/archive replace##local_replays")) {
+            if (!g_rep_manager.template_modified && view_type == 1)
+                view_type = 0; // if replay list was reset to default due to playing a real match, also reset view_type to default
+                // except for db, which does not immediately modify the template
+
+            bool view_changed = false;
+
+            if (ImGui::RadioButton("Recent replays", &view_type, 0))
+                view_changed = true;
+
+            if (view_type == 0) {
+                ImGui::SameLine();
+
+                if (ImGui::Button("Repair##replay_list"))
+                    g_rep_manager.load_replay_list_default_repair();
+
+                if (view_changed)
+                    g_rep_manager.load_replay_list_default();
+            }
+
+            if (ImGui::RadioButton("Replay archive", &view_type, 1))
+                view_changed = true;
+
+            ImGui::RadioButton("Replay db", &view_type, 2);
+
+
+            if (view_type == 1) { // archive controls
+                ImGui::TextUnformatted("page");
+
+                ImGui::SameLine();
+
+                if (ImGui::InputInt("##replay_list_page", &page))
+                    view_changed = true;
+
+                // TODO: search?
+
+                if (view_changed)
+                    g_rep_manager.load_replay_list_from_archive(page);
+            }
+
+
+            if (view_type == 2) { // db controls
+                if (ImGui::BeginCombo("character1##replay_db_character", character1 == -1 ? "<any>" : getCharacterNameByIndexA(character1).c_str())) {
+
+                    if (ImGui::Selectable("<any>", character1 == -1)) character1 = -1;
+
+                    for (int i = 0; i < getCharactersCount(); i++) {
+                        if (ImGui::Selectable(getCharacterNameByIndexA(i).c_str(), character1 == i))
+                            character1 = i;
+                    }
+
+                    ImGui::EndCombo();
+                }
+
+                ImGui::InputText("player1##replay_db_player", player1, sizeof(player1));
+
+
+                ImGui::TextUnformatted("vs");
+
+
+                if (ImGui::BeginCombo("character2##replay_db_character", character2 == -1 ? "<any>" : getCharacterNameByIndexA(character2).c_str())) {
+
+                    if (ImGui::Selectable("<any>", character2 == -1)) character2 = -1;
+
+                    for (int i = 0; i < getCharactersCount(); i++) {
+                        if (ImGui::Selectable(getCharacterNameByIndexA(i).c_str(), character2 == i))
+                            character2 = i;
+                    }
+
+                    ImGui::EndCombo();
+                }
+
+                ImGui::InputText("player2##replay_db_player", player2, sizeof(player2));
+
+
+                ImGui::TextUnformatted("page");
+
+                ImGui::SameLine();
+
+                ImGui::InputInt("##replay_list_page", &page);
+
+                if (ImGui::Button("Load##replay_db"))
+                    g_rep_manager.load_replay_list_from_db(page, character1, player1, character2, player2);
+                // TODO: instead of Load button, we could use view_changed and debounce
+            }
+
+
+            // print extra info about selected replay
+            char* base = GetBbcfBaseAdress();
+            ReplayList* replay_list = (ReplayList*)(base + 0xAA9808);
+            int selected_order = *(int*)(base + 0xE9329C); // replay menu item index
+
+            int selected_index = replay_list->order[selected_order]; //*(int*)(replay_list + 8 + 100 * 0x390 + selected_order * 4);
+
+            static bool first = true;
+            if (first && replay_list->count == 0) { // otherwise count is 0 until you go to replay theater
+                g_rep_manager.bbcf_sort_replay_list();
+                first = false;
+            }
+
+            if (selected_index != -1) {
+                ReplayFile* rp = replay_list->replays[selected_index].data(); // (ReplayFile*)(replay_list + 8 + selected_index * 0x390 - 8); // only first 0x390 bytes match
+
+                ImGui::Text("Selected: %s (lvl%d %s)%s",
+                    utf16_to_utf8(rp->p1_name).c_str(), rp->p1_lvl + 1, getCharacterNameByIndexA(rp->p1_toon).c_str(), rp->winner_maybe == 0 ? " (win)" : "");
+                ImGui::Text("      vs  %s (lvl%d %s)%s",
+                    utf16_to_utf8(rp->p2_name).c_str(), rp->p2_lvl + 1, getCharacterNameByIndexA(rp->p2_toon).c_str(), rp->winner_maybe == 1 ? " (win)" : "");
+                // TODO: draw replay levels, winner and other metadata on top of bbcf list ui?
+
+                if (ImGui::Button("<##replay_list_prev"))
+                    g_rep_manager.set_selected_replay_index(selected_order - 1, true);
+                ImGui::SameLine();
+
+                ImGui::Text("index %3d / %d", selected_order + 1, replay_list->count); // *(int*)(base + 0x8f85d8 + 0x1b1230 + 0x165d8)); // base->static_CSaveDataManager.replay_list.count
+                ImGui::SameLine();
+
+                if (ImGui::Button(">##replay_list_next"))
+                    g_rep_manager.set_selected_replay_index(selected_order + 1, true);
+
+                ImGui::SameLine();
+                if (ImGui::Button("Load##replay_list_next")) {
+                    g_rep_manager.load_replay(selected_order, NULL);
+                    g_rep_manager.unpack_replay_buffer();
+                }
+
+
+                if (view_type == 2) { // if db
+                    if (ImGui::Button("Save selected replay to archive##replay_db")) {
+                        char path[32] = "";
+                        char* replay_file_template = base + 0x4AA66C;
+                        sprintf(path, replay_file_template, selected_index);
+
+                        rep_manager.load_replay(path);
+                        auto new_fname = rep_manager.build_file_name();
+                        rep_manager.save_replay(REPLAY_ARCHIVE_FOLDER_PATH + new_fname);
+                    }
+                }
+            }
+
+
+            ImGui::Separator();
+
+            // load external replay file
+
+            //static char filename[256] = "https://bbreplay.ovh/download?filename=082009246cfd79b5a64208ba2.dat";
+            static char filename[256] = "./Save/Replay/replay00.dat";
+            ImGui::InputText("##replay_filename", filename, 256);
+            ImGui::SameLine();
+            
+            if (ImGui::Button("Load")) {
+
+                if(g_rep_manager.validate_url_prefix(filename))
+                    g_rep_manager.download_replay(filename, NULL);
+
+                else // load file
+                    g_rep_manager.load_replay(filename, NULL);
+
+                // TODO: check that replay in buffer is valid, show message otherwise
+                g_rep_manager.unpack_replay_buffer();
+            }
+
+            // load take filename from steam url, e.g. steam://run/586140/?load-replay=https%3A%2F%2Fbbreplay.ovh%2Fdownload%3Ffilename%3D082009246cfd79b5a64208ba2.dat
+            ISteamApps* apps = *(ISteamApps**)((char*)base + 0x005d3230); // base->static_SteamInterfaces.apps
+            const char* param = apps->GetLaunchQueryParam("load-replay");
+            //ImGui::Text("steam test param %p %s", param, param);
+
+            bool param_changed = false;
+            static char last_param[256] = "";
+            if (strcmp(param, last_param) != 0) {
+                strncpy(last_param, param, sizeof(last_param) - 1);
+                strncpy(filename, param, sizeof(filename)-1);
+                param_changed = true;
+                
+            }
+            if (param_changed) {
+                DWORD n = 256;
+
+                InternetCanonicalizeUrlA(param, filename, &n, ICU_DECODE);
+                if (g_rep_manager.validate_url_prefix(filename)) { //Makes sure the urls are only from the upload endpoint and bbreplay.ovh for now due to safety.
+                    if (g_rep_manager.download_replay(filename, NULL)) {
+                        g_rep_manager.unpack_replay_buffer();
+                        ScenesManager::PlayLoadedReplay();
+                    };
+                }
+            
+                // TODO:  Add a popup saying it failed to download the file later so it doesnt just fail silently.
+            }
+
+
+
+            ImGui::Separator();
+
+            // print extra info about the loaded replay
+            {
+                static bool autoplay = false, really_autoplay = false;
+
+                ReplayFile* rp = (ReplayFile*)(base + 0x0115b478);
+                if (g_rep_manager.check_file_validity(rp)) {
+                    ImGui::Separator();
+
+                    bool is_playing = *g_gameVals.pGameMode == GameMode_ReplayTheater && (*g_gameVals.pGameState == GameState_InMatch || *g_gameVals.pGameState == GameState_VersusScreen);
+                    ImGui::Text(is_playing ? "Playing: %s (lvl%d %s)%s" : "Loaded: %s (lvl%d %s)%s",
+                        utf16_to_utf8(rp->p1_name).c_str(), rp->p1_lvl + 1, getCharacterNameByIndexA(rp->p1_toon).c_str(), rp->winner_maybe == 0 ? " (win)" : "");
+                    ImGui::Text("      vs  %s (lvl%d %s)%s",
+                        utf16_to_utf8(rp->p2_name).c_str(), rp->p2_lvl + 1, getCharacterNameByIndexA(rp->p2_toon).c_str(), rp->winner_maybe == 1 ? " (win)" : "");
+                    ImGui::Text("      at %s", rp->date1);
+
+                    if (ImGui::Button(is_playing ? "Restart##replay" : "Play##replay")) {
+                        ScenesManager::PlayLoadedReplay();
+                    }
+
+                    ImGui::SameLine();
+                    ImGui::Checkbox("autoplay", &autoplay);
+                }
+
+                if (autoplay) {
+                    if (*g_gameVals.pGameState == GameState_InMatch) {
+                        auto match_state = *(int*)(base + 0xdb6ae0 + 0x62b7c + 0x30); //base->static_BATTLE_CObjectManager.match_info.match_state;
+                        if (match_state > 3) really_autoplay = true; // only autoplay if watched to the end
+                        if (match_state < 3) really_autoplay = false;
+                    }
+
+                    char* scene = *(char**)(base + 0x8903b0 + 0x2604); // base->static_GameVals.current_scene
+                    if (*g_gameVals.pGameState == GameState_ReplayMenu && really_autoplay && *(int*)(scene + 0x2c) == 9) {//scene->GameSceneState == 9) {
+                        really_autoplay = false;
+                        int i0 = g_rep_manager.get_selected_replay_index();
+                        int i1 = g_rep_manager.set_selected_replay_index(i0 + 1, false);
+                        if (i1 != i0) {
+                            g_rep_manager.load_replay(i1, NULL);
+                            g_rep_manager.unpack_replay_buffer();
+                            ScenesManager::PlayLoadedReplay();
+                        }
+                    }
+                }
+            }
+
+            ImGui::Separator();
+            ImGui::TreePop();
+        }
+    }
+   
+
+}
+
+
+unsigned int count_entities(bool unk_status2) {
+    if (!g_interfaces.player1.IsCharDataNullPtr() && !g_interfaces.player2.IsCharDataNullPtr()) {
+        std::vector<int*> entities{};
+        std::vector<CharData**> entities_char_data{};
+        for (int i = 0; i < 252; i++) {
+            entities.push_back((g_gameVals.pEntityList + i));
+            //entities_char_data.push_back((CharData*)(g_gameVals.pEntityList + i));
+        }
+        for (auto entity_ptr : entities) {
+            entities_char_data.push_back((CharData**)entity_ptr);
+        }
+        auto tst = entities_char_data[0];
+        auto r = 0;
+        for (auto entity : entities_char_data) {
+            if ((*entity)->unknownStatus1 != NULL) {
+                if (unk_status2) {
+                    if ((*entity)->unknown_status2 != NULL && (*entity)->unknown_status2 == 2) {
+                        r++;
+                    }
+                }
+                else {
+                    r++;
+                }
+            }
+        }
+        return r;
+        //auto tst = &entities_char_data[0]->frame_count_minus_1;
+    }
+    return 0;
+}
+
+  
+
+void ScrWindow::DrawReplayTakeover() {
+  
+    
+
+    char* bbcf_base = GetBbcfBaseAdress();
+    static std::vector<char> replay_action_load{};
+    static SnapshotApparatus* snap_apparatus_takeover = nullptr;
+    static int facing_left_replay_takeover = 0;
+    char current_round = *(bbcf_base + 0x11C034C);
+    //these are merely demonstrative, the formula to get the start of a players inputs in a round is: bbcf_base + 0x115B470 + 0x8d4 + (0x7080 * player_to_playback) + (0xE100 * current_round);
+    char* r1p1_start = bbcf_base + 0x115B470 + 0x8d4;
+    char* r1p2_start = bbcf_base + 0x115B470 + 0x8d4 + 0x7080;
+    char* r2p1_start = bbcf_base + 0x115B470 + 0x8d4 + 0x7080 + 0x7080;
+    char* r2p2_start = bbcf_base + 0x115B470 + 0x8d4 + 0x7080 + 0x7080 + 0x7080;
+    char* r3p1_start = bbcf_base + 0x115B470 + 0x8d4 + 0x7080 + 0x7080 + 0x7080 + 0x7080;
+    char* r3p2_start = bbcf_base + 0x115B470 + 0x8d4 + 0x7080 + 0x7080 + 0x7080 + 0x7080 + 0x7080;
+    static float wait_before_exec_s2 = 0; //for the little load delay bar
+
+    if (!ImGui::CollapsingHeader("Replay Takeover"))
+        return;
+    if (*(bbcf_base_adress + 0x8F7758) == 0) { //checks if it is searching for a ranked match
+        if (!g_interfaces.player1.IsCharDataNullPtr() && !g_interfaces.player2.IsCharDataNullPtr()) {
+            if (snap_apparatus_takeover == nullptr) {
+
+                snap_apparatus_takeover = new SnapshotApparatus();
+            }
+            if (!snap_apparatus_takeover->check_if_valid(g_interfaces.player1.GetData(),
+                g_interfaces.player2.GetData())) {
+                delete snap_apparatus_takeover;
+                snap_apparatus_takeover = new SnapshotApparatus();
+            }
+        }
+        else {
+            ImGui::Text("Cannot access replay takeover outside of a replay");
+            return;
+        }
+        ImGui::Text("time: %d", *g_gameVals.pMatchTimer);
+        if (*g_gameVals.pGameMode == GameMode_ReplayTheater) {
+            if (ImGui::Button("Takeover as P1")) {
+                if (!g_interfaces.player1.IsCharDataNullPtr() && !g_interfaces.player2.IsCharDataNullPtr()) {
+                    *g_gameVals.pGameMode = GameMode_Training;
+                    snap_apparatus_takeover->save_snapshot(0);
+
+                    int player_to_playback = 1;
+                    char* rpstart = r1p1_start + (0x7080 * player_to_playback) + (0xE100 * current_round);
+                    replay_action_load = {};
+
+
+
+                    for (int i = 0; i < 0x400; i++) {
+                        char* recorded_input = rpstart + (*g_gameVals.pFrameCount + i) * 2;
+                        replay_action_load.push_back(*recorded_input);
+                    }
+                    facing_left_replay_takeover = g_interfaces.player2.GetData()->facingLeft2;
+                    *(bbcf_base + 0x891A38) = 0; // sets training mode to be "p1" sided
+                    *(bbcf_base + 0x8929A8) = 1; //p1 control related
+                    *(bbcf_base + 0x8929A4) = 0; //p1 control related
+                }
+
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Takeover as P2")) {
+                if (!g_interfaces.player1.IsCharDataNullPtr() && !g_interfaces.player2.IsCharDataNullPtr()) {
+                    *g_gameVals.pGameMode = GameMode_Training;
+                    snap_apparatus_takeover->save_snapshot(0);
+
+
+                    int player_to_playback = 0;
+                    char* rpstart = r1p1_start + (0x7080 * player_to_playback) + (0xE100 * current_round);
+                    replay_action_load = {};
+
+
+                    for (int i = 0; i < 0x400; i++) {
+
+                        char* recorded_input = rpstart + (*g_gameVals.pFrameCount + i) * 2;
+                        replay_action_load.push_back(*recorded_input);
+                    }
+                    auto len_replay = replay_action_load.size();
+                    facing_left_replay_takeover = g_interfaces.player1.GetData()->facingLeft2;
+                    //bypasses necessary to make p2 control 
+                    *(bbcf_base + 0x891A38) = 1; // sets training mode to be "p2" sided
+                    *(bbcf_base + 0x8929A8) = 0; //p2 control related
+                    *(bbcf_base + 0x8929A4) = 1; //p2 control related
+
+                }
+            }
+        }
+        if (*g_gameVals.pGameMode == GameMode_Training) {
+            if ((ImGui::Button("Load Replay State") || ImGui::IsKeyPressed(g_modVals.replay_takeover_load_keycode))
+                && snap_apparatus_takeover->snapshot_count > 0) {
+                if (!g_interfaces.player1.IsCharDataNullPtr() && !g_interfaces.player2.IsCharDataNullPtr()) {
+                    snap_apparatus_takeover->load_snapshot(0);
+
+                    //snap_apparatus_takeover->load_snapshot(snap_apparatus_takeover->p_snapshot_reseve);
+
+                    playback_manager.load_into_slot(replay_action_load, facing_left_replay_takeover, 1);
+                    playback_manager.set_active_slot(1);
+                    playback_manager.set_playback_type(0); //forces playback type to be "normal" instead of "random"
+                    playback_manager.set_playback_position(0); //makes sure the playback is in frame zero
+                    playback_manager.set_playback_control(3); //activates the playback
+                    if (wait_before_exec_s2 > 0) {
+                        g_gameVals.isFrameFrozen = true;
+
+                        this->is_setup_time_running = true;
+                        this->base_time = wait_before_exec_s2;
+                    }
+
+                }
+            }
+        }
+        ImGui::SameLine();
+        ImGui::ShowHelpMarker("You can use a hotkey to activate it, default is F4 but can be changed in settings.ini between F1-9.");
+
+        ImGui::InputFloat("Setup time(s)", &wait_before_exec_s2, 0.3f);
+        ImGui::SameLine();
+        ImGui::ShowHelpMarker("This pauses the game once you load a state for the amount set in order to adjust hand position. Set to 0 if no delay is desired.");
+        if (is_setup_time_running == true) {
+            this->base_time -= ImGui::GetIO().DeltaTime;
+            ImGui::OpenPopup("progress_bar_replay_takeover");
+            ImGui::SetNextWindowSize(ImVec2(400, 50)); 
+            if (ImGui::BeginPopupModal("progress_bar_replay_takeover", NULL, ImGuiWindowFlags_NoTitleBar)) {
+
+                float progress = this->base_time / (wait_before_exec_s2);
+                ImGui::ProgressBar(progress);
+                if (progress <= 0) {
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::EndPopup();
+            }
+
+            if (this->base_time < 0) {
+                g_gameVals.isFrameFrozen = false;
+                this->is_setup_time_running = false;
+            }
+        }
+        if (*g_gameVals.pGameMode == GameMode_Training) {
+            if (ImGui::Button("Return to replay")) {
+                playback_manager.set_playback_control(0); //makes sure the playback is stopped before going back to the replay
+                *g_gameVals.pGameMode = GameMode_ReplayTheater;
+                snap_apparatus_takeover->load_snapshot(0);
+            }
+
+            if (ImGui::Button("FIX PLAYBACK")) {
+                facing_left_replay_takeover = !facing_left_replay_takeover;
+            }
+            ImGui::SameLine();
+            ImGui::ShowHelpMarker("Use this if the takeover appears to be faulty before reporting an issue, it should correct it most of the time. \n\nIf you use it when it is already working it will make it appear faulty, clicking again should return it to the previous state.");
+            
+        }
+
+        if (*g_gameVals.pGameMode == GameMode_Training) {
+            *g_gameVals.pMatchTimer = 3597;
+        }
+    }
+    else {
+        ImGui::Text("You cannot use this feature while searching for a ranked match.");
+    }
+}
+
+
+
+void ScrWindow::DrawRoomSection() {
+    const char* items[] = { "No Rematch", "No limit", "FT2", "FT3", "FT5", "FT10"};
+    static int currentItem = 0;
+
+    if (!ImGui::CollapsingHeader("Room Settings"))
+        return;
+
+    if (!g_gameVals.pRoom || g_gameVals.pRoom->roomStatus == RoomStatus_Unavailable 
+        || !(RoomManager::GetRoomSettingsStaticBaseAdress()))
+    {
+        ImGui::TextUnformatted("Room is not available!");
+        return;
+    }
+    //sets the selected value in the dropdown the actual value
+    switch (g_gameVals.pRoom->rematch) {
+    case RoomRematch::RematchType_Disabled:
+        currentItem = 0;
+        break;
+    case RoomRematch::RematchType_Unlimited:
+        currentItem = 1;
+        break;
+    case RoomRematch::RematchType_Ft2:
+        currentItem = 2;
+        break;
+    case RoomRematch::RematchType_Ft3:
+        currentItem = 3;
+        break;
+    case RoomRematch::RematchType_Ft5:
+        currentItem = 4;
+        break;
+    case RoomRematch::RematchType_Ft10:
+        currentItem = 5;
+        break;
+    default:
+        break;
+    }
+
+    if (ImGui::Combo("Rematch Settings##dropdown", &currentItem, items, IM_ARRAYSIZE(items)))
+    {
+        switch (currentItem) {
+        case 0:
+            g_interfaces.pRoomManager->ChangeRematchAmnt(0);
+            break;
+
+        case 1:
+            g_interfaces.pRoomManager->ChangeRematchAmnt(-1);
+            break;
+
+        case 2:
+            g_interfaces.pRoomManager->ChangeRematchAmnt(2);
+            break;
+
+        case 3:
+            g_interfaces.pRoomManager->ChangeRematchAmnt(3);
+            break;
+
+        case 4:
+            g_interfaces.pRoomManager->ChangeRematchAmnt(5);
+            break;
+
+        case 5:
+            g_interfaces.pRoomManager->ChangeRematchAmnt(10);
+            break;
+
+
+
+        default:
+            break;
+        }
+
+    };
+};

@@ -6,4 +6,5 @@ namespace MatchState
 	void OnMatchRematch();
 	void OnMatchEnd();
 	void OnUpdate();
+	void OnIntroPlaying();
 }

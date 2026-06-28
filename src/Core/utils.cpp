@@ -4,6 +4,35 @@
 #include <fstream>
 #include <Psapi.h>
 
+char* GetBbcfBaseAdress() {
+	static char* bbcf_base = NULL;
+	
+	// no point in calculating this more than once
+	if (bbcf_base != NULL) {
+		return bbcf_base;
+	}
+
+
+	//Get all module related information
+			//Get process name
+	TCHAR szFileName[MAX_PATH + 1];
+	GetModuleFileName(NULL, szFileName, MAX_PATH + 1);
+
+	MODULEINFO modinfo = { 0 };
+	HMODULE hModule = GetModuleHandle(szFileName);
+	if (hModule == 0) {
+		return NULL;
+	}
+	GetModuleInformation(GetCurrentProcess(), hModule, &modinfo, sizeof(MODULEINFO));
+	////////
+
+	//Assign our base and module size
+	//Having the values right is ESSENTIAL, this makes sure
+	//that we don't scan unwanted memory and leading our game to crash
+	long base = (long)modinfo.lpBaseOfDll;
+	bbcf_base = (char*)base;
+	return bbcf_base;
+}
 void WriteToProtectedMemory(uintptr_t addressToWrite, char* valueToWrite, int byteNum)
 {
 	//used to change our file access type, stores the old
@@ -269,6 +298,17 @@ std::string utf16_to_utf8(const std::wstring& wstr)
 	std::string strTo(size_needed, 0);
 	WideCharToMultiByte(CP_UTF8, 0, &wstr[0], (int)wstr.size(), &strTo[0], size_needed, NULL, NULL);
 	return strTo;
+}
+
+std::wstring utf8_to_utf16(const std::string& utf8_str) {
+	if (utf8_str.empty()) return std::wstring();
+	int size_needed = MultiByteToWideChar(CP_UTF8, 0, utf8_str.c_str(), -1, nullptr, 0);
+	std::wstring utf16_str(size_needed, L'\0');
+	MultiByteToWideChar(CP_UTF8, 0, utf8_str.c_str(), -1, &utf16_str[0], size_needed);
+	//removing null terminator
+	utf16_str.resize(size_needed - 1);
+
+	return utf16_str;
 }
 
 int SafeDereferencePtr(int* ptr)

@@ -1,12 +1,16 @@
 #include "MainWindow.h"
 
+#include "FrameAdvantage/FrameAdvantage.h"
 #include "HitboxOverlay.h"
 #include "PaletteEditorWindow.h"
+#include "FrameHistory/FrameHistoryWindow.h"
+#include "FrameAdvantage/FrameAdvantageWindow.h"
 
 #include "Core/Settings.h"
 #include "Core/info.h"
 #include "Core/interfaces.h"
 #include "Game/gamestates.h"
+#include "Core/utils.h"
 #include "Overlay/imgui_utils.h"
 #include "Overlay/Widget/ActiveGameModeWidget.h"
 #include "Overlay/Widget/GameModeSelectWidget.h"
@@ -39,8 +43,8 @@ void MainWindow::BeforeDraw()
 			windowSizeConstraints = ImVec2(250, 190);
 			break;
 		case 3:
-			windowSizeConstraints = ImVec2(400, 230);
-			break;
+windowSizeConstraints = ImVec2(400, 230);
+break;
 		default:
 			windowSizeConstraints = ImVec2(330, 230);
 	}
@@ -76,7 +80,10 @@ void MainWindow::Draw()
 	DrawGameplaySettingSection();
 	DrawCustomPalettesSection();
 	DrawHitboxOverlaySection();
+	DrawFrameHistorySection();
+	DrawFrameAdvantageSection();
 	DrawAvatarSection();
+	DrawControllerSettingSection();
 	DrawLoadedSettingsValuesSection();
 	DrawUtilButtons();
 
@@ -99,6 +106,10 @@ void MainWindow::DrawUtilButtons() const
 	{
 		m_pWindowContainer->GetWindow(WindowType_Log)->ToggleOpen();
 	}
+	if (ImGui::Button("States", BTN_SIZE))
+	{
+		m_pWindowContainer->GetWindow(WindowType_Scr)->ToggleOpen();
+	}
 }
 
 void MainWindow::DrawCurrentPlayersCount() const
@@ -112,8 +123,6 @@ void MainWindow::DrawCurrentPlayersCount() const
 
 void MainWindow::DrawAvatarSection() const
 {
-	
-
 	if (!ImGui::CollapsingHeader("Avatar settings"))
 		return;
 
@@ -128,6 +137,108 @@ void MainWindow::DrawAvatarSection() const
 		ImGui::HorizontalSpacing(); ImGui::SliderInt("Color", g_gameVals.playerAvatarColAddr, 0, 0x3);
 		ImGui::HorizontalSpacing(); ImGui::SliderByte("Accessory 1", g_gameVals.playerAvatarAcc1, 0, 0xCF);
 		ImGui::HorizontalSpacing(); ImGui::SliderByte("Accessory 2", g_gameVals.playerAvatarAcc2, 0, 0xCF);
+	}
+}
+
+
+void MainWindow::DrawFrameHistorySection() const
+{
+	if (!ImGui::CollapsingHeader("FrameHistory"))
+		return;
+
+	if (!isFrameHistoryEnabledInCurrentState()) {
+		ImGui::HorizontalSpacing();
+		ImGui::TextDisabled("YOU ARE NOT IN A MATCH, IN TRAINING MODE OR REPLAY THEATER!");
+		return;
+	}
+	if (g_interfaces.player1.IsCharDataNullPtr() || g_interfaces.player2.IsCharDataNullPtr()) {
+		ImGui::HorizontalSpacing();
+		ImGui::TextDisabled("THERE WAS AN ERROR LOADING ONE/BOTH OF THE CHARACTERS");
+		return; 
+	}
+	//if (g_interfaces.player1.GetData()->charIndex == g_interfaces.player2.GetData()->charIndex) {
+	//	ImGui::HorizontalSpacing();
+	//	ImGui::TextDisabled("THIS FEATURE CURRENTLY DOES NOT SUPPORT MIRRORS! IF IT ISN'T A MIRROR THERE WAS AN ERROR LOADING ONE OF THE CHARACTERS");
+	//	return;
+	//}
+	static bool isOpen = false;
+
+	FrameHistoryWindow* frameHistWin = m_pWindowContainer->GetWindow<FrameHistoryWindow>(WindowType_FrameHistory);
+
+
+	ImGui::HorizontalSpacing();
+	ImGui::Checkbox("Enable##framehistory_section", &isOpen);
+	ImGui::SameLine();
+	ImGui::ShowHelpMarker("For each non-idle frame, display a column of rectangles with info about it. \r\n \r\nFor each player : \r\n = The first row displays player state. \r\n - Startup->green \r\n - Active->red \r\n - Recovery->blue \r\n - Blockstun->yellow \r\n - Hitstun->purple \r\n - Hard landing recovery->blush \r\n - Special: hard to classify states(e.g.dashes)->Aquamarine \r\n\r\n = Second row is for invul/armor. The position of the line segments indicates the attributes, and its color if invul or armor: \r\n - Invul->white \r\n - Armor->brown \r\n - H->top segment \r\n - B->middle segment \r\n - F->bottom segment \r\n - T->left segment \r\n - P->right segment \r\n");
+	if (isOpen)
+	{
+		frameHistWin->Open();
+	}
+	else
+	{
+		frameHistWin->Close();
+	}
+		
+	ImGui::HorizontalSpacing();
+	ImGui::Checkbox("Auto Reset##Reset after each idle frame", &frameHistWin->resetting);
+	ImGui::SameLine();
+	ImGui::ShowHelpMarker("block auto-reset on an idle frame: Do not overwrite automatically after an idle frame.");
+
+	ImGui::HorizontalSpacing();
+	if (ImGui::SliderFloat("Box width", &frameHistWin->width, 1., 100.)) {
+		Settings::changeSetting("FrameHistoryWidth", std::to_string(frameHistWin->width));
+	}
+	ImGui::HorizontalSpacing();
+	if (ImGui::SliderFloat("Box height", &frameHistWin->height, 1., 100.)) {
+		Settings::changeSetting("FrameHistoryHeight", std::to_string(frameHistWin->height));
+	}
+	ImGui::HorizontalSpacing();
+	if (ImGui::SliderFloat("spacing", &frameHistWin->spacing, 1., 100.)) {
+		Settings::changeSetting("FrameHistorySpacing", std::to_string(frameHistWin->spacing));
+	};
+
+	
+}
+
+
+
+void MainWindow::DrawFrameAdvantageSection() const
+{
+	if (!ImGui::CollapsingHeader("Framedata"))
+		return;
+
+	if (!isInMatch())
+	{
+		ImGui::HorizontalSpacing();
+		ImGui::TextDisabled("YOU ARE NOT IN MATCH!");
+		return;
+	}
+	else if (!(*g_gameVals.pGameMode == GameMode_Training || *g_gameVals.pGameMode == GameMode_ReplayTheater))
+	{
+		ImGui::HorizontalSpacing();
+		ImGui::TextDisabled("YOU ARE NOT IN TRAINING MODE OR REPLAY THEATER!");
+		return;
+	}
+
+	if (!g_gameVals.pEntityList)
+		return;
+
+	static bool isFrameAdvantageOpen = false;
+	ImGui::HorizontalSpacing();
+	ImGui::Checkbox("Enable##framedata_section", &isFrameAdvantageOpen);
+	//ImGui::Checkbox("Enable##framedata_section", &isFrameAdvantageOpen);
+	ImGui::HorizontalSpacing();
+	ImGui::Checkbox("Advantage on stagger hit", &idleActionToggles.ukemiStaggerHit);
+
+	if (isFrameAdvantageOpen)
+	{
+		m_pWindowContainer->GetWindow(WindowType_FrameAdvantage)->Open();
+		
+	}
+	else
+	{
+		m_pWindowContainer->GetWindow(WindowType_FrameAdvantage)->Close();
+		//frameAdvWin->Close();
 	}
 }
 
@@ -175,7 +286,7 @@ void MainWindow::DrawHitboxOverlaySection() const
 	static bool isOpen = false;
 
 	ImGui::HorizontalSpacing();
-	if (ImGui::Checkbox("Enable", &isOpen))
+	if (ImGui::Checkbox("Enable##hitbox_overlay_section", &isOpen))
 	{
 		if (isOpen)
 		{
@@ -216,30 +327,47 @@ void MainWindow::DrawHitboxOverlaySection() const
 		m_pWindowContainer->GetWindow<HitboxOverlay>(WindowType_HitboxOverlay)->DrawRectFillTransparencySlider();
 
 		ImGui::HorizontalSpacing();
+		ImGui::Checkbox("Draw hitbox/hurtbox",
+			&m_pWindowContainer->GetWindow<HitboxOverlay>(WindowType_HitboxOverlay)->drawHitboxHurtbox);
+		ImGui::HorizontalSpacing();
 		ImGui::Checkbox("Draw origin",
 			&m_pWindowContainer->GetWindow<HitboxOverlay>(WindowType_HitboxOverlay)->drawOriginLine);
-
+		ImGui::SameLine();
+		ImGui::ShowHelpMarker("The point in space where your character resides. \nImportant!: This is a single point, the render is composed of two lines to facilitate viewing, the actual point is where the two lines touch.");
+		ImGui::HorizontalSpacing();
+		ImGui::Checkbox("Draw collision",
+			&m_pWindowContainer->GetWindow<HitboxOverlay>(WindowType_HitboxOverlay)->drawCollisionBoxes);
+		ImGui::SameLine();
+		ImGui::ShowHelpMarker("Defines collision between objects/characters. Also used for throw range checks.");
+		ImGui::HorizontalSpacing();
+		ImGui::Checkbox("Draw throw/range boxes",
+			&m_pWindowContainer->GetWindow<HitboxOverlay>(WindowType_HitboxOverlay)->drawRangeCheckBoxes);
+		ImGui::SameLine();
+		ImGui::ShowHelpMarker("Throw Range Box(yellow): All throws require the throw range check. In order to pass this check the throw range box must overlap target's  collision box.\n\nMove Range Box(green): All throws and some moves require the move range check. In order to pass this check the move range box must overlap the target's origin point.\n\n\n\nHow do throws connect?\n\nIn order for a throw to connect you must have satisfy the following conditions:\n1: Both players must be on the ground or in the air. This is decided by their origin position, not sprite.\n2: You must pass the move range check.\n3: You must pass the throw range check.\n4: The hitbox of the throw must overlap the hurtbox of the target.\n5: The target must not be throw immune.\n");
 		ImGui::VerticalSpacing();
 
 		ImGui::HorizontalSpacing();
 		ImGui::Checkbox("Freeze frame:", &g_gameVals.isFrameFrozen);
+		if (ImGui::IsKeyPressed(g_modVals.freeze_frame_keycode))
+			g_gameVals.isFrameFrozen ^= 1;
+
 		if (g_gameVals.pFrameCount)
 		{
 			ImGui::SameLine();
-			ImGui::Text("%d", *g_gameVals.pFrameCount);
-			ImGui::SameLine();
-			if (ImGui::Button("Reset"))
-			{
-				*g_gameVals.pFrameCount = 0;
-				g_gameVals.framesToReach = 0;
-			}
+ImGui::Text("%d", *g_gameVals.pFrameCount);
+ImGui::SameLine();
+if (ImGui::Button("Reset"))
+{
+	*g_gameVals.pFrameCount = 0;
+	g_gameVals.framesToReach = 0;
+}
 		}
 
 		if (g_gameVals.isFrameFrozen)
 		{
 			static int framesToStep = 1;
 			ImGui::HorizontalSpacing();
-			if (ImGui::Button("Step frames"))
+			if (ImGui::Button("Step frames") || ImGui::IsKeyPressed(g_modVals.step_frames_keycode))
 			{
 				g_gameVals.framesToReach = *g_gameVals.pFrameCount + framesToStep;
 			}
@@ -297,9 +425,41 @@ void MainWindow::DrawGameplaySettingSection() const
 		ImGui::Checkbox("Hide HUD", (bool*)g_gameVals.pIsHUDHidden);
 	}
 }
+void MainWindow::DrawControllerSettingSection() const {
+	if (!ImGui::CollapsingHeader("Controller Settings"))
+		return;
+	static bool controller_position_swapped = false;
 
+	if (ImGui::Checkbox("Keyboard + Controller/ Swap controller pos", &controller_position_swapped)) {
+		//make the battle_key_controller into a proper struck later
+		char*** battle_key_controller = (char***)(GetBbcfBaseAdress() + 0x8929c8);
+		char** menu_control_p1 = (char**)((char*)*battle_key_controller + 0x10);
+		char** menu_control_p2 = (char**)((char*)*battle_key_controller + 0x14);
+		char** unknown_p1 = (char**)((char*)*battle_key_controller + 0x1C);
+		char** unknown_p2 = (char**)((char*)*battle_key_controller + 0x20);
+		char** char_control_p1 = (char**)((char*)*battle_key_controller + 0x24);
+		char** char_control_p2 = (char**)((char*)*battle_key_controller + 0x28);
+		std::swap(*menu_control_p1, *menu_control_p2);
+		std::swap(*char_control_p1, *char_control_p2);
+		std::swap(*unknown_p1, *unknown_p2);
+	}
+	ImGui::SameLine();
+	ImGui::ShowHelpMarker("Swap the p1 and p2 controller positions. This can be used to play locally with a single controller and a keyboard as this will force the single controller to be in p2 position while the keyboard is always p1.");
+}
 void MainWindow::DrawLinkButtons() const
 {
+	//ImGui::ButtonUrl("Replay Database", REPLAY_DB_FRONTEND, BTN_SIZE);
+	if (*g_gameVals.pGameMode == GameMode_ReplayTheater) {
+		if (ImGui::Button("Toggle Rewind"))
+			m_pWindowContainer->GetWindow(WindowType_ReplayRewind)->ToggleOpen();
+	}
+	ImGui::ButtonUrl("Replay Database", REPLAY_DB_FRONTEND);
+	ImGui::SameLine();
+	if (ImGui::Button("Enable/Disable Upload")) {
+		m_pWindowContainer->GetWindow(WindowType_ReplayDBPopup)->ToggleOpen();
+	}
+	
+	
 	ImGui::ButtonUrl("Discord", MOD_LINK_DISCORD, BTN_SIZE);
 
 	ImGui::SameLine();
@@ -307,6 +467,7 @@ void MainWindow::DrawLinkButtons() const
 
 	ImGui::SameLine();
 	ImGui::ButtonUrl("GitHub", MOD_LINK_GITHUB, BTN_SIZE);
+	
 }
 
 void MainWindow::DrawLoadedSettingsValuesSection() const

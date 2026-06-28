@@ -23,6 +23,153 @@ static char palDescBuf[IMPL_DESC_LENGTH] = "";
 static char palCreatorBuf[IMPL_CREATOR_LENGTH] = "";
 static bool palBoolEffect = false;
 
+void PaletteEditorWindow::ClearUndoHistory()
+{
+	m_history.entries.clear();
+	m_history.paletteChanges.clear();
+	m_history.gradientChanges.clear();
+	m_history.cursor = 0;
+}
+
+void PaletteEditorWindow::Undo()
+{
+	if (m_history.cursor > 0)
+	{
+		m_history.cursor -= 1;
+	}
+
+	if (m_history.cursor < m_history.entries.size())
+	{
+		HistoryEntry entry = m_history.entries[m_history.cursor];
+		switch (entry.changeType)
+		{
+		case ChangeType::Palette:
+		{
+			PaletteChange change = m_history.paletteChanges[entry.changeIdx];
+			memcpy(m_paletteEditorArray + change.offset, &change.oldValue, sizeof(Color));
+			break;
+		}
+
+		case ChangeType::Gradient:
+		{
+			GradientChange& change = m_history.gradientChanges[entry.changeIdx];
+			memcpy(m_paletteEditorArray, &change.oldColors[0], change.oldColors.size() * sizeof(Color));
+			break;
+		}
+
+		default:
+			break;
+		}
+	}
+}
+
+void PaletteEditorWindow::Redo()
+{
+	if (m_history.cursor < m_history.entries.size())
+	{
+		HistoryEntry entry = m_history.entries[m_history.cursor];
+		switch (entry.changeType)
+		{
+		case ChangeType::Palette:
+		{
+			PaletteChange change = m_history.paletteChanges[entry.changeIdx];
+			memcpy(m_paletteEditorArray + change.offset, &change.newValue, sizeof(Color));
+			break;
+		}
+
+		case ChangeType::Gradient:
+		{
+			GradientChange& change = m_history.gradientChanges[entry.changeIdx];
+			memcpy(m_paletteEditorArray, &change.newColors[0], change.newColors.size() * sizeof(Color));
+			break;
+		}
+
+		default:
+			break;
+		}
+
+		m_history.cursor += 1;
+	}
+}
+
+void PaletteEditorWindow::ClearRedoEntries()
+{
+	// If the cursor is not at the end of the history, then erase everything after it
+	while (m_history.cursor < m_history.entries.size())
+	{
+		HistoryEntry last = m_history.entries[m_history.entries.size() - 1];
+		switch (last.changeType)
+		{
+		case ChangeType::Palette:
+			m_history.paletteChanges.pop_back();
+			break;
+
+		case ChangeType::Gradient:
+			m_history.gradientChanges.pop_back();
+			break;
+
+		default:
+			break;
+		}
+
+		m_history.entries.pop_back();
+	}
+}
+
+void PaletteEditorWindow::RecordPaletteChange(PaletteChange change)
+{
+	ClearRedoEntries();
+
+	// If there's nothing currently in the list we can push this change and return early.
+	if (m_history.entries.size() == 0)
+	{
+		HistoryEntry entry = { ChangeType::Palette, 0 };
+		m_history.entries.push_back(entry);
+		m_history.paletteChanges.push_back(change);
+		m_history.cursor += 1;
+		return;
+	}
+
+	// If the last entry isn't a palette change with the same offset we can also push and return
+	//early.
+	HistoryEntry lastEntry = m_history.entries[m_history.entries.size() - 1];
+	if (lastEntry.changeType != ChangeType::Palette || m_history.paletteChanges[lastEntry.changeIdx].offset != change.offset)
+	{
+		HistoryEntry entry = { ChangeType::Palette, m_history.paletteChanges.size() };
+		m_history.paletteChanges.push_back(change);
+		m_history.entries.push_back(entry);
+		m_history.cursor += 1;
+		return;
+	}
+
+	// Check the timestamp of the last change; if it's <0.2 seconds. If it is, then update the old 
+	// change, otherwise push a new one.
+	PaletteChange& previous = m_history.paletteChanges[lastEntry.changeIdx];
+	std::time_t now = std::time(nullptr);
+	if (std::difftime(now, previous.timestamp) < 0.2)
+	{
+		previous.timestamp = now;
+		previous.newValue = change.newValue;
+	}
+	else
+	{
+		HistoryEntry entry = { ChangeType::Palette, m_history.paletteChanges.size() };
+		m_history.paletteChanges.push_back(change);
+		m_history.entries.push_back(entry);
+		m_history.cursor += 1;
+	}
+}
+
+void PaletteEditorWindow::RecordGradientChange(GradientChange change)
+{
+	ClearRedoEntries();
+
+	HistoryEntry entry = { ChangeType::Gradient, m_history.gradientChanges.size() };
+	m_history.entries.push_back(entry);
+	m_history.gradientChanges.push_back(change);
+	m_history.cursor += 1;
+}
+
 void PaletteEditorWindow::ShowAllPaletteSelections(const std::string& windowID)
 {
 	if (HasNullPointer())
@@ -100,6 +247,8 @@ void PaletteEditorWindow::OnMatchInit()
 	m_highlightMode = false;
 	m_showAlpha = false;
 
+	ClearUndoHistory();
+
 	CopyPalFileToEditorArray(m_selectedFile, *m_selectedCharPalHandle);
 }
 
@@ -118,6 +267,7 @@ void PaletteEditorWindow::Draw()
 	FileSelection();
 	EditingModesSelection();
 	ShowPaletteBoxes();
+	ShowUndoAndRedo();
 	SavePaletteToFile();
 }
 
@@ -151,7 +301,7 @@ void PaletteEditorWindow::CharacterSelection()
 	if (ImGui::BeginPopup("select_char_pal"))
 	{
 		const int NUMBER_OF_CHARS = 2;
-		
+
 		for (int i = 0; i < NUMBER_OF_CHARS; i++)
 		{
 			ImGui::PushID(i);
@@ -236,7 +386,7 @@ void PaletteEditorWindow::EditingModesSelection()
 	ImGui::SameLine();
 	int nextLineColumnPosX = ImGui::GetCursorPosX();
 	ImGui::Checkbox("Freeze frame", &g_gameVals.isFrameFrozen);
-	
+
 	if (ImGui::Checkbox("Highlight mode", &m_highlightMode))
 	{
 		if (m_highlightMode)
@@ -281,6 +431,10 @@ void PaletteEditorWindow::ShowPaletteBoxes()
 		int curColorBoxOffset = (i * sizeof(int));
 		int idx = i + 1;
 
+		PaletteChange potentialChange;
+		memcpy(&potentialChange.oldValue, m_paletteEditorArray + curColorBoxOffset, sizeof(Color));
+		potentialChange.offset = curColorBoxOffset;
+
 		if (m_highlightMode)
 		{
 			ImGui::ColorButtonOn32Bit("##PalColorButton", idx, (unsigned char*)m_paletteEditorArray + curColorBoxOffset, m_colorEditFlags);
@@ -301,6 +455,10 @@ void PaletteEditorWindow::ShowPaletteBoxes()
 			}
 			else
 			{
+				memcpy(&potentialChange.newValue, m_paletteEditorArray + curColorBoxOffset, sizeof(Color));
+				potentialChange.timestamp = std::time(nullptr);
+				RecordPaletteChange(potentialChange);
+
 				g_interfaces.pPaletteManager->ReplacePaletteFile(m_paletteEditorArray, m_selectedFile, *m_selectedCharPalHandle);
 			}
 		}
@@ -328,6 +486,37 @@ void PaletteEditorWindow::ShowPaletteBoxes()
 	ImGui::PopStyleVar();
 }
 
+void PaletteEditorWindow::ShowUndoAndRedo()
+{
+	// Disable undo and redo when highlight mode is enabled
+	if (m_highlightMode)
+	{
+		return;
+	}
+
+	if (m_history.cursor == 0)
+	{
+		ImGui::Text("Undo");
+	}
+	else if (ImGui::Button("Undo"))
+	{
+		Undo();
+		g_interfaces.pPaletteManager->ReplacePaletteFile(m_paletteEditorArray, m_selectedFile, *m_selectedCharPalHandle);
+	}
+
+	ImGui::SameLine();
+
+	if (m_history.cursor >= m_history.entries.size())
+	{
+		ImGui::Text("Redo");
+	}
+	else if (ImGui::Button("Redo"))
+	{
+		Redo();
+		g_interfaces.pPaletteManager->ReplacePaletteFile(m_paletteEditorArray, m_selectedFile, *m_selectedCharPalHandle);
+	}
+}
+
 void PaletteEditorWindow::DisableHighlightModes()
 {
 	m_highlightMode = false;
@@ -347,7 +536,15 @@ void PaletteEditorWindow::SavePaletteToFile()
 		return;
 	}
 
-	struct TextFilters { static int FilterAllowedChars(ImGuiTextEditCallbackData* data) { if (data->EventChar < 256 && strchr(" qwertzuiopasdfghjklyxcvbnmQWERTZUIOPASDFGHJKLYXCVBNM0123456789_.()[]!@&+-'^,;{}$=", (char)data->EventChar)) return 0; return 1; } };
+	struct TextFilters 
+	{
+		static int FilterAllowedChars(ImGuiTextEditCallbackData* data) 
+		{
+			if (data->EventChar < 256 && strchr(" qwertzuiopasdfghjklyxcvbnmQWERTZUIOPASDFGHJKLYXCVBNM0123456789_.()[]!@&+-'^,;{}$=", (char)data->EventChar))
+				return 0;
+			return 1; 
+		} 
+	};
 
 
 	ImGui::Checkbox("Save with bloom effect", &palBoolEffect);
@@ -464,7 +661,7 @@ void PaletteEditorWindow::ReloadSavedPalette(const char* palName)
 	CopyPalFileToEditorArray(m_selectedFile, *m_selectedCharPalHandle);
 }
 
-bool PaletteEditorWindow::ShowOverwritePopup(bool *p_open, const wchar_t* wFullPath, const char* filename)
+bool PaletteEditorWindow::ShowOverwritePopup(bool* p_open, const wchar_t* wFullPath, const char* filename)
 {
 	bool isOverwriteAllowed = true;
 
@@ -542,7 +739,7 @@ void PaletteEditorWindow::ShowOnlinePaletteResetButton(Player& playerHandle, uin
 	ShowHoveredPaletteInfoToolTip(palInfo, charIndex, 0);
 }
 
-void PaletteEditorWindow::ShowPaletteSelectButton(Player & playerHandle, const char * btnText, const char * popupID)
+void PaletteEditorWindow::ShowPaletteSelectButton(Player& playerHandle, const char* btnText, const char* popupID)
 {
 	CharPaletteHandle& charPalHandle = playerHandle.GetPalHandle();
 	int selected_pal_index = g_interfaces.pPaletteManager->GetCurrentCustomPalIndex(charPalHandle);
@@ -702,12 +899,12 @@ void PaletteEditorWindow::HandleHoveredPaletteSelection(CharPaletteHandle* charP
 	}
 }
 
-void PaletteEditorWindow::ShowPaletteRandomizerButton(const char * btnID, Player& playerHandle)
+void PaletteEditorWindow::ShowPaletteRandomizerButton(const char* btnID, Player& playerHandle)
 {
 	int charIndex = playerHandle.GetData()->charIndex;
 	char buf[32];
 	sprintf_s(buf, " ? ##%s", btnID);
-	
+
 	if (ImGui::Button(buf) && m_customPaletteVector[charIndex].size() > 1)
 	{
 		CharPaletteHandle& charPalHandle = playerHandle.GetPalHandle();
@@ -730,12 +927,13 @@ void PaletteEditorWindow::ShowPaletteRandomizerButton(const char * btnID, Player
 	ImGui::HoverTooltip("Random selection");
 }
 
-void PaletteEditorWindow::CopyToEditorArray(const char * pSrc)
+void PaletteEditorWindow::CopyToEditorArray(const char* pSrc)
 {
+	ClearUndoHistory();
 	memcpy(m_paletteEditorArray, pSrc, IMPL_PALETTE_DATALEN);
 }
 
-void PaletteEditorWindow::CopyPalFileToEditorArray(PaletteFile palFile, CharPaletteHandle & charPalHandle)
+void PaletteEditorWindow::CopyPalFileToEditorArray(PaletteFile palFile, CharPaletteHandle& charPalHandle)
 {
 	const char* fileAddr = g_interfaces.pPaletteManager->GetCurPalFileAddr(palFile, charPalHandle);
 	CopyToEditorArray(fileAddr);
@@ -759,7 +957,7 @@ void PaletteEditorWindow::UpdateHighlightArray(int selectedBoxIndex)
 	previousSelectedBoxIndex = selectedBoxIndex;
 }
 
-void PaletteEditorWindow::CopyImplDataToEditorFields(CharPaletteHandle & charPalHandle)
+void PaletteEditorWindow::CopyImplDataToEditorFields(CharPaletteHandle& charPalHandle)
 {
 	const IMPL_info_t& palInfo = g_interfaces.pPaletteManager->GetCurrentPalInfo(charPalHandle);
 
@@ -795,7 +993,7 @@ void PaletteEditorWindow::ShowGradientPopup()
 		static int color2 = 0xFFFFFFFF;
 		int alpha_flag = m_colorEditFlags & ImGuiColorEditFlags_NoAlpha;
 
-		ImGui::ColorEdit4On32Bit("Start color", NULL,(unsigned char*)&color1, alpha_flag);
+		ImGui::ColorEdit4On32Bit("Start color", NULL, (unsigned char*)&color1, alpha_flag);
 		ImGui::ColorEdit4On32Bit("End color", NULL, (unsigned char*)&color2, alpha_flag);
 
 		if (ImGui::Button("Swap colors"))
@@ -820,11 +1018,20 @@ void PaletteEditorWindow::GenerateGradient(int idx1, int idx2, int color1, int c
 	idx1 -= 1;
 	idx2 -= 1;
 
+
+
 	int steps = idx2 - idx1;
 	if (steps < 1)
 	{
 		return;
 	}
+
+	size_t size = steps + 1;
+	GradientChange change;
+	change.start = idx1;
+	change.oldColors.resize(size + 1);
+	change.newColors.resize(size);
+	memcpy(change.oldColors.data(), m_paletteEditorArray + idx1, size * sizeof(Color));
 
 	float frac = 1.0 / (float)(idx2 - idx1);
 
@@ -850,5 +1057,9 @@ void PaletteEditorWindow::GenerateGradient(int idx1, int idx2, int color1, int c
 		((int*)m_paletteEditorArray)[idx1 + i] = color ^ ((int*)m_paletteEditorArray)[idx1 + i] & a;
 	}
 
+	memcpy(change.newColors.data(), m_paletteEditorArray + idx1, size * sizeof(Color));
+	RecordGradientChange(change);
+
 	g_interfaces.pPaletteManager->ReplacePaletteFile(m_paletteEditorArray, m_selectedFile, *m_selectedCharPalHandle);
 }
+

@@ -7,6 +7,50 @@
 #include "Palette/CharPaletteHandle.h"
 
 #include <vector>
+#include <ctime>
+
+struct Color
+{
+	unsigned char blue;
+	unsigned char green;
+	unsigned char red;
+	unsigned char alpha;
+};
+
+struct PaletteChange
+{
+	size_t offset;
+	Color newValue;
+	Color oldValue;
+	std::time_t timestamp;
+};
+
+struct GradientChange
+{
+	size_t start;
+	std::vector<Color> oldColors;
+	std::vector<Color> newColors;
+};
+
+enum class ChangeType
+{
+	Palette,
+	Gradient,
+};
+
+struct HistoryEntry 
+{
+	ChangeType changeType;
+	size_t changeIdx;
+};
+
+struct History
+{
+	std::vector<HistoryEntry> entries;
+	std::vector<PaletteChange> paletteChanges;
+	std::vector<GradientChange> gradientChanges;
+	size_t cursor;
+};
 
 class PaletteEditorWindow : public IWindow
 {
@@ -49,6 +93,13 @@ private:
 	void CopyImplDataToEditorFields(CharPaletteHandle& charPalHandle);
 	void ShowGradientPopup();
 	void GenerateGradient(int idx1, int idx2, int color1, int color2);
+	void ShowUndoAndRedo();
+	void ClearUndoHistory();
+	void ClearRedoEntries();
+	void Undo();
+	void Redo();
+	void RecordPaletteChange(PaletteChange change);
+	void RecordGradientChange(GradientChange change);
 
 	std::vector<std::vector<IMPL_data_t>>& m_customPaletteVector;
 	Player*             m_playerHandles[2];
@@ -63,4 +114,22 @@ private:
 	int                 m_colorEditFlags;
 	bool                m_highlightMode;
 	bool                m_showAlpha;
+
+	// Undo history has a number of unusual moving parts. The general idea is that for each means of
+	// changing colours (e.g. via the gradient editor, via the colour picker, etc.) we record a list
+	// of changes. Alongside these is a record of which changes happened chronologically. You can 
+	// iterate through m_history.entries to get the order in which every change was made, find the 
+	// changeType and changeIdx, and then get the specific details of a change from one of the other
+	// lists.
+	//
+	// Palette history is also recorded in a strange way. ImGui doesn't really give good enough ways 
+	// to handle things like a window or popup closing, but does tell us everytime a colour changes 
+	// (which can be very very often, especially if a user drags the colour picker around for a 
+	// second or two).
+	//
+	// To work around this, we push a change into a list, then if the next change we're told about
+	// happened in less than 0.2 secs, we just update the entry in the list instead of pushing a 
+	// new one.
+	History m_history;
 };
+

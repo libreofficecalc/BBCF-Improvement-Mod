@@ -4,6 +4,7 @@
 
 #include "Core/info.h"
 #include "Core/logger.h"
+#include "Core/interfaces.h"
 #include "Overlay/Logger/ImGuiLogger.h"
 #include "Overlay/WindowManager.h"
 
@@ -25,7 +26,8 @@ std::string GetNewVersionNum()
 
 void CheckUpdate()
 {
-	std::wstring wUrl = MOD_LINK_FORUM;
+
+    std::wstring wUrl = MOD_LINK_API_GITHUB_RELEASE;
 	std::string data = DownloadUrl(wUrl);
 
 	if (strcmp(data.c_str(), "") == 0)
@@ -35,33 +37,37 @@ void CheckUpdate()
 		return;
 	}
 
-	data = data.substr(0, 950).c_str();
 
-	// Fits on: <title>[BBCF IMPROVEMENT MOD] (v2.06
-	// and captures: v2.06
-	std::regex r("<title>.+(v\\d\.\\d\\d)");
+	data = data.c_str();
+
+	std::regex r("\"name\"\\s*:\\s*\"(v[\\d \.]+)\\s");
 	std::smatch m;
 	std::regex_search(data, m, r);
 
 	if (m[1].str() == "")
 	{
+		
 		g_imGuiLogger->Log("[error] Update check failed. Regex no match.\n");
 		return;
 	}
 
-	if (strcmp(m[1].str().c_str(), MOD_VERSION_NUM) != 0)
+    if(std::string(MOD_VERSION_NUM).find(m[1].str()) == std::string::npos)
 	{
 		newVersionNum = m[1].str();
 
+	  
 		LOG(2, "New version found: %s\n", newVersionNum.c_str());
-		g_imGuiLogger->Log("[system] Update available: BBCF Improvement Mod %s has been released!\n",
-			newVersionNum.c_str());
+		g_imGuiLogger->Log("[system] Update available: BBCF Improvement Mod %s has been released!(current: %s)\n",
+			newVersionNum.c_str(),MOD_VERSION_NUM);
 
 		WindowManager::GetInstance().GetWindowContainer()->GetWindow(WindowType_UpdateNotifier)->Open();
 	}
 	else
 	{
-		g_imGuiLogger->Log("[system] BBCF Improvement Mod is up-to-date\n");
+		newVersionNum = m[1].str();
+		g_imGuiLogger->Log("[system] BBCF Improvement Mod is up-to-date, current: %s, latest: %s\n",
+		   MOD_VERSION_NUM,newVersionNum.c_str()
+			);
 	}
 }
 
@@ -74,4 +80,22 @@ void StartAsyncUpdateCheck()
 	{
 		CloseHandle(CreateThread(nullptr, 0, (LPTHREAD_START_ROUTINE)CheckUpdate, nullptr, 0, nullptr));
 	}
+}
+
+
+
+
+	// Function to send a POST request with the provided bytes as the body
+
+
+
+
+
+
+void StartAsyncReplayUpload() {
+	if (!Settings::settingsIni.uploadReplayData || g_modVals.uploadReplayDataVeto) {
+		return;
+	}
+		CloseHandle(CreateThread(nullptr, 0, (LPTHREAD_START_ROUTINE)UploadReplayBinary, nullptr, 0, nullptr));
+	
 }

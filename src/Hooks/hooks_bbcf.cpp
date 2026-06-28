@@ -10,6 +10,15 @@
 #include "Network/RoomManager.h"
 #include "Overlay/WindowManager.h"
 #include "SteamApiWrapper/steamApiWrappers.h"
+#include "Core/info.h"
+#include <string>
+#include "Web/update_check.h"
+#include "Game/ReplayFiles/ReplayFileManager.h"
+
+
+
+
+
 
 DWORD GetGameStateTitleScreenJmpBackAddr = 0;
 void __declspec(naked)GetGameStateTitleScreen()
@@ -64,6 +73,10 @@ void __declspec(naked)GetGameStateMenuScreen()
 	WindowManager::GetInstance().Initialize(g_gameProc.hWndGameWindow, g_interfaces.pD3D9ExWrapper);
 
 	MatchState::OnMatchEnd();
+
+	// shouldn't be needed, but just in case something writes replay_list to file from some odd place, make sure it's kept in the correct state
+	if (g_rep_manager.template_modified)
+		g_rep_manager.load_replay_list_default();
 
 	__asm
 	{
@@ -334,6 +347,12 @@ void __declspec(naked)MatchIntroStartsPlayingFunc()
 
 	g_interfaces.pGameModeManager->InitGameMode();
 
+	if (*g_gameVals.pGameMode != GameMode_ReplayTheater && *g_gameVals.pGameMode != GameMode_Training) {
+		if (g_rep_manager.template_modified)
+			g_rep_manager.load_replay_list_default();
+	}
+	MatchState::OnIntroPlaying();
+	
 	__asm
 	{
 		popad
@@ -629,6 +648,107 @@ void __declspec(naked)GetFFAMatchThisPlayerIndex()
 	}
 }
 
+DWORD SetDumpfileCommentStringJmpBackAddr = 0;
+void __declspec(naked)SetDumpfileCommentString()
+{
+	static int* addr = nullptr;
+
+	LOG_ASM(2, "SetDumpfileCommentString\n");
+	static char* format_string = "\n GameMode: %d, GameScene: %d, GameSceneStatus: %d \n Improvement Mod loaded \n Version: "  MOD_VERSION_NUM;
+	_asm
+	{
+		push format_string
+		jmp[SetDumpfileCommentStringJmpBackAddr]
+	}
+}
+
+DWORD UploadReplayToEndpointJmpBackAddr = 0;
+void __declspec(naked)UploadReplayToEndpoint()
+{
+	//_asm {
+	//	mov esi, ecx
+	//	mov[esi + 18h], 00000001h
+	//	pushad
+	//}
+
+	_asm {
+		PUSH ebp
+		MOV ebp,esp
+		sub esp,20
+		pushad
+	}
+		LOG_ASM(2, "UploadReplayToEndpoint\n");
+		//static char* format_string = "\n GameMode: %d, GameScene: %d, GameSceneStatus: %d \n Improvement Mod loaded \n Version: "  MOD_VERSION_NUM;
+		StartAsyncReplayUpload();
+
+		if (Settings::settingsIni.autoArchive)
+			g_rep_manager.archive_replay((ReplayFile*)(GetBbcfBaseAdress() + 0x11B0348)); // archive directly from replay_buffer
+
+	_asm
+	{
+		popad
+		jmp[UploadReplayToEndpointJmpBackAddr]
+	}
+}
+
+DWORD DelNetworkReqWatchReplaysJmpBackAddr = 0;
+void __declspec(naked)DelNetworkReqWatchReplays()
+{
+	_asm {
+		mov eax, 1
+		jmp[DelNetworkReqWatchReplaysJmpBackAddr]
+	}
+	LOG_ASM(2, "DelNetworkReqWatchReplays\n");
+}
+
+//DWORD DirectHookTestJmpBackAddr = 0;
+//void __declspec(naked)DirectHookTest() {
+//	_asm {
+//		pushad
+//		mov eax, 01h
+//		popad
+//		jmp[DirectHookTestJmpBackAddr]
+//	}
+//}
+
+void BeforeWriteReplayListDat_Helper()
+{
+	if (!g_rep_manager.template_modified) {
+		typedef void(__stdcall *func)();
+		func continue_write = (func)(GetBbcfBaseAdress() + 0x2C3F20);
+		continue_write();
+	}
+}
+
+DWORD BeforeWriteReplayListDatJmpBackAddr = 0;
+void __declspec(naked)BeforeWriteReplayListDat()
+{
+	LOG_ASM(2, "BeforeWriteReplayListDat\n");
+	__asm {
+		pushfd
+		pushad
+
+		call BeforeWriteReplayListDat_Helper
+
+		popad
+		popfd
+
+		jmp[BeforeWriteReplayListDatJmpBackAddr]
+	}
+}
+
+void __declspec(naked)SkipReplayListConfirm()
+{
+	LOG_ASM(2, "SkipReplayListConfirm\n");
+
+	static char* continue_load;
+	continue_load = GetBbcfBaseAdress() + 0x002c2bcf;
+	_asm {
+		mov eax, 1
+		jmp[continue_load]
+	}
+}
+
 bool placeHooks_bbcf()
 {
 	LOG(2, "placeHooks_bbcf\n");
@@ -709,9 +829,28 @@ bool placeHooks_bbcf()
 	GetFFAMatchThisPlayerIndexJmpBackAddr = HookManager::SetHook("GetFFAMatchThisPlayerIndex", "\xc7\x83\x04\x07\x00\x00\x00\x00\x00\x00\xc7\x83\xd8\x06\x00\x00\x00\x00\x00\x00",
 		"xxxxxxxxxxxxxxxxxxxx", 10, GetFFAMatchThisPlayerIndex);
 
+	
+
 	HookManager::RegisterHook("GetMoneyAddr", "\xFF\x35\x00\x00\x00\x00\x8D\x45\x00\x68\x00\x00\x00\x00\x50\xE8\x00\x00\x00\x00\xDB\x45",
 		"xx????xx?x????xx????xx", 6);
 	g_gameVals.pGameMoney = (int*)HookManager::GetBytesFromAddr("GetMoneyAddr", 2, 4);
+
+	SetDumpfileCommentStringJmpBackAddr = HookManager::SetHook("SetDumpfileCommentString", "\x68\x04\x8f\xe6\x00", "xxx??", 5, SetDumpfileCommentString);
+
+	//HookManager::RegisterHook
+	//UploadReplayToEndpointJmpBackAddr = HookManager::SetHook("UploadReplayToEndpoint", "\xA1\x40\x0C\x44\x01", "xxxxx", 5, UploadReplayToEndpoint);
+	//UploadReplayToEndpointJmpBackAddr = HookManager::SetHook("UploadReplayToEndpoint", "\x89\x43\x44", "xxx", 3, UploadReplayToEndpoint);
+	//UploadReplayToEndpointJmpBackAddr = HookManager::SetHook("UploadReplayToEndpoint", "\xB9\x08\x00\x00\x00\x8B\xF2\xF3\xA5\x8B\x42\x04", "xxxxxxxxxxxx", 12, UploadReplayToEndpoint);
+	//UploadReplayToEndpointJmpBackAddr = HookManager::SetHook("UploadReplayToEndpoint", "\x8B\xF1\xC7\x46\x18\x01\x00\x00\x00", "xxxxxxxxx", 9, UploadReplayToEndpoint);
+	//UploadReplayToEndpointJmpBackAddr = HookManager::SetHook("UploadReplayToEndpoint", (DWORD)(GetBbcfBaseAdress() + 0xcb26e), 6, UploadReplayToEndpoint);
+	UploadReplayToEndpointJmpBackAddr = HookManager::SetHook("UploadReplayToEndpoint", (DWORD)(GetBbcfBaseAdress() + 0xcb0b0), 6, UploadReplayToEndpoint);
+	DelNetworkReqWatchReplaysJmpBackAddr = HookManager::SetHook("DelNetworkReqWatchReplays", (DWORD)(GetBbcfBaseAdress() + 0x2c2f6f), 5, DelNetworkReqWatchReplays);
+	
+	//DirectHookTestJmpBackAddr = HookManager::SetHook("DirectHookTest",(DWORD)(GetBbcfBaseAdress() + 0x37c3b3) , 6, DirectHookTest);
+
+	BeforeWriteReplayListDatJmpBackAddr = HookManager::SetHook("BeforeWriteReplayListDat", (DWORD)(GetBbcfBaseAdress() + 0x2C2AF8), 5, BeforeWriteReplayListDat);
+
+	HookManager::SetHook("SkipReplayListConfirm", (DWORD)(GetBbcfBaseAdress() + 0x002c3038), 5, SkipReplayListConfirm);
 
 	return true;
 }

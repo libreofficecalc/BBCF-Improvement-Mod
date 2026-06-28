@@ -49,6 +49,7 @@ void RoomWindow::Draw()
 
 	ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 5.0f);
 
+
 	if (isStageSelectorEnabledInCurrentState())
 	{
 		ImGui::VerticalSpacing(10);
@@ -91,6 +92,7 @@ void RoomWindow::Draw()
 	}
 
 	ImGui::PopStyleVar();
+
 }
 
 void RoomWindow::SetWindowTitleRoomType(const std::string& roomTypeName)

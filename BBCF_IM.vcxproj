@@ -15,16 +15,37 @@
     <ClCompile Include="depends\imgui\imgui_demo.cpp" />
     <ClCompile Include="depends\imgui\imgui_draw.cpp" />
     <ClCompile Include="depends\imgui\imgui_impl_dx9.cpp" />
+    <ClCompile Include="src\Game\ScenesManager\ScenesManager.cpp" />
+    <ClCompile Include="src\Game\ReplayRewind\ReplayRewind.cpp" />
+    <ClCompile Include="src\Overlay\Window\FrameAdvantage\FrameAdvantageWindow.cpp" />
+    <ClCompile Include="src\Overlay\Window\FrameHistory\FrameHistory.cpp" />
+    <ClCompile Include="src\Overlay\Window\FrameHistory\FrameHistoryWindow.cpp" />
+    <ClCompile Include="src\Overlay\Window\ReplayDBPopupWindow.cpp" />
+    <ClCompile Include="src\Network\ReplayUploadManager.cpp" />
+    <ClCompile Include="src\Game\SnapshotApparatus\SnapshotApparatus.cpp" />
+    <ClCompile Include="src\Overlay\Window\ComboDataWindow.cpp" />
+    <ClCompile Include="src\Overlay\Window\FrameAdvantage\PlayerExtendedData.cpp" />
+    <ClCompile Include="src\Game\Jonb\JonbDBReader.cpp" />
+    <ClCompile Include="src\Game\Playbacks\PlaybackSlot.cpp" />
+    <ClCompile Include="src\Game\Playbacks\PlaybackManager.cpp" />
     <ClCompile Include="src\CustomGameMode\customGameMode.cpp" />
     <ClCompile Include="src\CustomGameMode\GameModeManager.cpp" />
     <ClCompile Include="src\Game\characters.cpp" />
+    <ClCompile Include="src\Game\ReplayFiles\ReplayFileManager.cpp" />
+    <ClCompile Include="src\Game\ReplayStates\FrameState.cpp" />
+    <ClCompile Include="src\Game\Scr\ScrStateReader.cpp" />
+    <ClCompile Include="src\Overlay\Window\FrameAdvantage\FrameAdvantage.cpp" />
     <ClCompile Include="src\Game\stages.cpp" />
     <ClCompile Include="src\Network\OnlineGameModeManager.cpp" />
     <ClCompile Include="src\Overlay\NotificationBar\NotificationBar.cpp" />
     <ClCompile Include="src\Overlay\Widget\ActiveGameModeWidget.cpp" />
     <ClCompile Include="src\Overlay\Widget\GameModeSelectWidget.cpp" />
     <ClCompile Include="src\Overlay\Widget\StageSelectWidget.cpp" />
+    <ClCompile Include="src\Overlay\Window\InputBufferWindow.cpp" />
+    <ClCompile Include="src\Overlay\Window\PlaybackEditorWindow.cpp" />
+    <ClCompile Include="src\Overlay\Window\ReplayRewindWindow.cpp" />
     <ClCompile Include="src\Overlay\Window\RoomWindow.cpp" />
+    <ClCompile Include="src\Overlay\Window\ScrWindow.cpp" />
     <ClCompile Include="src\Palette\CharPaletteHandle.cpp" />
     <ClCompile Include="src\Game\gamestates.cpp" />
     <ClCompile Include="src\Game\Jonb\JonbReader.cpp" />
@@ -74,27 +95,59 @@
     <ClCompile Include="src\Web\update_check.cpp" />
     <ClCompile Include="src\Core\utils.cpp" />
     <ClCompile Include="src\Web\url_downloader.cpp" />
+    <ClCompile Include="src\Game\Menus\TrainingSetupMenu.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\..\..\..\Downloads\stb_image.h" />
     <ClInclude Include="depends\imgui\imconfig.h" />
     <ClInclude Include="depends\imgui\imgui.h" />
     <ClInclude Include="depends\imgui\imgui_impl_dx9.h" />
     <ClInclude Include="depends\imgui\imgui_internal.h" />
+    <ClInclude Include="depends\imgui\stb_image.h" />
     <ClInclude Include="depends\imgui\stb_rect_pack.h" />
     <ClInclude Include="depends\imgui\stb_textedit.h" />
     <ClInclude Include="depends\imgui\stb_truetype.h" />
+    <ClInclude Include="src\Core\keycodes.h" />
+    <ClInclude Include="src\Game\ReplayFiles\ReplayList.h" />
+    <ClInclude Include="src\Game\ScenesManager\ScenesManager.h" />
+    <ClInclude Include="src\Game\ReplayRewind\ReplayRewind.h" />
+    <ClInclude Include="src\Overlay\Window\FrameAdvantage\FrameAdvantageWindow.h" />
+    <ClInclude Include="src\Overlay\Window\FrameHistory\FrameHistory.h" />
+    <ClInclude Include="src\Overlay\Window\FrameHistory\FrameHistoryWindow.h" />
+    <ClInclude Include="src\Overlay\Window\ReplayDBPopupWindow.h" />
+    <ClInclude Include="src\Network\ReplayUploadManager.h" />
+    <ClInclude Include="src\Game\GhidraDefs.h" />
+    <ClInclude Include="src\Game\SnapshotApparatus\SnapshotApparatus.h" />
+    <ClInclude Include="src\Overlay\Window\ComboDataWindow.h" />
+    <ClInclude Include="src\Overlay\Window\FrameAdvantage\PlayerExtendedData.h" />
+    <ClInclude Include="src\Game\Jonb\JonbDBEntry.h" />
+    <ClInclude Include="src\Game\Jonb\JonbDBReader.h" />
+    <ClInclude Include="src\Game\Playbacks\PlaybackSlot.h" />
+    <ClInclude Include="src\Game\Playbacks\PlaybackManager.h" />
     <ClInclude Include="src\Core\info.h" />
     <ClInclude Include="src\CustomGameMode\customGameMode.h" />
     <ClInclude Include="src\CustomGameMode\GameModeManager.h" />
     <ClInclude Include="src\D3D9EXWrapper\d3d9.h" />
     <ClInclude Include="src\Game\characters.h" />
+    <ClInclude Include="src\Game\ReplayFiles\ReplayFile.h" />
+    <ClInclude Include="src\Game\ReplayFiles\ReplayFileManager.h" />
+    <ClInclude Include="src\Game\ReplayStates\FrameState.h" />
+    <ClInclude Include="src\Game\Scr\CmdList.h" />
+    <ClInclude Include="src\Game\Scr\ScrStateEntry.h" />
+    <ClInclude Include="src\Game\Scr\ScrStateReader.h" />
     <ClInclude Include="src\Game\stages.h" />
+    <ClInclude Include="src\Game\EntityData.h" />
     <ClInclude Include="src\Network\OnlineGameModeManager.h" />
     <ClInclude Include="src\Overlay\NotificationBar\NotificationBar.h" />
     <ClInclude Include="src\Overlay\Widget\ActiveGameModeWidget.h" />
     <ClInclude Include="src\Overlay\Widget\GameModeSelectWidget.h" />
     <ClInclude Include="src\Overlay\Widget\StageSelectWidget.h" />
+    <ClInclude Include="src\Overlay\Window\FrameAdvantage\FrameAdvantage.h" />
+    <ClInclude Include="src\Overlay\Window\InputBufferWindow.h" />
+    <ClInclude Include="src\Overlay\Window\PlaybackEditorWindow.h" />
+    <ClInclude Include="src\Overlay\Window\ReplayRewindWindow.h" />
     <ClInclude Include="src\Overlay\Window\RoomWindow.h" />
+    <ClInclude Include="src\Overlay\Window\ScrWindow.h" />
     <ClInclude Include="src\Palette\CharPaletteHandle.h" />
     <ClInclude Include="src\Game\Jonb\JonbEntry.h" />
     <ClInclude Include="src\Game\Jonb\JonbReader.h" />
@@ -149,15 +202,22 @@
     <ClInclude Include="src\Web\update_check.h" />
     <ClInclude Include="src\Core\utils.h" />
     <ClInclude Include="src\Web\url_downloader.h" />
+    <ClInclude Include="src\Game\Menus\TrainingSetupMenu.h" />
   </ItemGroup>
   <ItemGroup>
+    <None Include=".gitignore" />
     <None Include="export\dinput8.def" />
+    <None Include="LICENSE" />
+    <None Include="README.md" />
     <None Include="resource\palettes.ini" />
     <None Include="resource\settings.ini">
       <FileType>Document</FileType>
       <DeploymentContent>false</DeploymentContent>
     </None>
     <None Include="src\Core\settings.def" />
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="USER_README.txt" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{CB50353A-2EC9-4D1C-89C6-65A621C335C5}</ProjectGuid>
@@ -219,10 +279,11 @@
       <PrecompiledHeaderFile />
       <PrecompiledHeaderOutputFile />
       <PreprocessToFile>false</PreprocessToFile>
+      <LanguageStandard>Default</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
-      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <GenerateDebugInformation>DebugFull</GenerateDebugInformation>
       <AdditionalDependencies>comsuppw.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <ModuleDefinitionFile>export/dinput8.def</ModuleDefinitionFile>
     </Link>
@@ -244,6 +305,7 @@
       <PrecompiledHeaderFile />
       <PrecompiledHeaderOutputFile />
       <AssemblerOutput>NoListing</AssemblerOutput>
+      <LanguageStandard>Default</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>

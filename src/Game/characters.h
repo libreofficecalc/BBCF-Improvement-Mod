@@ -11,7 +11,7 @@ enum CharIndex
 	CharIndex_Tager,
 	CharIndex_Litchi,
 	CharIndex_Arakune,
-	CharIndex_Bang8,
+	CharIndex_Bang,
 	CharIndex_Carl,
 	CharIndex_Hakumen,
 	CharIndex_Nu,

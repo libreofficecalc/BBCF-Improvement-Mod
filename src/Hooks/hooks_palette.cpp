@@ -170,6 +170,28 @@ void __declspec(naked) GetPaletteIndexPointers()
 		jmp[GetPaletteIndexPointersJmpBackAddr]
 	}
 }
+// DWORD P1InputJmpBackAddr = 0;
+//void __declspec(naked)P1Input()
+//{
+//	LOG_ASM(2, "P1Input\n");
+//	
+//	static char* addr = nullptr;
+//	static int playerNr = -1;
+//	__asm
+//	{
+//		movzx edi, ax
+//		mov[esi], di
+//		mov[addr], esi
+		
+//	}
+//	g_gameVals.P1InputJumpBackAdress = P1InputJmpBackAddr;
+
+//	__asm
+//	{
+//		jmp[P1InputJmpBackAddr]
+//	}
+	
+//}]
 
 bool placeHooks_palette()
 {
@@ -191,6 +213,10 @@ bool placeHooks_palette()
 
 	GetIsP1CPUJmpBackAddr = HookManager::SetHook("GetIsP1CPU", "\x89\xB8\x00\x00\x00\x00\x8B\x83",
 		"xx????xx", 6, GetIsP1CPU);
+
+
+//	P1InputJmpBackAddr = HookManager::SetHook("P1Input", "\x0F\xB7\x00\x66\x89\x00\xE9\x00\x00\x00\x00\x53",
+//		"xx?xx?x????x", 6, P1Input);
 
 	return true;
 }

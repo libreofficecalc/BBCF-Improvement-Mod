@@ -9,6 +9,7 @@ std::vector<functionhook_t> HookManager::hooks;
 JMPBACKADDR HookManager::SetHook(const char* label, const char* pattern, const char* mask,
 	const int len, void* newFunc, bool activate)
 {
+	/*Hooks to an adress found using a pattern*/
 	if (len > MAX_LENGTH)
 	{
 		LOG(2, "Overwritten bytes more than %d (%d)! \n", MAX_LENGTH, len);
@@ -65,6 +66,62 @@ JMPBACKADDR HookManager::SetHook(const char* label, const char* pattern, const c
 	return jmpBackAddr;
 }
 
+JMPBACKADDR HookManager::SetHook(const char* label, DWORD startAddress, const int len, void* newFunc, bool activate)
+{
+	/*Hooks to a direct adress*/
+	if (len > MAX_LENGTH)
+	{
+		LOG(2, "Overwritten bytes more than %d (%d)! \n", MAX_LENGTH, len);
+		return 0;
+	}
+
+	//check if there is already a hook registered with same label
+	int index = GetHookStructIndex(label);
+	if (index != -1)
+	{
+		LOG(2, "%s hook already present!\n", label);
+		return hooks[index].jmpBackAddr;
+	}
+
+	hooks.push_back(functionhook_t{});
+	index = hooks.size() - 1;
+	hooks[index].label = label;
+	hooks[index].pattern = "";
+	hooks[index].mask = "";
+	hooks[index].length = len;
+	hooks[index].newFunc = newFunc;
+	hooks[index].startAddress = startAddress;
+
+	if (!startAddress)
+	{
+		LOG(2, "%s invalid start address provided: 0x%p\n", label, startAddress);
+		return 0;
+	}
+
+	LOG(2, "%s found at: 0x%p\n", label, startAddress);
+
+	if (!SaveOriginalBytes(index, (void*)startAddress, len))
+	{
+		LOG(2, "Saving original bytes failed.\n");
+		return 0;
+	}
+
+	DWORD jmpBackAddr = startAddress + len;
+	hooks[index].jmpBackAddr = jmpBackAddr;
+
+	if (activate)
+	{
+		if (!PlaceHook((void*)startAddress, newFunc, len))
+		{
+			LOG(2, "%s hook failed.\n", label);
+			return 0;
+		}
+		hooks[index].activated = true;
+		LOG(2, "Hook set on %s\n", label);
+	}
+
+	return jmpBackAddr;
+}
 //sets new hooked address to an existing hook struct
 bool HookManager::SetHook(const char* label, void* newFunc, bool activate)
 {

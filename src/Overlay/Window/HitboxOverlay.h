@@ -11,7 +11,11 @@ typedef unsigned int uint32_t;
 class HitboxOverlay : public IWindow
 {
 public:
+	bool drawHitboxHurtbox = true;
 	bool drawOriginLine = false;
+	bool drawBoundingBoxes = false;
+	bool drawCollisionBoxes = false;
+	bool drawRangeCheckBoxes = false;
 	bool drawCharacterHitbox[2] = {true, true};
 
 	HitboxOverlay(const std::string& windowTitle, bool windowClosable,
@@ -29,7 +33,10 @@ protected:
 	void AfterDraw() override;
 
 private:
+	void fixAspectRatio(ImVec2& point);
 	void DrawOriginLine(ImVec2 worldPos, float rotationRad);
+	void DrawRangeCheckBoxes(ImVec2 worldPos, float rotationRad, const CharData* charObj);
+	void DrawCollisionBoxes(ImVec2 worldPos, float rotationRad, const CharData* charObj);
 	void DrawCollisionAreas(const CharData* charObj, const ImVec2 playerWorldPos);
 
 	bool IsOwnerEnabled(CharData* ownerCharInfo);
@@ -50,6 +57,12 @@ private:
 	float m_scale = 0.346f;
 	float m_rectThickness = 2.5f;
 	float m_rectFillTransparency = 0.5f;
+
+	// Aspect ratio fixes
+	ImGuiIO io;
+	const float aspectRatio = 5.0f / 3.0f;
+	float displayRatio;
+	const char* aspectRatioAddress;
 
 	ImGuiWindowFlags m_overlayWindowFlags = ImGuiWindowFlags_NoTitleBar
 		| ImGuiWindowFlags_NoInputs
