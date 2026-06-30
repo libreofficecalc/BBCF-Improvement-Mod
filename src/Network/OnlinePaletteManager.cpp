@@ -4,6 +4,8 @@
 
 #include "Core/logger.h"
 #include "Core/interfaces.h"
+#include "Game/gamestates.h"
+
 OnlinePaletteManager::OnlinePaletteManager(PaletteManager* pPaletteManager, CharPaletteHandle* pP1CharPalHandle,
 	CharPaletteHandle* pP2CharPalHandle, RoomManager* pRoomManager)
 	: m_pPaletteManager(pPaletteManager), m_pP1CharPalHandle(pP1CharPalHandle), 
@@ -29,38 +31,38 @@ void OnlinePaletteManager::RecvPaletteDataPacket(Packet* packet)
 {
 	LOG(2, "OnlinePaletteManager::RecvPaletteDataPacket\n");
 
+	if (!g_modVals.enableForeignPalettes)
+		return;
+
 	uint16_t matchPlayerIndex = m_pRoomManager->GetPlayerMatchPlayerIndexByRoomMemberIndex(packet->roomMemberIndex);
 	CharPaletteHandle& charPalHandle = GetPlayerCharPaletteHandle(matchPlayerIndex);
-    // for next release I should just make it so that ReplacePaletteFiles is not reacheable and leave the enable foreign palettes as a means to actuall stop palettes from loading, instead of a "fix" for ranked crash.
-	//if (g_gameVals.enableForeignPalettes) {
-		if (charPalHandle.IsNullPointerPalBasePtr())
-		{
-			m_unprocessedPaletteFiles.push(UnprocessedPaletteFile(matchPlayerIndex, (PaletteFile)packet->part, (char*)packet->data));
-			return;
-		}
-		if (g_modVals.enableForeignPalettes) {
-			m_pPaletteManager->ReplacePaletteFile((const char*)packet->data, (PaletteFile)packet->part, charPalHandle);
-		}
 
-	//}
+	if (charPalHandle.IsNullPointerPalBasePtr() || !isInMatch())
+	{
+		m_unprocessedPaletteFiles.push(UnprocessedPaletteFile(matchPlayerIndex, (PaletteFile)packet->part, (char*)packet->data));
+		return;
+	}
+
+	m_pPaletteManager->ReplacePaletteFile((const char*)packet->data, (PaletteFile)packet->part, charPalHandle);
 }
 
 void OnlinePaletteManager::RecvPaletteInfoPacket(Packet* packet)
 {
 	LOG(2, "OnlinePaletteManager::RecvPaletteInfoPacket\n");
 
+	if (!g_modVals.enableForeignPalettes)
+		return;
+
 	uint16_t matchPlayerIndex = m_pRoomManager->GetPlayerMatchPlayerIndexByRoomMemberIndex(packet->roomMemberIndex);
 	CharPaletteHandle& charPalHandle = GetPlayerCharPaletteHandle(matchPlayerIndex);
-	//if (g_gameVals.enableForeignPalettes) {
-		if (charPalHandle.IsNullPointerPalBasePtr())
-		{
-			m_unprocessedPaletteInfos.push(UnprocessedPaletteInfo(matchPlayerIndex, (IMPL_info_t*)packet->data));
-			return;
-		}
-		if (g_modVals.enableForeignPalettes) {
-			m_pPaletteManager->SetCurrentPalInfo(charPalHandle, *(IMPL_info_t*)packet->data);
-		}
-	//}
+
+	if (charPalHandle.IsNullPointerPalBasePtr() || !isInMatch())
+	{
+		m_unprocessedPaletteInfos.push(UnprocessedPaletteInfo(matchPlayerIndex, (IMPL_info_t*)packet->data));
+		return;
+	}
+
+	m_pPaletteManager->SetCurrentPalInfo(charPalHandle, *(IMPL_info_t*)packet->data);
 }
 
 void OnlinePaletteManager::ProcessSavedPalettePackets()

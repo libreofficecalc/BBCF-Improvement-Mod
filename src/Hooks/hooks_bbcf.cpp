@@ -127,6 +127,15 @@ void __declspec(naked)GetGameStateVersusScreen()
 {
 	LOG_ASM(2, "GetGameStateVersusScreen\n");
 
+	__asm pushad
+
+	g_interfaces.pPaletteManager->OnMatchEnd(
+		g_interfaces.player1.GetPalHandle(),
+		g_interfaces.player2.GetPalHandle()
+	);
+
+	__asm popad
+
 	__asm
 	{
 		mov dword ptr[eax + 10Ch], 0Eh
